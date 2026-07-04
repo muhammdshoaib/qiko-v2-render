@@ -1,0 +1,80 @@
+// Thin client for the qiko-core API. Cookies (httpOnly qiko_access + CSRF) are sent automatically
+// with credentials: "include"; nothing is stored in localStorage.
+const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000/api/v1";
+
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    credentials: "include",
+    headers: { "Content-Type": "application/json", ...(opts.headers ?? {}) },
+    ...opts,
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.status === 204 ? (null as T) : ((await res.json()) as T);
+}
+
+// Auth
+export const login = (email: string, password: string) =>
+  request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+export const logout = () => request("/auth/logout", { method: "POST" });
+export const me = () => request<{ id: string; email: string; role: string }>("/auth/me");
+export type MeUser = { id: string; email: string; role: string };
+
+// Agents (workers)
+export type Agent = { id: string; name: string; status: string; atype: string };
+export const listAgents = () => request<Agent[]>("/agents");
+export const createAgent = (name: string, plan = "free") =>
+  request<Agent>("/agents", { method: "POST", body: JSON.stringify({ name, plan }) });
+export const markReady = (id: string) => request<Agent>(`/agents/${id}/ready`, { method: "POST" });
+
+// Knowledge + chat
+export type Doc = { doc_id: string; chunks: number };
+export const ingest = (doc_id: string, text: string) =>
+  request<{ doc_id: string; chunks: number }>("/knowledge/ingest", {
+    method: "POST",
+    body: JSON.stringify({ doc_id, text }),
+  });
+export const listDocuments = () => request<Doc[]>("/knowledge/documents");
+export const deleteDocument = (docId: string) =>
+  request<{ removed: number }>(`/knowledge/documents/${encodeURIComponent(docId)}`, { method: "DELETE" });
+export const ask = (conversation_id: string, question: string) =>
+  request<{ role: string; text: string }>("/chat/ask", {
+    method: "POST",
+    body: JSON.stringify({ conversation_id, question }),
+  });
+
+// Worker knowledge sources
+const src = (agentId: string, kind: string, body: object) =>
+  request<{ doc_id: string }>(`/agents/${agentId}/sources/${kind}`, { method: "POST", body: JSON.stringify(body) });
+export const addBehavior = (agentId: string, source_id: string, text: string) =>
+  src(agentId, "behaviors", { source_id, text });
+export const addFaq = (agentId: string, source_id: string, question: string, answer: string) =>
+  src(agentId, "faqs", { source_id, question, answer });
+export const addPolicy = (agentId: string, source_id: string, title: string, body: string) =>
+  src(agentId, "policies", { source_id, title, body });
+export const addWebsite = (agentId: string, source_id: string, name: string, url: string, details: string) =>
+  src(agentId, "websites", { source_id, name, url, details });
+
+// Teams
+export type Team = { team_id: string; members: Record<string, string> };
+export const createTeam = (owner_id: string) =>
+  request<Team>("/teams", { method: "POST", body: JSON.stringify({ owner_id }) });
+export const addTeamMember = (teamId: string, user_id: string, role: string) =>
+  request<Team>(`/teams/${teamId}/members`, { method: "POST", body: JSON.stringify({ user_id, role }) });
+
+// Public embed chat (no auth)
+export const publicChat = (tenant: string, workerId: string, question: string) =>
+  request<{ role: string; text: string }>("/public/chat", {
+    method: "POST",
+    body: JSON.stringify({ tenant, worker_id: workerId, question }),
+  });
+
+// Billing
+export type Subscription = { customer_id: string; plan?: string; status: string };
+export const subscriptionStatus = (customerId: string) =>
+  request<Subscription>(`/billing/subscription/${encodeURIComponent(customerId)}`);

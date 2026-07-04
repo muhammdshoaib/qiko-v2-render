@@ -1,0 +1,14 @@
+# Live (production). Secrets from AWS SSM, no host DB/redis port exposure.
+# Run: COMPOSE_PROJECT_NAME=qiko-live docker compose -f docker-compose.yml -f docker-compose.live.yml up -d
+services:
+  qiko-core:
+    environment:
+      - ENVIRONMENT=live
+      - LOG_LEVEL=WARNING
+    deploy:
+      resources:
+        limits: {memory: 512M, cpus: "1.0"}
+  db:
+    deploy:
+      resources:
+        limits: {memory: 1G, cpus: "1.0"}

@@ -1,0 +1,85 @@
+# Base stack shared by all environments. Compose project name is set per environment
+# via COMPOSE_PROJECT_NAME (qiko-dev / qiko-preprod / qiko-live) so containers, networks
+# and volumes never collide between environments on the same host.
+#
+# DB and Redis live only on app-net and are never exposed to the public proxy network.
+
+services:
+  qiko-core:
+    build: ./qiko-core
+    env_file: [./.env]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-qiko}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-qiko}
+      - REDIS_URL=redis://redis:6379/0
+      - USE_DB_STORES=true          # persist to Postgres (dev overlay turns this off)
+      - TASK_BACKEND=arq            # offload heavy work to the worker tier
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+    networks: [proxy-net, app-net]
+
+  # Async task tier (arq). Runs the registered jobs (ingest, email, ...) off the API request path.
+  worker:
+    build: ./qiko-core
+    command: ["arq", "app.tasks.worker.WorkerSettings"]
+    env_file: [./.env]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-qiko}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-qiko}
+      - REDIS_URL=redis://redis:6379/0
+      - TASK_BACKEND=arq
+    depends_on:
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+    networks: [app-net]
+
+  creator:
+    build: {context: ./frontend, dockerfile: apps/creator/Dockerfile}
+    environment:
+      - NEXT_PUBLIC_API_BASE=${PUBLIC_API_BASE:-http://localhost:8000/api/v1}
+    depends_on: [qiko-core]
+    restart: unless-stopped
+    networks: [proxy-net]
+
+  admin:
+    build: {context: ./frontend, dockerfile: apps/admin/Dockerfile}
+    environment:
+      - NEXT_PUBLIC_API_BASE=${PUBLIC_API_BASE:-http://localhost:8000/api/v1}
+    depends_on: [qiko-core]
+    restart: unless-stopped
+    networks: [proxy-net]
+
+  db:
+    image: pgvector/pgvector:pg18
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-qiko}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB:-qiko}
+    volumes:
+      # pg18+ stores data in a major-version subdir; mount the parent (not /data).
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-qiko} -d ${POSTGRES_DB:-qiko}"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks: [app-net]
+
+  redis:
+    image: redis:8
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks: [app-net]
+
+networks:
+  proxy-net: {driver: bridge}
+  app-net: {driver: bridge}
+
+volumes:
+  postgres_data:

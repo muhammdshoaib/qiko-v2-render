@@ -1,0 +1,59 @@
+"""Admin customer directory: list with search/plan filters + per-customer earnings, a details
+view, and soft-delete with email anonymisation. Aggregates from one source (the unified tables)."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class CustomerRecord:
+    user_id: str
+    email: str
+    plan: str = "free"
+    stripe_paid_cents: int = 0
+    local_paid_cents: int = 0
+    agents: int = 0
+    conversations: int = 0
+    is_studio: bool = False
+    deleted: bool = False
+
+    @property
+    def earnings_cents(self) -> int:
+        # Earnings = the higher of the two sources (Stripe vs local), reconciled to one number.
+        return max(self.stripe_paid_cents, self.local_paid_cents)
+
+
+@dataclass
+class CustomerDirectory:
+    _by_id: dict[str, CustomerRecord] = field(default_factory=dict)
+
+    def add(self, rec: CustomerRecord) -> None:
+        self._by_id[rec.user_id] = rec
+
+    def list(self, *, search: str | None = None, plan: str | None = None,
+             page: int = 1, page_size: int = 20) -> dict:
+        rows = [r for r in self._by_id.values() if not r.deleted]
+        if search:
+            s = search.lower()
+            rows = [r for r in rows if s in r.email.lower() or s in r.user_id.lower()]
+        if plan and plan != "all":
+            rows = [r for r in rows if r.plan == plan]
+        rows.sort(key=lambda r: r.earnings_cents, reverse=True)
+        total = len(rows)
+        start = (page - 1) * page_size
+        return {"total": total, "page": page, "items": rows[start:start + page_size]}
+
+    def details(self, user_id: str) -> CustomerRecord | None:
+        rec = self._by_id.get(user_id)
+        return rec if rec and not rec.deleted else None
+
+    def set_studio(self, user_id: str, enabled: bool) -> CustomerRecord:
+        rec = self._by_id[user_id]
+        rec.is_studio = enabled
+        return rec
+
+    def soft_delete(self, user_id: str) -> CustomerRecord:
+        rec = self._by_id[user_id]
+        rec.deleted = True
+        rec.email = f"deleted+{user_id}@anonymized.invalid"  # anonymise PII
+        return rec

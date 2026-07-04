@@ -1,0 +1,18 @@
+# Dev (local). Exposes ports for convenience; hot iteration.
+# Run: COMPOSE_PROJECT_NAME=qiko-dev docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  qiko-core:
+    environment:
+      - ENVIRONMENT=dev
+      - LOG_LEVEL=DEBUG
+      - USE_DB_STORES=false   # dev runs in-memory for fast iteration
+      - TASK_BACKEND=eager    # dev runs tasks inline (no separate worker needed)
+    ports: ["8000:8000"]
+  creator:
+    ports: ["3000:3000"]
+  admin:
+    ports: ["3001:3001"]
+  db:
+    ports: ["5432:5432"]
+  redis:
+    ports: ["6379:6379"]

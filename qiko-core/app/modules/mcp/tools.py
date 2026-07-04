@@ -1,0 +1,35 @@
+"""Platform tools exposed to agents through the shared ToolRegistry with Pydantic-validated
+arguments. These are the callable capabilities (knowledge, Excel-as-knowledge, Signal); the
+Python MCP SDK server (server.py) simply surfaces this registry over MCP."""
+from __future__ import annotations
+
+from pydantic import BaseModel, Field
+
+from app.modules.agentcore.tools import ToolRegistry
+from app.modules.knowledge.service import KnowledgeService
+
+
+class SearchArgs(BaseModel):
+    query: str = Field(min_length=1)
+    k: int = Field(default=5, ge=1, le=50)
+
+
+class IngestArgs(BaseModel):
+    doc_id: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+
+
+def build_registry(knowledge: KnowledgeService, tenant: str) -> ToolRegistry:
+    """Build a tenant-scoped tool registry. Excel analysis is ingested as knowledge, so it is
+    searchable through the same knowledge_search tool (Excel = a knowledge sub-feature)."""
+    reg = ToolRegistry()
+
+    @reg.register("knowledge_search", SearchArgs)
+    async def _search(a: SearchArgs) -> list[str]:
+        return [p.text for p in await knowledge.retrieve(tenant, a.query, k=a.k)]
+
+    @reg.register("knowledge_ingest", IngestArgs)
+    async def _ingest(a: IngestArgs) -> int:
+        return await knowledge.ingest(tenant, a.doc_id, a.text)
+
+    return reg

@@ -1,0 +1,78 @@
+"""User store. In-memory implementation stands in until the DB-backed store lands with the
+data-migration work (SCRUM-7). The rest of the module depends only on the UserStore protocol."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Protocol
+
+from app.modules.identity.rbac import Role
+from app.modules.identity.security import hash_password
+
+
+@dataclass
+class User:
+    id: str
+    email: str
+    password_hash: str
+    tenant: str | None = None
+    role: Role = Role.viewer
+    twofa_enabled: bool = False
+    totp_secret: str | None = None
+    current_sid: str | None = None
+
+
+class UserStore(Protocol):
+    async def add(self, user: User) -> User: ...
+    async def get_by_email(self, email: str) -> User | None: ...
+    async def get_by_id(self, user_id: str) -> User | None: ...
+    async def set_sid(self, user_id: str, sid: str | None) -> None: ...
+    async def enable_twofa(self, user_id: str, secret: str) -> None: ...
+    async def set_password(self, user_id: str, password_hash: str) -> None: ...
+
+
+@dataclass
+class InMemoryUserStore:
+    _by_id: dict[str, User] = field(default_factory=dict)
+
+    def seed(self, user: User) -> User:
+        """Synchronous bootstrap insert (dev seeding / tests). Runtime writes use async add()."""
+        self._by_id[user.id] = user
+        return user
+
+    async def add(self, user: User) -> User:
+        return self.seed(user)
+
+    async def get_by_email(self, email: str) -> User | None:
+        return next((u for u in self._by_id.values() if u.email == email.lower()), None)
+
+    async def get_by_id(self, user_id: str) -> User | None:
+        return self._by_id.get(user_id)
+
+    async def set_sid(self, user_id: str, sid: str | None) -> None:
+        user = self._by_id.get(user_id)
+        if user:
+            user.current_sid = sid
+
+    async def enable_twofa(self, user_id: str, secret: str) -> None:
+        user = self._by_id.get(user_id)
+        if user:
+            user.twofa_enabled = True
+            user.totp_secret = secret
+
+    async def set_password(self, user_id: str, password_hash: str) -> None:
+        user = self._by_id.get(user_id)
+        if user:
+            user.password_hash = password_hash
+
+
+def seeded_store() -> InMemoryUserStore:
+    """An in-memory store. Seeds a dev owner account ONLY in debug/dev, so no default credentials
+    ever ship to preprod/live (A07). Prod bootstraps its admin from SSM secrets / migration."""
+    from app.core.config import get_settings
+
+    store = InMemoryUserStore()
+    if get_settings().debug:
+        store.seed(User(id="u-owner", email="owner@qiko.ai",
+                        password_hash=hash_password("change-me-locally"),
+                        tenant="qiko", role=Role.owner))
+    return store
