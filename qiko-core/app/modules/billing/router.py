@@ -63,6 +63,22 @@ class CheckoutBody(BaseModel):
     promo: str | None = None
 
 
+@router.get("/plans")
+def plans() -> list[dict]:
+    """Public pricing catalog (for the onboarding plan step)."""
+    from app.modules.billing.plans import PLANS
+
+    out = []
+    for i, p in enumerate(PLANS.values(), start=1):
+        out.append({
+            "id": i, "name": p.name.title(), "price_id": f"price_{p.name}",
+            "amount": p.price_cents, "interval": "month",
+            "display_price": "Custom" if p.price_cents == 0 and p.name != "free" else f"${p.price_cents // 100}",
+            "features": [f"{'Unlimited' if p.worker_limit < 0 else p.worker_limit} worker(s)"],
+        })
+    return out
+
+
 @router.post("/checkout")
 def checkout(body: CheckoutBody, _tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
     return {"url": subs.start_checkout(body.customer_id, body.plan, price_id=body.price_id, promo=body.promo)}
