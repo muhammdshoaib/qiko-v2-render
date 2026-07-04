@@ -35,17 +35,21 @@ services:
     networks: [app-net]
 
   creator:
-    build: {context: ./frontend, dockerfile: apps/creator/Dockerfile}
-    environment:
-      - NEXT_PUBLIC_API_BASE=${PUBLIC_API_BASE:-http://localhost:8000/api/v1}
+    build:
+      context: ./frontend
+      dockerfile: apps/creator/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: ${PUBLIC_API_BASE:-http://localhost:8000/api/v1}
     depends_on: [qiko-core]
     restart: unless-stopped
     networks: [proxy-net]
 
   admin:
-    build: {context: ./frontend, dockerfile: apps/admin/Dockerfile}
-    environment:
-      - NEXT_PUBLIC_API_BASE=${PUBLIC_API_BASE:-http://localhost:8000/api/v1}
+    build:
+      context: ./frontend
+      dockerfile: apps/admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: ${PUBLIC_API_BASE:-http://localhost:8000/api/v1}
     depends_on: [qiko-core]
     restart: unless-stopped
     networks: [proxy-net]

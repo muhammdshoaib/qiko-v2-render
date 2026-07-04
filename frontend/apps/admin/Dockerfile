@@ -5,6 +5,9 @@ WORKDIR /app
 ENV PNPM_HOME=/pnpm PATH=/pnpm:$PATH
 RUN corepack enable
 
+ARG NEXT_PUBLIC_API_BASE=http://localhost:8000/api/v1
+ENV NEXT_PUBLIC_API_BASE=$NEXT_PUBLIC_API_BASE
+
 COPY . .
 RUN pnpm install --frozen-lockfile && pnpm --filter admin build
 

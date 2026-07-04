@@ -1,10 +1,22 @@
 # Preprod / staging (client-facing validation). Production-like, no host DB port exposure.
-# Run: COMPOSE_PROJECT_NAME=qiko-preprod docker compose -f docker-compose.yml -f docker-compose.preprod.yml up -d
+# Run: COMPOSE_PROJECT_NAME=qiko-preprod docker compose -f docker-compose.yml -f docker-compose.preprod.yml up -d --build
 services:
   qiko-core:
     environment:
       - ENVIRONMENT=preprod
       - LOG_LEVEL=INFO
-    deploy:
-      resources:
-        limits: {memory: 512M, cpus: "1.0"}
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [creator, admin, qiko-core]
+    networks: [proxy-net]
+
+volumes:
+  caddy_data:
+  caddy_config:

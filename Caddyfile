@@ -1,0 +1,14 @@
+# Preprod reverse proxy + automatic TLS (Let's Encrypt).
+# Creator + API share one origin (cookies stay first-party); admin on its own subdomain.
+preprod.qiko.ai {
+	handle /api/* {
+		reverse_proxy qiko-core:8000
+	}
+	handle {
+		reverse_proxy creator:3000
+	}
+}
+
+admin.preprod.qiko.ai {
+	reverse_proxy admin:3001
+}
