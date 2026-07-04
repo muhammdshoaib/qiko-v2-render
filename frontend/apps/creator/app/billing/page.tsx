@@ -54,7 +54,7 @@ export default function BillingPage() {
                   </div>
                   <p className="text-2xl font-bold">{p.price}<span className="text-sm font-normal text-muted-foreground">/mo</span></p>
                   <ul className="space-y-1.5 text-sm text-muted-foreground">
-                    {p.features.map((f) => <li key={f} className="flex items-center gap-2"><Check className="size-4 text-[hsl(var(--success))]" /> {f}</li>)}
+                    {p.features.map((f) => <li key={f} className="flex items-center gap-2"><Check className="size-4 text-success" /> {f}</li>)}
                   </ul>
                   <Button variant={p.id === "pro" ? "default" : "outline"} className="w-full">
                     {p.id === "enterprise" ? "Contact sales" : "Choose plan"}

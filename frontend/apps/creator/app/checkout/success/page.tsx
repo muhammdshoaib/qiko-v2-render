@@ -9,7 +9,7 @@ export default function CheckoutSuccessPage() {
     <main className="flex min-h-screen items-center justify-center p-6">
       <Card className="w-full max-w-sm">
         <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
-          <span className="grid size-12 place-items-center rounded-full bg-accent text-[hsl(var(--success))]">
+          <span className="grid size-12 place-items-center rounded-full bg-accent text-success">
             <CheckCircle2 className="size-7" />
           </span>
           <div>

@@ -108,7 +108,7 @@ function SourceForm({ title, fields, onSubmit, onDone }: {
         </div>
       ))}
       {m.isError && <p className="text-sm text-destructive">Not permitted (needs editor role).</p>}
-      {m.isSuccess && <p className="text-sm text-[hsl(var(--success))]">Added — grounding updated.</p>}
+      {m.isSuccess && <p className="text-sm text-success">Added — grounding updated.</p>}
       <div className="flex justify-end"><Button disabled={m.isPending} onClick={() => m.mutate()}>Save</Button></div>
     </CardContent></Card>
   );

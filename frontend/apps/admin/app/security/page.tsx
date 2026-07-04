@@ -39,7 +39,7 @@ export default function SecurityPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {enabled ? (
-              <div className="flex items-center gap-2 text-sm text-[hsl(var(--success))]">
+              <div className="flex items-center gap-2 text-sm text-success">
                 <ShieldCheck className="size-4" /> 2FA is now active on your account.
               </div>
             ) : !secret ? (

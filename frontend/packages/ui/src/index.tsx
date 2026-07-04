@@ -77,7 +77,7 @@ const badgeVariants = cva("inline-flex items-center rounded-full px-2.5 py-0.5 t
     variant: {
       default: "bg-primary/10 text-primary",
       muted: "bg-muted text-muted-foreground",
-      success: "bg-[hsl(var(--success))]/12 text-[hsl(var(--success))]",
+      success: "bg-success/15 text-success",
       destructive: "bg-destructive/10 text-destructive",
     },
   },
@@ -93,15 +93,8 @@ export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivEl
 }
 
 /* ---------- Brand ---------- */
-export function Logo({ className }: { className?: string }) {
-  return (
-    <span className={cn("inline-flex items-center gap-2 font-semibold tracking-tight", className)}>
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden>
-        <rect width="24" height="24" rx="7" fill="hsl(var(--primary))" />
-        <path d="M7 12.5 10.5 16 17 8.5" stroke="hsl(var(--primary-foreground))" strokeWidth="2.2"
-              strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-      <span>Qiko</span>
-    </span>
-  );
+export function Logo({ className, iconOnly = false }: { className?: string; iconOnly?: boolean }) {
+  // Official Qiko wordmark / icon (assets live in each app's /public).
+  const src = iconOnly ? "/qiko-icon.png" : "/qiko-logo.webp";
+  return <img src={src} alt="Qiko" className={cn(iconOnly ? "h-8 w-8" : "h-7 w-auto", className)} />;
 }
