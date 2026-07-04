@@ -5,7 +5,7 @@ import type { NextRequest } from "next/server";
 export function middleware(req: NextRequest) {
   const authed = req.cookies.has("qiko_access");
   const { pathname } = req.nextUrl;
-  const isPublic = pathname === "/" || pathname.startsWith("/login") || pathname.startsWith("/signup");
+  const isPublic = pathname === "/" || pathname.startsWith("/login") || pathname.startsWith("/signup") || pathname.startsWith("/onboarding");
   const isLogin = pathname.startsWith("/login");
   if (!authed && !isPublic) return NextResponse.redirect(new URL("/login", req.url));
   if (authed && isLogin) return NextResponse.redirect(new URL("/dashboard", req.url));
