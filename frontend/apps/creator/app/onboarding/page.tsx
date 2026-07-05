@@ -663,11 +663,11 @@ export default function Onboarding() {
       {/* Header */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-[#050810]/60 backdrop-blur-xl border-b border-white/5">
         {/* {JSON.stringify(wizardData)} */}
-        <div className="container flex h-16 items-center justify-between px-4">
+        <div className="container mx-auto flex h-16 items-center justify-between px-4">
           {/* {JSON.stringify(wizardData)} */}
           <div className="flex items-center gap-3">
             <img 
-              src="/qiko-logo.png" 
+              src="/qiko-logo.webp" 
               alt={BRAND_TEXT}
               className="h-8 w-auto"
               style={{ filter: 'drop-shadow(0 0 10px rgba(99, 102, 241, 0.5))' }}
@@ -701,7 +701,7 @@ export default function Onboarding() {
         </div>
       </header>
       
-      <main className="container max-w-2xl px-4 relative z-10 flex flex-col justify-center" style={{ minHeight: "calc(100vh - 64px)", paddingTop: "80px", paddingBottom: "24px" }}>
+      <main className="container mx-auto max-w-2xl px-4 relative z-10 flex flex-col justify-center" style={{ minHeight: "calc(100vh - 64px)", paddingTop: "80px", paddingBottom: "24px" }}>
         {/* Step 1: Choose Industry */}
         {step === 1 && (
           <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">
