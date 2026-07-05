@@ -15,6 +15,7 @@ from app.db.models import Agent as AgentRow
 from app.db.models import Conversation as ConversationRow
 from app.db.models import Message as MessageRow
 from app.db.models import Passage as PassageRow
+from app.db.models import Tenant as TenantRow
 from app.db.models import User as UserRow
 from app.db.models import VerifiedAnswer
 from app.modules.agents.service import Agent
@@ -30,6 +31,11 @@ class SqlUserStore:
 
     async def add(self, user: User) -> User:
         async with self.sessionmaker() as s, s.begin():
+            # Signup creates brand-new tenants on the fly; ensure the FK target exists first
+            # (idempotent -- a no-op for tenants that are already there). Dialect-agnostic
+            # check-then-insert so this works on both Postgres (prod) and SQLite (tests).
+            if await s.get(TenantRow, user.tenant) is None:
+                s.add(TenantRow(id=user.tenant, name=user.tenant))
             s.add(UserRow(id=user.id, email=user.email.lower(), password_hash=user.password_hash,
                           tenant_id=user.tenant, role=user.role.value, twofa_enabled=user.twofa_enabled,
                           totp_secret=user.totp_secret, current_sid=user.current_sid))
