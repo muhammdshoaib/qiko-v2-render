@@ -82,6 +82,21 @@ async def test_tool_registry_invoke_and_validation():
         await reg.invoke("missing", {})
 
 
+async def test_tool_registry_wraps_handler_failures_as_tool_error():
+    """A real gateway call (Stripe/Calendly/Slack/...) blowing up must not leak a raw exception."""
+    reg = ToolRegistry()
+
+    class Args(BaseModel):
+        pass
+
+    @reg.register("flaky", Args)
+    def _flaky(_a: Args) -> None:
+        raise RuntimeError("upstream API said no")
+
+    with pytest.raises(ToolError, match="flaky failed"):
+        await reg.invoke("flaky", {})
+
+
 # --- runtime end-to-end ---
 async def test_runtime_auto_accepts_grounded_answer():
     core = AgentCore(generator=Generator(provider=StubProvider()))

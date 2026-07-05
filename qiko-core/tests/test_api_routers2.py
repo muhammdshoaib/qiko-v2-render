@@ -30,6 +30,34 @@ def test_leads_router(client):
     assert client.post("/api/v1/leads", json={"kind": "spam", "name": "x", "email": "b@x.com"}, cookies=C).status_code == 400
 
 
+def test_checkout_and_portal_convert_gateway_failures_to_502():
+    """A real gateway (Stripe/...) blowing up must surface as a clean 502, not a raw 500."""
+    import httpx
+    import pytest
+    from fastapi import HTTPException
+
+    from app.modules.billing.router import CheckoutBody, checkout, portal
+    from app.modules.billing.subscriptions import SubscriptionService
+
+    class FailingGateway:
+        def create_checkout_session(self, **_kw):
+            raise httpx.HTTPStatusError("boom", request=httpx.Request("POST", "https://x"),
+                                        response=httpx.Response(400))
+
+        def billing_portal_url(self, **_kw):
+            raise httpx.HTTPStatusError("boom", request=httpx.Request("POST", "https://x"),
+                                        response=httpx.Response(400))
+
+    subs = SubscriptionService(FailingGateway())
+    with pytest.raises(HTTPException) as e1:
+        checkout(CheckoutBody(customer_id="cus1", plan="pro"), _tenant="t", subs=subs)
+    assert e1.value.status_code == 502
+
+    with pytest.raises(HTTPException) as e2:
+        portal("cus1", _tenant="t", subs=subs)
+    assert e2.value.status_code == 502
+
+
 def test_billing_webhook_public_and_subscription(client):
     # webhook is public (signature-verified in prod), no auth cookie
     evt = {"id": "evt1", "type": "invoice.paid",

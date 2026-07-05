@@ -43,5 +43,10 @@ class ToolRegistry:
             validated = tool.schema(**args)
         except ValidationError as e:
             raise ToolError(f"invalid arguments for {name}: {e.error_count()} error(s)") from e
-        result = tool.handler(validated)  # handlers may be sync or async
-        return await result if inspect.isawaitable(result) else result
+        try:
+            result = tool.handler(validated)  # handlers may be sync or async
+            return await result if inspect.isawaitable(result) else result
+        except ToolError:
+            raise
+        except Exception as e:  # a real gateway (Stripe/Calendly/Slack/...) failed -> don't leak a raw 500
+            raise ToolError(f"{name} failed: {e}") from e

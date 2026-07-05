@@ -1,10 +1,11 @@
 """Billing HTTP API: Stripe webhook receiver + subscription lifecycle (tenant-scoped)."""
 from __future__ import annotations
 
+from dataclasses import asdict
+
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
-
-from dataclasses import asdict
 
 from app.core.config import get_settings
 from app.core.deps import (
@@ -81,12 +82,18 @@ def plans() -> list[dict]:
 
 @router.post("/checkout")
 def checkout(body: CheckoutBody, _tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
-    return {"url": subs.start_checkout(body.customer_id, body.plan, price_id=body.price_id, promo=body.promo)}
+    try:
+        return {"url": subs.start_checkout(body.customer_id, body.plan, price_id=body.price_id, promo=body.promo)}
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail="payment provider error") from e
 
 
 @router.get("/portal/{customer_id}")
 def portal(customer_id: str, _tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
-    return {"url": subs.portal_url(customer_id)}
+    try:
+        return {"url": subs.portal_url(customer_id)}
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail="payment provider error") from e
 
 
 @router.post("/subscription/{customer_id}/cancel")
@@ -116,7 +123,10 @@ class PaymentLinkBody(BaseModel):
 @router.post("/payment-links")
 def create_payment_link(body: PaymentLinkBody, _tenant: str = Depends(authed_tenant),
                         _role: dict = Depends(require_role(Role.admin)), links=Depends(get_payment_links)) -> dict:
-    log = links.create(body.customer_email, body.amount_cents, recurring=body.recurring)
+    try:
+        log = links.create(body.customer_email, body.amount_cents, recurring=body.recurring)
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail="payment provider error") from e
     return {"session_id": log.session_id, "url": log.url, "status": log.status}
 
 
