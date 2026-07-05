@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutGrid, MessageSquare, Users, CreditCard, Settings, LogOut } from "lucide-react";
+import { LayoutGrid, MessageSquare, Users, CreditCard, Settings, LogOut, Sparkles } from "lucide-react";
 import { Button, Logo, cn } from "@qiko/ui";
 import { logout } from "@/lib/api";
 
@@ -17,6 +17,7 @@ const NAV = [
 export function AppShell({ title, children }: { title: string; children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const inStudio = pathname.startsWith("/studio");
 
   async function onLogout() {
     try {
@@ -32,6 +33,13 @@ export function AppShell({ title, children }: { title: string; children: React.R
         <div className="px-2 pb-4">
           <Logo />
         </div>
+        <button
+          onClick={() => router.push(inStudio ? "/dashboard" : "/studio")}
+          className="mb-3 flex items-center justify-center gap-2 rounded-xl bg-white/[0.02] px-3 py-2.5 text-xs font-medium text-slate-300 transition-all hover:bg-white/[0.05]"
+        >
+          <Sparkles className="size-3.5" />
+          {inStudio ? "Switch to Creator" : "Switch to Studio"}
+        </button>
         <nav className="flex flex-col gap-1">
           {NAV.map(({ href, label, icon: Icon }) => {
             const active = pathname === href || pathname.startsWith(href + "/");
