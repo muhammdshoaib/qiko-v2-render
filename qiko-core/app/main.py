@@ -32,6 +32,15 @@ from app.core.dev_gateways import (
     StubWhatsAppGateway,
 )
 from app.core.observability import init_sentry, init_tracing
+from app.integrations.clients import (
+    CalendlyClient,
+    ClickUpClient,
+    GA4Client,
+    SignalEngineClient,
+    SlackClient,
+    StripeClient,
+    WhatsAppClient,
+)
 from app.modules.billing.payment_links import PaymentLinkService
 from app.modules.channels.sessions import ChannelSessionStore
 from app.modules.channels.slack_oauth import InstallationStore, SlackOAuth, WorkspaceLinkStore
@@ -131,22 +140,29 @@ def create_app() -> FastAPI:
     )
 
     # Domain service singletons (in-memory dev defaults; DB-backed stores swap in behind the same
-    # protocols in SCRUM-57. External gateways use dev stubs until real clients land in SCRUM-59).
+    # protocols in SCRUM-57. External gateways use the real client (app/integrations/clients.py)
+    # when the matching secret is configured, dev stub otherwise -- see the selector block below).
     app.state.knowledge = KnowledgeService()
     app.state.agents = AgentService()
     app.state.chat = ChatService()
     app.state.teams = TeamService()
     app.state.leads = LeadService(get_email_sender())
-    app.state.subscriptions = SubscriptionService(StubStripeGateway())
+
+    # Real client if the secret is configured, dev stub otherwise -- same pattern as
+    # get_email_sender(). Gmail (as an agent tool, not transactional email) and Speech
+    # (TTS/STT) have no real client yet, so those two stay stubbed.
+    stripe_gateway = StripeClient() if settings.stripe_secret_key else StubStripeGateway()
+    app.state.subscriptions = SubscriptionService(stripe_gateway)
     app.state.stripe_webhook = StripeWebhookHandler()
-    app.state.whatsapp = WhatsAppAdapter(StubWhatsAppGateway())
+    app.state.whatsapp = WhatsAppAdapter(
+        WhatsAppClient() if settings.whatsapp_access_token else StubWhatsAppGateway())
     app.state.excel = ExcelService(app.state.knowledge)
     app.state.sources = KnowledgeSources(app.state.knowledge)
     app.state.voice = VoicePipeline(StubSpeechGateway())
-    app.state.signal_engine = StubSignalEngine()
+    app.state.signal_engine = SignalEngineClient() if settings.signal_engine_url else StubSignalEngine()
     app.state.customers = CustomerDirectory()
-    app.state.ga4 = StubGA4Gateway()
-    app.state.payment_links = PaymentLinkService(gateway=StubStripeGateway(), email=get_email_sender())
+    app.state.ga4 = GA4Client() if settings.ga4_property_id and settings.ga4_access_token else StubGA4Gateway()
+    app.state.payment_links = PaymentLinkService(gateway=stripe_gateway, email=get_email_sender())
     app.state.admin_org = AdminOrg()
     app.state.otp_store = OtpStore()
     app.state.channel_sessions = ChannelSessionStore()
@@ -154,10 +170,10 @@ def create_app() -> FastAPI:
     app.state.slack_links = WorkspaceLinkStore()
     app.state.file_generator = FileGenerator()
     app.state.task_queue = build_task_queue(task_registry)
-    app.state.calendly = StubCalendlyGateway()
+    app.state.calendly = CalendlyClient() if settings.calendly_token else StubCalendlyGateway()
     app.state.gmail = StubGmailGateway()
-    app.state.slack = StubSlackGateway()
-    app.state.clickup = StubClickUpGateway()
+    app.state.slack = SlackClient() if settings.slack_bot_token else StubSlackGateway()
+    app.state.clickup = ClickUpClient() if settings.clickup_api_token else StubClickUpGateway()
 
     # Every request is tenant-scoped.
     app.include_router(health_router)
