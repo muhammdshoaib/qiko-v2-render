@@ -4,15 +4,15 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, FileText, Trash2 } from "lucide-react";
+import { ArrowLeft, Bot, FileText, SendHorizonal, Trash2 } from "lucide-react";
 import { Badge, Button, Card, CardContent, Input, Label, Skeleton, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import {
-  addBehavior, addFaq, addPolicy, addWebsite,
-  deleteDocument, ingest, listDocuments, type Doc,
+  addBehavior, addFaq, addPolicy, addWebsite, ask,
+  deleteDocument, ingest, listAgents, listDocuments, type Doc,
 } from "@/lib/api";
 
-const TABS = ["Knowledge", "Behaviors", "FAQs", "Websites", "Policies"] as const;
+const TABS = ["Knowledge", "Behaviors", "FAQs", "Websites", "Policies", "Chat"] as const;
 type Tab = (typeof TABS)[number];
 
 function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
@@ -24,6 +24,8 @@ export default function WorkerDetailPage() {
   const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>("Knowledge");
   const docs = useQuery({ queryKey: ["documents"], queryFn: listDocuments });
+  const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
+  const worker = agents.data?.find((a) => a.id === id);
   const refresh = () => qc.invalidateQueries({ queryKey: ["documents"] });
 
   return (
@@ -33,10 +35,20 @@ export default function WorkerDetailPage() {
           <ArrowLeft className="size-4" /> Back to workers
         </Link>
 
-        <div className="flex gap-1 border-b border-border">
+        <div className="flex items-center gap-3">
+          <span className="grid size-12 place-items-center rounded-xl bg-gradient-to-br from-primary to-secondary text-primary-foreground">
+            <Bot className="size-6" />
+          </span>
+          <div>
+            <h1 className="text-xl font-semibold" style={{ fontFamily: "var(--font-display)" }}>{worker?.name ?? "Worker"}</h1>
+            {worker && <Badge variant={worker.status === "ready" ? "success" : "muted"}>{worker.status}</Badge>}
+          </div>
+        </div>
+
+        <div className="flex gap-1 border-b border-border overflow-x-auto">
           {TABS.map((t) => (
             <button key={t} onClick={() => setTab(t)}
-              className={cn("border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+              className={cn("shrink-0 border-b-2 px-3 py-2 text-sm font-medium transition-colors",
                 tab === t ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
               {t}
             </button>
@@ -56,6 +68,7 @@ export default function WorkerDetailPage() {
         {tab === "Policies" && (
           <SourceForm title="Add a policy" onSubmit={(sid) => addPolicy(id, sid, val("title"), val("body"))} fields={[["title", "Title", false], ["body", "Body", true]]} onDone={refresh} />
         )}
+        {tab === "Chat" && <ChatTab />}
       </div>
     </AppShell>
   );
@@ -64,6 +77,51 @@ export default function WorkerDetailPage() {
   function val(name: string): string {
     return (document.getElementById(`f-${name}`) as HTMLInputElement | HTMLTextAreaElement | null)?.value ?? "";
   }
+}
+
+function ChatTab() {
+  const [conversationId] = useState(() => `test-${Date.now()}`);
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<{ role: string; text: string }[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  async function send(e: React.FormEvent) {
+    e.preventDefault();
+    if (!input) return;
+    const q = input;
+    setInput("");
+    setMessages((m) => [...m, { role: "user", text: q }]);
+    setBusy(true);
+    try {
+      const reply = await ask(conversationId, q);
+      setMessages((m) => [...m, reply]);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardContent className="pt-6 space-y-4">
+        <p className="text-sm text-muted-foreground">Test how this worker answers, grounded in the knowledge you&apos;ve added.</p>
+        <div className="min-h-40 space-y-2 rounded-md border border-border p-3">
+          {messages.length === 0 && <p className="text-sm text-muted-foreground">Ask a question to see a grounded reply…</p>}
+          {messages.map((m, i) => (
+            <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
+              <span className={cn("max-w-[85%] rounded-2xl px-3 py-2 text-sm",
+                m.role === "user" ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted rounded-bl-sm")}>
+                {m.text}
+              </span>
+            </div>
+          ))}
+        </div>
+        <form onSubmit={send} className="flex gap-2">
+          <Input placeholder="Ask your worker something…" value={input} onChange={(e) => setInput(e.target.value)} disabled={busy} />
+          <Button type="submit" disabled={busy || !input}><SendHorizonal className="size-4" /></Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
 }
 
 function KnowledgeTab({ id, docs, loading, onChange }: { id: string; docs?: Doc[]; loading: boolean; onChange: () => void }) {
