@@ -61,6 +61,22 @@ export async function signupAvatar(body: { user_name: string; email: string; pas
   return req("/auth/login", { method: "POST", body: JSON.stringify({ email: body.email, password: body.password }) });
 }
 
+export async function forgotPasswordAvatar(email: string) {
+  return req("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
+}
+
+export async function resetPasswordAvatar(body: { email: string; otp: string; password: string }) {
+  await req("/auth/reset-password", {
+    method: "POST",
+    body: JSON.stringify({ email: body.email, otp: body.otp, new_password: body.password }),
+  });
+  const r = await req<{ user: Record<string, unknown> }>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email: body.email, password: body.password }),
+  });
+  return { data: { token: "cookie", user: r.user } };
+}
+
 export async function getSubscriptionPlans(): Promise<SubscriptionPlan[]> {
   return req<SubscriptionPlan[]>("/billing/plans");
 }
