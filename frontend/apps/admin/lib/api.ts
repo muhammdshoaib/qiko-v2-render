@@ -20,6 +20,8 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
 export const login = (email: string, password: string) =>
   request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
 export const logout = () => request("/auth/logout", { method: "POST" });
+export const forgotPassword = (email: string) =>
+  request("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
 
 export type Customer = { user_id: string; email: string; plan: string; earnings_cents: number };
 export const listCustomers = (search = "") =>
