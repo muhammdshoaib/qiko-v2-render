@@ -76,8 +76,15 @@ def test_agents_write_requires_editor_role(client):
     assert r.status_code == 403
 
 
-def test_admin_requires_admin_role(client):
+def test_admin_requires_platform_admin_not_tenant_role(client):
+    """Regression: the tenant role (even "owner"/"admin" of your OWN tenant) must never grant
+    cross-tenant platform-admin access -- every signed-up user is "owner" of their own tenant."""
     subs = [{"customer_id": "c1", "plan": "pro", "price_cents": 5000}]
     assert client.post("/api/v1/admin/revenue", json=subs, cookies=auth_cookies("t", "editor")).status_code == 403
-    ok = client.post("/api/v1/admin/revenue", json=subs, cookies=auth_cookies("t", "admin"))
+    assert client.post("/api/v1/admin/revenue", json=subs, cookies=auth_cookies("t", "owner")).status_code == 403
+    assert client.post("/api/v1/admin/revenue", json=subs, cookies=auth_cookies("t", "admin")).status_code == 403
+
+    admin_email = "platform-admin@qiko.ai"
+    client.app.state.admin_org.bootstrap_super_admin(admin_email)
+    ok = client.post("/api/v1/admin/revenue", json=subs, cookies=auth_cookies("t", "viewer", email=admin_email))
     assert ok.json()["active_subscriptions"] == 1

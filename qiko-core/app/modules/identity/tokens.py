@@ -28,10 +28,11 @@ def _encode(claims: dict, ttl_seconds: int, secret: str) -> str:
 
 
 def create_access_token(user_id: str, *, tenant: str | None = None, role: str = "viewer",
-                        sid: str | None = None, secret: str | None = None,
+                        sid: str | None = None, email: str | None = None, secret: str | None = None,
                         ttl_seconds: int | None = None) -> str:
     s = get_settings()
-    return _encode({"sub": user_id, "type": "access", "tenant": tenant, "role": role, "sid": sid},
+    return _encode({"sub": user_id, "type": "access", "tenant": tenant, "role": role,
+                    "sid": sid, "email": email},
                    ttl_seconds or s.access_token_ttl_seconds, secret or s.session_secret)
 
 

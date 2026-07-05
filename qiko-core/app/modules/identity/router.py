@@ -96,7 +96,8 @@ async def logout(request: Request, response: Response, store: UserStore = Depend
 
 
 def _issue(response: Response, user: User, sid: str) -> None:
-    access = tokens.create_access_token(user.id, tenant=user.tenant, role=user.role.value, sid=sid)
+    access = tokens.create_access_token(user.id, tenant=user.tenant, role=user.role.value,
+                                        sid=sid, email=user.email)
     refresh_token = tokens.create_refresh_token(user.id, sid=sid)
     csrf_token = csrf.generate_csrf_token()
     cookies.set_auth_cookies(response, access, refresh_token, csrf_token)

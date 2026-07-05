@@ -45,8 +45,11 @@ def test_2fa_exchange_bridge(client):
 
 
 def test_admin_org_rbac(client):
-    boss = auth_cookies("b4", "owner", user_id="boss@x.com")
+    boss = auth_cookies("b4", "owner", email="boss@x.com")
     assert client.post("/api/v1/admin/org/bootstrap", cookies=boss).json()["super_admin"] == "boss@x.com"
+    # bootstrap is first-run only -- a second caller can't self-escalate afterwards
+    other = auth_cookies("b4", "owner", email="other@x.com")
+    assert client.post("/api/v1/admin/org/bootstrap", cookies=other).status_code == 409
     tok = client.post("/api/v1/admin/org/invite", json={"email": "viewer@x.com", "role": "viewer"}, cookies=boss).json()["token"]
     assert client.post("/api/v1/admin/org/accept", json={"token": tok}, cookies=boss).json()["role"] == "viewer"
     assert client.get("/api/v1/admin/org/role/viewer@x.com", cookies=boss).json()["role"] == "viewer"

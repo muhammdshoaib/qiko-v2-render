@@ -34,11 +34,46 @@ async def authed_tenant(claims: dict = Depends(current_claims)):
 
 
 def require_role(minimum: Role):
-    """Dependency factory: require the authenticated user's role to meet `minimum`."""
+    """Dependency factory: require the authenticated user's role to meet `minimum`.
+
+    This is the TENANT-scoped role (owner/admin/editor/viewer of the caller's own tenant) --
+    "owner" ranks above "admin" here on purpose (an owner can do anything an admin can within
+    their own tenant). It must never be used to gate cross-tenant platform-admin endpoints:
+    every signed-up user is "owner" of their own tenant, so require_role(Role.admin) would let
+    any customer into the admin panel. Use require_platform_admin/_super_admin for that instead.
+    """
     def _dep(claims: dict = Depends(current_claims)) -> dict:
         if not role_allows(claims.get("role", "viewer"), minimum):
             raise HTTPException(status_code=403, detail="insufficient role")
         return claims
+    return _dep
+
+
+def _platform_admin_role(request: Request, claims: dict = Depends(current_claims)):
+    email = claims.get("email")
+    role = request.app.state.admin_org.role_of(email) if email else None
+    if role is None:
+        raise HTTPException(status_code=403, detail="platform admin access required")
+    return role
+
+
+def require_platform_admin():
+    """Any registered platform admin (super_admin or read-only viewer) -- for read endpoints
+    (customer directory, revenue, analytics). Completely separate from the tenant Role system."""
+    def _dep(role=Depends(_platform_admin_role)):
+        return role
+    return _dep
+
+
+def require_platform_super_admin():
+    """Only a platform super_admin -- for mutating admin endpoints (delete/disable a customer,
+    toggle Studio access, manage other admins)."""
+    from app.modules.identity.admin_rbac import AdminRole
+
+    def _dep(role=Depends(_platform_admin_role)):
+        if role is not AdminRole.super_admin:
+            raise HTTPException(status_code=403, detail="platform super_admin access required")
+        return role
     return _dep
 
 

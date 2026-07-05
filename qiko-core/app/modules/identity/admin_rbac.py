@@ -66,3 +66,6 @@ class AdminOrg:
 
     def role_of(self, email: str) -> AdminRole | None:
         return self._admins.get(email.lower())
+
+    def is_empty(self) -> bool:
+        return not self._admins

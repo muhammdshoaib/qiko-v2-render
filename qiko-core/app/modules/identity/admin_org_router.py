@@ -4,18 +4,30 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core.deps import current_claims, get_admin_org, require_role
+from app.core.deps import current_claims, get_admin_org
 from app.modules.identity.admin_rbac import AdminAuthzError, AdminRole
-from app.modules.identity.rbac import Role
 
 router = APIRouter(prefix="/admin/org", tags=["admin"])
 
 
+def _actor_email(claims: dict) -> str:
+    email = claims.get("email")
+    if not email:
+        raise HTTPException(status_code=403, detail="token has no email")
+    return email
+
+
 @router.post("/bootstrap")
-def bootstrap(claims: dict = Depends(current_claims), _r: dict = Depends(require_role(Role.owner)),
-              org=Depends(get_admin_org)) -> dict:
-    org.bootstrap_super_admin(claims["sub"])
-    return {"super_admin": claims["sub"]}
+def bootstrap(claims: dict = Depends(current_claims), org=Depends(get_admin_org)) -> dict:
+    """First-run only: the very first authenticated caller becomes super_admin. Once any admin
+    exists, this is a no-op (use /invite, super_admin-only, to add more) -- so this can never be
+    used to self-escalate after initial setup, and it's keyed by email like everything else here
+    (never the tenant role, which every signed-up user satisfies as "owner" of their own tenant)."""
+    if not org.is_empty():
+        raise HTTPException(status_code=409, detail="already bootstrapped")
+    email = _actor_email(claims)
+    org.bootstrap_super_admin(email)
+    return {"super_admin": email}
 
 
 class InviteBody(BaseModel):
@@ -26,7 +38,7 @@ class InviteBody(BaseModel):
 @router.post("/invite")
 def invite(body: InviteBody, claims: dict = Depends(current_claims), org=Depends(get_admin_org)) -> dict:
     try:
-        return {"token": org.invite(claims["sub"], body.email, body.role)}
+        return {"token": org.invite(_actor_email(claims), body.email, body.role)}
     except AdminAuthzError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
 
@@ -46,7 +58,7 @@ def accept(body: AcceptBody, org=Depends(get_admin_org)) -> dict:
 @router.delete("/{email}")
 def remove(email: str, claims: dict = Depends(current_claims), org=Depends(get_admin_org)) -> dict:
     try:
-        org.remove(claims["sub"], email)
+        org.remove(_actor_email(claims), email)
     except AdminAuthzError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
     return {"removed": email}

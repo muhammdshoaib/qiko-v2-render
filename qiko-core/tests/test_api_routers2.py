@@ -95,15 +95,24 @@ def test_signal_router(client):
 
 
 def test_admin_customers_requires_admin(client):
+    # a regular tenant user -- even a tenant "admin"/"owner" -- is not a platform admin
     assert client.get("/api/v1/admin/customers", cookies=auth_cookies("t", "viewer")).status_code == 403
-    body = client.get("/api/v1/admin/customers", cookies=auth_cookies("t", "admin")).json()
+    assert client.get("/api/v1/admin/customers", cookies=auth_cookies("t", "admin")).status_code == 403
+
+    admin_email = "platform-admin2@qiko.ai"
+    client.app.state.admin_org.bootstrap_super_admin(admin_email)
+    body = client.get("/api/v1/admin/customers", cookies=auth_cookies("t", "viewer", email=admin_email)).json()
     assert body["total"] == 0
 
 
 def test_admin_overview_and_analytics(client):
-    ov = client.get("/api/v1/admin/overview", cookies=auth_cookies("t", "admin")).json()
+    admin_email = "platform-admin3@qiko.ai"
+    client.app.state.admin_org.bootstrap_super_admin(admin_email)
+    admin_cookies = auth_cookies("t", "viewer", email=admin_email)
+
+    ov = client.get("/api/v1/admin/overview", cookies=admin_cookies).json()
     assert ov["customers_total"] == 0 and ov["active_subscriptions"] == 0 and ov["by_plan"] == {}
-    an = client.get("/api/v1/admin/analytics", cookies=auth_cookies("t", "admin")).json()
+    an = client.get("/api/v1/admin/analytics", cookies=admin_cookies).json()
     assert an["had_data"] is False and an["sessions"] == 0
-    # viewer is blocked
-    assert client.get("/api/v1/admin/overview", cookies=auth_cookies("t", "viewer")).status_code == 403
+    # a regular tenant admin/owner is blocked -- only a real platform admin gets in
+    assert client.get("/api/v1/admin/overview", cookies=auth_cookies("t", "admin")).status_code == 403
