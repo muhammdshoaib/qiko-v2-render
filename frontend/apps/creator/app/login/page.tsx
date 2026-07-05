@@ -1,55 +1,162 @@
 "use client";
-
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label, Logo } from "@qiko/ui";
-import { login } from "@/lib/api";
+import { useLocation } from "@/lib/wouter";
+import { useAppDispatch } from "@/store/hooks";
+import { setAuth, setCalendlyToken } from "@/store/slices/authSlice";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Loader2, Eye, EyeOff, ArrowLeft, AlertCircle } from "lucide-react";
+import { Link } from "@/lib/wouter";
+import { toast } from "sonner";
+import { loginAvatar } from "@/lib/avatarApi";
+import { resolveDecryptedCalendlyToken } from "@/lib/calendlyToken";
 
-export default function LoginPage() {
-  const router = useRouter();
+export default function Login() {
+  const dispatch = useAppDispatch();
+  const [, setLocation] = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
-  async function onSubmit(e: React.FormEvent) {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setBusy(true);
-    setError(null);
+    setErrorMessage(null);
+    setIsLoading(true);
+
     try {
-      await login(email, password);
-      router.push("/dashboard");
-    } catch {
-      setError("Invalid credentials");
+      const res = await loginAvatar({ email, password });
+      
+      if (res?.data?.token) {
+        const userInfo = res?.data?.user ?? null;
+        const rawCalendly = (userInfo as any)?.calendly_token ?? "";
+        const usableCalendly = rawCalendly ? await resolveDecryptedCalendlyToken(rawCalendly) : "";
+
+        dispatch(setAuth({
+          token: res.data.token,
+          userInfo: userInfo ? { ...(userInfo as any), calendlyToken: usableCalendly || undefined } : null,
+        }));
+        if (usableCalendly) dispatch(setCalendlyToken(usableCalendly));
+
+        toast.success("Welcome back!");
+        window.location.href = "/dashboard";
+      }
+    } catch (error: any) {
+      console.error("Login error:", error);
+      const errorMsg = error.message || "Login failed. Please try again.";
+      setErrorMessage(errorMsg);
+      toast.error(errorMsg);
     } finally {
-      setBusy(false);
+      setIsLoading(false);
     }
-  }
+  };
 
   return (
-    <main className="relative flex min-h-screen items-center justify-center overflow-hidden p-6">
-      <div className="pointer-events-none absolute -top-40 left-1/2 size-[36rem] -translate-x-1/2 rounded-full bg-primary/20 blur-3xl" />
-      <Card className="relative w-full max-w-sm">
-        <CardHeader>
-          <Logo className="mb-2 text-lg" />
-          <CardTitle>Welcome back</CardTitle>
-          <CardDescription>Sign in to manage your AI workers.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={onSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="email">Email</Label>
-              <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+    <div className="min-h-screen bg-[#050810] flex items-center justify-center p-4">
+      {/* Background gradient effects */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
+      </div>
+
+      <div className="relative z-10 w-full max-w-md">
+        {/* Back to home */}
+        <Link href="/" className="inline-flex items-center gap-2 text-slate-400 hover:text-white mb-8 transition-colors">
+          <ArrowLeft className="w-4 h-4" />
+          Back to home
+        </Link>
+
+        <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
+          <CardHeader className="text-center">
+            <div className="mx-auto mb-4">
+              <span className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent">
+                Qiko
+              </span>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="password">Password</Label>
-              <Input id="password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+            <CardTitle className="text-2xl text-white">Welcome back</CardTitle>
+            <CardDescription className="text-slate-400">
+              Sign in to your account to continue
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Error message display */}
+              {errorMessage && (
+                <div className="flex items-start gap-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                  <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                  <p className="text-red-400 text-sm">{errorMessage}</p>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <Label htmlFor="email" className="text-slate-300">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:ring-cyan-500/20"
+                />
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password" className="text-slate-300">Password</Label>
+                  <Link href="/forgot-password" className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors">
+                    Forgot password?
+                  </Link>
+                </div>
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:ring-cyan-500/20 pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <Button
+                type="submit"
+                disabled={isLoading}
+                className="w-full bg-gradient-to-r from-purple-600 to-cyan-600 text-white border-0"
+              >
+                {isLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Signing in...
+                  </>
+                ) : (
+                  "Sign in"
+                )}
+              </Button>
+            </form>
+
+            <div className="mt-6 text-center">
+              <p className="text-slate-400 text-sm">
+                Don't have an account?{" "}
+                <Link href="/signup" className="text-cyan-400 hover:text-cyan-300 transition-colors">
+                  Sign up
+                </Link>
+              </p>
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</Button>
-          </form>
-        </CardContent>
-      </Card>
-    </main>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
   );
 }

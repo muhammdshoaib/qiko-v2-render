@@ -131,6 +131,51 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Creator success story */}
+      <section className="relative z-10 px-4 py-20 max-w-6xl mx-auto">
+        <div className="text-center mb-12">
+          <Eyebrow>CREATOR SUCCESS STORY</Eyebrow>
+          <h2 className="text-3xl md:text-5xl font-bold max-w-3xl mx-auto" style={{ fontFamily: "Satoshi, sans-serif" }}>
+            Turn your niche expertise into a revenue-generating digital worker.
+          </h2>
+        </div>
+        <div className="grid lg:grid-cols-2 gap-8 items-start">
+          <div>
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-12 h-12 rounded-full grid place-items-center text-lg font-bold" style={{ background: "linear-gradient(135deg,#6366F1,#22D3EE)" }}>A</div>
+              <div><p className="font-semibold">Alex</p><p className="text-sm text-slate-400">French Villa Expert</p></div>
+            </div>
+            <p className="text-slate-300 mb-4 leading-relaxed">Alex has spent a decade curating the best French villas for high-end travellers. With Qiko, they described their ideal assistant in plain English, uploaded their villa notes, client preferences, and past recommendations, and let Qiko handle the models and GPUs.</p>
+            <p className="text-slate-400 mb-6 leading-relaxed">Alex now licenses their knowledge to users wanting to buy or rent a villa in France. They help them find the perfect property based on their unique and expert knowledge 24/7.</p>
+            <div className="grid grid-cols-3 gap-4 mb-6">
+              {[["1 day", "Time to first model"], ["Sub-second", "Response time"], ["Per agency", "Revenue model"]].map(([v, l]) => (
+                <div key={l} className="bg-[#0a0f1a]/80 border border-white/5 rounded-xl p-4">
+                  <p className="text-xl font-bold text-[#22D3EE]">{v}</p><p className="text-xs text-slate-500 mt-1">{l}</p>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {["Digital Twin", "Earn While You Sleep", "Full Control"].map((t) => (
+                <span key={t} className="text-xs px-3 py-1 rounded-full bg-[#6366F1]/10 border border-[#6366F1]/30 text-[#a5b4fc]">{t}</span>
+              ))}
+            </div>
+          </div>
+          <div className="relative bg-[#0a0f1a] border border-white/10 rounded-2xl p-5">
+            <div className="flex items-center gap-3 pb-4 border-b border-white/5 mb-4">
+              <div className="w-9 h-9 rounded-full grid place-items-center text-sm font-bold" style={{ background: "linear-gradient(135deg,#6366F1,#22D3EE)" }}>A</div>
+              <div><p className="text-sm font-semibold">Alex.AI</p><p className="text-xs text-[#22D3EE]">French Villa Expert • Online</p></div>
+            </div>
+            <div className="space-y-3 text-sm">
+              <div className="flex justify-end"><div className="bg-[#6366F1] text-white rounded-2xl rounded-br-sm px-3.5 py-2 max-w-[85%]">Hi Alex, I&apos;m looking for a villa in Provence for a family reunion next summer. We&apos;ll be 12 people.</div></div>
+              <div className="flex justify-start"><div className="bg-[#141a28] text-slate-200 rounded-2xl rounded-bl-sm px-3.5 py-2 max-w-[85%]">Lovely! Provence is perfect for family gatherings. A few questions to find your ideal property:</div></div>
+              <div className="flex justify-start"><div className="bg-[#141a28] text-slate-200 rounded-2xl rounded-bl-sm px-3.5 py-2 max-w-[85%]">Do you prefer the Luberon valley (charming hilltop villages, lavender fields) or closer to the coast near Saint-Rémy?</div></div>
+              <div className="flex justify-end"><div className="bg-[#6366F1] text-white rounded-2xl rounded-br-sm px-3.5 py-2 max-w-[85%]">Luberon sounds magical. We have toddlers so fenced pool is essential.</div></div>
+              <div className="flex justify-start"><div className="bg-[#141a28] text-slate-200 rounded-2xl rounded-bl-sm px-3.5 py-2 max-w-[85%]">Perfect choice. For the Luberon with child-safe pools, I&apos;d recommend Mas de Bonnieux or Domaine des Oliviers—both have enclosed gardens near Gordes. Shall I compare their chef and concierge options?</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* What Qiko handles */}
       <section id="enterprise" className="relative z-10 px-4 py-20 max-w-6xl mx-auto">
         <div className="text-center mb-14">

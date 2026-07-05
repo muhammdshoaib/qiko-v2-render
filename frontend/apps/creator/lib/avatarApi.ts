@@ -44,6 +44,16 @@ export async function addAvatarKnowledge(payload: Record<string, unknown>) {
   return req("/knowledge/ingest", { method: "POST", body: JSON.stringify({ doc_id: docId, text }) });
 }
 
+export async function loginAvatar(body: { email: string; password: string }) {
+  // V2 sets an httpOnly cookie; there is no client token. Return a truthy token so the
+  // ported UI's success branch runs, plus the user object.
+  const r = await req<{ user: Record<string, unknown> }>("/auth/login", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+  return { data: { token: "cookie", user: r.user } };
+}
+
 export async function signupAvatar(body: { user_name: string; email: string; password: string }) {
   const tenant = body.email.split("@")[0].toLowerCase();
   await req("/auth/signup", { method: "POST", body: JSON.stringify({ tenant, email: body.email, password: body.password }) });
