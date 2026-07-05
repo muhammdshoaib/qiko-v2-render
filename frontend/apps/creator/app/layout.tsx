@@ -6,8 +6,8 @@ import { Providers } from "./providers";
 const inter = Inter({ subsets: ["latin"], variable: "--font-qiko" });
 
 export const metadata: Metadata = {
-  title: "Qiko — Build Your AI Expert",
-  description: "Train a custom AI on your expertise. Answer clients 24/7 with your knowledge, your tone, your way.",
+  title: "Qiko | Build & Sell Custom AI Digital Workers",
+  description: "You bring the niche expertise. Qiko handles models, GPUs and security so you can launch a production ready digital worker.",
   icons: { icon: "/qiko-icon.png" },
 };
 
