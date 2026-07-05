@@ -11,7 +11,7 @@ export default function InvoicesPage() {
   return (
     <AppShell title="Invoices">
       <div className="mx-auto max-w-4xl space-y-6">
-        <h2 className="text-2xl font-semibold tracking-tight">Invoices</h2>
+        <h1 className="text-2xl font-bold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>Invoices</h1>
         {invoices.isError && <Card><CardContent className="py-6 text-sm text-destructive">Not authorized (admin role required).</CardContent></Card>}
         <div className="space-y-2">
           {invoices.isLoading && [0, 1].map((i) => <Skeleton key={i} className="h-14 w-full" />)}

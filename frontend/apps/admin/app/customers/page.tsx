@@ -16,7 +16,7 @@ export default function CustomersPage() {
       <div className="mx-auto max-w-4xl space-y-6">
         <div className="flex items-end justify-between">
           <div>
-            <h2 className="text-2xl font-semibold tracking-tight">Customers</h2>
+            <h1 className="text-2xl font-bold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>Customers</h1>
             <p className="text-sm text-muted-foreground">{customers.data?.total ?? 0} total</p>
           </div>
           <div className="relative w-64">
