@@ -27,7 +27,7 @@ export default function OverviewPage() {
     <AppShell title="Overview">
       <div className="mx-auto max-w-4xl space-y-6">
         <div>
-          <h2 className="text-2xl font-semibold tracking-tight">Overview</h2>
+          <h1 className="text-2xl font-bold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>Platform Overview</h1>
           <p className="text-sm text-muted-foreground">Key metrics across the platform.</p>
         </div>
 
