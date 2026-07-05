@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from fastapi import Depends, HTTPException, Request
 
+from app.core.config import get_settings
 from app.core.tenancy import reset_tenant, set_tenant
 from app.modules.identity.cookies import ACCESS_COOKIE
 from app.modules.identity.rbac import Role, role_allows
@@ -134,11 +135,19 @@ def get_clickup(request: Request):
 
 
 def build_tenant_worker(request: Request, tenant: str):
-    """Assemble a per-tenant Worker over the shared knowledge service + agentcore (agentic-first)."""
+    """Assemble a per-tenant Worker over the shared knowledge service + agentcore (agentic-first).
+    The feedback flywheel (verified answers) persists to Postgres when USE_DB_STORES is on, so
+    human-approved answers survive a redeploy instead of living only in process memory."""
     from app.modules.agentcore.generator import Generator
     from app.modules.agentcore.runtime import AgentCore
     from app.modules.workers.config import WorkerConfig
     from app.modules.workers.worker import Worker
 
+    verified = None
+    if get_settings().use_db_stores:
+        from app.db.stores import SqlVerifiedStore
+
+        verified = SqlVerifiedStore(request.app.state.sessionmaker)
     return Worker(config=WorkerConfig(name=f"w-{tenant}", tenant=tenant),
-                  knowledge=request.app.state.knowledge, agent=AgentCore(generator=Generator()))
+                  knowledge=request.app.state.knowledge,
+                  agent=AgentCore(generator=Generator(), verified=verified))

@@ -51,6 +51,17 @@ def test_batch_answer_is_grounded_confidence_scored_and_gated(client):
         assert 0.0 <= item["confidence"] <= 1.0
 
 
+def test_feedback_approves_answer_into_flywheel(client):
+    c = auth_cookies("feedbackco", "owner")
+    r = client.post("/api/v1/agents/feedback",
+                     json={"requirement_id": "q1", "topic": "iso", "approved_text": "IDG holds ISO 9001."},
+                     cookies=c)
+    assert r.status_code == 200 and r.json() == {"verified": True}
+    # the next answer on the same topic should be grounded in the verified text, not escalate
+    r2 = client.post("/api/v1/agents/batch-answer", json={"questions": ["Does the company hold ISO 9001?"]}, cookies=c)
+    assert r2.status_code == 200
+
+
 def test_batch_export_returns_xlsx(client):
     c = auth_cookies("exportco", "owner")
     r = client.post("/api/v1/agents/batch-export", json={"questions": ["Any question?"]}, cookies=c)

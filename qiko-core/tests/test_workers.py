@@ -34,10 +34,10 @@ async def test_answer_with_no_knowledge_escalates():
     assert result.decision is Decision.human_review
 
 
-def test_approve_feeds_flywheel():
+async def test_approve_feeds_flywheel():
     w = _worker()
-    w.approve("B11.1", ISO, topic="qms")
-    assert w.agent.verified.get("idg", "qms") == [ISO]
+    await w.approve("B11.1", ISO, topic="qms")
+    assert await w.agent.verified.get("idg", "qms") == [ISO]
 
 
 async def test_workers_are_tenant_isolated():

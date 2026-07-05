@@ -28,11 +28,11 @@ class Worker:
         passages = await self.knowledge.retrieve(self.config.tenant, requirement_text, k=self.config.retrieval_k)
         req = Requirement(id=requirement_id, text=requirement_text,
                           context=[p.text for p in passages], topic=topic)
-        return self.agent.run(req, tenant=self.config.tenant)
+        return await self.agent.run(req, tenant=self.config.tenant)
 
-    def approve(self, requirement_id: str, approved_text: str, *, topic: str | None = None) -> None:
+    async def approve(self, requirement_id: str, approved_text: str, *, topic: str | None = None) -> None:
         req = Requirement(id=requirement_id, text="", topic=topic)
-        self.agent.record_feedback(req, tenant=self.config.tenant, approved_text=approved_text)
+        await self.agent.record_feedback(req, tenant=self.config.tenant, approved_text=approved_text)
 
 
 def build_worker(config: WorkerConfig, *, provider=None, embeddings=None) -> Worker:

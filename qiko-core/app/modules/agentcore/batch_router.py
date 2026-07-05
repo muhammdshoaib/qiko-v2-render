@@ -28,6 +28,12 @@ class BatchAnswer(BaseModel):
     citations: list[str]
 
 
+class FeedbackBody(BaseModel):
+    requirement_id: str = Field(min_length=1)
+    approved_text: str = Field(min_length=1)
+    topic: str | None = None
+
+
 async def _run_batch(request: Request, tenant: str, body: BatchAskBody) -> list[BatchAnswer]:
     worker = build_tenant_worker(request, tenant)
     out: list[BatchAnswer] = []
@@ -45,6 +51,16 @@ async def _run_batch(request: Request, tenant: str, body: BatchAskBody) -> list[
 async def batch_answer(body: BatchAskBody, request: Request, tenant: str = Depends(authed_tenant)) -> list[BatchAnswer]:
     """Answer a list of requirements/questions, each grounded + confidence-scored + gated."""
     return await _run_batch(request, tenant, body)
+
+
+@router.post("/feedback")
+async def feedback(body: FeedbackBody, request: Request, tenant: str = Depends(authed_tenant)) -> dict:
+    """Human approves or edits an answer -> it becomes verified ground truth for that topic, so
+    future answers are grounded in it instead of re-guessing (the same review->flywheel loop the
+    original IDG worker used, now a generic capability every worker gets for free)."""
+    worker = build_tenant_worker(request, tenant)
+    await worker.approve(body.requirement_id, body.approved_text, topic=body.topic)
+    return {"verified": True}
 
 
 @router.post("/batch-export")

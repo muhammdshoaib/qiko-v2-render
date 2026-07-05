@@ -43,5 +43,5 @@ async def public_ask(worker: Worker, chat: ChatService, *, user_email: str, ques
     passages = await worker.knowledge.retrieve(tenant, question, k=worker.config.retrieval_k)
     context = [p.text for p in passages] + extra
     req = Requirement(id=cid, text=question, context=context, topic=topic)
-    result = worker.agent.run(req, tenant=tenant)
+    result = await worker.agent.run(req, tenant=tenant)
     return await chat.post(tenant, cid, "assistant", result.answer)

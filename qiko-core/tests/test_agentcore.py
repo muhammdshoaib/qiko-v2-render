@@ -54,13 +54,13 @@ def test_gate_thresholds():
 
 
 # --- flywheel ---
-def test_flywheel_add_get_dedupe_scoping():
+async def test_flywheel_add_get_dedupe_scoping():
     s = InMemoryVerifiedStore()
-    s.add("acme", "qms", "answer one")
-    s.add("acme", "qms", "answer one")  # dedupe
-    s.add("acme", "qms", "  ")          # empty ignored
-    assert s.get("acme", "qms") == ["answer one"]
-    assert s.get("other", "qms") == []  # tenant-scoped
+    await s.add("acme", "qms", "answer one")
+    await s.add("acme", "qms", "answer one")  # dedupe
+    await s.add("acme", "qms", "  ")          # empty ignored
+    assert await s.get("acme", "qms") == ["answer one"]
+    assert await s.get("other", "qms") == []  # tenant-scoped
 
 
 # --- tools ---
@@ -83,23 +83,23 @@ async def test_tool_registry_invoke_and_validation():
 
 
 # --- runtime end-to-end ---
-def test_runtime_auto_accepts_grounded_answer():
+async def test_runtime_auto_accepts_grounded_answer():
     core = AgentCore(generator=Generator(provider=StubProvider()))
     req = Requirement(id="B1", text="Describe your QMS.", context=ISO_EVIDENCE, topic="qms")
-    result = core.run(req, tenant="acme")
+    result = await core.run(req, tenant="acme")
     assert result.decision is Decision.auto_accept
     assert result.critique.grounding >= 0.85
     assert result.citations == ISO_EVIDENCE
 
 
-def test_runtime_escalates_ungrounded_and_flywheel_overrides():
+async def test_runtime_escalates_ungrounded_and_flywheel_overrides():
     fabricated = "Our spaceship fleet orbits Jupiter every fortnight."
     core = AgentCore(generator=Generator(provider=StubProvider(canned=fabricated)))
     req = Requirement(id="B1", text="Describe your QMS.", context=ISO_EVIDENCE, topic="qms")
 
-    result = core.run(req, tenant="acme")
+    result = await core.run(req, tenant="acme")
     assert result.decision is Decision.human_review
 
     # A reviewer approves a grounded answer; it becomes trusted ground truth for the topic.
-    core.record_feedback(req, tenant="acme", approved_text=ISO_EVIDENCE[0])
-    assert core.verified.get("acme", "qms") == ISO_EVIDENCE
+    await core.record_feedback(req, tenant="acme", approved_text=ISO_EVIDENCE[0])
+    assert await core.verified.get("acme", "qms") == ISO_EVIDENCE

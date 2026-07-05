@@ -27,9 +27,9 @@ class AgentCore:
         if self.verified is None:
             self.verified = InMemoryVerifiedStore()
 
-    def run(self, req: Requirement, *, tenant: str) -> AgentResult:
+    async def run(self, req: Requirement, *, tenant: str) -> AgentResult:
         topic = req.topic or req.id
-        verified = self.verified.get(tenant, topic)
+        verified = await self.verified.get(tenant, topic)
         answer = self.generator.generate(req, verified=verified)
         # The critic scores against the retrieved evidence plus any verified prior answers.
         critique = critic_mod.grounding_score(answer, list(req.context) + verified)
@@ -37,7 +37,7 @@ class AgentCore:
         return AgentResult(requirement_id=req.id, answer=answer, critique=critique,
                            decision=decision, citations=list(req.context))
 
-    def record_feedback(self, req: Requirement, *, tenant: str, approved_text: str) -> None:
+    async def record_feedback(self, req: Requirement, *, tenant: str, approved_text: str) -> None:
         """Human approval/edit becomes trusted ground truth for this tenant + topic."""
         topic = req.topic or req.id
-        self.verified.add(tenant, topic, approved_text)
+        await self.verified.add(tenant, topic, approved_text)
