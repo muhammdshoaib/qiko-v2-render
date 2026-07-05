@@ -24,6 +24,14 @@ async def test_agent_store_crud_and_tenant_scope(tmp_path):
     assert (await store.list("acme"))[0].status == "ready"
 
 
+async def test_agent_store_get_is_tenant_scoped(tmp_path):
+    store = SqlAgentStore(await _sm(tmp_path / "c.db"))
+    await store.add(Agent(id="a1", tenant="acme", name="IDG"))
+    assert (await store.get("acme", "a1")).name == "IDG"
+    assert await store.get("beta", "a1") is None    # not beta's agent
+    assert await store.get("acme", "missing") is None
+
+
 async def test_agent_store_mark_ready_cross_tenant_blocked(tmp_path):
     store = SqlAgentStore(await _sm(tmp_path / "b.db"))
     await store.add(Agent(id="a1", tenant="acme", name="IDG"))

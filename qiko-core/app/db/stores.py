@@ -144,6 +144,13 @@ class SqlAgentStore:
     async def count(self, tenant: str) -> int:
         return len(await self.list(tenant))
 
+    async def get(self, tenant: str, agent_id: str) -> Agent | None:
+        async with self.sessionmaker() as s:
+            row = await s.get(AgentRow, agent_id)
+            if row is None or row.tenant_id != tenant:
+                return None
+            return self._to_domain(row)
+
     async def mark_ready(self, tenant: str, agent_id: str) -> Agent:
         async with self.sessionmaker() as s, s.begin():
             row = await s.get(AgentRow, agent_id)

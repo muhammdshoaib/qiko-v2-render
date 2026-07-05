@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
     app.state.sessionmaker = build_sessionmaker(engine)
     if get_settings().use_db_stores:
         # Flip the live app from in-memory to the Postgres-backed stores (async end-to-end).
-        from app.db.stores import SqlChatStore, SqlUserStore, SqlVectorStore
+        from app.db.stores import SqlAgentStore, SqlChatStore, SqlUserStore, SqlVectorStore
         from app.modules.identity.router import set_store as set_user_store
 
         sm = app.state.sessionmaker
@@ -91,6 +91,7 @@ async def lifespan(app: FastAPI):
         app.state.excel = ExcelService(app.state.knowledge)
         app.state.sources = KnowledgeSources(app.state.knowledge)
         app.state.chat = ChatService(store=SqlChatStore(sm))
+        app.state.agents = AgentService(store=SqlAgentStore(sm))  # workers survive a redeploy
         set_user_store(SqlUserStore(sm))  # users/sessions/2FA persist to Postgres
     try:
         yield

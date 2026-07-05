@@ -21,7 +21,7 @@ class PublicChatBody(BaseModel):
 
 @router.post("/chat")
 async def public_chat(body: PublicChatBody, request: Request) -> dict:
-    agent = request.app.state.agents.get(body.tenant, body.worker_id)
+    agent = await request.app.state.agents.get(body.tenant, body.worker_id)
     if agent is None:
         raise HTTPException(status_code=404, detail="worker not found")
     worker = build_tenant_worker(request, body.tenant)  # grounded over the tenant's knowledge

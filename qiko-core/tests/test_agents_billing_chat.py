@@ -19,17 +19,17 @@ def test_plan_worker_limit_gating():
 
 
 # --- agent lifecycle + gating ---
-def test_agent_lifecycle_and_plan_limit():
+async def test_agent_lifecycle_and_plan_limit():
     svc = AgentService()
     free = get_plan("free")
-    a = svc.create("acme", "IDG worker", free)
+    a = await svc.create("acme", "IDG worker", free)
     assert a.status == "training"
-    svc.mark_ready("acme", a.id)
-    assert svc.list("acme")[0].status == "ready"
+    await svc.mark_ready("acme", a.id)
+    assert (await svc.list("acme"))[0].status == "ready"
     with pytest.raises(PlanLimitError):
-        svc.create("acme", "second", free)  # free allows only 1
+        await svc.create("acme", "second", free)  # free allows only 1
     # a different tenant is unaffected
-    assert svc.create("beta", "theirs", free).tenant == "beta"
+    assert (await svc.create("beta", "theirs", free)).tenant == "beta"
 
 
 # --- chat history + agentic answer ---
