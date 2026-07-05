@@ -28,7 +28,7 @@ export function AppShell({ title, children }: { title: string; children: React.R
 
   return (
     <div className="grid min-h-screen grid-cols-[15rem_1fr] max-md:grid-cols-1">
-      <aside className="flex flex-col gap-1 border-r border-border bg-card px-3 py-4 max-md:hidden">
+      <aside className="flex flex-col gap-1 border-r border-white/10 bg-[#040b1c] px-3 py-4 shadow-[0_0_40px_rgba(3,8,20,0.8)] max-md:hidden">
         <div className="px-2 pb-4">
           <Logo />
         </div>
@@ -40,8 +40,10 @@ export function AppShell({ title, children }: { title: string; children: React.R
                 key={href}
                 href={href}
                 className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  "flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm font-medium transition-all",
+                  active
+                    ? "border-white/10 bg-gradient-to-br from-primary/20 to-secondary/20 text-white"
+                    : "border-transparent text-slate-400 hover:bg-white/5 hover:text-white",
                 )}
               >
                 <Icon className="size-4" />
@@ -51,14 +53,14 @@ export function AppShell({ title, children }: { title: string; children: React.R
           })}
         </nav>
         <div className="mt-auto">
-          <Button variant="ghost" className="w-full justify-start text-muted-foreground" onClick={onLogout}>
+          <Button variant="ghost" className="w-full justify-start text-slate-400 hover:text-white" onClick={onLogout}>
             <LogOut className="size-4" /> Sign out
           </Button>
         </div>
       </aside>
 
       <div className="flex flex-col">
-        <header className="flex h-14 items-center justify-between border-b border-border px-6">
+        <header className="flex h-14 items-center justify-between border-b border-white/10 px-6">
           <h1 className="text-sm font-semibold">{title}</h1>
           <Button variant="ghost" size="sm" className="md:hidden" onClick={onLogout}>
             <LogOut className="size-4" />
