@@ -6,24 +6,46 @@ Run inside the qiko-core container (has app.modules.identity.security + psycopg)
     PG_DSN=postgresql://qiko:pw@db:5432/qiko PREPROD_PW=preprod-test \
     python scripts/migrate_stage.py
 
-Passwords: Laravel uses bcrypt, V2 uses PBKDF2 (incompatible), so every migrated (test) user
-gets PREPROD_PW. For a real live cutover, migrate with an unusable hash + force OTP reset instead.
-Knowledge (behaviors/faqs/policies/docs) needs embeddings -> handled by a separate pass.
+Passwords: Laravel uses bcrypt, V2 uses PBKDF2 (incompatible) -- the original hash is never read
+or stored either way. Two modes, controlled by MIGRATION_MODE:
+  - "preprod" (default): every migrated user gets the SAME shared test password (PREPROD_PW).
+    Fine for a disposable test environment, never for anything with real user data.
+  - "live": every user gets a per-user, cryptographically random, unusable password hash (nobody
+    knows it, including us) -- they can only get in via the existing forgot-password -> OTP ->
+    reset-password flow (app/modules/identity/onboarding_router.py), which is real and live.
+    Use MIGRATION_MODE=live for any migration involving real user accounts.
+Knowledge (behaviors/faqs/policies/docs) needs embeddings -> handled by scripts/migrate_knowledge.py.
 """
 import os
-
-import psycopg
-import pymysql
+import secrets
+from collections.abc import Callable
 
 from app.modules.identity.security import hash_password
 
 
+def make_password_hasher(*, live_mode: bool, preprod_pw: str) -> Callable[[], str]:
+    """preprod: every call returns the SAME hash (one shared test password).
+    live: every call returns a hash of a fresh random secret nobody is ever told -> the account
+    is unusable until the real forgot-password/OTP flow sets a real password."""
+    if not live_mode:
+        shared = hash_password(preprod_pw)
+        return lambda: shared
+    return lambda: hash_password(secrets.token_urlsafe(32))
+
+
 def main() -> None:
+    import psycopg
+    import pymysql
+
     my = pymysql.connect(host=os.environ["MYSQL_HOST"], user=os.environ["MYSQL_USER"],
                          password=os.environ["MYSQL_PW"], database=os.environ["MYSQL_DB"],
                          cursorclass=pymysql.cursors.DictCursor)
     pg = psycopg.connect(os.environ["PG_DSN"], autocommit=True)
-    pw_hash = hash_password(os.environ.get("PREPROD_PW", "preprod-test"))
+    next_password_hash = make_password_hasher(
+        live_mode=os.environ.get("MIGRATION_MODE", "preprod") == "live",
+        preprod_pw=os.environ.get("PREPROD_PW", "preprod-test"),
+    )
+
     n = {"tenants": 0, "users": 0, "agents": 0, "conversations": 0, "messages": 0, "skipped": 0}
 
     def ins(sql: str, args: tuple) -> bool:
@@ -45,7 +67,7 @@ def main() -> None:
                 n["tenants"] += 1
             if ins("INSERT INTO users(id,email,password_hash,tenant_id,role,twofa_enabled,created_at) "
                    "VALUES(%s,%s,%s,%s,'owner',false,now()) ON CONFLICT (email) DO NOTHING",
-                   (t, email, pw_hash, t)):
+                   (t, email, next_password_hash(), t)):
                 n["users"] += 1
 
         agent_tenant: dict = {}
