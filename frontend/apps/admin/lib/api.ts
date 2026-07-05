@@ -7,10 +7,22 @@ export class ApiError extends Error {
   }
 }
 
+// Double-submit CSRF: the server sets a readable (non-httpOnly) qiko_csrf cookie and requires it
+// echoed back as a header on state-changing requests (currently /auth/logout and /auth/refresh).
+function csrfToken(): string | undefined {
+  if (typeof document === "undefined") return undefined;
+  return document.cookie.match(/(?:^|; )qiko_csrf=([^;]+)/)?.[1];
+}
+
 async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  const csrf = csrfToken();
   const res = await fetch(`${BASE}${path}`, {
     credentials: "include",
-    headers: { "Content-Type": "application/json", ...(opts.headers ?? {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...(csrf ? { "x-csrf-token": csrf } : {}),
+      ...(opts.headers ?? {}),
+    },
     ...opts,
   });
   if (!res.ok) throw new ApiError(res.status, await res.text());
