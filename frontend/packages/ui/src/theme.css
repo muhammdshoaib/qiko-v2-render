@@ -76,3 +76,14 @@
   }
   h1, h2, h3 { font-family: var(--font-display); letter-spacing: -0.02em; }
 }
+
+/* Qiko "glass-card" — the real site's floating glassmorphism surface (nav, feature cards, CTAs).
+   Values matched from the live qiko.ai computed styles. */
+.glass-card {
+  background: oklch(0.16 0.035 250 / 0.6);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-radius: 16px;
+  border: 1px solid oklch(1 0 0 / 0.1);
+  box-shadow: oklch(0.12 0.03 250 / 0.4) 0px 4px 24px -1px, oklch(1 0 0 / 0.05) 0px 1px 0px 0px inset;
+}

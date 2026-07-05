@@ -49,27 +49,31 @@ export default function LandingPage() {
         <div className="absolute w-[500px] h-[500px] rounded-full opacity-20" style={{ background: "radial-gradient(circle,#22D3EE 0%,transparent 70%)", top: "20%", right: "8%", filter: "blur(90px)" }} />
       </div>
 
-      {/* Nav */}
-      <header className="fixed top-0 inset-x-0 z-50 bg-[#050810]/70 backdrop-blur-xl border-b border-white/5">
-        <div className="mx-auto flex items-center justify-between h-16 px-6 max-w-6xl">
-          <img src="/qiko-logo.webp" alt="Qiko" className="h-8 w-auto" style={{ filter: "drop-shadow(0 0 10px rgba(99,102,241,0.5))" }} />
-          <nav className="hidden md:flex items-center gap-8 text-sm text-slate-300">
-            <a href="#" className="text-white">Home</a>
-            <a href="#pricing" className="hover:text-white">Pricing</a>
-            <a href="#why" className="hover:text-white">About</a>
-            <a href="#enterprise" className="hover:text-white">Enterprise</a>
+      {/* Nav — floating glass-card, matching the live site exactly */}
+      <header className="fixed top-0 inset-x-0 z-50">
+        <div className="mx-3 sm:mx-4 mt-3 sm:mt-4 md:mx-8">
+          <nav className="glass-card px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between max-w-6xl mx-auto">
+            <a href="/" className="flex items-center gap-2 group">
+              <img src="/qiko-logo.webp" alt="Go to Qiko homepage" className="h-8 sm:h-10 w-auto transition-all duration-300 group-hover:scale-105" />
+            </a>
+            <div className="hidden md:flex items-center gap-8 text-sm text-slate-300">
+              <a href="#" className="text-white">Home</a>
+              <a href="#pricing" className="hover:text-white">Pricing</a>
+              <a href="#why" className="hover:text-white">About</a>
+              <a href="#enterprise" className="hover:text-white">Enterprise</a>
+            </div>
+            <div className="flex items-center gap-3">
+              <button onClick={() => router.push("/login")} className="text-slate-300 hover:text-white text-sm font-medium px-4 py-2 rounded-full">Sign in</button>
+              <button onClick={go} className="bg-gradient-to-r from-[#6366F1] to-[#A855F7] text-white text-sm font-medium px-5 py-2 rounded-full shadow-lg shadow-[#6366F1]/25">Get started</button>
+            </div>
           </nav>
-          <div className="flex items-center gap-3">
-            <button onClick={() => router.push("/login")} className="text-slate-300 hover:text-white text-sm font-medium px-4 py-2 rounded-full">Sign in</button>
-            <button onClick={go} className="bg-gradient-to-r from-[#6366F1] to-[#A855F7] text-white text-sm font-medium px-5 py-2 rounded-full shadow-lg shadow-[#6366F1]/25">Get started</button>
-          </div>
         </div>
       </header>
 
       {/* Hero */}
       <section className="relative pt-36 pb-16 px-4">
         <div className="relative z-10 max-w-4xl mx-auto text-center">
-          <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-[1.05]" style={{ fontFamily: "Satoshi, sans-serif" }}>
+          <h1 className="text-5xl md:text-7xl font-black mb-6 leading-[1.05]" style={{ fontFamily: "Satoshi, sans-serif", fontWeight: 900 }}>
             Build and sell your own <span style={{ background: "linear-gradient(135deg,#6366F1,#22D3EE)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>digital worker.</span>
           </h1>
           <p className="text-lg md:text-xl text-slate-300 mb-10 max-w-2xl mx-auto leading-relaxed">
@@ -104,7 +108,7 @@ export default function LandingPage() {
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {WHY.map((w) => (
-            <div key={w.title} className="bg-[#0a0f1a]/80 border border-white/5 rounded-xl p-6">
+            <div key={w.title} className="glass-card p-6">
               <div className="w-10 h-10 rounded-lg grid place-items-center mb-4" style={{ background: "#6366F120", boxShadow: "0 0 20px #6366F130" }}><w.icon className="w-5 h-5 text-[#6366F1]" /></div>
               <h3 className="font-semibold mb-1">{w.title}</h3>
               <p className="text-sm text-slate-400">{w.desc}</p>
@@ -122,7 +126,7 @@ export default function LandingPage() {
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {STEPS.map((s) => (
-            <div key={s.n} className="bg-[#0a0f1a]/80 border border-white/5 rounded-xl p-6">
+            <div key={s.n} className="glass-card p-6">
               <div className="text-3xl font-bold mb-3" style={{ background: "linear-gradient(135deg,#6366F1,#22D3EE)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{s.n}</div>
               <h3 className="font-semibold mb-1">{s.title}</h3>
               <p className="text-sm text-slate-400">{s.desc}</p>
@@ -149,7 +153,7 @@ export default function LandingPage() {
             <p className="text-slate-400 mb-6 leading-relaxed">Alex now licenses their knowledge to users wanting to buy or rent a villa in France. They help them find the perfect property based on their unique and expert knowledge 24/7.</p>
             <div className="grid grid-cols-3 gap-4 mb-6">
               {[["1 day", "Time to first model"], ["Sub-second", "Response time"], ["Per agency", "Revenue model"]].map(([v, l]) => (
-                <div key={l} className="bg-[#0a0f1a]/80 border border-white/5 rounded-xl p-4">
+                <div key={l} className="glass-card p-4">
                   <p className="text-xl font-bold text-[#22D3EE]">{v}</p><p className="text-xs text-slate-500 mt-1">{l}</p>
                 </div>
               ))}
@@ -185,7 +189,7 @@ export default function LandingPage() {
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {HANDLES.map((h) => (
-            <div key={h.title} className="bg-[#0a0f1a]/80 border border-white/5 rounded-xl p-6">
+            <div key={h.title} className="glass-card p-6">
               <div className="w-10 h-10 rounded-lg grid place-items-center mb-4" style={{ background: "#22D3EE18", boxShadow: "0 0 20px #22D3EE22" }}><h.icon className="w-5 h-5 text-[#22D3EE]" /></div>
               <h3 className="font-semibold mb-1">{h.title}</h3>
               <p className="text-sm text-slate-400">{h.desc}</p>
