@@ -1,139 +1,208 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, MessageSquare, Globe, Shield, Clock } from "lucide-react";
+import { ArrowRight, Target, Zap, Shield, Sparkles, Cpu, Server, Database, Lock, Plug, Activity } from "lucide-react";
 
-const typingExamples = [
-  "I am a golf travel specialist...",
-  "I am a real estate advisor...",
-  "I am a financial consultant...",
-  "I am a fitness coach...",
-  "I am a legal expert...",
-  "I am a marketing strategist...",
+const WHY = [
+  { icon: Target, title: "Accurate", desc: "Grounded in your own data, decisions, and judgment—not generic training data." },
+  { icon: Zap, title: "Low Latency", desc: "Optimised for your specific use case instead of generic everything-models." },
+  { icon: Shield, title: "Secure & Private", desc: "Data stays in a dedicated environment; on-prem or VPC deployments available." },
+  { icon: Sparkles, title: "On-Brand", desc: "Tone, style, and behaviour that match you or your company perfectly." },
 ];
-
-const useCases = [
-  { icon: MessageSquare, title: "Answer Questions", description: "Handle client inquiries automatically, even the tricky ones", color: "#6366F1" },
-  { icon: Globe, title: "Never Miss a Lead", description: "Respond to prospects at 3am without lifting a finger", color: "#22D3EE" },
-  { icon: Shield, title: "Sound Like You", description: "Your tone, your expertise, your way of explaining things", color: "#A855F7" },
-  { icon: Clock, title: "Save Hours Daily", description: "Stop repeating yourself—let AI handle the routine stuff", color: "#EC4899" },
+const STEPS = [
+  { n: "01", title: "Describe your digital worker", desc: "Start in plain English. Tell Qiko what your worker should do, who it helps, and how it should behave." },
+  { n: "02", title: "Upload your expertise data", desc: "Share documents, transcripts, decision logs, and knowledge. Qiko trains your worker on your unique expertise." },
+  { n: "03", title: "Qiko deploys with GPT-5", desc: "We configure your worker with GPT-5, set up knowledge training, integrate APIs, and handle all infrastructure." },
+  { n: "04", title: "Launch and earn", desc: "We deploy your worker behind secure APIs and a hosted interface so you can sell access as a subscription." },
 ];
+const HANDLES = [
+  { icon: Cpu, title: "Model Selection & Optimisation", desc: "Best-fit base AI models (e.g. Claude, GPT, or custom models such as Llama, Mistral) sized to your use case." },
+  { icon: Server, title: "GPU & Infra Orchestration", desc: "Automatic allocation of GPU capacity via partners, with monitoring and scaling baked in." },
+  { icon: Database, title: "Data Pipelines & RAG", desc: "We design retrieval and training pipelines so your model can use your documents and systems reliably." },
+  { icon: Lock, title: "Security & Isolation", desc: "Isolated deployments, encryption, and optional on-prem / private cloud setups for strict compliance." },
+  { icon: Plug, title: "APIs & Integration", desc: "Your model ships with documented APIs and webhooks so you can embed it into your app from day one." },
+  { icon: Activity, title: "Monitoring & Iteration", desc: "We track performance and feedback so your digital twin gets sharper over time." },
+];
+const WHO = [
+  { title: "Recruiters", desc: "Who want an AI that screens and pitches like they do." },
+  { title: "Travel & Lifestyle Experts", desc: "Who want an assistant that knows their taste." },
+  { title: "Sales Trainers", desc: "Who want an AI that coaches reps in their methodology." },
+  { title: "Niche Consultants", desc: "Who want to package their knowledge as a subscription." },
+];
+const TRUSTED = ["Recruitment", "Travel", "Sales Training", "Consulting"];
 
-function useTypingAnimation(texts: string[], typingSpeed = 80, deletingSpeed = 40, pauseDuration = 2000) {
-  const [displayText, setDisplayText] = useState("");
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [isDeleting, setIsDeleting] = useState(false);
-  useEffect(() => {
-    const currentText = texts[currentIndex];
-    const timeout = setTimeout(() => {
-      if (!isDeleting) {
-        if (displayText.length < currentText.length) setDisplayText(currentText.slice(0, displayText.length + 1));
-        else setTimeout(() => setIsDeleting(true), pauseDuration);
-      } else if (displayText.length > 0) setDisplayText(displayText.slice(0, -1));
-      else { setIsDeleting(false); setCurrentIndex((p) => (p + 1) % texts.length); }
-    }, isDeleting ? deletingSpeed : typingSpeed);
-    return () => clearTimeout(timeout);
-  }, [displayText, currentIndex, isDeleting, texts, typingSpeed, deletingSpeed, pauseDuration]);
-  return displayText;
+function Eyebrow({ children }: { children: React.ReactNode }) {
+  return <p className="text-xs font-semibold tracking-[0.2em] text-[#6366F1] mb-4">{children}</p>;
 }
 
 export default function LandingPage() {
   const router = useRouter();
-  const [inputValue, setInputValue] = useState("");
-  const [isFocused, setIsFocused] = useState(false);
-  const animatedPlaceholder = useTypingAnimation(typingExamples);
-  const getStarted = () => router.push("/onboarding");
+  const go = () => router.push("/onboarding");
+  const [input, setInput] = useState("");
 
   return (
     <div className="min-h-screen bg-[#050810] text-white overflow-x-hidden relative">
+      {/* Ambient orbs */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute w-[600px] h-[600px] rounded-full opacity-30" style={{ background: "radial-gradient(circle, #6366F1 0%, transparent 70%)", top: "-10%", left: "20%", filter: "blur(80px)", animation: "float1 12s ease-in-out infinite" }} />
-        <div className="absolute w-[500px] h-[500px] rounded-full opacity-25" style={{ background: "radial-gradient(circle, #22D3EE 0%, transparent 70%)", top: "30%", right: "10%", filter: "blur(80px)", animation: "float2 10s ease-in-out infinite" }} />
-        <div className="absolute w-[400px] h-[400px] rounded-full opacity-20" style={{ background: "radial-gradient(circle, #A855F7 0%, transparent 70%)", bottom: "10%", left: "30%", filter: "blur(80px)", animation: "float3 14s ease-in-out infinite" }} />
-        <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: "linear-gradient(rgba(99,102,241,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(99,102,241,0.3) 1px, transparent 1px)", backgroundSize: "60px 60px" }} />
+        <div className="absolute w-[600px] h-[600px] rounded-full opacity-25" style={{ background: "radial-gradient(circle,#6366F1 0%,transparent 70%)", top: "-8%", left: "15%", filter: "blur(90px)" }} />
+        <div className="absolute w-[500px] h-[500px] rounded-full opacity-20" style={{ background: "radial-gradient(circle,#22D3EE 0%,transparent 70%)", top: "20%", right: "8%", filter: "blur(90px)" }} />
       </div>
 
-      <header className="fixed top-0 left-0 right-0 z-50 bg-[#050810]/60 backdrop-blur-xl border-b border-white/5">
+      {/* Nav */}
+      <header className="fixed top-0 inset-x-0 z-50 bg-[#050810]/70 backdrop-blur-xl border-b border-white/5">
         <div className="mx-auto flex items-center justify-between h-16 px-6 max-w-6xl">
           <img src="/qiko-logo.webp" alt="Qiko" className="h-8 w-auto" style={{ filter: "drop-shadow(0 0 10px rgba(99,102,241,0.5))" }} />
+          <nav className="hidden md:flex items-center gap-8 text-sm text-slate-300">
+            <a href="#" className="text-white">Home</a>
+            <a href="#pricing" className="hover:text-white">Pricing</a>
+            <a href="#why" className="hover:text-white">About</a>
+            <a href="#enterprise" className="hover:text-white">Enterprise</a>
+          </nav>
           <div className="flex items-center gap-3">
-            <button onClick={() => router.push("/login")} className="text-slate-300 hover:text-white hover:bg-white/10 font-medium px-4 py-2 rounded-full transition-all">Sign in</button>
-            <button onClick={getStarted} className="bg-gradient-to-r from-[#6366F1] to-[#A855F7] text-white font-medium px-5 py-2 rounded-full shadow-lg shadow-[#6366F1]/25 transition-all hover:shadow-[#6366F1]/40">Get started</button>
+            <button onClick={() => router.push("/login")} className="text-slate-300 hover:text-white text-sm font-medium px-4 py-2 rounded-full">Sign in</button>
+            <button onClick={go} className="bg-gradient-to-r from-[#6366F1] to-[#A855F7] text-white text-sm font-medium px-5 py-2 rounded-full shadow-lg shadow-[#6366F1]/25">Get started</button>
           </div>
         </div>
       </header>
 
-      <section className="relative pt-32 pb-20 px-4">
+      {/* Hero */}
+      <section className="relative pt-36 pb-16 px-4">
         <div className="relative z-10 max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#6366F1]/10 border border-[#6366F1]/30 mb-8 backdrop-blur-sm">
-            <span className="w-2 h-2 rounded-full bg-[#22D3EE] animate-pulse shadow-lg shadow-[#22D3EE]/50" />
-            <span className="text-sm text-[#22D3EE] font-medium">Now in Beta • Join 500+ creators</span>
-          </div>
-          <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight" style={{ fontFamily: "Satoshi, sans-serif", background: "linear-gradient(135deg, #ffffff 0%, #6366F1 50%, #22D3EE 100%)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", textShadow: "0 0 80px rgba(99,102,241,0.5)" }}>
-            Build Your AI Expert
+          <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-[1.05]" style={{ fontFamily: "Satoshi, sans-serif" }}>
+            Build and sell your own <span style={{ background: "linear-gradient(135deg,#6366F1,#22D3EE)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>digital worker.</span>
           </h1>
-          <p className="text-xl md:text-2xl text-slate-300 mb-12 max-w-2xl mx-auto leading-relaxed">
-            Train a custom AI on your expertise. Answer clients <span className="text-[#22D3EE]">24/7</span> with your knowledge, your tone, your way.
+          <p className="text-lg md:text-xl text-slate-300 mb-10 max-w-2xl mx-auto leading-relaxed">
+            You bring the niche expertise. Qiko handles models, GPUs and security so you can launch a production ready digital worker.
           </p>
-
-          <div className="relative max-w-xl mx-auto mb-8 group">
-            <div className="absolute -inset-[1px] rounded-2xl opacity-75 group-hover:opacity-100 transition-opacity" style={{ background: "linear-gradient(135deg, #6366F1, #22D3EE, #A855F7, #6366F1)", backgroundSize: "300% 300%", animation: "gradient-shift 4s ease infinite" }} />
-            <div className="relative bg-[#0a0f1a] rounded-2xl p-6">
-              <div className="relative mb-4 text-left">
-                <input type="text" value={inputValue} onChange={(e) => setInputValue(e.target.value)} onFocus={() => setIsFocused(true)} onBlur={() => setIsFocused(false)} className="w-full bg-transparent text-white text-lg outline-none" />
-                {!inputValue && !isFocused && (
-                  <div className="absolute top-0 left-0 pointer-events-none text-lg text-slate-400">
-                    {animatedPlaceholder}
-                    <span className="inline-block w-0.5 h-5 bg-[#6366F1] ml-0.5 animate-pulse align-middle" />
-                  </div>
-                )}
-                {!inputValue && isFocused && <div className="absolute top-0 left-0 pointer-events-none text-lg text-slate-500">Type your profession...</div>}
-              </div>
-              <div className="flex items-center justify-end">
-                <button onClick={getStarted} className="bg-gradient-to-r from-[#6366F1] to-[#22D3EE] text-white font-semibold px-6 py-2.5 rounded-full flex items-center gap-2 shadow-lg shadow-[#6366F1]/30 hover:shadow-[#6366F1]/50">
-                  Start Building <ArrowRight className="w-4 h-4" />
-                </button>
+          <div className="relative max-w-xl mx-auto group">
+            <div className="absolute -inset-[1px] rounded-2xl opacity-70 group-hover:opacity-100 transition-opacity" style={{ background: "linear-gradient(135deg,#6366F1,#22D3EE,#A855F7,#6366F1)", backgroundSize: "300% 300%" }} />
+            <div className="relative bg-[#0a0f1a] rounded-2xl p-6 text-left">
+              <input value={input} onChange={(e) => setInput(e.target.value)} placeholder="I am a real estate agent..." className="w-full bg-transparent text-white text-lg outline-none placeholder:text-slate-500 mb-4" />
+              <div className="flex justify-end">
+                <button onClick={go} className="bg-gradient-to-r from-[#6366F1] to-[#22D3EE] text-white font-semibold px-6 py-2.5 rounded-full inline-flex items-center gap-2 shadow-lg shadow-[#6366F1]/30">Start Building <ArrowRight className="w-4 h-4" /></button>
               </div>
             </div>
           </div>
         </div>
       </section>
 
-      <section className="py-16 px-4 relative z-10">
-        <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-4">
-          {useCases.map((u) => (
-            <div key={u.title} className="group relative bg-[#0a0f1a]/80 backdrop-blur-sm rounded-xl p-5 border border-white/5 hover:border-transparent transition-all overflow-hidden">
-              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: `radial-gradient(circle at center, ${u.color}15 0%, transparent 70%)` }} />
-              <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-3 relative" style={{ background: `${u.color}20`, boxShadow: `0 0 20px ${u.color}30` }}>
-                <u.icon className="w-5 h-5" style={{ color: u.color }} />
-              </div>
-              <h3 className="font-semibold text-white mb-1 relative">{u.title}</h3>
-              <p className="text-sm text-slate-400 relative">{u.description}</p>
+      {/* Trusted */}
+      <section className="relative z-10 px-4 pb-20">
+        <p className="text-center text-sm text-slate-500 mb-5">Trusted by creators in</p>
+        <div className="flex flex-wrap justify-center gap-x-10 gap-y-3 text-slate-400 font-medium">
+          {TRUSTED.map((t) => <span key={t}>{t}</span>)}
+        </div>
+      </section>
+
+      {/* Why digital workers */}
+      <section id="why" className="relative z-10 px-4 py-20 max-w-6xl mx-auto">
+        <div className="text-center mb-14">
+          <Eyebrow>WHY DIGITAL WORKERS</Eyebrow>
+          <h2 className="text-3xl md:text-5xl font-bold mb-4" style={{ fontFamily: "Satoshi, sans-serif" }}>Generic AI is smart. Your digital worker is <span className="text-[#22D3EE]">you</span>.</h2>
+          <p className="text-slate-400 max-w-2xl mx-auto">Deploy a digital worker in minutes. As your business grows, train custom models on your proprietary data and own your competitive advantage.</p>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {WHY.map((w) => (
+            <div key={w.title} className="bg-[#0a0f1a]/80 border border-white/5 rounded-xl p-6">
+              <div className="w-10 h-10 rounded-lg grid place-items-center mb-4" style={{ background: "#6366F120", boxShadow: "0 0 20px #6366F130" }}><w.icon className="w-5 h-5 text-[#6366F1]" /></div>
+              <h3 className="font-semibold mb-1">{w.title}</h3>
+              <p className="text-sm text-slate-400">{w.desc}</p>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="py-24 px-4 relative z-10">
+      {/* How it works */}
+      <section className="relative z-10 px-4 py-20 max-w-6xl mx-auto">
+        <div className="text-center mb-14">
+          <Eyebrow>HOW IT WORKS</Eyebrow>
+          <h2 className="text-3xl md:text-5xl font-bold mb-4" style={{ fontFamily: "Satoshi, sans-serif" }}>From idea to revenue-ready digital worker</h2>
+          <p className="text-slate-400">Four simple steps to launch your AI-powered digital worker and start earning.</p>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {STEPS.map((s) => (
+            <div key={s.n} className="bg-[#0a0f1a]/80 border border-white/5 rounded-xl p-6">
+              <div className="text-3xl font-bold mb-3" style={{ background: "linear-gradient(135deg,#6366F1,#22D3EE)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{s.n}</div>
+              <h3 className="font-semibold mb-1">{s.title}</h3>
+              <p className="text-sm text-slate-400">{s.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* What Qiko handles */}
+      <section id="enterprise" className="relative z-10 px-4 py-20 max-w-6xl mx-auto">
+        <div className="text-center mb-14">
+          <Eyebrow>WE DO THE HARD WORK</Eyebrow>
+          <h2 className="text-3xl md:text-5xl font-bold mb-4" style={{ fontFamily: "Satoshi, sans-serif" }}>What Qiko handles for you</h2>
+          <p className="text-slate-400 max-w-2xl mx-auto">Qiko is everything between your expertise and a production-ready LLM business—handled for you.</p>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {HANDLES.map((h) => (
+            <div key={h.title} className="bg-[#0a0f1a]/80 border border-white/5 rounded-xl p-6">
+              <div className="w-10 h-10 rounded-lg grid place-items-center mb-4" style={{ background: "#22D3EE18", boxShadow: "0 0 20px #22D3EE22" }}><h.icon className="w-5 h-5 text-[#22D3EE]" /></div>
+              <h3 className="font-semibold mb-1">{h.title}</h3>
+              <p className="text-sm text-slate-400">{h.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Who it's for */}
+      <section className="relative z-10 px-4 py-20 max-w-6xl mx-auto">
+        <div className="text-center mb-14">
+          <Eyebrow>BUILT FOR CREATORS</Eyebrow>
+          <h2 className="text-3xl md:text-5xl font-bold" style={{ fontFamily: "Satoshi, sans-serif" }}>Who Qiko is for</h2>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {WHO.map((w) => (
+            <div key={w.title} className="bg-gradient-to-b from-[#0a0f1a] to-[#0a0f1a]/40 border border-white/5 rounded-xl p-6">
+              <h3 className="font-semibold mb-2 text-[#22D3EE]">{w.title}</h3>
+              <p className="text-sm text-slate-400">{w.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Final CTA */}
+      <section id="pricing" className="relative z-10 px-4 py-24">
         <div className="max-w-2xl mx-auto text-center relative">
-          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[300px] rounded-full opacity-30 pointer-events-none" style={{ background: "radial-gradient(circle, #6366F1 0%, transparent 70%)", filter: "blur(60px)" }} />
-          <h2 className="text-3xl md:text-5xl font-bold mb-6 relative" style={{ fontFamily: "Satoshi, sans-serif" }}>
-            Ready to Build Your <span className="text-[#22D3EE]">AI Expert</span>?
-          </h2>
-          <p className="text-slate-400 mb-8 text-lg relative">Train a custom AI on your knowledge. You decide.</p>
-          <button onClick={getStarted} className="relative bg-gradient-to-r from-[#6366F1] via-[#A855F7] to-[#22D3EE] text-white font-semibold px-10 py-4 rounded-full text-lg shadow-2xl shadow-[#6366F1]/40 hover:shadow-[#6366F1]/60 inline-flex items-center" style={{ backgroundSize: "200% 200%", animation: "gradient-shift 3s ease infinite" }}>
-            Get Started Free <ArrowRight className="w-5 h-5 ml-2" />
+          <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[300px] rounded-full opacity-25 pointer-events-none" style={{ background: "radial-gradient(circle,#6366F1 0%,transparent 70%)", filter: "blur(60px)" }} />
+          <h2 className="text-3xl md:text-5xl font-bold mb-4 relative" style={{ fontFamily: "Satoshi, sans-serif" }}>Ready to build your digital worker?</h2>
+          <p className="text-slate-400 mb-8 relative">Tell Qiko what you do. We'll design, deploy, and host your digital worker so you can start selling it.</p>
+          <button onClick={go} className="relative bg-gradient-to-r from-[#6366F1] via-[#A855F7] to-[#22D3EE] text-white font-semibold px-10 py-4 rounded-full text-lg shadow-2xl shadow-[#6366F1]/40 inline-flex items-center">
+            Create my digital worker <ArrowRight className="w-5 h-5 ml-2" />
           </button>
         </div>
       </section>
 
-      <style>{`
-        @keyframes float1 { 0%,100%{transform:translate(0,0) scale(1);} 33%{transform:translate(30px,-30px) scale(1.05);} 66%{transform:translate(-20px,20px) scale(0.95);} }
-        @keyframes float2 { 0%,100%{transform:translate(0,0) scale(1);} 33%{transform:translate(-40px,20px) scale(1.1);} 66%{transform:translate(30px,-40px) scale(0.9);} }
-        @keyframes float3 { 0%,100%{transform:translate(0,0) scale(1);} 50%{transform:translate(50px,-30px) scale(1.05);} }
-        @keyframes gradient-shift { 0%{background-position:0% 50%;} 50%{background-position:100% 50%;} 100%{background-position:0% 50%;} }
-      `}</style>
+      {/* Footer */}
+      <footer className="relative z-10 border-t border-white/5 px-6 py-12">
+        <div className="max-w-6xl mx-auto grid sm:grid-cols-3 gap-8">
+          <div>
+            <img src="/qiko-logo.webp" alt="Qiko" className="h-7 w-auto mb-4" />
+            <p className="text-sm text-slate-500 max-w-xs">Turn your deep expertise into scalable, secure AI products. Qiko handles the models, GPUs, and infrastructure so you can focus on what you know best.</p>
+          </div>
+          <div>
+            <h4 className="font-semibold mb-3 text-sm">Product</h4>
+            <ul className="space-y-2 text-sm text-slate-400">
+              <li><a href="#" className="hover:text-white">Home</a></li>
+              <li><a href="#why" className="hover:text-white">About</a></li>
+              <li><a href="#enterprise" className="hover:text-white">Enterprise</a></li>
+              <li><a href="#pricing" className="hover:text-white">Pricing</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="font-semibold mb-3 text-sm">Company</h4>
+            <ul className="space-y-2 text-sm text-slate-400">
+              <li><a href="mailto:support@qiko.ai" className="hover:text-white">Contact</a></li>
+              <li><a href="#" className="hover:text-white">Terms and Conditions</a></li>
+            </ul>
+          </div>
+        </div>
+        <p className="text-center text-xs text-slate-600 mt-10">© 2026 Qiko. All rights reserved.</p>
+      </footer>
     </div>
   );
 }
