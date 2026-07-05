@@ -28,7 +28,7 @@ export function AppShell({ title, children }: { title: string; children: React.R
 
   return (
     <div className="grid min-h-screen grid-cols-[15rem_1fr] max-md:grid-cols-1">
-      <aside className="flex flex-col gap-1 border-r border-border bg-card px-3 py-4 max-md:hidden">
+      <aside className="flex flex-col gap-1 border-r border-sidebar-border bg-sidebar px-3 py-4 max-md:hidden">
         <div className="flex items-center gap-2 px-2 pb-4">
           <Logo />
           <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">ADMIN</span>
@@ -38,8 +38,8 @@ export function AppShell({ title, children }: { title: string; children: React.R
             const active = pathname.startsWith(href);
             return (
               <Link key={href} href={href}
-                className={cn("flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  active ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground")}>
+                className={cn("flex items-center gap-2 rounded-md p-2 text-sm transition-colors",
+                  active ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground" : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground")}>
                 <Icon className="size-4" />
                 {label}
               </Link>
@@ -47,13 +47,13 @@ export function AppShell({ title, children }: { title: string; children: React.R
           })}
         </nav>
         <div className="mt-auto">
-          <Button variant="ghost" className="w-full justify-start text-muted-foreground" onClick={onLogout}>
+          <Button variant="ghost" className="w-full justify-start text-sidebar-foreground/70" onClick={onLogout}>
             <LogOut className="size-4" /> Sign out
           </Button>
         </div>
       </aside>
       <div className="flex flex-col">
-        <header className="flex h-14 items-center border-b border-border px-6">
+        <header className="flex h-14 items-center border-b border-sidebar-border px-6">
           <h1 className="text-sm font-semibold">{title}</h1>
         </header>
         <main className="flex-1 overflow-y-auto p-6">{children}</main>

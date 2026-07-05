@@ -8,11 +8,11 @@ import { ArrowLeft, Bot, FileText, SendHorizonal, Trash2 } from "lucide-react";
 import { Badge, Button, Card, CardContent, Input, Label, Skeleton, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import {
-  addBehavior, addFaq, addPolicy, addWebsite, ask,
-  deleteDocument, ingest, listAgents, listDocuments, type Doc,
+  addBehavior, addFaq, addPolicy, addWebsite, ask, batchAnswer, batchExportUrl,
+  deleteDocument, ingest, listAgents, listDocuments, type BatchAnswer, type Doc,
 } from "@/lib/api";
 
-const TABS = ["Knowledge", "Behaviors", "FAQs", "Websites", "Policies", "Chat"] as const;
+const TABS = ["Knowledge", "Behaviors", "FAQs", "Websites", "Policies", "Chat", "Batch"] as const;
 type Tab = (typeof TABS)[number];
 
 function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
@@ -69,6 +69,7 @@ export default function WorkerDetailPage() {
           <SourceForm title="Add a policy" onSubmit={(sid) => addPolicy(id, sid, val("title"), val("body"))} fields={[["title", "Title", false], ["body", "Body", true]]} onDone={refresh} />
         )}
         {tab === "Chat" && <ChatTab />}
+        {tab === "Batch" && <BatchTab />}
       </div>
     </AppShell>
   );
@@ -121,6 +122,61 @@ function ChatTab() {
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+function BatchTab() {
+  const [raw, setRaw] = useState("");
+  const questions = raw.split("\n").map((q) => q.trim()).filter(Boolean);
+  const run = useMutation({ mutationFn: () => batchAnswer(questions) });
+  const [exporting, setExporting] = useState(false);
+
+  async function onExport() {
+    setExporting(true);
+    try {
+      const url = await batchExportUrl(questions);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "worker-answers.xlsx";
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card><CardContent className="space-y-3 pt-6">
+        <p className="text-sm text-muted-foreground">Paste one question per line (e.g. RFP requirements). Each gets a grounded answer, a confidence score, and a decision — high-confidence answers auto-accept, the rest are flagged for human review.</p>
+        <Textarea placeholder={"Does the company hold ISO 9001?\nWhat services are offered in Region X?"} value={raw} onChange={(e) => setRaw(e.target.value)} />
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" disabled={!run.data || exporting} onClick={onExport}>
+            {exporting ? "Exporting…" : "Download .xlsx"}
+          </Button>
+          <Button disabled={questions.length === 0 || run.isPending} onClick={() => run.mutate()}>
+            {run.isPending ? "Answering…" : `Run ${questions.length || ""} question(s)`}
+          </Button>
+        </div>
+      </CardContent></Card>
+
+      {run.data?.map((a: BatchAnswer) => (
+        <Card key={a.id}>
+          <CardContent className="space-y-2 pt-6">
+            <div className="flex items-start justify-between gap-3">
+              <p className="font-medium">{a.question}</p>
+              <Badge variant={a.decision === "auto_accept" ? "success" : "muted"}>
+                {a.decision === "auto_accept" ? "Auto-accepted" : "Needs review"} · {(a.confidence * 100).toFixed(0)}%
+              </Badge>
+            </div>
+            <p className="text-sm text-muted-foreground whitespace-pre-wrap">{a.answer}</p>
+            {a.citations.length > 0 && (
+              <p className="text-xs text-muted-foreground">{a.citations.length} supporting citation(s) from your knowledge base.</p>
+            )}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
   );
 }
 

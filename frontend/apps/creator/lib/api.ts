@@ -48,6 +48,20 @@ export const ask = (conversation_id: string, question: string) =>
     body: JSON.stringify({ conversation_id, question }),
   });
 
+// Grounded batch answering (confidence + citations + human-review gate) + xlsx export
+export type BatchAnswer = { id: string; question: string; answer: string; confidence: number; decision: string; citations: string[] };
+export const batchAnswer = (questions: string[]) =>
+  request<BatchAnswer[]>("/agents/batch-answer", { method: "POST", body: JSON.stringify({ questions }) });
+export async function batchExportUrl(questions: string[]): Promise<string> {
+  const res = await fetch(`${BASE}/agents/batch-export`, {
+    method: "POST", credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ questions }),
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return URL.createObjectURL(await res.blob());
+}
+
 // Worker knowledge sources
 const src = (agentId: string, kind: string, body: object) =>
   request<{ doc_id: string }>(`/agents/${agentId}/sources/${kind}`, { method: "POST", body: JSON.stringify(body) });
