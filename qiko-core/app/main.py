@@ -54,6 +54,7 @@ from app.modules.channels.whatsapp import WhatsAppAdapter
 from app.modules.chat.public_router import router as public_chat_router
 from app.modules.chat.router import router as chat_router
 from app.modules.chat.service import ChatService
+from app.modules.agentcore.batch_router import router as batch_router
 from app.modules.excel.router import router as excel_router
 from app.modules.excel.service import ExcelService
 from app.modules.health.router import router as health_router
@@ -163,7 +164,7 @@ def create_app() -> FastAPI:
     for r in (identity_router, knowledge_router, agents_router, admin_router, chat_router,
               teams_router, leads_router, billing_router, channels_router, excel_router, voice_router,
               signal_router, public_chat_router, sources_router, twofa_router,
-              onboarding_router, admin_org_router):
+              onboarding_router, admin_org_router, batch_router):
         app.include_router(r, prefix="/api/v1")
     return app
 

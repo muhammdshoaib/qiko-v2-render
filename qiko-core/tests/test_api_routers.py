@@ -36,6 +36,29 @@ def test_agents_lifecycle_and_plan_gate(client):
     assert client.post("/api/v1/agents", json={"name": "second", "plan": "free"}, cookies=c).status_code == 403
 
 
+def test_batch_answer_is_grounded_confidence_scored_and_gated(client):
+    c = auth_cookies("batchco", "owner")
+    client.post("/api/v1/knowledge/ingest", json={"doc_id": "iso", "text": ISO}, cookies=c)
+    r = client.post("/api/v1/agents/batch-answer",
+                     json={"questions": ["Does IDG hold ISO 9001?", "What is the capital of Mars?"]},
+                     cookies=c)
+    assert r.status_code == 200
+    results = r.json()
+    assert len(results) == 2
+    for item in results:
+        assert set(item) >= {"id", "question", "answer", "confidence", "decision", "citations"}
+        assert item["decision"] in ("auto_accept", "human_review")
+        assert 0.0 <= item["confidence"] <= 1.0
+
+
+def test_batch_export_returns_xlsx(client):
+    c = auth_cookies("exportco", "owner")
+    r = client.post("/api/v1/agents/batch-export", json={"questions": ["Any question?"]}, cookies=c)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/vnd.openxmlformats")
+    assert len(r.content) > 0
+
+
 def test_agents_write_requires_editor_role(client):
     # a viewer cannot create agents
     r = client.post("/api/v1/agents", json={"name": "x"}, cookies=auth_cookies("t", "viewer"))
