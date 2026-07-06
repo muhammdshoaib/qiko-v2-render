@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     ga4_access_token: str = ""
     voice_model: str = "amazon.nova-sonic-v1:0"
     public_base_url: str = "http://localhost:3000"
+    # Share the auth/CSRF cookies across subdomains (e.g. ".preprod.qiko.ai" so both
+    # preprod.qiko.ai and admin.preprod.qiko.ai see the same session). Empty = host-only
+    # cookie (dev default; fine when creator/admin/API are all on the same host).
+    cookie_domain: str = ""
 
     # Email
     email_backend: str = "console"  # console | smtp
