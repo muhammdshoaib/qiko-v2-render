@@ -36,6 +36,17 @@ def test_agents_lifecycle_and_plan_gate(client):
     assert client.post("/api/v1/agents", json={"name": "second", "plan": "free"}, cookies=c).status_code == 403
 
 
+def test_agent_plan_limit_cannot_be_bypassed_by_client_supplied_plan(client):
+    """Regression: /agents used to trust a client-supplied "plan" field to decide the worker
+    limit, so any free-tier tenant could self-upgrade past it by just sending a different plan
+    name. The plan must always come from the tenant's real (server-side) subscription."""
+    c = auth_cookies("bypassteam", "owner")
+    assert client.post("/api/v1/agents", json={"name": "first"}, cookies=c).status_code == 200
+    for fake_plan in ("pro", "enterprise"):
+        r = client.post("/api/v1/agents", json={"name": "second", "plan": fake_plan}, cookies=c)
+        assert r.status_code == 403, f"plan={fake_plan} should not bypass the free-tier limit"
+
+
 def test_batch_answer_is_grounded_confidence_scored_and_gated(client):
     c = auth_cookies("batchco", "owner")
     client.post("/api/v1/knowledge/ingest", json={"doc_id": "iso", "text": ISO}, cookies=c)
