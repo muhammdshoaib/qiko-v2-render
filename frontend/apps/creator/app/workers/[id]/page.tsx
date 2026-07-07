@@ -4,16 +4,18 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Bot, FileText, GraduationCap, SendHorizonal, Trash2 } from "lucide-react";
+import {
+  ArrowLeft, Bot, Calendar, ExternalLink, FileText, GraduationCap, Phone, SendHorizonal, Trash2,
+} from "lucide-react";
 import { Badge, Button, Card, CardContent, Input, Label, Skeleton, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import {
   addBehavior, addFaq, addPolicy, addWebsite, ask, batchAnswer, batchExportUrl,
-  deleteDocument, ingest, listAgents, listDocuments, updateAgentConfig,
-  type Agent, type BatchAnswer, type Doc,
+  deleteDocument, getVapiCredentials, ingest, listAgents, listDocuments, saveVapiCredentials,
+  updateAgentConfig, updateCalendlyEventType, type Agent, type BatchAnswer, type Doc,
 } from "@/lib/api";
 
-const TABS = ["Train", "Chat", "Batch"] as const;
+const TABS = ["Train", "Connections", "Chat", "Batch"] as const;
 type Tab = (typeof TABS)[number];
 
 function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
@@ -61,10 +63,126 @@ export default function WorkerDetailPage() {
           <TrainTab id={id} worker={worker} docs={docs.data} loading={docs.isLoading}
             onKnowledgeChange={refresh} onWorkerChange={refreshAgents} />
         )}
+        {tab === "Connections" && <ConnectionsTab id={id} worker={worker} />}
         {tab === "Chat" && <ChatTab />}
         {tab === "Batch" && <BatchTab />}
       </div>
     </AppShell>
+  );
+}
+
+const CONNECTIONS_SUBTABS = ["Voice", "Calendly"] as const;
+
+function ConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
+  const [sub, setSub] = useState<(typeof CONNECTIONS_SUBTABS)[number]>("Voice");
+  return (
+    <div className="space-y-4">
+      <div className="flex gap-1 rounded-lg bg-muted p-1">
+        {CONNECTIONS_SUBTABS.map((s) => (
+          <button key={s} onClick={() => setSub(s)}
+            className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+              sub === s ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+            {s === "Voice" ? <Phone className="size-3.5" /> : <Calendar className="size-3.5" />} {s}
+          </button>
+        ))}
+      </div>
+      {sub === "Voice" && <VoiceSubTab id={id} />}
+      {sub === "Calendly" && <CalendlySubTab id={id} worker={worker} />}
+    </div>
+  );
+}
+
+function VoiceSubTab({ id }: { id: string }) {
+  const creds = useQuery({ queryKey: ["vapi-credentials", id], queryFn: () => getVapiCredentials(id) });
+  const [assistantId, setAssistantId] = useState("");
+  const [publicKey, setPublicKey] = useState("");
+  const [secretKey, setSecretKey] = useState("");
+  const qc = useQueryClient();
+  const save = useMutation({
+    mutationFn: () => saveVapiCredentials(id, { vapi_assistant_id: assistantId, vapi_public_key: publicKey, vapi_api_key: secretKey }),
+    onSuccess: () => { setSecretKey(""); qc.invalidateQueries({ queryKey: ["vapi-credentials", id] }); },
+  });
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="font-medium">Voice AI Settings</p>
+        <p className="text-sm text-muted-foreground">Enable voice conversations so customers can call and talk to your digital worker</p>
+      </div>
+
+      {!creds.data?.vapi_credentials_added && (
+        <Card className="border-amber-500/30 bg-amber-500/5"><CardContent className="space-y-2 pt-6 text-sm">
+          <p className="font-medium">Vapi API Key Required</p>
+          <p className="text-muted-foreground">You need these 3 values from your Vapi account to enable voice for this worker.</p>
+          <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
+            <li><b>Assistant ID</b> - In Vapi, go to Assistants {"\u2192"} open your assistant {"\u2192"} copy the Assistant ID (this is not the assistant name).</li>
+            <li><b>Public Key</b> - In Vapi, go to Dashboard {"\u2192"} API Keys {"\u2192"} copy the Public Key (usually starts with pk-).</li>
+            <li><b>Private Key</b> - In Vapi, go to Dashboard {"\u2192"} API Keys {"\u2192"} copy the Private Key (keep this private).</li>
+          </ol>
+          <a href="https://vapi.ai" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-amber-600 hover:underline">
+            Get Vapi ID & Keys <ExternalLink className="size-3.5" />
+          </a>
+        </CardContent></Card>
+      )}
+
+      <Card><CardContent className="space-y-4 pt-6">
+        <p className="text-sm">Voice Status: <span className="font-medium">{creds.data?.vapi_credentials_added ? "Voice is enabled for this worker" : "Voice is not enabled"}</span></p>
+        <div className="space-y-1.5">
+          <Label>Assistant ID</Label>
+          <Input placeholder="e.g. your-vapi-assistant-id" value={assistantId || creds.data?.vapi_assistant_id || ""}
+            onChange={(e) => setAssistantId(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Public Key</Label>
+          <Input placeholder="pk-..." value={publicKey || creds.data?.vapi_public_key || ""}
+            onChange={(e) => setPublicKey(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Secret Key</Label>
+          <Input type="password" placeholder={creds.data?.vapi_api_key_masked || "sk-..."} value={secretKey}
+            onChange={(e) => setSecretKey(e.target.value)} />
+        </div>
+        <div className="flex justify-end">
+          <Button disabled={!assistantId || !publicKey || !secretKey || save.isPending} onClick={() => save.mutate()}>
+            {save.isPending ? "Saving..." : "Save"}
+          </Button>
+        </div>
+      </CardContent></Card>
+    </div>
+  );
+}
+
+function CalendlySubTab({ id, worker }: { id: string; worker?: Agent }) {
+  const savedEventType = worker?.config?.calendly_event_type as string | undefined;
+  const [url, setUrl] = useState("");
+  const save = useMutation({ mutationFn: () => updateCalendlyEventType(id, url) });
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="font-medium">Calendly</p>
+        <p className="text-sm text-muted-foreground">Connect a Calendly event type so your worker can schedule meetings</p>
+      </div>
+      <Card><CardContent className="space-y-3 pt-6">
+        {savedEventType ? (
+          <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm">
+            <p className="font-medium">Selected Calendly event</p>
+            <p className="font-mono text-xs text-muted-foreground">{savedEventType}</p>
+          </div>
+        ) : (
+          <p className="text-sm text-muted-foreground">No Calendly event type connected yet.</p>
+        )}
+        <div className="space-y-1.5">
+          <Label>Calendly event type URL</Label>
+          <Input placeholder="https://calendly.com/you/30min" value={url} onChange={(e) => setUrl(e.target.value)} />
+        </div>
+        <div className="flex justify-end">
+          <Button disabled={!url || save.isPending} onClick={() => save.mutate()}>
+            {savedEventType ? "Change Calendly event" : "Connect Calendly"}
+          </Button>
+        </div>
+      </CardContent></Card>
+    </div>
   );
 }
 

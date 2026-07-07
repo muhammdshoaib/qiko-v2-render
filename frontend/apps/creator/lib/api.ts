@@ -46,6 +46,14 @@ export const markReady = (id: string) => request<Agent>(`/agents/${id}/ready`, {
 export const updateAgentConfig = (id: string, patch: Record<string, unknown>) =>
   request<Agent>(`/agents/${id}/config`, { method: "PUT", body: JSON.stringify({ patch }) });
 
+// Connections: Voice (Vapi.ai) + Calendly
+export type VapiCredentials = { vapi_credentials_added: boolean; vapi_assistant_id: string; vapi_public_key: string; vapi_api_key_masked: string };
+export const getVapiCredentials = (agentId: string) => request<VapiCredentials>(`/agents/${agentId}/vapi-credentials`);
+export const saveVapiCredentials = (agentId: string, body: { vapi_assistant_id: string; vapi_public_key: string; vapi_api_key: string }) =>
+  request<VapiCredentials>(`/agents/${agentId}/vapi-credentials`, { method: "POST", body: JSON.stringify(body) });
+export const updateCalendlyEventType = (agentId: string, calendly_event_type: string) =>
+  request<Agent>(`/agents/${agentId}/calendly-event-type`, { method: "PUT", body: JSON.stringify({ calendly_event_type }) });
+
 // Knowledge + chat
 export type Doc = { doc_id: string; chunks: number };
 export const ingest = (doc_id: string, text: string) =>
