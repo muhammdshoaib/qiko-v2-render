@@ -93,6 +93,10 @@ def get_requirements(request: Request):
     return request.app.state.requirements
 
 
+def get_assignments(request: Request):
+    return request.app.state.assignments
+
+
 def get_chat(request: Request):
     return request.app.state.chat
 

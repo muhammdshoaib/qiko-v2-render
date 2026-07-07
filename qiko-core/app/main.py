@@ -55,6 +55,8 @@ from app.core.tenancy import tenant_dependency
 from app.modules.admin.router import router as admin_router
 from app.modules.agents.router import router as agents_router
 from app.modules.agents.service import AgentService
+from app.modules.assignments.router import router as assignments_router
+from app.modules.assignments.service import AssignmentService
 from app.modules.rfp.router import router as rfp_router
 from app.modules.rfp.service import RequirementService, RfpPackService
 from app.modules.billing.router import router as billing_router
@@ -96,6 +98,7 @@ async def lifespan(app: FastAPI):
         # Flip the live app from in-memory to the Postgres-backed stores (async end-to-end).
         from app.db.stores import (
             SqlAgentStore,
+            SqlAssignmentStore,
             SqlChatStore,
             SqlRequirementStore,
             SqlRfpPackStore,
@@ -112,6 +115,7 @@ async def lifespan(app: FastAPI):
         app.state.agents = AgentService(store=SqlAgentStore(sm))  # workers survive a redeploy
         app.state.rfp_packs = RfpPackService(store=SqlRfpPackStore(sm))
         app.state.requirements = RequirementService(store=SqlRequirementStore(sm))
+        app.state.assignments = AssignmentService(store=SqlAssignmentStore(sm))
         set_user_store(SqlUserStore(sm))  # users/sessions/2FA persist to Postgres
     try:
         yield
@@ -157,6 +161,7 @@ def create_app() -> FastAPI:
     app.state.agents = AgentService()
     app.state.rfp_packs = RfpPackService()
     app.state.requirements = RequirementService()
+    app.state.assignments = AssignmentService()
     app.state.chat = ChatService()
     app.state.teams = TeamService()
     app.state.leads = LeadService(get_email_sender())
@@ -191,9 +196,9 @@ def create_app() -> FastAPI:
     # Every request is tenant-scoped.
     app.include_router(health_router)
     app.include_router(health_router, prefix="/api/v1", dependencies=[Depends(tenant_dependency)])
-    for r in (identity_router, knowledge_router, agents_router, rfp_router, admin_router, chat_router,
-              teams_router, leads_router, billing_router, channels_router, excel_router, voice_router,
-              signal_router, public_chat_router, sources_router, twofa_router,
+    for r in (identity_router, knowledge_router, agents_router, rfp_router, assignments_router, admin_router,
+              chat_router, teams_router, leads_router, billing_router, channels_router, excel_router,
+              voice_router, signal_router, public_chat_router, sources_router, twofa_router,
               onboarding_router, admin_org_router, batch_router):
         app.include_router(r, prefix="/api/v1")
     return app

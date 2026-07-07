@@ -103,6 +103,24 @@ class PackRequirement(Base):
     requirement: Mapped[str] = mapped_column(String)
 
 
+class Assignment(Base):
+    __tablename__ = "assignments"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    pack_id: Mapped[str] = mapped_column(String(64), index=True)
+    agent_id: Mapped[str] = mapped_column(String(64))
+    rfp_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    section_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    section_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    assignee_user_id: Mapped[str] = mapped_column(String(64), index=True)
+    assigned_by_user_id: Mapped[str] = mapped_column(String(64))
+    question: Mapped[str] = mapped_column(String)
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class Passage(Base):
     __tablename__ = "passages"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

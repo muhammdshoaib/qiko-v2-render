@@ -12,6 +12,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Agent as AgentRow
+from app.db.models import Assignment as AssignmentRow
 from app.db.models import Conversation as ConversationRow
 from app.db.models import Message as MessageRow
 from app.db.models import PackRequirement as PackRequirementRow
@@ -21,6 +22,7 @@ from app.db.models import Tenant as TenantRow
 from app.db.models import User as UserRow
 from app.db.models import VerifiedAnswer
 from app.modules.agents.service import Agent
+from app.modules.assignments.service import Assignment, AssignmentNotFound
 from app.modules.chat.service import Message
 from app.modules.identity.rbac import Role
 from app.modules.identity.store import User
@@ -232,6 +234,68 @@ class SqlRequirementStore:
             rows = (await s.execute(select(PackRequirementRow).where(
                 PackRequirementRow.tenant_id == tenant, PackRequirementRow.pack_id == pack_id))).scalars().all()
             return [self._to_domain(r) for r in rows]
+
+
+@dataclass
+class SqlAssignmentStore:
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    def _to_domain(self, r: AssignmentRow) -> Assignment:
+        return Assignment(id=r.id, tenant=r.tenant_id, pack_id=r.pack_id, agent_id=r.agent_id,
+                          rfp_title=r.rfp_title, section_id=r.section_id, section_title=r.section_title,
+                          assignee_user_id=r.assignee_user_id, assigned_by_user_id=r.assigned_by_user_id,
+                          question=r.question, status=r.status, due_at=r.due_at,
+                          completed_at=r.completed_at, created_at=r.created_at)
+
+    async def add(self, a: Assignment) -> Assignment:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(AssignmentRow(id=a.id, tenant_id=a.tenant, pack_id=a.pack_id, agent_id=a.agent_id,
+                                rfp_title=a.rfp_title, section_id=a.section_id, section_title=a.section_title,
+                                assignee_user_id=a.assignee_user_id, assigned_by_user_id=a.assigned_by_user_id,
+                                question=a.question, status=a.status, due_at=a.due_at))
+        return a
+
+    async def list(self, tenant: str, *, pack_id: str | None = None,
+                   assignee_user_id: str | None = None, status: str | None = None) -> list[Assignment]:
+        async with self.sessionmaker() as s:
+            q = select(AssignmentRow).where(AssignmentRow.tenant_id == tenant)
+            if pack_id is not None:
+                q = q.where(AssignmentRow.pack_id == pack_id)
+            if assignee_user_id is not None:
+                q = q.where(AssignmentRow.assignee_user_id == assignee_user_id)
+            if status is not None:
+                q = q.where(AssignmentRow.status == status)
+            rows = (await s.execute(q)).scalars().all()
+            return [self._to_domain(r) for r in rows]
+
+    async def get(self, tenant: str, assignment_id: str) -> Assignment | None:
+        async with self.sessionmaker() as s:
+            row = await s.get(AssignmentRow, assignment_id)
+            if row is None or row.tenant_id != tenant:
+                return None
+            return self._to_domain(row)
+
+    async def update(self, tenant: str, assignment_id: str, **fields) -> Assignment:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(AssignmentRow, assignment_id)
+            if row is None or row.tenant_id != tenant:
+                raise AssignmentNotFound(assignment_id)
+            for k, v in fields.items():
+                setattr(row, k, v)
+            return self._to_domain(row)
+
+    async def delete_by_section(self, tenant: str, pack_id: str, section_id: str) -> int:
+        async with self.sessionmaker() as s, s.begin():
+            result = await s.execute(delete(AssignmentRow).where(
+                AssignmentRow.tenant_id == tenant, AssignmentRow.pack_id == pack_id,
+                AssignmentRow.section_id == section_id))
+            return result.rowcount or 0
+
+    async def delete_by_pack(self, tenant: str, pack_id: str) -> int:
+        async with self.sessionmaker() as s, s.begin():
+            result = await s.execute(delete(AssignmentRow).where(
+                AssignmentRow.tenant_id == tenant, AssignmentRow.pack_id == pack_id))
+            return result.rowcount or 0
 
 
 @dataclass
