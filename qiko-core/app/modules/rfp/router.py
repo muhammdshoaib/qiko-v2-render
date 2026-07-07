@@ -8,6 +8,8 @@ from app.core.deps import authed_tenant, get_requirements, get_rfp_packs, requir
 from app.modules.ai.gateway import get_provider
 from app.modules.identity.rbac import Role
 from app.modules.knowledge.parsing import UnsupportedDocumentError, extract_text
+from app.modules.rfp.brief import BriefError, extract_brief
+from app.modules.rfp.compliance import ComplianceError, extract_compliance
 from app.modules.rfp.extraction import ExtractionError, extract_requirements
 from app.modules.rfp.service import PackRequirement, RfpPack, RfpPackNotFound
 
@@ -92,3 +94,40 @@ async def extract(pack_id: str, file: UploadFile = File(...), tenant: str = Depe
 async def list_requirements(pack_id: str, tenant: str = Depends(authed_tenant),
                             reqs=Depends(get_requirements)) -> list[PackRequirement]:
     return await reqs.list(tenant, pack_id)
+
+
+async def _read_tender_text(pack_id: str, tenant: str, file: UploadFile, packs) -> str:
+    try:
+        await packs.get(tenant, pack_id)
+    except RfpPackNotFound as e:
+        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    data = await file.read()
+    try:
+        return extract_text(file.filename or "document.txt", data)
+    except UnsupportedDocumentError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@router.post("/{pack_id}/compliance")
+async def compliance_check(pack_id: str, file: UploadFile = File(...), tenant: str = Depends(authed_tenant),
+                           _role: dict = Depends(require_role(Role.editor)),
+                           packs=Depends(get_rfp_packs)) -> list[dict]:
+    """Extract mandatory pass/fail compliance items from an uploaded tender document."""
+    text = await _read_tender_text(pack_id, tenant, file, packs)
+    try:
+        return extract_compliance(text, get_provider())
+    except ComplianceError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@router.post("/{pack_id}/brief")
+async def tender_brief(pack_id: str, file: UploadFile = File(...), tenant: str = Depends(authed_tenant),
+                       _role: dict = Depends(require_role(Role.editor)),
+                       packs=Depends(get_rfp_packs)) -> dict:
+    """Extract the Bid Context brief (summary/scope/format/dates/success-criteria/gaps) from an
+    uploaded tender document."""
+    text = await _read_tender_text(pack_id, tenant, file, packs)
+    try:
+        return extract_brief(text, get_provider())
+    except BriefError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
