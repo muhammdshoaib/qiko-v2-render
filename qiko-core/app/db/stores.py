@@ -15,6 +15,7 @@ from app.db.models import Agent as AgentRow
 from app.db.models import Conversation as ConversationRow
 from app.db.models import Message as MessageRow
 from app.db.models import Passage as PassageRow
+from app.db.models import RfpPack as RfpPackRow
 from app.db.models import Tenant as TenantRow
 from app.db.models import User as UserRow
 from app.db.models import VerifiedAnswer
@@ -23,6 +24,7 @@ from app.modules.chat.service import Message
 from app.modules.identity.rbac import Role
 from app.modules.identity.store import User
 from app.modules.knowledge.models import Passage
+from app.modules.rfp.service import RfpPack, RfpPackNotFound
 
 
 @dataclass
@@ -158,6 +160,52 @@ class SqlAgentStore:
                 raise KeyError(agent_id)
             row.status = "ready"
             return self._to_domain(row)
+
+
+@dataclass
+class SqlRfpPackStore:
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    def _to_domain(self, r: RfpPackRow) -> RfpPack:
+        return RfpPack(id=r.id, tenant=r.tenant_id, agent_id=r.agent_id, title=r.title,
+                       client_name=r.client_name, deadline=r.deadline, stage=r.stage,
+                       created_at=r.created_at)
+
+    async def add(self, pack: RfpPack) -> RfpPack:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(RfpPackRow(id=pack.id, tenant_id=pack.tenant, agent_id=pack.agent_id,
+                             title=pack.title, client_name=pack.client_name,
+                             deadline=pack.deadline, stage=pack.stage))
+        return pack
+
+    async def list(self, tenant: str, *, agent_id: str | None = None) -> list[RfpPack]:
+        async with self.sessionmaker() as s:
+            q = select(RfpPackRow).where(RfpPackRow.tenant_id == tenant)
+            if agent_id is not None:
+                q = q.where(RfpPackRow.agent_id == agent_id)
+            rows = (await s.execute(q)).scalars().all()
+            return [self._to_domain(r) for r in rows]
+
+    async def get(self, tenant: str, pack_id: str) -> RfpPack | None:
+        async with self.sessionmaker() as s:
+            row = await s.get(RfpPackRow, pack_id)
+            if row is None or row.tenant_id != tenant:
+                return None
+            return self._to_domain(row)
+
+    async def set_stage(self, tenant: str, pack_id: str, stage: str) -> RfpPack:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(RfpPackRow, pack_id)
+            if row is None or row.tenant_id != tenant:
+                raise RfpPackNotFound(pack_id)
+            row.stage = stage
+            return self._to_domain(row)
+
+    async def delete(self, tenant: str, pack_id: str) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(RfpPackRow, pack_id)
+            if row is not None and row.tenant_id == tenant:
+                await s.delete(row)
 
 
 @dataclass

@@ -85,6 +85,10 @@ def get_agents(request: Request):
     return request.app.state.agents
 
 
+def get_rfp_packs(request: Request):
+    return request.app.state.rfp_packs
+
+
 def get_chat(request: Request):
     return request.app.state.chat
 

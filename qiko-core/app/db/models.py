@@ -80,6 +80,18 @@ class Agent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class RfpPack(Base):
+    __tablename__ = "rfp_packs"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    title: Mapped[str] = mapped_column(String(255))
+    client_name: Mapped[str] = mapped_column(String(255), default="")
+    deadline: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    stage: Mapped[str] = mapped_column(String(16), default="parsed")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class Passage(Base):
     __tablename__ = "passages"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

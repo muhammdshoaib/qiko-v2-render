@@ -55,6 +55,8 @@ from app.core.tenancy import tenant_dependency
 from app.modules.admin.router import router as admin_router
 from app.modules.agents.router import router as agents_router
 from app.modules.agents.service import AgentService
+from app.modules.rfp.router import router as rfp_router
+from app.modules.rfp.service import RfpPackService
 from app.modules.billing.router import router as billing_router
 from app.modules.billing.subscriptions import SubscriptionService
 from app.modules.billing.webhook import StripeWebhookHandler
@@ -92,7 +94,13 @@ async def lifespan(app: FastAPI):
     app.state.sessionmaker = build_sessionmaker(engine)
     if get_settings().use_db_stores:
         # Flip the live app from in-memory to the Postgres-backed stores (async end-to-end).
-        from app.db.stores import SqlAgentStore, SqlChatStore, SqlUserStore, SqlVectorStore
+        from app.db.stores import (
+            SqlAgentStore,
+            SqlChatStore,
+            SqlRfpPackStore,
+            SqlUserStore,
+            SqlVectorStore,
+        )
         from app.modules.identity.router import set_store as set_user_store
 
         sm = app.state.sessionmaker
@@ -101,6 +109,7 @@ async def lifespan(app: FastAPI):
         app.state.sources = KnowledgeSources(app.state.knowledge)
         app.state.chat = ChatService(store=SqlChatStore(sm))
         app.state.agents = AgentService(store=SqlAgentStore(sm))  # workers survive a redeploy
+        app.state.rfp_packs = RfpPackService(store=SqlRfpPackStore(sm))
         set_user_store(SqlUserStore(sm))  # users/sessions/2FA persist to Postgres
     try:
         yield
@@ -144,6 +153,7 @@ def create_app() -> FastAPI:
     # when the matching secret is configured, dev stub otherwise -- see the selector block below).
     app.state.knowledge = KnowledgeService()
     app.state.agents = AgentService()
+    app.state.rfp_packs = RfpPackService()
     app.state.chat = ChatService()
     app.state.teams = TeamService()
     app.state.leads = LeadService(get_email_sender())
@@ -178,7 +188,7 @@ def create_app() -> FastAPI:
     # Every request is tenant-scoped.
     app.include_router(health_router)
     app.include_router(health_router, prefix="/api/v1", dependencies=[Depends(tenant_dependency)])
-    for r in (identity_router, knowledge_router, agents_router, admin_router, chat_router,
+    for r in (identity_router, knowledge_router, agents_router, rfp_router, admin_router, chat_router,
               teams_router, leads_router, billing_router, channels_router, excel_router, voice_router,
               signal_router, public_chat_router, sources_router, twofa_router,
               onboarding_router, admin_org_router, batch_router):
