@@ -1,7 +1,7 @@
 """Functional API tests for chat/teams/leads/billing/channels/excel/voice/signal routers (authenticated)."""
 import base64
 
-from tests.helpers import auth_cookies
+from tests.helpers import auth_cookies, bootstrap_admin
 
 C = auth_cookies("acme", "owner")
 ISO = "IDG holds a current ISO 9001 certification valid through 2027."
@@ -100,14 +100,14 @@ def test_admin_customers_requires_admin(client):
     assert client.get("/api/v1/admin/customers", cookies=auth_cookies("t", "admin")).status_code == 403
 
     admin_email = "platform-admin2@qiko.ai"
-    client.app.state.admin_org.bootstrap_super_admin(admin_email)
+    bootstrap_admin(client, admin_email)
     body = client.get("/api/v1/admin/customers", cookies=auth_cookies("t", "viewer", email=admin_email)).json()
     assert body["total"] == 0
 
 
 def test_admin_overview_and_analytics(client):
     admin_email = "platform-admin3@qiko.ai"
-    client.app.state.admin_org.bootstrap_super_admin(admin_email)
+    bootstrap_admin(client, admin_email)
     admin_cookies = auth_cookies("t", "viewer", email=admin_email)
 
     ov = client.get("/api/v1/admin/overview", cookies=admin_cookies).json()

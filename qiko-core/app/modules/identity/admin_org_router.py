@@ -18,15 +18,15 @@ def _actor_email(claims: dict) -> str:
 
 
 @router.post("/bootstrap")
-def bootstrap(claims: dict = Depends(current_claims), org=Depends(get_admin_org)) -> dict:
+async def bootstrap(claims: dict = Depends(current_claims), org=Depends(get_admin_org)) -> dict:
     """First-run only: the very first authenticated caller becomes super_admin. Once any admin
     exists, this is a no-op (use /invite, super_admin-only, to add more) -- so this can never be
     used to self-escalate after initial setup, and it's keyed by email like everything else here
     (never the tenant role, which every signed-up user satisfies as "owner" of their own tenant)."""
-    if not org.is_empty():
+    if not await org.is_empty():
         raise HTTPException(status_code=409, detail="already bootstrapped")
     email = _actor_email(claims)
-    org.bootstrap_super_admin(email)
+    await org.bootstrap_super_admin(email)
     return {"super_admin": email}
 
 
@@ -36,9 +36,9 @@ class InviteBody(BaseModel):
 
 
 @router.post("/invite")
-def invite(body: InviteBody, claims: dict = Depends(current_claims), org=Depends(get_admin_org)) -> dict:
+async def invite(body: InviteBody, claims: dict = Depends(current_claims), org=Depends(get_admin_org)) -> dict:
     try:
-        return {"token": org.invite(_actor_email(claims), body.email, body.role)}
+        return {"token": await org.invite(_actor_email(claims), body.email, body.role)}
     except AdminAuthzError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
 
@@ -48,23 +48,23 @@ class AcceptBody(BaseModel):
 
 
 @router.post("/accept")
-def accept(body: AcceptBody, org=Depends(get_admin_org)) -> dict:
+async def accept(body: AcceptBody, org=Depends(get_admin_org)) -> dict:
     try:
-        return {"role": org.accept(body.token).value}
+        return {"role": (await org.accept(body.token)).value}
     except AdminAuthzError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.delete("/{email}")
-def remove(email: str, claims: dict = Depends(current_claims), org=Depends(get_admin_org)) -> dict:
+async def remove(email: str, claims: dict = Depends(current_claims), org=Depends(get_admin_org)) -> dict:
     try:
-        org.remove(_actor_email(claims), email)
+        await org.remove(_actor_email(claims), email)
     except AdminAuthzError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
     return {"removed": email}
 
 
 @router.get("/role/{email}")
-def role_of(email: str, _claims: dict = Depends(current_claims), org=Depends(get_admin_org)) -> dict:
-    role = org.role_of(email)
+async def role_of(email: str, _claims: dict = Depends(current_claims), org=Depends(get_admin_org)) -> dict:
+    role = await org.role_of(email)
     return {"email": email, "role": role.value if role else None}

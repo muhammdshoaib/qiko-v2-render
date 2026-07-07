@@ -1,10 +1,10 @@
-from tests.helpers import auth_cookies
+from tests.helpers import auth_cookies, bootstrap_admin
 
 ADMIN_EMAIL = "platform-admin4@qiko.ai"
 
 
 def _admin_cookies(client):
-    client.app.state.admin_org.bootstrap_super_admin(ADMIN_EMAIL)
+    bootstrap_admin(client, ADMIN_EMAIL)
     return auth_cookies("adm", "viewer", email=ADMIN_EMAIL)
 
 

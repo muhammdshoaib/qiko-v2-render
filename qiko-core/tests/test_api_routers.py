@@ -1,5 +1,5 @@
 """Functional API tests via TestClient: routers are authenticated, tenant-scoped (from token), RBAC-gated."""
-from tests.helpers import auth_cookies
+from tests.helpers import auth_cookies, bootstrap_admin
 
 C = auth_cookies("acme", "owner")
 ISO = "IDG holds a current ISO 9001 certification valid through 2027."
@@ -96,6 +96,6 @@ def test_admin_requires_platform_admin_not_tenant_role(client):
     assert client.post("/api/v1/admin/revenue", json=subs, cookies=auth_cookies("t", "admin")).status_code == 403
 
     admin_email = "platform-admin@qiko.ai"
-    client.app.state.admin_org.bootstrap_super_admin(admin_email)
+    bootstrap_admin(client, admin_email)
     ok = client.post("/api/v1/admin/revenue", json=subs, cookies=auth_cookies("t", "viewer", email=admin_email))
     assert ok.json()["active_subscriptions"] == 1

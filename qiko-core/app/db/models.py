@@ -121,6 +121,13 @@ class Assignment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class PlatformAdmin(Base):
+    __tablename__ = "platform_admins"
+    email: Mapped[str] = mapped_column(String(320), primary_key=True)
+    role: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class Passage(Base):
     __tablename__ = "passages"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

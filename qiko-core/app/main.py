@@ -97,6 +97,7 @@ async def lifespan(app: FastAPI):
     if get_settings().use_db_stores:
         # Flip the live app from in-memory to the Postgres-backed stores (async end-to-end).
         from app.db.stores import (
+            SqlAdminOrgStore,
             SqlAgentStore,
             SqlAssignmentStore,
             SqlChatStore,
@@ -116,6 +117,7 @@ async def lifespan(app: FastAPI):
         app.state.rfp_packs = RfpPackService(store=SqlRfpPackStore(sm))
         app.state.requirements = RequirementService(store=SqlRequirementStore(sm))
         app.state.assignments = AssignmentService(store=SqlAssignmentStore(sm))
+        app.state.admin_org = AdminOrg(store=SqlAdminOrgStore(sm))  # platform admins survive a redeploy
         set_user_store(SqlUserStore(sm))  # users/sessions/2FA persist to Postgres
     try:
         yield

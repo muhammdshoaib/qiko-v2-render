@@ -49,9 +49,9 @@ def require_role(minimum: Role):
     return _dep
 
 
-def _platform_admin_role(request: Request, claims: dict = Depends(current_claims)):
+async def _platform_admin_role(request: Request, claims: dict = Depends(current_claims)):
     email = claims.get("email")
-    role = request.app.state.admin_org.role_of(email) if email else None
+    role = await request.app.state.admin_org.role_of(email) if email else None
     if role is None:
         raise HTTPException(status_code=403, detail="platform admin access required")
     return role

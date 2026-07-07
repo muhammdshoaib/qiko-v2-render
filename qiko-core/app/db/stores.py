@@ -17,6 +17,7 @@ from app.db.models import Conversation as ConversationRow
 from app.db.models import Message as MessageRow
 from app.db.models import PackRequirement as PackRequirementRow
 from app.db.models import Passage as PassageRow
+from app.db.models import PlatformAdmin as PlatformAdminRow
 from app.db.models import RfpPack as RfpPackRow
 from app.db.models import Tenant as TenantRow
 from app.db.models import User as UserRow
@@ -24,6 +25,7 @@ from app.db.models import VerifiedAnswer
 from app.modules.agents.service import Agent
 from app.modules.assignments.service import Assignment, AssignmentNotFound
 from app.modules.chat.service import Message
+from app.modules.identity.admin_rbac import AdminRole
 from app.modules.identity.rbac import Role
 from app.modules.identity.store import User
 from app.modules.knowledge.models import Passage
@@ -336,3 +338,34 @@ class SqlChatStore:
         async with self.sessionmaker() as s, s.begin():
             await s.execute(delete(MessageRow).where(MessageRow.tenant_id == tenant,
                                                      MessageRow.conversation_id == conversation_id))
+
+
+@dataclass
+class SqlAdminOrgStore:
+    """Persists the platform-admin registry (SCRUM-80) -- previously in-memory, wiped on every
+    redeploy, which made /admin/org/bootstrap a "first caller after a redeploy wins" race."""
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def get(self, email: str) -> AdminRole | None:
+        async with self.sessionmaker() as s:
+            row = await s.get(PlatformAdminRow, email.lower())
+            return AdminRole(row.role) if row else None
+
+    async def set(self, email: str, role: AdminRole) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(PlatformAdminRow, email.lower())
+            if row is None:
+                s.add(PlatformAdminRow(email=email.lower(), role=role.value))
+            else:
+                row.role = role.value
+
+    async def delete(self, email: str) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(PlatformAdminRow, email.lower())
+            if row is not None:
+                await s.delete(row)
+
+    async def is_empty(self) -> bool:
+        async with self.sessionmaker() as s:
+            row = (await s.execute(select(PlatformAdminRow).limit(1))).scalars().first()
+            return row is None
