@@ -9,5 +9,11 @@ aws ssm get-parameter --region me-central-1 --name /qiko/preprod/ENV --with-decr
 C="docker compose -f docker-compose.yml -f docker-compose.preprod.yml"
 $C up -d --build
 sleep 15
-$C exec -T qiko-core alembic upgrade head
+# Retry migrations for a bit: qiko-core may still be starting up (DB connection not ready yet)
+# right after `up -d`, and a failed migration must never be silently swallowed (see git history).
+for i in 1 2 3 4 5; do
+  $C exec -T qiko-core alembic upgrade head && break
+  echo "alembic upgrade head failed (attempt $i/5), retrying in 10s..."
+  sleep 10
+done
 $C ps --format "{{.Service}} {{.State}} {{.Status}}"
