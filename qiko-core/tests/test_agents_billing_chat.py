@@ -14,7 +14,8 @@ ISO = "IDG holds a current ISO 9001 certification valid through 2027."
 def test_plan_worker_limit_gating():
     assert can_create_worker(0, get_plan("free")) is True
     assert can_create_worker(1, get_plan("free")) is False       # free limit 1
-    assert can_create_worker(4, get_plan("pro")) is True         # pro limit 5
+    assert can_create_worker(2, get_plan("pro")) is True         # pro (Premium) limit 3
+    assert can_create_worker(3, get_plan("pro")) is False
     assert can_create_worker(999, get_plan("enterprise")) is True  # unlimited
 
 

@@ -66,16 +66,20 @@ class CheckoutBody(BaseModel):
 
 @router.get("/plans")
 def plans() -> list[dict]:
-    """Public pricing catalog (for the onboarding plan step)."""
-    from app.modules.billing.plans import PLANS
+    """Public pricing catalog (for the onboarding plan step and the Pricing page). Real product
+    shows Premium + Enterprise as self-serve/contact-sales tiers (verified live on
+    stage-app.qiko.ai/app/pricing) -- Basic is a contact-sales-only tier, not listed here."""
+    from app.modules.billing.plans import list_plans
 
     out = []
-    for i, p in enumerate(PLANS.values(), start=1):
+    for i, p in enumerate(list_plans(), start=1):
+        is_custom = p.price_cents < 0
         out.append({
-            "id": i, "name": p.name.title(), "price_id": f"price_{p.name}",
-            "amount": p.price_cents, "interval": "month",
-            "display_price": "Custom" if p.price_cents == 0 and p.name != "free" else f"${p.price_cents // 100}",
-            "features": [f"{'Unlimited' if p.worker_limit < 0 else p.worker_limit} worker(s)"],
+            "id": i, "name": p.display_name, "price_id": f"price_{p.name}",
+            "amount": 0 if is_custom else p.price_cents, "interval": "month",
+            "display_price": "Custom Pricing" if is_custom else f"${p.price_cents // 100}",
+            "worker_limit": p.worker_limit,
+            "features": p.features,
         })
     return out
 

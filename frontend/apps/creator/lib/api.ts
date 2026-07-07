@@ -120,3 +120,7 @@ export const publicChat = (tenant: string, workerId: string, question: string) =
 export type Subscription = { customer_id: string; plan?: string; status: string };
 export const subscriptionStatus = (customerId: string) =>
   request<Subscription>(`/billing/subscription/${encodeURIComponent(customerId)}`);
+export type BillingPlan = { id: number; name: string; price_id: string; amount: number; interval: string; display_price: string; worker_limit: number; features: string[] };
+export const listPlans = () => request<BillingPlan[]>("/billing/plans");
+export const startCheckout = (customerId: string, plan: string, priceId: string) =>
+  request<{ url: string }>("/billing/checkout", { method: "POST", body: JSON.stringify({ customer_id: customerId, plan, price_id: priceId }) });

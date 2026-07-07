@@ -8,6 +8,25 @@ def test_checkout_and_portal(client):
     assert "url" in client.get("/api/v1/billing/portal/cus1", cookies=C).json()
 
 
+def test_plans_match_the_real_product(client):
+    """Regression: the catalog used to be Free/Pro/Enterprise with a generic worker-count feature
+    list. The real product (verified live on stage-app.qiko.ai/app/pricing) is Premium ($49/mo,
+    3 workers) and Enterprise (custom pricing, everything in Premium plus more)."""
+    plans = client.get("/api/v1/billing/plans", cookies=C).json()
+    names = [p["name"] for p in plans]
+    assert names == ["Premium", "Enterprise"]
+
+    premium = plans[0]
+    assert premium["display_price"] == "$49"
+    assert premium["worker_limit"] == 3
+    assert "3 Digital Workers" in premium["features"]
+
+    enterprise = plans[1]
+    assert enterprise["display_price"] == "Custom Pricing"
+    assert enterprise["worker_limit"] == -1
+    assert "Dedicated Account Manager" in enterprise["features"]
+
+
 def test_subscription_cancel_resume(client):
     client.post("/api/v1/billing/subscription/cus2/activate", json={"plan": "pro"}, cookies=C)
     assert client.post("/api/v1/billing/subscription/cus2/cancel", cookies=C).json()["cancel_at_period_end"] is True

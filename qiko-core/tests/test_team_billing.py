@@ -31,10 +31,10 @@ def test_cancelling_member_is_not_billing_user():
 
 
 def test_team_plan_and_worker_limit():
-    subs = _subs_with("bob", "pro")  # limit 5
+    subs = _subs_with("bob", "pro")  # Premium, limit 3
     members = ["alice", "bob"]
     assert team_plan(members, subs).name == "pro"
-    assert can_team_create_worker(members, 4, subs) is True
-    assert can_team_create_worker(members, 5, subs) is False   # team-wide limit
+    assert can_team_create_worker(members, 2, subs) is True
+    assert can_team_create_worker(members, 3, subs) is False   # team-wide limit
     # no active sub -> free (limit 1)
     assert can_team_create_worker(["x"], 1, _subs_with(None)) is False

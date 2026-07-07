@@ -29,7 +29,7 @@ def test_lifecycle_activate_cancel_resume():
     assert svc.status("cus_1").cancel_at_period_end is True   # active until period end
     svc.resume("cus_1")
     assert svc.status("cus_1").cancel_at_period_end is False
-    assert svc.plan_for("cus_1").worker_limit == 5            # pro
+    assert svc.plan_for("cus_1").worker_limit == 3            # pro (Premium: 3 workers)
 
 
 def test_plan_defaults_to_free_without_subscription():

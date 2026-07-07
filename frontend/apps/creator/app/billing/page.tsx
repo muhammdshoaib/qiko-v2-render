@@ -5,13 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Check } from "lucide-react";
 import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, Label, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
-import { subscriptionStatus } from "@/lib/api";
-
-const PLANS = [
-  { id: "free", name: "Free", price: "$0", features: ["1 worker", "Community support"] },
-  { id: "pro", name: "Pro", price: "$49", features: ["5 workers", "Priority support", "Channels"] },
-  { id: "enterprise", name: "Enterprise", price: "Custom", features: ["Unlimited workers", "SSO", "SLA"] },
-];
+import { listPlans, subscriptionStatus, type BillingPlan } from "@/lib/api";
 
 export default function BillingPage() {
   const [customerId, setCustomerId] = useState("");
@@ -21,10 +15,16 @@ export default function BillingPage() {
     queryFn: () => subscriptionStatus(lookup),
     enabled: !!lookup,
   });
+  const plans = useQuery({ queryKey: ["plans"], queryFn: listPlans });
 
   return (
     <AppShell title="Billing">
-      <div className="mx-auto max-w-3xl space-y-6">
+      <div className="mx-auto max-w-4xl space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold">Plans &amp; Pricing</h1>
+          <p className="text-sm text-muted-foreground">Choose the right plan for your needs</p>
+        </div>
+
         <Card>
           <CardHeader><CardTitle>Subscription status</CardTitle></CardHeader>
           <CardContent className="space-y-4">
@@ -42,29 +42,69 @@ export default function BillingPage() {
           </CardContent>
         </Card>
 
-        <div>
-          <h3 className="mb-3 text-sm font-medium text-muted-foreground">Plans</h3>
-          <div className="grid gap-4 sm:grid-cols-3">
-            {PLANS.map((p) => (
-              <Card key={p.id} className={cn(p.id === "pro" && "ring-2 ring-primary")}>
-                <CardContent className="space-y-3 pt-6">
-                  <div className="flex items-baseline justify-between">
-                    <p className="font-semibold">{p.name}</p>
-                    {p.id === "pro" && <Badge>Popular</Badge>}
-                  </div>
-                  <p className="text-2xl font-bold">{p.price}<span className="text-sm font-normal text-muted-foreground">/mo</span></p>
-                  <ul className="space-y-1.5 text-sm text-muted-foreground">
-                    {p.features.map((f) => <li key={f} className="flex items-center gap-2"><Check className="size-4 text-success" /> {f}</li>)}
-                  </ul>
-                  <Button variant={p.id === "pro" ? "default" : "outline"} className="w-full">
-                    {p.id === "enterprise" ? "Contact sales" : "Choose plan"}
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {plans.data?.map((p) => (
+            <Card key={p.id} className={cn(p.name === "Enterprise" && "ring-2 ring-primary")}>
+              <CardContent className="space-y-3 pt-6">
+                <div className="flex items-baseline justify-between">
+                  <p className="font-semibold">{p.name}</p>
+                  {p.name === "Enterprise" && <Badge>Most Popular</Badge>}
+                </div>
+                <p className="text-2xl font-bold">
+                  {p.display_price}
+                  {p.display_price !== "Custom Pricing" && <span className="text-sm font-normal text-muted-foreground">/month</span>}
+                </p>
+                <ul className="space-y-1.5 text-sm text-muted-foreground">
+                  {p.features.map((f) => <li key={f} className="flex items-center gap-2"><Check className="size-4 text-success" /> {f}</li>)}
+                </ul>
+                <Button variant={p.name === "Enterprise" ? "outline" : "default"} className="w-full">
+                  {p.name === "Enterprise" ? "Contact Us" : "Choose Plan"}
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
         </div>
+
+        {plans.data && <FeatureComparison plans={plans.data} />}
       </div>
     </AppShell>
+  );
+}
+
+function FeatureComparison({ plans }: { plans: BillingPlan[] }) {
+  const allFeatures = Array.from(new Set(plans.flatMap((p) => p.features)));
+  return (
+    <Card>
+      <CardHeader><CardTitle>Feature Comparison</CardTitle></CardHeader>
+      <CardContent>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border text-left text-muted-foreground">
+              <th className="py-2 font-medium">Feature</th>
+              {plans.map((p) => <th key={p.id} className="py-2 font-medium">{p.name}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-b border-border/60">
+              <td className="py-2">Digital Workers</td>
+              {plans.map((p) => (
+                <td key={p.id} className="py-2">{p.worker_limit < 0 ? "Custom / Scalable" : p.worker_limit}</td>
+              ))}
+            </tr>
+            {allFeatures.map((f) => (
+              <tr key={f} className="border-b border-border/60">
+                <td className="py-2">{f}</td>
+                {plans.map((p) => (
+                  <td key={p.id} className="py-2">
+                    {p.features.includes(f) || p.features.includes("Everything in Premium")
+                      ? <Check className="size-4 text-success" /> : <span className="text-muted-foreground">—</span>}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
   );
 }
