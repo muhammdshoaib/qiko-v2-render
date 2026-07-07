@@ -90,8 +90,12 @@ function TrainTab({ id, worker, docs, loading, onKnowledgeChange, onWorkerChange
           </button>
         ))}
       </div>
-      {step === "Background" && <BackgroundStep id={id} worker={worker} onSaved={onWorkerChange} />}
-      {step === "Tone" && <ToneStep id={id} worker={worker} onSaved={onWorkerChange} />}
+      {step === "Background" && (
+        <BackgroundStep key={worker ? "loaded" : "loading"} id={id} worker={worker} onSaved={onWorkerChange} />
+      )}
+      {step === "Tone" && (
+        <ToneStep key={worker ? "loaded" : "loading"} id={id} worker={worker} onSaved={onWorkerChange} />
+      )}
       {step === "Behavior" && <BehaviorStep id={id} />}
       {step === "Knowledge" && <KnowledgeStep id={id} docs={docs} loading={loading} onChange={onKnowledgeChange} />}
     </div>
