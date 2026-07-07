@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.db.models import Agent as AgentRow
 from app.db.models import Conversation as ConversationRow
 from app.db.models import Message as MessageRow
+from app.db.models import PackRequirement as PackRequirementRow
 from app.db.models import Passage as PassageRow
 from app.db.models import RfpPack as RfpPackRow
 from app.db.models import Tenant as TenantRow
@@ -24,7 +25,7 @@ from app.modules.chat.service import Message
 from app.modules.identity.rbac import Role
 from app.modules.identity.store import User
 from app.modules.knowledge.models import Passage
-from app.modules.rfp.service import RfpPack, RfpPackNotFound
+from app.modules.rfp.service import PackRequirement, RfpPack, RfpPackNotFound
 
 
 @dataclass
@@ -206,6 +207,31 @@ class SqlRfpPackStore:
             row = await s.get(RfpPackRow, pack_id)
             if row is not None and row.tenant_id == tenant:
                 await s.delete(row)
+
+
+@dataclass
+class SqlRequirementStore:
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    def _to_domain(self, r: PackRequirementRow) -> PackRequirement:
+        return PackRequirement(id=r.id, tenant=r.tenant_id, pack_id=r.pack_id, req_id=r.req_id,
+                               title=r.title, classification=r.classification, requirement=r.requirement)
+
+    async def replace_all(self, tenant: str, pack_id: str, items: list[PackRequirement]) -> list[PackRequirement]:
+        async with self.sessionmaker() as s, s.begin():
+            await s.execute(delete(PackRequirementRow).where(
+                PackRequirementRow.tenant_id == tenant, PackRequirementRow.pack_id == pack_id))
+            for item in items:
+                s.add(PackRequirementRow(id=item.id, tenant_id=tenant, pack_id=pack_id, req_id=item.req_id,
+                                         title=item.title, classification=item.classification,
+                                         requirement=item.requirement))
+        return items
+
+    async def list(self, tenant: str, pack_id: str) -> list[PackRequirement]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(select(PackRequirementRow).where(
+                PackRequirementRow.tenant_id == tenant, PackRequirementRow.pack_id == pack_id))).scalars().all()
+            return [self._to_domain(r) for r in rows]
 
 
 @dataclass

@@ -56,7 +56,7 @@ from app.modules.admin.router import router as admin_router
 from app.modules.agents.router import router as agents_router
 from app.modules.agents.service import AgentService
 from app.modules.rfp.router import router as rfp_router
-from app.modules.rfp.service import RfpPackService
+from app.modules.rfp.service import RequirementService, RfpPackService
 from app.modules.billing.router import router as billing_router
 from app.modules.billing.subscriptions import SubscriptionService
 from app.modules.billing.webhook import StripeWebhookHandler
@@ -97,6 +97,7 @@ async def lifespan(app: FastAPI):
         from app.db.stores import (
             SqlAgentStore,
             SqlChatStore,
+            SqlRequirementStore,
             SqlRfpPackStore,
             SqlUserStore,
             SqlVectorStore,
@@ -110,6 +111,7 @@ async def lifespan(app: FastAPI):
         app.state.chat = ChatService(store=SqlChatStore(sm))
         app.state.agents = AgentService(store=SqlAgentStore(sm))  # workers survive a redeploy
         app.state.rfp_packs = RfpPackService(store=SqlRfpPackStore(sm))
+        app.state.requirements = RequirementService(store=SqlRequirementStore(sm))
         set_user_store(SqlUserStore(sm))  # users/sessions/2FA persist to Postgres
     try:
         yield
@@ -154,6 +156,7 @@ def create_app() -> FastAPI:
     app.state.knowledge = KnowledgeService()
     app.state.agents = AgentService()
     app.state.rfp_packs = RfpPackService()
+    app.state.requirements = RequirementService()
     app.state.chat = ChatService()
     app.state.teams = TeamService()
     app.state.leads = LeadService(get_email_sender())

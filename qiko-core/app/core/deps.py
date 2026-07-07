@@ -89,6 +89,10 @@ def get_rfp_packs(request: Request):
     return request.app.state.rfp_packs
 
 
+def get_requirements(request: Request):
+    return request.app.state.requirements
+
+
 def get_chat(request: Request):
     return request.app.state.chat
 

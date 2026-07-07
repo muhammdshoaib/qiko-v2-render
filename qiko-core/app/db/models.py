@@ -92,6 +92,17 @@ class RfpPack(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class PackRequirement(Base):
+    __tablename__ = "rfp_pack_requirements"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    pack_id: Mapped[str] = mapped_column(String(64), index=True)
+    req_id: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(255))
+    classification: Mapped[str] = mapped_column(String(16))
+    requirement: Mapped[str] = mapped_column(String)
+
+
 class Passage(Base):
     __tablename__ = "passages"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

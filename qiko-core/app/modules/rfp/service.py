@@ -101,3 +101,52 @@ class RfpPackService:
 
     async def delete(self, tenant: str, pack_id: str) -> None:
         await self.store.delete(tenant, pack_id)
+
+
+@dataclass
+class PackRequirement:
+    id: str
+    tenant: str
+    pack_id: str
+    req_id: str
+    title: str
+    classification: str
+    requirement: str
+
+
+class RequirementStore(Protocol):
+    async def replace_all(self, tenant: str, pack_id: str, items: list[PackRequirement]) -> list[PackRequirement]: ...
+    async def list(self, tenant: str, pack_id: str) -> list[PackRequirement]: ...
+
+
+@dataclass
+class InMemoryRequirementStore:
+    _by_pack: dict[str, list[PackRequirement]] = field(default_factory=dict)
+
+    async def replace_all(self, tenant: str, pack_id: str, items: list[PackRequirement]) -> list[PackRequirement]:
+        self._by_pack[pack_id] = items
+        return items
+
+    async def list(self, tenant: str, pack_id: str) -> list[PackRequirement]:
+        return [r for r in self._by_pack.get(pack_id, []) if r.tenant == tenant]
+
+
+@dataclass
+class RequirementService:
+    store: RequirementStore = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.store is None:
+            self.store = InMemoryRequirementStore()
+
+    async def save_extracted(self, tenant: str, pack_id: str, extracted: list[dict]) -> list[PackRequirement]:
+        items = [
+            PackRequirement(id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id,
+                            req_id=e["id"], title=e["title"], classification=e["classification"],
+                            requirement=e["requirement"])
+            for e in extracted
+        ]
+        return await self.store.replace_all(tenant, pack_id, items)
+
+    async def list(self, tenant: str, pack_id: str) -> list[PackRequirement]:
+        return await self.store.list(tenant, pack_id)
