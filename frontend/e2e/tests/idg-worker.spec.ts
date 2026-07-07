@@ -27,4 +27,22 @@ test.describe("IDG worker - grounded answering critical path", () => {
     await expect(page.getByText(/(Auto-accepted|Needs review) · \d+%/)).toBeVisible({ timeout: 20000 });
     await expect(page.getByText(/source\(s\) from the knowledge base/)).toBeVisible();
   });
+
+  test("Studio Overview shows real per-worker metrics and use-case tiles", async ({ page }) => {
+    await page.goto("/login");
+    await page.locator("#email").fill(EMAIL!);
+    await page.locator("#password").fill(PASSWORD!);
+    await page.locator("#password").press("Enter");
+    await expect(page).toHaveURL(/\/dashboard/);
+
+    await page.goto("/studio");
+    await page.getByRole("button", { name: /Pre Sales Writer Worker/i }).first().click();
+
+    // Overview is the default tab: metric tiles + use-case grid (Studio dashboard, SCRUM-70).
+    await expect(page.getByText("Active Bids")).toBeVisible();
+    await expect(page.getByText("Avg Readiness")).toBeVisible();
+    await expect(page.getByText("AI Response Generation")).toBeVisible();
+    await expect(page.getByText("Compliance Checker")).toBeVisible();
+    await expect(page.getByText("Coming soon").first()).toBeVisible();
+  });
 });

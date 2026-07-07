@@ -93,6 +93,12 @@ export const createTeam = (owner_id: string) =>
 export const addTeamMember = (teamId: string, user_id: string, role: string) =>
   request<Team>(`/teams/${teamId}/members`, { method: "POST", body: JSON.stringify({ user_id, role }) });
 
+// RFP packs (tenders a worker is answering) + section assignments
+export type RfpPack = { id: string; tenant: string; agent_id: string; title: string; client_name: string; deadline: string | null; stage: string; created_at: string };
+export const listRfpPacks = (agentId: string) => request<RfpPack[]>(`/rfp/packs?agent_id=${encodeURIComponent(agentId)}`);
+export type PackRequirement = { id: string; pack_id: string; req_id: string; title: string; classification: string; requirement: string };
+export const listRequirements = (packId: string) => request<PackRequirement[]>(`/rfp/packs/${packId}/requirements`);
+
 // Public embed chat (no auth)
 export const publicChat = (tenant: string, workerId: string, question: string) =>
   request<{ role: string; text: string }>("/public/chat", {

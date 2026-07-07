@@ -3,17 +3,23 @@
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Bot, Download, MessageSquare, Search, SendHorizonal } from "lucide-react";
+import {
+  ArrowLeft, Bot, CheckCircle2, ClipboardCheck, Download, FileText, ListChecks,
+  Lock, MessageSquare, Search, SendHorizonal, Shield, TrendingUp, Users,
+} from "lucide-react";
 import { Badge, Button, Card, CardContent } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
-import { ask, batchAnswer, batchExportUrl, listAgents, type BatchAnswer } from "@/lib/api";
+import {
+  ask, batchAnswer, batchExportUrl, listAgents, listDocuments, listRfpPacks,
+  type BatchAnswer, type RfpPack,
+} from "@/lib/api";
 
-const TABS = ["Chat", "Research"] as const;
+const TABS = ["Overview", "Chat", "Research"] as const;
 
 export default function StudioWorkerPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const [tab, setTab] = useState<(typeof TABS)[number]>("Chat");
+  const [tab, setTab] = useState<(typeof TABS)[number]>("Overview");
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const worker = agents.data?.find((a) => a.id === id);
 
@@ -43,10 +49,90 @@ export default function StudioWorkerPage() {
           ))}
         </div>
 
+        {tab === "Overview" && (
+          <StudioOverview agentId={id} onOpenResearch={() => setTab("Research")}
+            onOpenKnowledge={() => router.push(`/workers/${id}`)} />
+        )}
         {tab === "Chat" && <StudioChat />}
         {tab === "Research" && <StudioResearch />}
       </div>
     </AppShell>
+  );
+}
+
+type UseCase = { title: string; description: string; icon: typeof FileText; status: "active" | "coming_soon"; onClick?: () => void };
+
+function StudioOverview({ agentId, onOpenResearch, onOpenKnowledge }: {
+  agentId: string; onOpenResearch: () => void; onOpenKnowledge: () => void;
+}) {
+  const packs = useQuery({ queryKey: ["rfp-packs", agentId], queryFn: () => listRfpPacks(agentId) });
+  const docs = useQuery({ queryKey: ["documents"], queryFn: listDocuments });
+
+  const activeBids = packs.data?.length ?? 0;
+  const inReview = packs.data?.filter((p: RfpPack) => p.stage === "review" || p.stage === "final").length ?? 0;
+  const avgReadiness = activeBids > 0 ? Math.round((inReview / activeBids) * 100) : 0;
+  const dataVolume = docs.data?.reduce((n, d) => n + d.chunks, 0) ?? 0;
+  const nextDeadline = packs.data?.map((p) => p.deadline).filter(Boolean).sort()[0] ?? null;
+
+  const metrics = [
+    { label: "Active Bids", value: String(activeBids) },
+    { label: "Avg Readiness", value: activeBids > 0 ? `${avgReadiness}%` : "\u2014" },
+    { label: "Data volume", value: `${dataVolume} chunks` },
+    { label: "Next Bid", value: nextDeadline ?? "\u2014" },
+  ];
+
+  const useCases: UseCase[] = [
+    { title: "AI Response Generation", description: "Generate section-by-section RFP responses from the knowledge base",
+      icon: FileText, status: "active", onClick: onOpenResearch },
+    { title: "Knowledge Base", description: "Manage and search your response library",
+      icon: ClipboardCheck, status: "active", onClick: onOpenKnowledge },
+    { title: "Section Assignment", description: "Assign and track section ownership across the team",
+      icon: ListChecks, status: "active" },
+    { title: "Compliance Checker", description: "Validate responses against compliance requirements",
+      icon: Shield, status: "coming_soon" },
+    { title: "Win/Loss Analysis", description: "Track outcomes and improve future responses",
+      icon: TrendingUp, status: "coming_soon" },
+    { title: "Teams Integration", description: "Notifications and collaboration via Microsoft Teams",
+      icon: Users, status: "coming_soon" },
+  ];
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {metrics.map((m) => (
+          <Card key={m.label}><CardContent className="space-y-1 pt-6">
+            <p className="text-xs text-muted-foreground">{m.label}</p>
+            <p className="text-xl font-bold">{m.value}</p>
+          </CardContent></Card>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {useCases.map((uc) => {
+          const Icon = uc.icon;
+          const clickable = uc.status === "active" && uc.onClick;
+          return (
+            <Card key={uc.title} className={uc.status === "coming_soon" ? "opacity-60" : clickable ? "cursor-pointer transition-colors hover:border-primary/40" : ""}
+              {...(clickable ? { onClick: uc.onClick } : {})}>
+              <CardContent className="flex items-start gap-3 pt-6">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  {uc.status === "coming_soon" ? <Lock className="size-4" /> : <Icon className="size-4" />}
+                </div>
+                <div className="flex-1 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium">{uc.title}</p>
+                    {uc.status === "coming_soon"
+                      ? <Badge variant="muted">Coming soon</Badge>
+                      : <CheckCircle2 className="size-3.5 text-emerald-500" />}
+                  </div>
+                  <p className="text-xs text-muted-foreground">{uc.description}</p>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
