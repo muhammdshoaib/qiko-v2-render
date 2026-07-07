@@ -71,7 +71,7 @@ export default function LandingPage() {
               <img src="/qiko-logo.webp" alt="Go to Qiko homepage" className="h-8 sm:h-10 w-auto transition-all duration-300 group-hover:scale-105" />
             </a>
             <div className="hidden md:flex items-center gap-8 text-sm text-slate-300">
-              <a href="#" className="text-white">Home</a>
+              <a href="/" className="text-white">Home</a>
               <a href="#signal" className="hover:text-white">Signal</a>
               <a href="#labs" className="hover:text-white">Labs</a>
               <a href="#about" className="hover:text-white">About</a>
@@ -145,7 +145,7 @@ export default function LandingPage() {
       </section>
 
       {/* See your brand the way AI does */}
-      <section id="signal" className="relative z-10 px-4 py-20 max-w-6xl mx-auto">
+      <section id="signal" className="relative z-10 px-4 py-20 max-w-6xl mx-auto scroll-mt-28">
         <div className="text-center mb-14">
           <Eyebrow>Qiko Signal</Eyebrow>
           <h2 className="text-3xl md:text-5xl font-bold mb-4" style={{ fontFamily: "Satoshi, sans-serif" }}>See your brand the way AI does.</h2>
@@ -203,13 +203,13 @@ export default function LandingPage() {
             <p className="text-xs font-semibold uppercase tracking-wider text-[#6366F1] mb-3">Enterprise</p>
             <h3 className="text-xl font-bold mb-3">Build with Qiko Labs</h3>
             <p className="text-sm text-slate-400 mb-6">For enterprises that want custom AI workers and agentic workflows without managing models, infrastructure, or security. We build it on Qiko, primed for what comes next.</p>
-            <a href="mailto:labs@qiko.ai" className="text-sm font-semibold text-[#6366F1] inline-flex items-center gap-1.5">Build with Qiko Labs <ArrowRight className="w-3.5 h-3.5" /></a>
+            <a href="mailto:support@qiko.ai?subject=Qiko%20Labs" className="text-sm font-semibold text-[#6366F1] inline-flex items-center gap-1.5">Build with Qiko Labs <ArrowRight className="w-3.5 h-3.5" /></a>
           </div>
         </div>
       </section>
 
       {/* Three pillars */}
-      <section id="labs" className="relative z-10 px-4 py-20 max-w-6xl mx-auto">
+      <section id="labs" className="relative z-10 px-4 py-20 max-w-6xl mx-auto scroll-mt-28">
         <div className="text-center mb-14">
           <Eyebrow>One platform, three pillars</Eyebrow>
           <h2 className="text-3xl md:text-5xl font-bold mb-4" style={{ fontFamily: "Satoshi, sans-serif" }}>SEO + AEO + GEO</h2>
@@ -228,7 +228,7 @@ export default function LandingPage() {
       </section>
 
       {/* Under the hood */}
-      <section id="about" className="relative z-10 px-4 py-20 max-w-6xl mx-auto">
+      <section id="about" className="relative z-10 px-4 py-20 max-w-6xl mx-auto scroll-mt-28">
         <div className="text-center mb-14">
           <Eyebrow>Under the hood</Eyebrow>
           <h2 className="text-3xl md:text-5xl font-bold mb-4" style={{ fontFamily: "Satoshi, sans-serif" }}>Serious infrastructure, quietly handled.</h2>
@@ -268,7 +268,7 @@ export default function LandingPage() {
             <button onClick={runAssessment} className="bg-gradient-to-r from-[#6366F1] via-[#A855F7] to-[#22D3EE] text-white font-semibold px-8 py-3.5 rounded-full inline-flex items-center gap-2 shadow-2xl shadow-[#6366F1]/40">
               Run your free assessment <ArrowRight className="w-4 h-4" />
             </button>
-            <a href="mailto:labs@qiko.ai" className="glass-card text-white font-medium px-8 py-3.5 rounded-full">Talk to Qiko Labs</a>
+            <a href="mailto:support@qiko.ai?subject=Qiko%20Labs" className="glass-card text-white font-medium px-8 py-3.5 rounded-full">Talk to Qiko Labs</a>
           </div>
         </div>
       </section>

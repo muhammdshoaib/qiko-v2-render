@@ -68,7 +68,7 @@ export default function SignUpSuccess() {
             <h2 className="text-white font-semibold text-2xl">Having trouble?</h2>
             <p className="text-slate-300 text-lg">
               Contact us at{" "}
-              <a href="mailto:team@qiko.com" className="text-cyan-300 hover:text-cyan-200 transition-colors">
+              <a href="mailto:support@qiko.ai" className="text-cyan-300 hover:text-cyan-200 transition-colors">
                 support@qiko.ai
               </a>
             </p>
