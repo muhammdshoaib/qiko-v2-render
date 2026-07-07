@@ -5,6 +5,17 @@ cd /opt/docker/qiko/platform || exit 1
 export COMPOSE_PROJECT_NAME=qiko-preprod
 export GIT_SSH_COMMAND="ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no"
 git fetch origin preprod -q && git reset --hard origin/preprod -q
+
+# This script rewrites itself via the git reset above. Bash does not reliably re-read a running
+# script's source after the underlying file changes mid-execution (the interpreter can keep
+# stale buffered/offset state), which silently dropped the migration-retry logic below on a real
+# deploy this sprint (build+deploy succeeded, alembic never ran, no error). Re-exec a fresh bash
+# process against the just-pulled file so every line below always reflects what's on disk.
+if [ -z "${REDEPLOY_REEXECED:-}" ]; then
+  export REDEPLOY_REEXECED=1
+  exec bash "$0" "$@"
+fi
+
 aws ssm get-parameter --region me-central-1 --name /qiko/preprod/ENV --with-decryption --query Parameter.Value --output text > .env
 C="docker compose -f docker-compose.yml -f docker-compose.preprod.yml"
 $C up -d --build
