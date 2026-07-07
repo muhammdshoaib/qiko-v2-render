@@ -34,6 +34,7 @@ class AgentStore(Protocol):
     async def count(self, tenant: str) -> int: ...
     async def get(self, tenant: str, agent_id: str) -> Agent | None: ...
     async def mark_ready(self, tenant: str, agent_id: str) -> Agent: ...
+    async def update_config(self, tenant: str, agent_id: str, patch: dict) -> Agent: ...
 
 
 @dataclass
@@ -57,6 +58,13 @@ class InMemoryAgentStore:
         for a in self._by_tenant.get(tenant, []):
             if a.id == agent_id:
                 a.status = "ready"
+                return a
+        raise KeyError(agent_id)
+
+    async def update_config(self, tenant: str, agent_id: str, patch: dict) -> Agent:
+        for a in self._by_tenant.get(tenant, []):
+            if a.id == agent_id:
+                a.config = {**a.config, **patch}
                 return a
         raise KeyError(agent_id)
 
@@ -87,3 +95,7 @@ class AgentService:
 
     async def mark_ready(self, tenant: str, agent_id: str) -> Agent:
         return await self.store.mark_ready(tenant, agent_id)
+
+    async def update_config(self, tenant: str, agent_id: str, patch: dict) -> Agent:
+        """Merge-patch the agent's free-form config (e.g. Background/Tone wizard fields)."""
+        return await self.store.update_config(tenant, agent_id, patch)

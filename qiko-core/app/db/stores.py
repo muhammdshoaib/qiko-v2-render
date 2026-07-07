@@ -164,6 +164,14 @@ class SqlAgentStore:
             row.status = "ready"
             return self._to_domain(row)
 
+    async def update_config(self, tenant: str, agent_id: str, patch: dict) -> Agent:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(AgentRow, agent_id)
+            if row is None or row.tenant_id != tenant:
+                raise KeyError(agent_id)
+            row.config = {**(row.config or {}), **patch}
+            return self._to_domain(row)
+
 
 @dataclass
 class SqlRfpPackStore:

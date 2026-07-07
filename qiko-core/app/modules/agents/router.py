@@ -35,6 +35,20 @@ async def list_agents(tenant: str = Depends(authed_tenant), svc=Depends(get_agen
     return await svc.list(tenant)
 
 
+class UpdateConfigBody(BaseModel):
+    patch: dict = Field(default_factory=dict)
+
+
+@router.put("/{agent_id}/config")
+async def update_config(agent_id: str, body: UpdateConfigBody, tenant: str = Depends(authed_tenant),
+                        _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_agents)) -> Agent:
+    """Merge-patch the worker's free-form config -- backs the Train wizard's Background/Tone steps."""
+    try:
+        return await svc.update_config(tenant, agent_id, body.patch)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="agent not found") from e
+
+
 @router.post("/{agent_id}/ready")
 async def mark_ready(agent_id: str, tenant: str = Depends(authed_tenant),
                      _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_agents)) -> Agent:

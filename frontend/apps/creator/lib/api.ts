@@ -38,11 +38,13 @@ export const me = () => request<{ id: string; email: string; role: string }>("/a
 export type MeUser = { id: string; email: string; role: string };
 
 // Agents (workers)
-export type Agent = { id: string; name: string; status: string; atype: string };
+export type Agent = { id: string; name: string; status: string; atype: string; config: Record<string, unknown> };
 export const listAgents = () => request<Agent[]>("/agents");
 export const createAgent = (name: string, plan = "free") =>
   request<Agent>("/agents", { method: "POST", body: JSON.stringify({ name, plan }) });
 export const markReady = (id: string) => request<Agent>(`/agents/${id}/ready`, { method: "POST" });
+export const updateAgentConfig = (id: string, patch: Record<string, unknown>) =>
+  request<Agent>(`/agents/${id}/config`, { method: "PUT", body: JSON.stringify({ patch }) });
 
 // Knowledge + chat
 export type Doc = { doc_id: string; chunks: number };
