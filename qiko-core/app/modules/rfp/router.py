@@ -1,11 +1,15 @@
 """RFP pack HTTP API (tenant-scoped): create/list/get/delete tenders a worker is answering."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+import io
+
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.core.deps import authed_tenant, get_requirements, get_rfp_packs, require_role
+from app.core.deps import authed_tenant, build_tenant_worker, get_requirements, get_rfp_packs, require_role
 from app.modules.ai.gateway import get_provider
+from app.modules.chat.files import build_docx, build_xlsx
 from app.modules.identity.rbac import Role
 from app.modules.knowledge.parsing import UnsupportedDocumentError, extract_text
 from app.modules.rfp.brief import BriefError, extract_brief
@@ -131,3 +135,81 @@ async def tender_brief(pack_id: str, file: UploadFile = File(...), tenant: str =
         return extract_brief(text, get_provider())
     except BriefError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+_STATUS_LABELS = {"auto_accept": "AI-drafted (met internal bar)", "human_review": "AI-drafted, for human review"}
+
+
+async def _answer_pack(request: Request, tenant: str, pack_id: str, reqs) -> list[dict]:
+    requirements = await reqs.list(tenant, pack_id)
+    if not requirements:
+        raise HTTPException(status_code=404, detail="no extracted requirements for this pack -- run /extract first")
+    worker = build_tenant_worker(request, tenant)
+    out = []
+    for r in requirements:
+        if r.classification != "KB":
+            out.append({"req": r, "answer": "", "confidence": 0.0, "decision": "human_review",
+                       "citations": [], "note": f"{r.classification}: to be completed by the team, not drafted by AI."})
+            continue
+        result = await worker.answer(r.req_id, r.requirement)
+        out.append({"req": r, "answer": result.answer, "confidence": round(result.critique.grounding, 2),
+                   "decision": result.decision.value, "citations": result.citations, "note": ""})
+    return out
+
+
+@router.get("/{pack_id}/export/xlsx")
+async def export_xlsx(pack_id: str, request: Request, tenant: str = Depends(authed_tenant),
+                      reqs=Depends(get_requirements)) -> StreamingResponse:
+    """Coverage sheet: one row per requirement, with a Grounding % column and human-readable
+    status, plus blank Review/Comment columns for offline reviewer sign-off."""
+    answered = await _answer_pack(request, tenant, pack_id, reqs)
+    rows = [["ID", "Requirement", "AI Answer", "Confidence", "Grounding %", "Status", "KB Sources",
+             "Review (Approve/Edit/Reject)", "Comment / Edited answer"]]
+    for a in answered:
+        r = a["req"]
+        status = a["note"] or _STATUS_LABELS.get(a["decision"], a["decision"])
+        rows.append([r.req_id, r.title, a["answer"], a["confidence"], round(a["confidence"] * 100, 1),
+                    status, "; ".join(a["citations"]), "", ""])
+    xlsx_bytes = build_xlsx("Coverage", rows)
+    return StreamingResponse(io.BytesIO(xlsx_bytes),
+                             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={"Content-Disposition": "attachment; filename=rfp-coverage.xlsx"})
+
+
+@router.get("/{pack_id}/export/docx-clean")
+async def export_docx_clean(pack_id: str, request: Request, tenant: str = Depends(authed_tenant),
+                            reqs=Depends(get_requirements)) -> StreamingResponse:
+    """Client-ready submission: per-section heading + answer prose only, no confidence/citation
+    annotations. Un-drafted (non-KB) sections show a placeholder for the team to complete."""
+    answered = await _answer_pack(request, tenant, pack_id, reqs)
+    paragraphs = []
+    for a in answered:
+        r = a["req"]
+        paragraphs.append(f"{r.req_id}. {r.title}")
+        paragraphs.append(a["answer"] or f"[To be completed by the team in the prescribed format: {r.classification}]")
+    docx_bytes = build_docx("Tender Response", paragraphs)
+    return StreamingResponse(io.BytesIO(docx_bytes),
+                             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                             headers={"Content-Disposition": "attachment; filename=submission.docx"})
+
+
+@router.get("/{pack_id}/export/docx-review")
+async def export_docx_review(pack_id: str, request: Request, tenant: str = Depends(authed_tenant),
+                             reqs=Depends(get_requirements)) -> StreamingResponse:
+    """Internal annotated variant: requirement text + confidence/status note + answer + KB
+    sources -- for human review before the clean submission is finalised."""
+    answered = await _answer_pack(request, tenant, pack_id, reqs)
+    paragraphs = []
+    for a in answered:
+        r = a["req"]
+        paragraphs.append(f"{r.req_id}. {r.title}")
+        paragraphs.append(f"Requirement: {r.requirement}")
+        status = a["note"] or f"[AI-drafted - confidence {round(a['confidence'] * 100)}% - {a['decision']}]"
+        paragraphs.append(status)
+        paragraphs.append(a["answer"] or "(not drafted)")
+        if a["citations"]:
+            paragraphs.append(f"Knowledge base sources: {'; '.join(a['citations'])}")
+    docx_bytes = build_docx("Tender Response - Review Draft", paragraphs)
+    return StreamingResponse(io.BytesIO(docx_bytes),
+                             media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                             headers={"Content-Disposition": "attachment; filename=review-draft.docx"})
