@@ -24,7 +24,7 @@ test.describe("IDG worker - grounded answering critical path", () => {
 
     // Grounded answer with a confidence badge and at least one citation -- proves the answer
     // came from the real imported knowledge base, not a hallucination.
-    await expect(page.getByText(/(Auto-accepted|Needs review) · \d+%/)).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(/(High confidence|Needs review) · \d+%/)).toBeVisible({ timeout: 20000 });
     await expect(page.getByText(/source\(s\) from the knowledge base/)).toBeVisible();
   });
 
