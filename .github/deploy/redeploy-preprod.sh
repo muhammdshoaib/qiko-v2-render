@@ -9,5 +9,5 @@ aws ssm get-parameter --region me-central-1 --name /qiko/preprod/ENV --with-decr
 C="docker compose -f docker-compose.yml -f docker-compose.preprod.yml"
 $C up -d --build
 sleep 15
-$C exec -T qiko-core alembic upgrade head || true
+$C exec -T qiko-core alembic upgrade head
 $C ps --format "{{.Service}} {{.State}} {{.Status}}"
