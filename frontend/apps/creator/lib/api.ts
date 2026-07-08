@@ -35,7 +35,6 @@ export const login = (email: string, password: string) =>
   request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
 export const logout = () => request("/auth/logout", { method: "POST" });
 export const me = () => request<{ id: string; email: string; role: string }>("/auth/me");
-export type MeUser = { id: string; email: string; role: string };
 
 // Agents (workers)
 export type Agent = { id: string; name: string; status: string; atype: string; config: Record<string, unknown> };

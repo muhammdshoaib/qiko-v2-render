@@ -6,12 +6,15 @@ exporters are initialised here behind config; the exporter wiring itself is depl
 """
 from __future__ import annotations
 
+import logging
 import uuid
 from contextvars import ContextVar
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
+
+logger = logging.getLogger(__name__)
 
 REQUEST_ID_HEADER = "X-Request-Id"
 _request_id: ContextVar[str | None] = ContextVar("request_id", default=None)
@@ -39,14 +42,22 @@ def init_sentry() -> bool:  # pragma: no cover - requires the sentry SDK + DSN
     dsn = getattr(get_settings(), "sentry_dsn", "")
     if not dsn:
         return False
-    import sentry_sdk
+    try:
+        import sentry_sdk
+    except ImportError:
+        logger.warning("SENTRY_DSN is set but the sentry-sdk package isn't installed; skipping init")
+        return False
 
     sentry_sdk.init(dsn=dsn, traces_sample_rate=0.1)
     return True
 
 
 def init_tracing(app) -> bool:  # pragma: no cover - requires the OTel SDK + collector
-    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+    try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+    except ImportError:
+        logger.warning("OTEL_ENABLED is set but opentelemetry packages aren't installed; skipping init")
+        return False
 
     FastAPIInstrumentor.instrument_app(app)
     return True

@@ -297,13 +297,11 @@ export default function CreatingWorker() {
         setStageProgress(prev => Math.min(prev + progressStep, 100));
       }, 50);
 
-      console.log("setTimeout 3");
       timeout = setTimeout(() => {
         setCurrentStage(prev => prev + 1);
         setTotalProgress(((currentStage + 1) / STAGES.length) * 100);
       }, stageDuration);
     } else if (currentStage === STAGES.length && !isComplete) {
-      console.log("setTimeout 4");
       setTimeout(() => {
         setIsComplete(true);
         setShowConfetti(true);

@@ -48,10 +48,8 @@ export function useComposition<
   });
 
   const onCompositionEnd = usePersistFn((e: React.CompositionEvent<T>) => {
-    // 使用两层 setTimeout 来处理 Safari 浏览器中 compositionEnd 先于 onKeyDown 触发的问题
-    console.log("setTimeout 8");
+    // Two nested setTimeouts to handle Safari firing compositionEnd before onKeyDown.
     timer.current = setTimeout(() => {
-      console.log("setTimeout 9");
       timer2.current = setTimeout(() => {
         c.current = false;
       });

@@ -15,6 +15,11 @@ node_modules/
 .next/
 .turbo/
 dist/
+*.tsbuildinfo
+
+# Playwright
+frontend/e2e/test-results/
+frontend/e2e/playwright-report/
 
 # Env & secrets
 .env

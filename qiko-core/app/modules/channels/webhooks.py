@@ -31,7 +31,14 @@ def verify_slack_signature(signing_secret: str, timestamp: str, body: bytes, sig
 
 @dataclass
 class IdempotencyGuard:
-    """Rejects duplicate event ids. In-memory now; Redis SET with TTL in prod."""
+    """Rejects duplicate event ids.
+
+    In-memory (per-process) only today -- correct for the current single-replica deployment, but
+    NOT safe once the API runs behind more than one replica: a duplicate delivery routed to a
+    different pod won't be caught. Before scaling out, back this with a Redis SET + TTL
+    (app.core.redis.build_redis is the client factory already in place for that) so the dedupe
+    state is shared across replicas instead of local to each process.
+    """
 
     _seen: set[str] = field(default_factory=set)
 

@@ -42,7 +42,11 @@ def forgot_password(body: ForgotBody, otp=Depends(get_otp_store)) -> dict:
     code = otp.issue(body.email)
     get_email_sender().send(to=body.email, subject="Your Qiko reset code", body=f"Your code: {code}")
     resp = {"sent": True}
-    if get_settings().email_backend == "console":  # dev convenience only
+    # Dev convenience only. Gated on the environment, not just the email backend: if ops ever
+    # leaves EMAIL_BACKEND=console in preprod/live (e.g. SMTP misconfigured), the OTP must never
+    # leak into the HTTP response for a real, non-dev environment.
+    settings = get_settings()
+    if settings.debug and settings.email_backend == "console":
         resp["otp"] = code
     return resp
 

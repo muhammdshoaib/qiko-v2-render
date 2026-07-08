@@ -43,7 +43,6 @@ function Input({
       dialogComposition.markCompositionEnd();
       // Delay setting composing to false to handle Safari's event order
       // In Safari, compositionEnd fires before the ESC keydown event
-      console.log("setTimeout 11");
       setTimeout(() => {
         dialogComposition.setComposing(false);
       }, 100);

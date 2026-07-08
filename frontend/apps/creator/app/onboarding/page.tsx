@@ -46,7 +46,7 @@ import { addAvatarKnowledge, createAvatar, createSignalWorker, signupAvatar, get
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useAppSelector } from "@/store/hooks";
 import { motion } from "framer-motion";
-import { BRAND_TEXT, BRAND_WEBSITE_URL } from "@/constants/brand";
+import { BRAND_TEXT } from "@/constants/brand";
 import PlanRecommendation from "./PlanRecommendation";
 
 // ─── Constants (replacing @shared/types) ─────────────────────────────
@@ -302,8 +302,6 @@ export default function Onboarding() {
     setPlansLoading(true);
     getSubscriptionPlans()
       .then((list) => {
-        
-    console.log("cancelled", cancelled)
         if (!cancelled) setPlans(Array.isArray(list) ? list : []);
       })
       .catch(() => {
@@ -400,7 +398,6 @@ export default function Onboarding() {
   }
 
   const handleSelectPlan = async (plan: SubscriptionType) => {
-    console.log("plan", plan)
     if (plan === "custom_model") {
       setSelectedPlan(plan);
       localStorage.setItem("selectedPlan", "Premium");
@@ -510,15 +507,13 @@ export default function Onboarding() {
       const name = wizardData.fullName || wizardData.professionalTitle || "My AI Assistant";
       const avatarRes = await createAvatar({ agent_name: name });
       const agentId = avatarRes?.data?.agent_unique_id;
-      // console.log("avatarRes", avatarRes, agentId);
-     
+
       if (!agentId) throw new Error("Avatar created but no agent id returned");
       try {
         await addAvatarKnowledge(buildKnowledgePayload(agentId));
         toast.success("Worker knowledge added sucessfully.");
       } catch (knowledgeError) {
         const msg = knowledgeError instanceof Error ? knowledgeError.message : "Knowledge save failed";
-        // console.log("knowledgeError", knowledgeError, msg);
         toast.warning(msg + " You can add training later.");
       }
 

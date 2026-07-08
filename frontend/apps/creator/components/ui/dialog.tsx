@@ -39,7 +39,6 @@ function Dialog({
         if (endTimerRef.current) {
           clearTimeout(endTimerRef.current);
         }
-        console.log("setTimeout 12");
         endTimerRef.current = setTimeout(() => {
           justEndedRef.current = false;
         }, 150);

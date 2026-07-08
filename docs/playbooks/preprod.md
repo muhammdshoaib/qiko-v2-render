@@ -8,14 +8,17 @@ its own database and secrets. Mirrors live as closely as possible.
 from AWS SSM under the preprod prefix. Postgres has automated backups + PITR.
 
 ## Deploy
-Deploys are triggered from `main` (systemd auto-deploy on the host) or manually:
+Every push to `main` triggers `.github/workflows/deploy-preprod.yml`: GitHub Actions fast-forwards
+the `preprod` branch, then dispatches `.github/deploy/redeploy-preprod.sh` to the preprod host via
+**AWS SSM Run Command** (not a host-side systemd watcher). The workflow health-checks the result
+and rolls back automatically on failure.
+
+To deploy manually (e.g. re-running after a transient failure), run the same script directly on
+the host:
 ```bash
 # on the preprod host
 cd /opt/docker/qiko/platform
-git pull
-export COMPOSE_PROJECT_NAME=qiko-preprod
-docker compose -f docker-compose.yml -f docker-compose.preprod.yml up -d --build
-docker compose -f docker-compose.yml -f docker-compose.preprod.yml exec -T qiko-core alembic upgrade head
+bash .github/deploy/redeploy-preprod.sh
 ```
 
 ## Secrets (AWS SSM)
