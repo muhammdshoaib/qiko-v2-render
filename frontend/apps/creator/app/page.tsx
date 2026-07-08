@@ -3,8 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowRight, BarChart3, BrainCircuit, ShieldCheck, Zap,
-  Search, MessageSquare, Eye, Target, Rocket,
+  ArrowRight, BarChart3, BrainCircuit, ShieldCheck, Zap, ChevronDown,
+  Search, MessageSquare, Eye, Target, Rocket, Radar, BookOpen, Sparkles,
 } from "lucide-react";
 
 const PILLARS = [
@@ -23,9 +23,9 @@ const PILLARS = [
 ];
 
 const JOURNEY = [
-  { step: "01", status: "Live now", title: "Be seen", desc: "Signal makes sure AI engines can find, read, and cite your brand." },
-  { step: "02", status: "Available now", title: "Be understood", desc: "Structure your knowledge, guardrails, and processes so AI represents you accurately, not whatever it guesses." },
-  { step: "03", status: "On the horizon", title: "Be acted on", desc: "As agents start to transact directly, the businesses already structured for it win. You will be ready." },
+  { step: "01", icon: Radar, color: "#22D3EE", status: "Live now", title: "Be seen", desc: "Signal makes sure AI engines can find, read, and cite your brand." },
+  { step: "02", icon: BookOpen, color: "#6366F1", status: "Available now", title: "Be understood", desc: "Structure your knowledge, guardrails, and processes so AI represents you accurately, not whatever it guesses." },
+  { step: "03", icon: Sparkles, color: "#A855F7", status: "On the horizon", title: "Be acted on", desc: "As agents start to transact directly, the businesses already structured for it win. You will be ready." },
 ];
 
 const FOUNDATIONS = [
@@ -72,8 +72,8 @@ export default function LandingPage() {
             </a>
             <div className="hidden md:flex items-center gap-8 text-sm text-slate-300">
               <a href="/" className="text-white">Home</a>
-              <a href="#signal" className="hover:text-white">Signal</a>
-              <a href="#labs" className="hover:text-white">Labs</a>
+              <a href="#signal" className="hover:text-white inline-flex items-center gap-1">Signal <ChevronDown className="w-3 h-3" /></a>
+              <a href="#labs" className="hover:text-white inline-flex items-center gap-1">Labs <ChevronDown className="w-3 h-3" /></a>
               <a href="#about" className="hover:text-white">About</a>
             </div>
             <div className="flex items-center gap-3">
@@ -174,13 +174,17 @@ export default function LandingPage() {
             Getting seen by AI is where it starts. Being represented accurately, and eventually transacted with, is where it goes. Qiko takes you along that path at your pace.
           </p>
         </div>
-        <div className="grid sm:grid-cols-3 gap-4">
+        <div className="relative grid sm:grid-cols-3 gap-8 sm:gap-4">
+          <div className="hidden sm:block absolute top-6 left-[16.5%] right-[16.5%] h-px" style={{ background: "linear-gradient(90deg,#22D3EE,#6366F1,#A855F7)" }} />
           {JOURNEY.map((j) => (
-            <div key={j.step} className="glass-card p-6">
-              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-full bg-[#22D3EE]/10 text-[#22D3EE] mb-4">{j.status}</span>
-              <div className="text-2xl font-bold mb-2" style={{ background: "linear-gradient(135deg,#6366F1,#22D3EE)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>{j.step}</div>
+            <div key={j.step} className="relative text-center sm:text-left">
+              <div className="relative z-10 w-12 h-12 rounded-full grid place-items-center mb-4 mx-auto sm:mx-0 bg-[#050810] border-2" style={{ borderColor: j.color }}>
+                <j.icon className="w-5 h-5" style={{ color: j.color }} />
+              </div>
+              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-full bg-white/5 mb-3" style={{ color: j.color }}>{j.status}</span>
               <h3 className="font-semibold mb-1">{j.title}</h3>
-              <p className="text-sm text-slate-400">{j.desc}</p>
+              <p className="text-sm text-slate-400 mb-2">{j.desc}</p>
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-600">Step {j.step}</p>
             </div>
           ))}
         </div>
@@ -258,8 +262,8 @@ export default function LandingPage() {
       </section>
 
       {/* Final CTA */}
-      <section className="relative z-10 px-4 py-24">
-        <div className="max-w-2xl mx-auto text-center relative">
+      <section className="relative z-10 px-4 py-20">
+        <div className="max-w-3xl mx-auto rounded-2xl border border-white/10 bg-gradient-to-b from-[#0d1b2a] to-[#0a0f1a] p-10 sm:p-16 text-center relative overflow-hidden">
           <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[300px] rounded-full opacity-25 pointer-events-none" style={{ background: "radial-gradient(circle,#6366F1 0%,transparent 70%)", filter: "blur(60px)" }} />
           <p className="text-xs font-semibold tracking-[0.2em] text-[#6366F1] mb-4 uppercase relative">Find out where you stand</p>
           <h2 className="text-3xl md:text-5xl font-bold mb-4 relative" style={{ fontFamily: "Satoshi, sans-serif" }}>See how AI sees your business.</h2>
@@ -268,15 +272,15 @@ export default function LandingPage() {
             <button onClick={runAssessment} className="bg-gradient-to-r from-[#6366F1] via-[#A855F7] to-[#22D3EE] text-white font-semibold px-8 py-3.5 rounded-full inline-flex items-center gap-2 shadow-2xl shadow-[#6366F1]/40">
               Run your free assessment <ArrowRight className="w-4 h-4" />
             </button>
-            <a href="mailto:support@qiko.ai?subject=Qiko%20Labs" className="glass-card text-white font-medium px-8 py-3.5 rounded-full">Talk to Qiko Labs</a>
+            <a href="mailto:support@qiko.ai?subject=Qiko%20Labs" className="border border-white/15 bg-white/5 text-white font-medium px-8 py-3.5 rounded-full hover:bg-white/10 transition-colors">Talk to Qiko Labs</a>
           </div>
         </div>
       </section>
 
       {/* Footer */}
       <footer className="relative z-10 border-t border-white/5 px-6 py-12">
-        <div className="max-w-6xl mx-auto grid sm:grid-cols-4 gap-8">
-          <div className="sm:col-span-2">
+        <div className="max-w-6xl mx-auto grid grid-cols-2 sm:grid-cols-5 gap-8">
+          <div className="col-span-2">
             <img src="/qiko-logo.webp" alt="Qiko" className="h-7 w-auto mb-4" />
             <p className="text-sm text-slate-500 max-w-xs">Be visible, understood, and ready for a world where AI does the searching.</p>
           </div>
@@ -292,6 +296,13 @@ export default function LandingPage() {
             <ul className="space-y-2 text-sm text-slate-400">
               <li><a href="#about" className="hover:text-white">About</a></li>
               <li><a href="mailto:support@qiko.ai" className="hover:text-white">Contact</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="font-semibold mb-3 text-sm">Account</h4>
+            <ul className="space-y-2 text-sm text-slate-400">
+              <li><button onClick={() => router.push("/login")} className="hover:text-white">Sign in</button></li>
+              <li><button onClick={goApp} className="hover:text-white">Get started</button></li>
             </ul>
           </div>
         </div>
