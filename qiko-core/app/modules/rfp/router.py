@@ -91,7 +91,36 @@ async def extract(pack_id: str, file: UploadFile = File(...), tenant: str = Depe
     except ExtractionError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
+    # Persisted so /ask can ground follow-up questions in the source document later, without
+    # re-uploading it.
+    await packs.set_document_text(tenant, pack_id, text)
     return await reqs.save_extracted(tenant, pack_id, extracted)
+
+
+class AskBody(BaseModel):
+    question: str = Field(min_length=1)
+
+
+@router.post("/{pack_id}/ask")
+async def ask_bid_context(pack_id: str, body: AskBody, tenant: str = Depends(authed_tenant),
+                          packs=Depends(get_rfp_packs)) -> dict:
+    """Bid Context Q&A: answer ad-hoc questions about the tender itself (scope, rules, format,
+    deadlines, risks) grounded ONLY in the uploaded tender document -- distinct from the
+    requirement-answering flow, which draws on the tenant's knowledge base instead. Port of
+    idg-worker's app/agents/bid_context.py."""
+    try:
+        pack = await packs.get(tenant, pack_id)
+    except RfpPackNotFound as e:
+        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    if not pack.document_text:
+        raise HTTPException(status_code=422, detail="no tender document on file for this pack -- run /extract first")
+
+    system = ("You are a tender analyst. Answer questions about THIS tender using ONLY the tender "
+             "document provided. Be precise about scope, submission format, deadlines, "
+             "qualification rules and risks. If the document doesn't state it, say so -- do not guess.")
+    prompt = f"TENDER DOCUMENT:\n{pack.document_text[:60_000]}\n\nQUESTION: {body.question}\n\nAnswer from the document only."
+    response = get_provider().generate(prompt, system=system, temperature=0.0)
+    return {"question": body.question, "answer": response.text}
 
 
 @router.get("/{pack_id}/requirements")

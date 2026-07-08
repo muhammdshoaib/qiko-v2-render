@@ -28,6 +28,7 @@ class RfpPack:
     deadline: str | None = None
     stage: str = "parsed"
     created_at: datetime = field(default_factory=_now)
+    document_text: str = ""
 
 
 class RfpPackNotFound(Exception):
@@ -39,6 +40,7 @@ class RfpPackStore(Protocol):
     async def list(self, tenant: str, *, agent_id: str | None = None) -> list[RfpPack]: ...
     async def get(self, tenant: str, pack_id: str) -> RfpPack | None: ...
     async def set_stage(self, tenant: str, pack_id: str, stage: str) -> RfpPack: ...
+    async def set_document_text(self, tenant: str, pack_id: str, text: str) -> RfpPack: ...
     async def delete(self, tenant: str, pack_id: str) -> None: ...
 
 
@@ -64,6 +66,13 @@ class InMemoryRfpPackStore:
         if pack is None:
             raise RfpPackNotFound(pack_id)
         pack.stage = stage
+        return pack
+
+    async def set_document_text(self, tenant: str, pack_id: str, text: str) -> RfpPack:
+        pack = await self.get(tenant, pack_id)
+        if pack is None:
+            raise RfpPackNotFound(pack_id)
+        pack.document_text = text
         return pack
 
     async def delete(self, tenant: str, pack_id: str) -> None:
@@ -98,6 +107,9 @@ class RfpPackService:
         if stage not in STAGES:
             raise ValueError(f"invalid stage '{stage}', must be one of {STAGES}")
         return await self.store.set_stage(tenant, pack_id, stage)
+
+    async def set_document_text(self, tenant: str, pack_id: str, text: str) -> RfpPack:
+        return await self.store.set_document_text(tenant, pack_id, text)
 
     async def delete(self, tenant: str, pack_id: str) -> None:
         await self.store.delete(tenant, pack_id)

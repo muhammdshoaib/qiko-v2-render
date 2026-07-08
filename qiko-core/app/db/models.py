@@ -90,6 +90,7 @@ class RfpPack(Base):
     deadline: Mapped[str | None] = mapped_column(String(64), nullable=True)
     stage: Mapped[str] = mapped_column(String(16), default="parsed")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    document_text: Mapped[str] = mapped_column(String, default="")
 
 
 class PackRequirement(Base):

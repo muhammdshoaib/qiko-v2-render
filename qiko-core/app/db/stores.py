@@ -182,13 +182,14 @@ class SqlRfpPackStore:
     def _to_domain(self, r: RfpPackRow) -> RfpPack:
         return RfpPack(id=r.id, tenant=r.tenant_id, agent_id=r.agent_id, title=r.title,
                        client_name=r.client_name, deadline=r.deadline, stage=r.stage,
-                       created_at=r.created_at)
+                       created_at=r.created_at, document_text=r.document_text or "")
 
     async def add(self, pack: RfpPack) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
             s.add(RfpPackRow(id=pack.id, tenant_id=pack.tenant, agent_id=pack.agent_id,
                              title=pack.title, client_name=pack.client_name,
-                             deadline=pack.deadline, stage=pack.stage))
+                             deadline=pack.deadline, stage=pack.stage,
+                             document_text=pack.document_text))
         return pack
 
     async def list(self, tenant: str, *, agent_id: str | None = None) -> list[RfpPack]:
@@ -212,6 +213,14 @@ class SqlRfpPackStore:
             if row is None or row.tenant_id != tenant:
                 raise RfpPackNotFound(pack_id)
             row.stage = stage
+            return self._to_domain(row)
+
+    async def set_document_text(self, tenant: str, pack_id: str, text: str) -> RfpPack:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(RfpPackRow, pack_id)
+            if row is None or row.tenant_id != tenant:
+                raise RfpPackNotFound(pack_id)
+            row.document_text = text
             return self._to_domain(row)
 
     async def delete(self, tenant: str, pack_id: str) -> None:
