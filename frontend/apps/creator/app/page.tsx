@@ -25,7 +25,7 @@ const HOME_HTML = `<main>
             <a data-action="goAudit" role="button" tabindex="0" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;font-size:15.5px;font-weight:700;color:#fff;text-decoration:none;background:linear-gradient(115deg,#22D3EE,#4F8FF7 55%,#6E73F2);padding:15px 26px;border-radius:999px;box-shadow:0 14px 38px -12px rgba(79,143,247,.75);">Run your free assessment <span>&#8594;</span></a>
             <a data-action="goSignal" role="button" tabindex="0" style="display:inline-flex;align-items:center;gap:8px;font-size:15.5px;font-weight:600;color:#E8EEF6;text-decoration:none;background:rgba(255,255,255,.04);border:1px solid #283349;padding:15px 24px;border-radius:999px;cursor:pointer;">Explore Signal</a>
           </div>
-          <p style="font-family:'Geist Mono',monospace;font-size:12.5px;color:#6B7689;margin:18px 0 0;">One free assessment to get started</p>
+          <p style="font-family:var(--font-geist-mono),monospace;font-size:12.5px;color:#6B7689;margin:18px 0 0;">One free assessment to get started</p>
         </div>
         
         <div style="position:relative;">
@@ -38,18 +38,18 @@ const HOME_HTML = `<main>
             <div style="display:flex;gap:12px;">
               <div style="flex:1;background:#0f1c30;border:1px solid #1e2e48;border-radius:14px;padding:15px;display:flex;gap:13px;align-items:center;">
                 <div style="width:62px;height:62px;border-radius:50%;background:conic-gradient(#7C8CFF 54%,#1c2c44 0);display:grid;place-items:center;flex:0 0 auto;"><i style="width:46px;height:46px;border-radius:50%;background:#0f1c30;display:grid;place-items:center;font-style:normal;font-weight:700;font-size:18px;color:#fff;">54</i></div>
-                <div><b style="display:block;font-size:13px;letter-spacing:.04em;color:#fff;">SEO</b><small style="font-size:11px;color:#7f93a8;">Traditional search</small><span style="font-family:'Geist Mono',monospace;font-size:10.5px;color:#9fb3c8;display:block;margin-top:5px;">You 54 &middot; Target 75</span></div>
+                <div><b style="display:block;font-size:13px;letter-spacing:.04em;color:#fff;">SEO</b><small style="font-size:11px;color:#7f93a8;">Traditional search</small><span style="font-family:var(--font-geist-mono),monospace;font-size:10.5px;color:#9fb3c8;display:block;margin-top:5px;">You 54 &middot; Target 75</span></div>
               </div>
               <div style="flex:1;background:#0f1c30;border:1px solid #1e2e48;border-radius:14px;padding:15px;display:flex;gap:13px;align-items:center;">
                 <div style="width:62px;height:62px;border-radius:50%;background:conic-gradient(#34d399 64%,#1c2c44 0);display:grid;place-items:center;flex:0 0 auto;"><i style="width:46px;height:46px;border-radius:50%;background:#0f1c30;display:grid;place-items:center;font-style:normal;font-weight:700;font-size:18px;color:#fff;">64</i></div>
-                <div><b style="display:block;font-size:13px;letter-spacing:.04em;color:#fff;">AIO</b><small style="font-size:11px;color:#7f93a8;">AI search</small><span style="font-family:'Geist Mono',monospace;font-size:10.5px;color:#9fb3c8;display:block;margin-top:5px;">You 64 &middot; Target 80</span></div>
+                <div><b style="display:block;font-size:13px;letter-spacing:.04em;color:#fff;">AIO</b><small style="font-size:11px;color:#7f93a8;">AI search</small><span style="font-family:var(--font-geist-mono),monospace;font-size:10.5px;color:#9fb3c8;display:block;margin-top:5px;">You 64 &middot; Target 80</span></div>
               </div>
             </div>
             <p style="border-left:3px solid #34d399;padding:7px 0 7px 13px;color:#cfe0ee;font-size:13px;margin:18px 0 8px;font-style:italic;">AI recommends you for 64% of tracked queries &mdash; invisible for the high-intent searches that win deals.</p>
             <div>
-              <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #1d2942;padding:10px 0;font-size:12.5px;color:#a7b8c9;"><span>Problem search &middot; competitors recommended</span><span style="font-family:'Geist Mono',monospace;font-weight:700;color:#f0726a;">38%</span></div>
-              <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #1d2942;padding:10px 0;font-size:12.5px;color:#a7b8c9;"><span>Feature search &middot; capability not attributed</span><span style="font-family:'Geist Mono',monospace;font-weight:700;color:#f0b249;">55%</span></div>
-              <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #1d2942;padding:10px 0;font-size:12.5px;color:#a7b8c9;"><span>Brand search &middot; AI knows who you are</span><span style="font-family:'Geist Mono',monospace;font-weight:700;color:#34d399;">92%</span></div>
+              <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #1d2942;padding:10px 0;font-size:12.5px;color:#a7b8c9;"><span>Problem search &middot; competitors recommended</span><span style="font-family:var(--font-geist-mono),monospace;font-weight:700;color:#f0726a;">38%</span></div>
+              <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #1d2942;padding:10px 0;font-size:12.5px;color:#a7b8c9;"><span>Feature search &middot; capability not attributed</span><span style="font-family:var(--font-geist-mono),monospace;font-weight:700;color:#f0b249;">55%</span></div>
+              <div style="display:flex;justify-content:space-between;align-items:center;border-top:1px solid #1d2942;padding:10px 0;font-size:12.5px;color:#a7b8c9;"><span>Brand search &middot; AI knows who you are</span><span style="font-family:var(--font-geist-mono),monospace;font-weight:700;color:#34d399;">92%</span></div>
             </div>
           </div>
         </div>
@@ -90,24 +90,24 @@ const HOME_HTML = `<main>
           <div class="q-journey" style="display:flex;align-items:stretch;gap:0;position:relative;z-index:1;">
           <div style="flex:1;position:relative;z-index:1;padding:0 14px;">
             <div style="width:72px;height:72px;border-radius:20px;background:linear-gradient(150deg,#0d2a38,#0c1a2c);border:1px solid #1c4254;display:grid;place-items:center;margin-bottom:20px;box-shadow:0 0 40px -8px rgba(34,211,238,.45);"><span style="width:24px;height:24px;border-radius:50%;border:3px solid #22D3EE;position:relative;"><span style="position:absolute;inset:5px;border-radius:50%;background:#22D3EE;"></span></span></div>
-            <span style="display:inline-flex;align-items:center;gap:6px;font-family:'Geist Mono',monospace;font-size:11px;color:#34d399;border:1px solid #1c4a36;background:rgba(20,60,42,.4);padding:4px 10px;border-radius:999px;margin-bottom:12px;"><span style="width:6px;height:6px;border-radius:50%;background:#34d399;"></span>Live now</span>
+            <span style="display:inline-flex;align-items:center;gap:6px;font-family:var(--font-geist-mono),monospace;font-size:11px;color:#34d399;border:1px solid #1c4a36;background:rgba(20,60,42,.4);padding:4px 10px;border-radius:999px;margin-bottom:12px;"><span style="width:6px;height:6px;border-radius:50%;background:#34d399;"></span>Live now</span>
             <b style="display:block;font-size:19px;margin:6px 0 8px;">Be seen</b>
             <span style="font-size:14.5px;color:#9aa6b8;line-height:1.55;">Signal makes sure AI engines can find, read, and cite your brand.</span>
-            <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#6B7689;margin-top:14px;">STEP 01</div>
+            <div style="font-family:var(--font-geist-mono),monospace;font-size:11px;color:#6B7689;margin-top:14px;">STEP 01</div>
           </div>
           <div style="flex:1;position:relative;z-index:1;padding:0 14px;">
             <div style="width:72px;height:72px;border-radius:20px;background:linear-gradient(150deg,#16243f,#0c1626);border:1px solid #25345a;display:grid;place-items:center;margin-bottom:20px;box-shadow:0 0 40px -8px rgba(79,143,247,.4);"><span style="width:24px;height:24px;border-radius:7px;border:3px solid #4F8FF7;position:relative;"><span style="position:absolute;inset:5px;border-radius:3px;background:#4F8FF7;"></span></span></div>
-            <span style="display:inline-flex;align-items:center;gap:6px;font-family:'Geist Mono',monospace;font-size:11px;color:#34d399;border:1px solid #1c4a36;background:rgba(20,60,42,.4);padding:4px 10px;border-radius:999px;margin-bottom:12px;"><span style="width:6px;height:6px;border-radius:50%;background:#34d399;"></span>Available now</span>
+            <span style="display:inline-flex;align-items:center;gap:6px;font-family:var(--font-geist-mono),monospace;font-size:11px;color:#34d399;border:1px solid #1c4a36;background:rgba(20,60,42,.4);padding:4px 10px;border-radius:999px;margin-bottom:12px;"><span style="width:6px;height:6px;border-radius:50%;background:#34d399;"></span>Available now</span>
             <b style="display:block;font-size:19px;margin:6px 0 8px;">Be understood</b>
             <span style="font-size:14.5px;color:#9aa6b8;line-height:1.55;">Structure your knowledge, guardrails, and processes so AI represents you accurately &mdash; not whatever it guesses.</span>
-            <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#6B7689;margin-top:14px;">STEP 02</div>
+            <div style="font-family:var(--font-geist-mono),monospace;font-size:11px;color:#6B7689;margin-top:14px;">STEP 02</div>
           </div>
           <div style="flex:1;position:relative;z-index:1;padding:0 14px;">
             <div style="width:72px;height:72px;border-radius:20px;background:linear-gradient(150deg,#241a3d,#130f24);border:1px solid #3a2a5c;display:grid;place-items:center;margin-bottom:20px;box-shadow:0 0 40px -8px rgba(168,85,247,.4);"><span style="width:0;height:0;border-left:13px solid transparent;border-right:13px solid transparent;border-bottom:22px solid #A855F7;"></span></div>
-            <span style="display:inline-flex;align-items:center;gap:6px;font-family:'Geist Mono',monospace;font-size:11px;color:#c79bff;border:1px solid #3a2a5c;background:rgba(50,30,80,.4);padding:4px 10px;border-radius:999px;margin-bottom:12px;"><span style="width:6px;height:6px;border-radius:50%;background:#A855F7;"></span>On the horizon</span>
+            <span style="display:inline-flex;align-items:center;gap:6px;font-family:var(--font-geist-mono),monospace;font-size:11px;color:#c79bff;border:1px solid #3a2a5c;background:rgba(50,30,80,.4);padding:4px 10px;border-radius:999px;margin-bottom:12px;"><span style="width:6px;height:6px;border-radius:50%;background:#A855F7;"></span>On the horizon</span>
             <b style="display:block;font-size:19px;margin:6px 0 8px;">Be acted on</b>
             <span style="font-size:14.5px;color:#9aa6b8;line-height:1.55;">As agents start to transact directly, the businesses already structured for it win. You will be ready.</span>
-            <div style="font-family:'Geist Mono',monospace;font-size:11px;color:#6B7689;margin-top:14px;">STEP 03</div>
+            <div style="font-family:var(--font-geist-mono),monospace;font-size:11px;color:#6B7689;margin-top:14px;">STEP 03</div>
           </div>
         </div>
         </div>
@@ -122,14 +122,14 @@ const HOME_HTML = `<main>
         <div style="position:relative;background:linear-gradient(165deg,#0e1830,#0b1322);border:1px solid #26406e;border-radius:20px;padding:34px;overflow:hidden;">
           <div style="position:absolute;top:-60px;right:-40px;width:200px;height:200px;border-radius:50%;background:radial-gradient(circle,rgba(34,211,238,.18),transparent 70%);"></div>
           <div style="position:relative;">
-            <div style="font-family:'Geist Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#7fdce6;margin-bottom:14px;">Self-serve</div>
+            <div style="font-family:var(--font-geist-mono),monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#7fdce6;margin-bottom:14px;">Self-serve</div>
             <h3 style="font-size:23px;font-weight:700;letter-spacing:-.02em;margin:0 0 12px;">Start with Signal</h3>
             <p style="font-size:15px;color:#9aa6b8;line-height:1.6;margin:0 0 26px;max-width:42ch;">Run a free assessment, see where you stand, and subscribe to track and improve your AI visibility over time. Best if you want to act now and move fast.</p>
             <a data-action="goAudit" role="button" tabindex="0" style="cursor:pointer;display:inline-flex;align-items:center;gap:8px;font-size:15px;font-weight:700;color:#fff;text-decoration:none;background:linear-gradient(115deg,#22D3EE,#4F8FF7 55%,#6E73F2);padding:13px 22px;border-radius:999px;box-shadow:0 12px 32px -12px rgba(79,143,247,.7);">Run your free assessment <span>&#8594;</span></a>
           </div>
         </div>
         <div style="background:linear-gradient(165deg,#0c1422,#0a1018);border:1px solid #18223a;border-radius:20px;padding:34px;">
-          <div style="font-family:'Geist Mono',monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#c79bff;margin-bottom:14px;">Enterprise</div>
+          <div style="font-family:var(--font-geist-mono),monospace;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:#c79bff;margin-bottom:14px;">Enterprise</div>
           <h3 style="font-size:23px;font-weight:700;letter-spacing:-.02em;margin:0 0 12px;">Build with Qiko Labs</h3>
           <p style="font-size:15px;color:#9aa6b8;line-height:1.6;margin:0 0 26px;max-width:42ch;">For enterprises that want custom AI workers and agentic workflows without managing models, infrastructure, or security. We build it on Qiko, primed for what comes next.</p>
           <a data-action="goLabs" role="button" tabindex="0" style="display:inline-flex;align-items:center;gap:8px;font-size:15px;font-weight:600;color:#E8EEF6;text-decoration:none;background:rgba(255,255,255,.04);border:1px solid #283349;padding:13px 22px;border-radius:999px;cursor:pointer;">Build with Qiko Labs <span>&#8594;</span></a>
@@ -296,7 +296,7 @@ function Footer({ onSignal, onLabs, onAbout, onSignIn, onGetStarted }: {
   onSignal: () => void; onLabs: () => void; onAbout: () => void; onSignIn: () => void; onGetStarted: () => void;
 }) {
   const linkStyle: React.CSSProperties = { display: "block", fontSize: 14, color: "#9aa6b8", textDecoration: "none", marginBottom: 11, cursor: "pointer" };
-  const label: React.CSSProperties = { fontFamily: "'Geist Mono',monospace", fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "#5a6679", marginBottom: 16 };
+  const label: React.CSSProperties = { fontFamily: "var(--font-geist-mono),monospace", fontSize: 11, letterSpacing: ".12em", textTransform: "uppercase", color: "#5a6679", marginBottom: 16 };
   return (
     <footer style={{ borderTop: "1px solid #11192b", background: "#070a12" }}>
       <div className="grid grid-cols-2 sm:grid-cols-[1.4fr_1fr_1fr_1fr]" style={{ maxWidth: 1200, margin: "0 auto", padding: "54px 24px 40px", gap: 34 }}>
@@ -324,7 +324,7 @@ function Footer({ onSignal, onLabs, onAbout, onSignIn, onGetStarted }: {
           <a onClick={onGetStarted} style={linkStyle}>Get started</a>
         </div>
       </div>
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "20px 24px 34px", borderTop: "1px solid #11192b", fontFamily: "'Geist Mono',monospace", fontSize: 11.5, color: "#4f5a6d" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "20px 24px 34px", borderTop: "1px solid #11192b", fontFamily: "var(--font-geist-mono),monospace", fontSize: 11.5, color: "#4f5a6d" }}>
         &copy; {new Date().getFullYear()} Qiko
       </div>
     </footer>
@@ -370,7 +370,7 @@ export default function LandingPage() {
       style={{
         background: "radial-gradient(1000px 600px at 82% -8%,rgba(34,160,245,.07),transparent 62%),radial-gradient(900px 560px at 8% 12%,rgba(168,85,247,.055),transparent 60%),#06080F",
         color: "#F4F7FB",
-        fontFamily: "Geist,ui-sans-serif,system-ui,sans-serif",
+        fontFamily: "var(--font-geist-sans),ui-sans-serif,system-ui,sans-serif",
         minHeight: "100vh",
         overflowX: "clip",
         WebkitFontSmoothing: "antialiased",

@@ -9,32 +9,33 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@qiko/ui": "workspace:*",
+    "@radix-ui/react-checkbox": "^1.3.3",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-label": "^2.1.7",
+    "@radix-ui/react-radio-group": "^1.3.8",
+    "@radix-ui/react-slider": "^1.3.6",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-switch": "^1.2.6",
+    "@tanstack/react-query": "^5.62.0",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.34.3",
+    "geist": "1.7.2",
+    "input-otp": "^1.4.2",
+    "lucide-react": "^0.462.0",
     "next": "^15.1.6",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@tanstack/react-query": "^5.62.0",
-    "@qiko/ui": "workspace:*",
-    "lucide-react": "^0.462.0",
-    "clsx": "^2.1.1",
-    "tailwind-merge": "^3.3.1",
-    "class-variance-authority": "^0.7.1",
-    "framer-motion": "^12.34.3",
     "sonner": "^2.0.7",
-    "@radix-ui/react-slot": "^1.2.3",
-    "@radix-ui/react-label": "^2.1.7",
-    "@radix-ui/react-checkbox": "^1.3.3",
-    "@radix-ui/react-radio-group": "^1.3.8",
-    "@radix-ui/react-slider": "^1.3.6",
-    "@radix-ui/react-switch": "^1.2.6",
-    "@radix-ui/react-dialog": "^1.1.15",
-    "input-otp": "^1.4.2"
+    "tailwind-merge": "^3.3.1"
   },
   "devDependencies": {
-    "typescript": "^5.6.0",
+    "@tailwindcss/postcss": "^4.0.0",
     "@types/node": "^22.10.0",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "tailwindcss": "^4.0.0",
-    "@tailwindcss/postcss": "^4.0.0"
+    "typescript": "^5.6.0"
   }
 }
