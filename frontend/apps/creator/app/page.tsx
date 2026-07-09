@@ -217,7 +217,7 @@ function Nav({ onAudit, onSignal, onLabs, onAbout, onSignIn, onGetStarted }: {
           <img src="/qiko-logo.webp" alt="Qiko" style={{ height: 30, width: "auto", display: "block" }} />
         </a>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "0 auto" }} className="hidden md:flex">
+        <div style={{ alignItems: "center", gap: 6, margin: "0 auto" }} className="hidden md:flex">
           <a onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })} style={{ fontSize: 14.5, fontWeight: 500, color: "#E6ECF5", textDecoration: "none", padding: "8px 14px", borderRadius: 999, cursor: "pointer" }}>Home</a>
 
           <div style={{ position: "relative", display: "flex", alignItems: "center" }}
@@ -257,15 +257,15 @@ function Nav({ onAudit, onSignal, onLabs, onAbout, onSignIn, onGetStarted }: {
           <a onClick={onAbout} style={{ fontSize: 14.5, fontWeight: 500, color: "#9aa6b8", textDecoration: "none", padding: "8px 14px", borderRadius: 999, cursor: "pointer" }}>About</a>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "0 0 auto" }} className="hidden md:flex">
+        <div style={{ alignItems: "center", gap: 10, flex: "0 0 auto" }} className="hidden md:flex">
           <a onClick={onSignIn} style={{ fontSize: 14.5, fontWeight: 600, color: "#D6DEEA", textDecoration: "none", padding: "9px 8px", cursor: "pointer" }}>Sign in</a>
           <a onClick={onGetStarted} style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 14.5, fontWeight: 700, color: "#fff", textDecoration: "none", background: "linear-gradient(115deg,#22D3EE,#4F8FF7 55%,#6E73F2)", padding: "11px 20px", borderRadius: 999, boxShadow: "0 10px 30px -10px rgba(79,143,247,.7)", cursor: "pointer" }}>
             Get started <span style={{ fontSize: 15 }}>&#8594;</span>
           </a>
         </div>
 
-        <button type="button" onClick={() => setMobileOpen((v) => !v)} aria-label="Menu" className="md:hidden"
-          style={{ marginLeft: "auto", flex: "0 0 auto", display: "flex", alignItems: "center", justifyContent: "center", width: 42, height: 42, borderRadius: 12, background: "rgba(255,255,255,.05)", border: "1px solid #283349", cursor: "pointer", padding: 0 }}>
+        <button type="button" onClick={() => setMobileOpen((v) => !v)} aria-label="Menu" className="flex md:hidden"
+          style={{ marginLeft: "auto", flex: "0 0 auto", alignItems: "center", justifyContent: "center", width: 42, height: 42, borderRadius: 12, background: "rgba(255,255,255,.05)", border: "1px solid #283349", cursor: "pointer", padding: 0 }}>
           <span style={{ position: "relative", display: "block", width: 18, height: 12 }}>
             <span style={{ position: "absolute", top: 0, left: 0, width: "100%", height: 2, background: "#E6ECF5", borderRadius: 2 }} />
             <span style={{ position: "absolute", top: 5, left: 0, width: "100%", height: 2, background: "#E6ECF5", borderRadius: 2 }} />
