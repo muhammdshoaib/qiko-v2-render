@@ -1,6 +1,6 @@
 import pytest
 
-from app.modules.rfp.service import RfpPackNotFound, RfpPackService
+from app.modules.rfp.service import RequirementService, RfpPackNotFound, RfpPackService
 
 from tests.helpers import auth_cookies
 
@@ -60,6 +60,23 @@ def test_rfp_pack_api_crud(client):
 
     assert client.delete(f"/api/v1/rfp/packs/{created['id']}", cookies=c).json()["deleted"] == created["id"]
     assert client.get("/api/v1/rfp/packs", cookies=c).json() == []
+
+
+def test_deleting_pack_also_deletes_its_requirements(client):
+    c = auth_cookies("rfpco2", "owner")
+    created = client.post("/api/v1/rfp/packs",
+                          json={"agent_id": "w1", "title": "Tender B"}, cookies=c).json()
+    pack_id = created["id"]
+
+    reqs: RequirementService = client.app.state.requirements
+    import asyncio
+    asyncio.run(reqs.save_extracted("rfpco2", pack_id, [
+        {"id": "1", "title": "Req one", "classification": "KB", "requirement": "text"},
+    ]))
+    assert len(client.get(f"/api/v1/rfp/packs/{pack_id}/requirements", cookies=c).json()) == 1
+
+    client.delete(f"/api/v1/rfp/packs/{pack_id}", cookies=c)
+    assert client.get(f"/api/v1/rfp/packs/{pack_id}/requirements", cookies=c).json() == []
 
 
 def test_rfp_pack_write_requires_editor_role(client):

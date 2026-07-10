@@ -259,6 +259,11 @@ class SqlRequirementStore:
                 PackRequirementRow.tenant_id == tenant, PackRequirementRow.pack_id == pack_id))).scalars().all()
             return [self._to_domain(r) for r in rows]
 
+    async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            await s.execute(delete(PackRequirementRow).where(
+                PackRequirementRow.tenant_id == tenant, PackRequirementRow.pack_id == pack_id))
+
 
 @dataclass
 class SqlAssignmentStore:

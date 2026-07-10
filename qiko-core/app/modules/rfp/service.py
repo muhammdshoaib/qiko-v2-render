@@ -129,6 +129,7 @@ class PackRequirement:
 class RequirementStore(Protocol):
     async def replace_all(self, tenant: str, pack_id: str, items: list[PackRequirement]) -> list[PackRequirement]: ...
     async def list(self, tenant: str, pack_id: str) -> list[PackRequirement]: ...
+    async def delete_for_pack(self, tenant: str, pack_id: str) -> None: ...
 
 
 @dataclass
@@ -142,6 +143,9 @@ class InMemoryRequirementStore:
     async def list(self, tenant: str, pack_id: str) -> list[PackRequirement]:
         return [r for r in self._by_pack.get(pack_id, []) if r.tenant == tenant]
 
+    async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
+        self._by_pack.pop(pack_id, None)
+
 
 @dataclass
 class RequirementService:
@@ -150,6 +154,9 @@ class RequirementService:
     def __post_init__(self) -> None:
         if self.store is None:
             self.store = InMemoryRequirementStore()
+
+    async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
+        await self.store.delete_for_pack(tenant, pack_id)
 
     async def save_extracted(self, tenant: str, pack_id: str, extracted: list[dict]) -> list[PackRequirement]:
         items = [

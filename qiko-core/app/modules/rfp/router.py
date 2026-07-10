@@ -65,7 +65,9 @@ async def set_stage(pack_id: str, body: StageBody, tenant: str = Depends(authed_
 
 @router.delete("/{pack_id}")
 async def delete_pack(pack_id: str, tenant: str = Depends(authed_tenant),
-                      _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_rfp_packs)) -> dict:
+                      _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_rfp_packs),
+                      reqs=Depends(get_requirements)) -> dict:
+    await reqs.delete_for_pack(tenant, pack_id)
     await svc.delete(tenant, pack_id)
     return {"deleted": pack_id}
 
