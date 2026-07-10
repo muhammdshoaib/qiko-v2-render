@@ -18,9 +18,9 @@ class LeadBody(BaseModel):
 
 
 @router.post("")
-def capture(body: LeadBody, _tenant: str = Depends(authed_tenant), svc=Depends(get_leads)) -> dict:
+async def capture(body: LeadBody, tenant: str = Depends(authed_tenant), svc=Depends(get_leads)) -> dict:
     try:
-        lead = svc.capture(body.kind, body.name, body.email, body.payload)
+        lead = await svc.capture(tenant, body.kind, body.name, body.email, body.payload)
         return {"kind": lead.kind, "email": lead.email}
     except LeadError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

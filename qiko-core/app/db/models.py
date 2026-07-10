@@ -129,6 +129,31 @@ class PlatformAdmin(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class Lead(Base):
+    __tablename__ = "leads"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    name: Mapped[str] = mapped_column(String(255))
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Team(Base):
+    __tablename__ = "teams"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class TeamMember(Base):
+    __tablename__ = "team_members"
+    team_id: Mapped[str] = mapped_column(ForeignKey("teams.id"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    role: Mapped[str] = mapped_column(String(16))
+
+
 class Passage(Base):
     __tablename__ = "passages"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

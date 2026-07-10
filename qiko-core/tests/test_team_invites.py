@@ -24,10 +24,10 @@ def test_expired_and_tampered_rejected():
         accept_invite("not.a.valid.token")
 
 
-def test_set_password_adds_member_and_hashes():
+async def test_set_password_adds_member_and_hashes():
     teams = TeamService()
-    team = teams.create_team("acme", "owner")
+    team = await teams.create_team("acme", "owner")
     token = create_invite(team.id, "member@x.com", Role.editor)
-    rec = set_invite_password(teams, token, "s3cret-pw")
-    assert teams.members(team.id)["member@x.com"] is Role.editor
+    rec = await set_invite_password(teams, token, "s3cret-pw")
+    assert (await teams.members(team.id))["member@x.com"] is Role.editor
     assert rec["password_hash"] != "s3cret-pw" and verify_password("s3cret-pw", rec["password_hash"])

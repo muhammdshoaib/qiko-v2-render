@@ -2,11 +2,13 @@ import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.db.base import Base
-from app.db.stores import SqlUserStore, SqlVectorStore, SqlVerifiedStore
+from app.db.stores import SqlLeadStore, SqlTeamStore, SqlUserStore, SqlVectorStore, SqlVerifiedStore
 from app.modules.identity.rbac import Role
 from app.modules.identity.security import hash_password
 from app.modules.identity.store import User
 from app.modules.knowledge.models import Passage
+from app.modules.leads.service import Lead
+from app.modules.teams.service import Team
 
 
 async def _sessionmaker(path: str):
@@ -60,3 +62,30 @@ async def test_vector_store_tenant_scope(db_path):
     acme = await vs.get("acme")
     assert [p.id for p in acme] == ["p1"] and acme[0].embedding == [0.1, 0.2]
     assert await vs.get("nobody") == []
+
+
+async def test_lead_store_persists_and_tenant_scoped(db_path):
+    sm1, e1 = await _sessionmaker(db_path)
+    lead = Lead(id="l1", tenant="acme", kind="enterprise", name="Acme Corp",
+               email="buyer@acme.com", payload={"seats": 50})
+    await SqlLeadStore(sm1).add(lead)
+    await e1.dispose()  # simulate redeploy/restart
+    sm2 = async_sessionmaker(create_async_engine(f"sqlite+aiosqlite:///{db_path}"), expire_on_commit=False)
+    leads = await SqlLeadStore(sm2).list("acme")
+    assert len(leads) == 1 and leads[0].email == "buyer@acme.com" and leads[0].payload == {"seats": 50}
+    assert await SqlLeadStore(sm2).list("beta") == []
+
+
+async def test_team_store_persists_membership_across_restart(db_path):
+    sm1, e1 = await _sessionmaker(db_path)
+    store1 = SqlTeamStore(sm1)
+    team = await store1.add(Team(id="t1", tenant="acme", members={"owner": Role.owner}))
+    await store1.set_member(team.id, "u2", Role.editor)
+    await e1.dispose()  # simulate redeploy/restart
+    sm2 = async_sessionmaker(create_async_engine(f"sqlite+aiosqlite:///{db_path}"), expire_on_commit=False)
+    store2 = SqlTeamStore(sm2)
+    reloaded = await store2.get("t1")
+    assert reloaded.members == {"owner": Role.owner, "u2": Role.editor}
+    await store2.remove_member("t1", "u2")
+    assert (await store2.get("t1")).members == {"owner": Role.owner}
+    assert await store2.get("missing") is None

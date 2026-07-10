@@ -43,9 +43,9 @@ def test_password_reset_otp():
     assert store.verify("u@x.com", store.issue("u@x.com", ttl=-1)) is False  # expired
 
 
-def test_signup_bootstraps_team_owner_and_welcome_email():
+async def test_signup_bootstraps_team_owner_and_welcome_email():
     teams, mail = TeamService(), ConsoleEmailSender()
-    rec = signup(teams, "acme", "Owner@X.com", "pw123456", mail)
+    rec = await signup(teams, "acme", "Owner@X.com", "pw123456", mail)
     assert rec["role"] == Role.owner.value and verify_password("pw123456", rec["password_hash"])
-    assert teams.members(rec["team_id"])["owner@x.com"] is Role.owner
+    assert (await teams.members(rec["team_id"]))["owner@x.com"] is Role.owner
     assert mail.sent[0]["to"] == "owner@x.com" and "Qiko" in mail.sent[0]["subject"]

@@ -27,22 +27,22 @@ def _members(team) -> dict:
 
 
 @router.post("")
-def create_team(body: CreateTeamBody, _tenant: str = Depends(authed_tenant), svc=Depends(get_teams)) -> dict:
-    return _members(svc.create_team(_tenant, body.owner_id))
+async def create_team(body: CreateTeamBody, _tenant: str = Depends(authed_tenant), svc=Depends(get_teams)) -> dict:
+    return _members(await svc.create_team(_tenant, body.owner_id))
 
 
 @router.get("/{team_id}/members")
-def members(team_id: str, _tenant: str = Depends(authed_tenant), svc=Depends(get_teams)) -> dict:
+async def members(team_id: str, _tenant: str = Depends(authed_tenant), svc=Depends(get_teams)) -> dict:
     try:
-        return {"team_id": team_id, "members": {u: r.value for u, r in svc.members(team_id).items()}}
+        return {"team_id": team_id, "members": {u: r.value for u, r in (await svc.members(team_id)).items()}}
     except KeyError as e:
         raise HTTPException(status_code=404, detail="team not found") from e
 
 
 @router.post("/{team_id}/members")
-def add_member(team_id: str, body: MemberBody, _tenant: str = Depends(authed_tenant), svc=Depends(get_teams)) -> dict:
+async def add_member(team_id: str, body: MemberBody, _tenant: str = Depends(authed_tenant), svc=Depends(get_teams)) -> dict:
     try:
-        return _members(svc.add_member(team_id, body.user_id, body.role))
+        return _members(await svc.add_member(team_id, body.user_id, body.role))
     except TeamError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except KeyError as e:
@@ -54,21 +54,25 @@ class RoleBody(BaseModel):
 
 
 @router.put("/{team_id}/members/{user_id}")
-def update_member(team_id: str, user_id: str, body: RoleBody, _tenant: str = Depends(authed_tenant),
-                  _r: dict = _admin, svc=Depends(get_teams)) -> dict:
+async def update_member(team_id: str, user_id: str, body: RoleBody, _tenant: str = Depends(authed_tenant),
+                        _r: dict = _admin, svc=Depends(get_teams)) -> dict:
     try:
-        return _members(svc.update_role(team_id, user_id, body.role))
+        return _members(await svc.update_role(team_id, user_id, body.role))
     except TeamError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="team not found") from e
 
 
 @router.delete("/{team_id}/members/{user_id}")
-def remove_member(team_id: str, user_id: str, _tenant: str = Depends(authed_tenant),
-                  _r: dict = _admin, svc=Depends(get_teams)) -> dict:
+async def remove_member(team_id: str, user_id: str, _tenant: str = Depends(authed_tenant),
+                        _r: dict = _admin, svc=Depends(get_teams)) -> dict:
     try:
-        return _members(svc.remove_member(team_id, user_id))
+        return _members(await svc.remove_member(team_id, user_id))
     except TeamError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="team not found") from e
 
 
 class InviteBody(BaseModel):
@@ -77,7 +81,7 @@ class InviteBody(BaseModel):
 
 
 @router.post("/{team_id}/invites")
-def invite(team_id: str, body: InviteBody, _tenant: str = Depends(authed_tenant), _r: dict = _admin) -> dict:
+async def invite(team_id: str, body: InviteBody, _tenant: str = Depends(authed_tenant), _r: dict = _admin) -> dict:
     return {"token": create_invite(team_id, body.email, body.role)}
 
 
@@ -99,9 +103,9 @@ class SetPasswordBody(BaseModel):
 
 
 @router.post("/invites/set-password")
-def set_password(body: SetPasswordBody, svc=Depends(get_teams)) -> dict:
+async def set_password(body: SetPasswordBody, svc=Depends(get_teams)) -> dict:
     try:
-        rec = set_invite_password(svc, body.token, body.password)
+        rec = await set_invite_password(svc, body.token, body.password)
     except InviteError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return {"email": rec["email"], "team_id": rec["team_id"]}

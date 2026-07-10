@@ -14,11 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.db.models import Agent as AgentRow
 from app.db.models import Assignment as AssignmentRow
 from app.db.models import Conversation as ConversationRow
+from app.db.models import Lead as LeadRow
 from app.db.models import Message as MessageRow
 from app.db.models import PackRequirement as PackRequirementRow
 from app.db.models import Passage as PassageRow
 from app.db.models import PlatformAdmin as PlatformAdminRow
 from app.db.models import RfpPack as RfpPackRow
+from app.db.models import Team as TeamRow
+from app.db.models import TeamMember as TeamMemberRow
 from app.db.models import Tenant as TenantRow
 from app.db.models import User as UserRow
 from app.db.models import VerifiedAnswer
@@ -29,7 +32,9 @@ from app.modules.identity.admin_rbac import AdminRole
 from app.modules.identity.rbac import Role
 from app.modules.identity.store import User
 from app.modules.knowledge.models import Passage
+from app.modules.leads.service import Lead
 from app.modules.rfp.service import PackRequirement, RfpPack, RfpPackNotFound
+from app.modules.teams.service import Team
 
 
 @dataclass
@@ -378,3 +383,68 @@ class SqlAdminOrgStore:
         async with self.sessionmaker() as s:
             row = (await s.execute(select(PlatformAdminRow).limit(1))).scalars().first()
             return row is None
+
+
+@dataclass
+class SqlLeadStore:
+    """Persists captured leads (enterprise/RAG-wired forms) -- previously in-memory only, so every
+    lead was lost on the next redeploy."""
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def add(self, lead: Lead) -> Lead:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(LeadRow(id=lead.id, tenant_id=lead.tenant, kind=lead.kind, name=lead.name,
+                          email=lead.email, payload=lead.payload))
+        return lead
+
+    async def list(self, tenant: str) -> list[Lead]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(LeadRow).where(LeadRow.tenant_id == tenant).order_by(LeadRow.created_at))).scalars().all()
+            return [Lead(id=r.id, tenant=r.tenant_id, kind=r.kind, name=r.name, email=r.email,
+                        payload=r.payload or {}, created_at=r.created_at) for r in rows]
+
+
+@dataclass
+class SqlTeamStore:
+    """Persists teams + membership -- previously in-memory only, so every team lost all but its
+    owner (recreated at signup) on the next redeploy."""
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def _load(self, s: AsyncSession, team_id: str) -> Team | None:
+        team_row = await s.get(TeamRow, team_id)
+        if team_row is None:
+            return None
+        member_rows = (await s.execute(
+            select(TeamMemberRow).where(TeamMemberRow.team_id == team_id))).scalars().all()
+        return Team(id=team_row.id, tenant=team_row.tenant_id,
+                    members={m.user_id: Role(m.role) for m in member_rows})
+
+    async def add(self, team: Team) -> Team:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(TeamRow(id=team.id, tenant_id=team.tenant))
+            for user_id, role in team.members.items():
+                s.add(TeamMemberRow(team_id=team.id, user_id=user_id, role=role.value))
+        return team
+
+    async def get(self, team_id: str) -> Team | None:
+        async with self.sessionmaker() as s:
+            return await self._load(s, team_id)
+
+    async def set_member(self, team_id: str, user_id: str, role: Role) -> Team:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(TeamMemberRow, (team_id, user_id))
+            if row is None:
+                s.add(TeamMemberRow(team_id=team_id, user_id=user_id, role=role.value))
+            else:
+                row.role = role.value
+        async with self.sessionmaker() as s:
+            return await self._load(s, team_id)
+
+    async def remove_member(self, team_id: str, user_id: str) -> Team:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(TeamMemberRow, (team_id, user_id))
+            if row is not None:
+                await s.delete(row)
+        async with self.sessionmaker() as s:
+            return await self._load(s, team_id)

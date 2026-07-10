@@ -147,10 +147,10 @@ def list_payment_links(email: str, _tenant: str = Depends(authed_tenant),
 
 
 @router.get("/team/{team_id}/plan")
-def team_billing_plan(team_id: str, _tenant: str = Depends(authed_tenant),
-                      subs=Depends(get_subscriptions), teams=Depends(get_teams)) -> dict:
+async def team_billing_plan(team_id: str, _tenant: str = Depends(authed_tenant),
+                            subs=Depends(get_subscriptions), teams=Depends(get_teams)) -> dict:
     try:
-        members = list(teams.members(team_id))
+        members = list(await teams.members(team_id))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="team not found") from e
     return {"team_id": team_id, "plan": team_plan(members, subs).name}

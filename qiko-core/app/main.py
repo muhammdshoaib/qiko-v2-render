@@ -102,8 +102,10 @@ async def lifespan(app: FastAPI):
             SqlAgentStore,
             SqlAssignmentStore,
             SqlChatStore,
+            SqlLeadStore,
             SqlRequirementStore,
             SqlRfpPackStore,
+            SqlTeamStore,
             SqlUserStore,
             SqlVectorStore,
         )
@@ -119,6 +121,8 @@ async def lifespan(app: FastAPI):
         app.state.requirements = RequirementService(store=SqlRequirementStore(sm))
         app.state.assignments = AssignmentService(store=SqlAssignmentStore(sm))
         app.state.admin_org = AdminOrg(store=SqlAdminOrgStore(sm))  # platform admins survive a redeploy
+        app.state.teams = TeamService(store=SqlTeamStore(sm))  # teams/membership survive a redeploy
+        app.state.leads = LeadService(get_email_sender(), store=SqlLeadStore(sm))  # leads survive a redeploy
         set_user_store(SqlUserStore(sm))  # users/sessions/2FA persist to Postgres
     try:
         yield

@@ -33,9 +33,9 @@ def accept_invite(token: str) -> dict:
         raise InviteError(str(e)) from e
 
 
-def set_invite_password(teams: TeamService, token: str, password: str) -> dict:
+async def set_invite_password(teams: TeamService, token: str, password: str) -> dict:
     """Accept the invite and provision the member. Returns the new member's credentials record."""
     data = accept_invite(token)
-    teams.add_member(data["team_id"], data["email"], Role(data["role"]))
+    await teams.add_member(data["team_id"], data["email"], Role(data["role"]))
     return {"email": data["email"], "team_id": data["team_id"],
             "password_hash": hash_password(password)}

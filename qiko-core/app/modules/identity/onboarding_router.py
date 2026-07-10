@@ -26,7 +26,7 @@ class SignupBody(BaseModel):
 
 @router.post("/signup")
 async def signup(body: SignupBody, store: UserStore = Depends(get_store), teams=Depends(get_teams)) -> dict:
-    rec = bootstrap_signup(teams, body.tenant, body.email, body.password, get_email_sender())
+    rec = await bootstrap_signup(teams, body.tenant, body.email, body.password, get_email_sender())
     uid = uuid.uuid4().hex[:12]
     await store.add(User(id=uid, email=rec["email"], password_hash=rec["password_hash"],
                          tenant=body.tenant, role=Role.owner))

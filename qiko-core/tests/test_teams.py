@@ -10,26 +10,26 @@ def test_permission_matrix():
     assert PERMISSIONS[Role.viewer] == set()
 
 
-def test_create_team_makes_owner():
+async def test_create_team_makes_owner():
     svc = TeamService()
-    team = svc.create_team("acme", "u-owner")
+    team = await svc.create_team("acme", "u-owner")
     assert team.members == {"u-owner": Role.owner}
 
 
-def test_add_update_remove_member_with_owner_protection():
+async def test_add_update_remove_member_with_owner_protection():
     svc = TeamService()
-    team = svc.create_team("acme", "owner")
-    svc.add_member(team.id, "u2", Role.editor)
-    assert svc.members(team.id)["u2"] is Role.editor
-    svc.update_role(team.id, "u2", Role.admin)
-    assert svc.members(team.id)["u2"] is Role.admin
-    svc.remove_member(team.id, "u2")
-    assert "u2" not in svc.members(team.id)
+    team = await svc.create_team("acme", "owner")
+    await svc.add_member(team.id, "u2", Role.editor)
+    assert (await svc.members(team.id))["u2"] is Role.editor
+    await svc.update_role(team.id, "u2", Role.admin)
+    assert (await svc.members(team.id))["u2"] is Role.admin
+    await svc.remove_member(team.id, "u2")
+    assert "u2" not in await svc.members(team.id)
 
     # owner is protected
     with pytest.raises(TeamError):
-        svc.update_role(team.id, "owner", Role.viewer)
+        await svc.update_role(team.id, "owner", Role.viewer)
     with pytest.raises(TeamError):
-        svc.remove_member(team.id, "owner")
+        await svc.remove_member(team.id, "owner")
     with pytest.raises(TeamError):
-        svc.add_member(team.id, "u3", Role.owner)  # only one owner
+        await svc.add_member(team.id, "u3", Role.owner)  # only one owner

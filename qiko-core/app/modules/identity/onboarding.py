@@ -73,9 +73,9 @@ class OtpStore:
 
 
 # --- signup bootstrap ---
-def signup(teams: TeamService, tenant: str, email: str, password: str, email_sender: EmailSender) -> dict:
+async def signup(teams: TeamService, tenant: str, email: str, password: str, email_sender: EmailSender) -> dict:
     """Atomically create the user + their team (owner) + send the welcome/verification email."""
-    team = teams.create_team(tenant, email.lower())
+    team = await teams.create_team(tenant, email.lower())
     subject, body = verification_email(f"https://qiko.ai/verify?email={email.lower()}")
     email_sender.send(to=email.lower(), subject=subject, body=body)
     return {"email": email.lower(), "team_id": team.id, "role": Role.owner.value,
