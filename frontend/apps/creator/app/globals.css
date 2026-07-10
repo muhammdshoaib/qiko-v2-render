@@ -2,3 +2,35 @@
 @import "../../../packages/ui/src/theme.css";
 @source "../";
 @source "../../../packages/ui/src";
+
+/* Geist + Geist Mono, self-hosted -- same font files stage.qiko.ai serves at
+   /assets/*.woff2, so the landing page renders identically instead of relying
+   on a separately-packaged (and potentially not byte-identical) distribution. */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url("/fonts/geist-400-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 600 800;
+  font-display: swap;
+  src: url("/fonts/geist-600-800.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 400 500;
+  font-display: swap;
+  src: url("/fonts/geist-mono-400-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 600 700;
+  font-display: swap;
+  src: url("/fonts/geist-mono-600-700.woff2") format("woff2");
+}
