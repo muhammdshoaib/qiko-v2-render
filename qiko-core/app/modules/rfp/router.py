@@ -188,6 +188,40 @@ async def _answer_pack(request: Request, tenant: str, pack_id: str, reqs) -> lis
     return out
 
 
+class FeedbackBody(BaseModel):
+    req_id: str = Field(min_length=1)
+    decision: str = Field(min_length=1)  # Approve | Edit | Reject
+    comment: str = ""
+
+
+@router.post("/{pack_id}/feedback")
+async def submit_feedback(pack_id: str, body: FeedbackBody, request: Request,
+                          tenant: str = Depends(authed_tenant)) -> dict:
+    """Human sign-off on an AI draft. Approve/Edit writes the (possibly edited) text back to the
+    knowledge base as trusted ground truth for this requirement type -- the feedback flywheel
+    (see AgentCore.record_feedback) -- so the next tender's draft for a similar requirement type
+    starts from what a human already approved. Reject records the decision without touching the KB."""
+    if body.decision not in {"Approve", "Edit", "Reject"}:
+        raise HTTPException(status_code=422, detail="decision must be Approve, Edit, or Reject")
+    if body.decision in {"Approve", "Edit"} and body.comment.strip():
+        worker = build_tenant_worker(request, tenant)
+        await worker.approve(body.req_id, body.comment.strip())
+    return {"req_id": body.req_id, "decision": body.decision, "saved": True}
+
+
+@router.get("/{pack_id}/answers")
+async def get_answers(pack_id: str, request: Request, tenant: str = Depends(authed_tenant),
+                      reqs=Depends(get_requirements)) -> list[dict]:
+    """JSON form of the same answer-pack pipeline the exports use -- powers the tender cockpit's
+    Sections tab (AI draft + confidence/grounding + citations + status per requirement)."""
+    answered = await _answer_pack(request, tenant, pack_id, reqs)
+    return [{
+        "req_id": a["req"].req_id, "req_title": a["req"].title, "classification": a["req"].classification,
+        "requirement": a["req"].requirement, "answer": a["answer"], "confidence": a["confidence"],
+        "grounding": a["confidence"], "status": a["decision"], "citations": a["citations"], "note": a["note"],
+    } for a in answered]
+
+
 @router.get("/{pack_id}/export/xlsx")
 async def export_xlsx(pack_id: str, request: Request, tenant: str = Depends(authed_tenant),
                       reqs=Depends(get_requirements)) -> StreamingResponse:

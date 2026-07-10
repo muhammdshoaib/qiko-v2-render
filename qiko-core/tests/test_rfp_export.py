@@ -56,6 +56,44 @@ def test_export_xlsx_has_grounding_column_and_status(client, monkeypatch):
     assert "team" in manual_row[5].lower()
 
 
+def test_get_answers_json_for_cockpit(client, monkeypatch):
+    c, pack, fake_get_provider = _setup_pack_with_requirements(client, "exportco1b")
+    monkeypatch.setattr("app.modules.rfp.router.get_provider", fake_get_provider)
+    client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
+               files={"file": ("t.txt", io.BytesIO(b"tender text"), "text/plain")})
+
+    r = client.get(f"/api/v1/rfp/packs/{pack['id']}/answers", cookies=c)
+    assert r.status_code == 200
+    answers = r.json()
+    assert len(answers) == 2
+    kb = next(a for a in answers if a["req_id"] == "A1")
+    assert kb["classification"] == "KB" and kb["answer"] and "confidence" in kb and "citations" in kb
+    manual = next(a for a in answers if a["req_id"] == "A2")
+    assert manual["answer"] == "" and "team" in manual["note"].lower()
+
+
+def test_feedback_approve_and_reject(client):
+    c = auth_cookies("fbco1", "owner")
+    pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender"}, cookies=c).json()
+
+    r = client.post(f"/api/v1/rfp/packs/{pack['id']}/feedback", cookies=c,
+                    json={"req_id": "B1", "decision": "Approve", "comment": "Human-approved answer text."})
+    assert r.status_code == 200
+    assert r.json() == {"req_id": "B1", "decision": "Approve", "saved": True}
+
+    r = client.post(f"/api/v1/rfp/packs/{pack['id']}/feedback", cookies=c,
+                    json={"req_id": "B1", "decision": "Reject"})
+    assert r.status_code == 200 and r.json()["decision"] == "Reject"
+
+
+def test_feedback_rejects_invalid_decision(client):
+    c = auth_cookies("fbco2", "owner")
+    pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender"}, cookies=c).json()
+    r = client.post(f"/api/v1/rfp/packs/{pack['id']}/feedback", cookies=c,
+                    json={"req_id": "B1", "decision": "Bogus"})
+    assert r.status_code == 422
+
+
 def test_export_docx_clean_and_review(client, monkeypatch):
     c, pack, fake_get_provider = _setup_pack_with_requirements(client, "exportco2")
     monkeypatch.setattr("app.modules.rfp.router.get_provider", fake_get_provider)

@@ -137,6 +137,31 @@ export const complianceCheck = (packId: string, documentText: string) =>
 
 export const exportUrl = (packId: string, kind: "xlsx" | "docx-clean" | "docx-review") => `${BASE}/rfp/packs/${packId}/export/${kind}`;
 
+export type Answer = {
+  req_id: string; req_title: string; classification: string; requirement: string;
+  answer: string; confidence: number; grounding: number; status: string;
+  citations: string[]; note: string;
+};
+export const getAnswers = (packId: string) => request<Answer[]>(`/rfp/packs/${packId}/answers`);
+
+export const submitFeedback = (packId: string, req_id: string, decision: "Approve" | "Edit" | "Reject", comment = "") =>
+  request<{ req_id: string; decision: string; saved: boolean }>(`/rfp/packs/${packId}/feedback`, {
+    method: "POST", body: JSON.stringify({ req_id, decision, comment }),
+  });
+
+export async function ingestFile(docId: string, file: File): Promise<{ chunks: number }> {
+  const csrf = document.cookie.match(/(?:^|; )qiko_csrf=([^;]+)/)?.[1];
+  const form = new FormData();
+  form.append("file", file);
+  form.append("doc_id", docId);
+  const res = await fetch(`${BASE}/knowledge/ingest-file`, {
+    method: "POST", credentials: "include", body: form,
+    headers: csrf ? { "x-csrf-token": csrf } : undefined,
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
 // Leads captured through public forms (enterprise / RAG-wired) -- shown as a lightweight CRM.
 export type Lead = { id: string; kind: string; name: string; email: string; payload: Record<string, unknown>; created_at: string };
 export const listLeads = () => request<Lead[]>("/leads");
