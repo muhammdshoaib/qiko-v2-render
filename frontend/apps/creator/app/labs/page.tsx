@@ -1,15 +1,14 @@
 "use client";
 
-import { useLayoutEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { QikoNav, QikoFooter } from "@/components/QikoSiteChrome";
 import LabsContactForm from "@/components/LabsContactForm";
 
 // Exact HTML extracted from the live stage.qiko.ai deployment (qiko-frontend's
-// client/src/new-site/content/labs.ts, itself "auto-generated from wireframe"). The contact
-// form at the bottom (#labs-contact-react-mount) is a real React component portaled in below,
-// same split the real site uses (LabsPageView.tsx: HtmlPage(labsHtml) + createPortal).
+// client/src/new-site/content/labs.ts, itself "auto-generated from wireframe"), minus its
+// #lb-contact section -- that one is rendered as real JSX below (see LabsPage), with
+// LabsContactForm as a normal child instead of a portal into a raw-HTML placeholder node
+// (the real site does the latter via createPortal; not worth the hydration-timing risk here).
 const LABS_HTML = `<main data-labs-page="">
 
     
@@ -146,29 +145,10 @@ const LABS_HTML = `<main data-labs-page="">
         </div>
       </div>
     </section>
-
-    
-    <section id="lb-contact" style="position:relative;max-width:1200px;margin:0 auto;padding:54px 24px 90px;scroll-margin-top:96px;">
-      <div style="position:absolute;top:40px;right:-60px;width:420px;height:420px;border-radius:50%;background:radial-gradient(circle,rgba(168,85,247,.14),transparent 65%);pointer-events:none;"></div>
-      <div class="q-2col" style="position:relative;display:grid;grid-template-columns:.9fr 1.1fr;gap:48px;align-items:start;">
-        <div>
-          <div style="font-size:12.5px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:#c79bff;margin-bottom:14px;">Get in touch</div>
-          <h2 style="font-size:clamp(30px,4vw,44px);font-weight:700;letter-spacing:-.025em;line-height:1.08;margin:0 0 18px;">Tell us what you want to build.</h2>
-          <p style="font-size:17px;line-height:1.65;color:#AEB9C9;max-width:44ch;margin:0 0 26px;">Send us the shape of the problem and we will come back with how Qiko Labs would approach it.</p>
-          <p style="font-size:15px;font-weight:600;color:#E8EEF6;max-width:42ch;">Built on Qiko, so what you build today is ready for what comes next.</p>
-        </div>
-        <div style="background:linear-gradient(165deg,#0d1526,#0a1120);border:1px solid #1d2942;border-radius:20px;padding:30px;"><div id="labs-contact-react-mount"></div></div>
-      </div>
-    </section>
 </main>`;
 
 export default function LabsPage() {
   const router = useRouter();
-  const [mountEl, setMountEl] = useState<HTMLElement | null>(null);
-
-  useLayoutEffect(() => {
-    setMountEl(document.getElementById("labs-contact-react-mount"));
-  }, []);
 
   const openExternal = (path: string) => window.open(`https://qiko.ai${path}`, "_blank", "noopener");
 
@@ -203,7 +183,23 @@ export default function LabsPage() {
       <QikoNav onHome={goHome} onSignal={goSignal} onLabs={goLabs} onAbout={goAbout} onSignIn={goSignIn} onGetStarted={goGetStarted}
            sigHow={sigHow} sigCheck={sigCheck} sigPricing={sigPricing} labBuild={labBuild} labHow={labHow} labWhy={labWhy} />
       <div suppressHydrationWarning dangerouslySetInnerHTML={{ __html: LABS_HTML }} />
-      {mountEl ? createPortal(<LabsContactForm />, mountEl) : null}
+      {/* Rendered as real JSX (not dangerouslySetInnerHTML + a portal into it) so the
+          interactive form is part of React's own tree from the start -- no
+          hydration-timing race to find and mount into a raw-HTML placeholder node. */}
+      <section id="lb-contact" style={{ position: "relative", maxWidth: 1200, margin: "0 auto", padding: "54px 24px 90px", scrollMarginTop: 96 }}>
+        <div style={{ position: "absolute", top: 40, right: -60, width: 420, height: 420, borderRadius: "50%", background: "radial-gradient(circle,rgba(168,85,247,.14),transparent 65%)", pointerEvents: "none" }} />
+        <div className="grid grid-cols-1 md:grid-cols-[.9fr_1.1fr]" style={{ position: "relative", gap: 48, alignItems: "start" }}>
+          <div>
+            <div style={{ fontSize: 12.5, fontWeight: 600, letterSpacing: ".18em", textTransform: "uppercase", color: "#c79bff", marginBottom: 14 }}>Get in touch</div>
+            <h2 style={{ fontSize: "clamp(30px,4vw,44px)", fontWeight: 700, letterSpacing: "-.025em", lineHeight: 1.08, margin: "0 0 18px" }}>Tell us what you want to build.</h2>
+            <p style={{ fontSize: 17, lineHeight: 1.65, color: "#AEB9C9", maxWidth: "44ch", margin: "0 0 26px" }}>Send us the shape of the problem and we will come back with how Qiko Labs would approach it.</p>
+            <p style={{ fontSize: 15, fontWeight: 600, color: "#E8EEF6", maxWidth: "42ch" }}>Built on Qiko, so what you build today is ready for what comes next.</p>
+          </div>
+          <div style={{ background: "linear-gradient(165deg,#0d1526,#0a1120)", border: "1px solid #1d2942", borderRadius: 20, padding: 30 }}>
+            <LabsContactForm />
+          </div>
+        </div>
+      </section>
       <QikoFooter onSignal={goSignal} onLabs={goLabs} onAbout={goAbout} onSignIn={goSignIn} onGetStarted={goGetStarted} />
     </div>
   );
