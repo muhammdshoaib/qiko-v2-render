@@ -81,6 +81,7 @@ from app.modules.knowledge.sources import KnowledgeSources
 from app.modules.knowledge.sources_router import router as sources_router
 from app.modules.leads.router import router as leads_router
 from app.modules.leads.service import LeadService
+from app.modules.marketing.router import router as marketing_router
 from app.modules.teams.router import router as teams_router
 from app.modules.teams.service import TeamService
 from app.modules.voice.pipeline import VoicePipeline
@@ -201,7 +202,7 @@ def create_app() -> FastAPI:
     for r in (identity_router, knowledge_router, agents_router, rfp_router, assignments_router, admin_router,
               chat_router, teams_router, leads_router, billing_router, channels_router, excel_router,
               voice_router, signal_router, public_chat_router, sources_router, twofa_router,
-              onboarding_router, admin_org_router, batch_router):
+              onboarding_router, admin_org_router, batch_router, marketing_router):
         app.include_router(r, prefix="/api/v1")
     return app
 

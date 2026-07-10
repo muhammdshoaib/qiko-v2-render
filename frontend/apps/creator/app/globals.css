@@ -34,3 +34,31 @@
   font-display: swap;
   src: url("/fonts/geist-mono-600-700.woff2") format("woff2");
 }
+
+/* Ambient-orb / spinner keyframes referenced by the ported landing + labs page HTML
+   (animation:qfloat / qfloat2 / qspin) -- present in the real site's own globals.css but
+   never defined here, so those animations were silently doing nothing. */
+@keyframes qfloat {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(-18px, 22px); }
+}
+@keyframes qfloat2 {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(24px, -16px); }
+}
+@keyframes qspin {
+  to { transform: rotate(360deg); }
+}
+
+/* stage.qiko.ai's h1/h2/h3 declare `font-family: Satoshi, Inter, ...` but never actually
+   self-host Satoshi (no @font-face for it exists anywhere on that deployment), so headings
+   silently fall through to Inter. This app's global h1/h2/h3 rule (theme.css) DOES load
+   Satoshi correctly, which is why the landing page's headings rendered visibly differently
+   (different glyph widths, different line wraps) from what's actually live. Overriding back
+   to Inter here, scoped to the landing page only, to match reality rather than the site's own
+   (unfulfilled) intent. */
+.qiko-landing-1to1 h1,
+.qiko-landing-1to1 h2,
+.qiko-landing-1to1 h3 {
+  font-family: var(--font-qiko), ui-sans-serif, system-ui, sans-serif !important;
+}

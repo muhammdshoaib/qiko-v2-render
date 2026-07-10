@@ -75,6 +75,7 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     email_from: str = "no-reply@qiko.ai"
+    labs_contact_email: str = "support@qiko.ai"
 
     # API hardening
     cors_allow_origins: list[str] = ["http://localhost:3000"]

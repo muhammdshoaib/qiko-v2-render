@@ -115,6 +115,11 @@ export const publicChat = (tenant: string, workerId: string, question: string) =
     body: JSON.stringify({ tenant, worker_id: workerId, question }),
   });
 
+// Public /labs contact form (no auth -- a prospect doesn't have a tenant yet)
+export type LabsContactBody = { name: string; work_email: string; company: string; company_size: string; build_request: string };
+export const submitLabsContact = (body: LabsContactBody) =>
+  request<{ success: boolean; message: string }>("/marketing/labs-contact", { method: "POST", body: JSON.stringify(body) });
+
 // Billing
 export type Subscription = { customer_id: string; plan?: string; status: string };
 export const subscriptionStatus = (customerId: string) =>
