@@ -2,15 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutGrid, MessageSquare, Users, CreditCard, Settings, LogOut, Sparkles } from "lucide-react";
+import { LayoutGrid, Users, CreditCard, Settings, LogOut, Sparkles, Wrench } from "lucide-react";
 import { Button, Logo, cn } from "@qiko/ui";
 import { logout } from "@/lib/api";
 
 const NAV = [
-  { href: "/dashboard", label: "Workers", icon: LayoutGrid },
-  { href: "/chat", label: "Chat", icon: MessageSquare },
-  { href: "/team", label: "Team", icon: Users },
-  { href: "/billing", label: "Billing", icon: CreditCard },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
+  { href: "/workers", label: "Workers", icon: Users },
+  { href: "/billing", label: "Pricing", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -33,13 +32,15 @@ export function AppShell({ title, children }: { title: string; children: React.R
         <div className="px-2 pb-4">
           <Logo />
         </div>
-        <button
-          onClick={() => router.push(inStudio ? "/dashboard" : "/studio")}
-          className="mb-3 flex items-center justify-center gap-2 rounded-xl bg-white/[0.02] px-3 py-2.5 text-xs font-medium text-slate-300 transition-all hover:bg-white/[0.05]"
-        >
-          <Sparkles className="size-3.5" />
-          {inStudio ? "Switch to Creator" : "Switch to Studio"}
-        </button>
+        <div className="px-3 py-3 mb-1 border-b border-white/10">
+          <button
+            onClick={() => router.push(inStudio ? "/dashboard" : "/studio")}
+            className="w-full flex items-center gap-2 rounded-xl bg-white/[0.02] px-3 py-2.5 text-xs font-medium text-slate-300 transition-all hover:bg-white/[0.05]"
+          >
+            {inStudio ? <Sparkles className="size-4 text-[#A78BFA] shrink-0" /> : <Wrench className="size-4 text-[#22D3EE] shrink-0" />}
+            <span>{inStudio ? "Studio" : "Creator"} <span className="text-slate-500">- {inStudio ? "Creator" : "Studio"}</span></span>
+          </button>
+        </div>
         <nav className="flex flex-col gap-1">
           {NAV.map(({ href, label, icon: Icon }) => {
             const active = pathname === href || pathname.startsWith(href + "/");

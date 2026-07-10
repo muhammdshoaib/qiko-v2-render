@@ -107,6 +107,35 @@ export type RfpPack = { id: string; tenant: string; agent_id: string; title: str
 export const listRfpPacks = (agentId: string) => request<RfpPack[]>(`/rfp/packs?agent_id=${encodeURIComponent(agentId)}`);
 export type PackRequirement = { id: string; pack_id: string; req_id: string; title: string; classification: string; requirement: string };
 export const listRequirements = (packId: string) => request<PackRequirement[]>(`/rfp/packs/${packId}/requirements`);
+export const getRfpPack = (packId: string) => request<RfpPack & { document_text: string }>(`/rfp/packs/${packId}`);
+export const askBidContext = (packId: string, question: string) =>
+  request<{ question: string; answer: string }>(`/rfp/packs/${packId}/ask`, {
+    method: "POST", body: JSON.stringify({ question }),
+  });
+
+export type ComplianceItem = { requirement: string; category: string; mandatory: boolean; owner: "AI" | "Human"; note: string };
+export type TenderBrief = {
+  summary: string; scope: string; submission_format: string;
+  key_dates: string[]; success_criteria: string[]; gaps_and_risks: string[];
+};
+
+async function postDocumentText<T>(path: string, documentText: string): Promise<T> {
+  const csrf = document.cookie.match(/(?:^|; )qiko_csrf=([^;]+)/)?.[1];
+  const form = new FormData();
+  form.append("file", new Blob([documentText], { type: "text/plain" }), "tender.txt");
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST", credentials: "include", body: form,
+    headers: csrf ? { "x-csrf-token": csrf } : undefined,
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json() as Promise<T>;
+}
+export const tenderBrief = (packId: string, documentText: string) =>
+  postDocumentText<TenderBrief>(`/rfp/packs/${packId}/brief`, documentText);
+export const complianceCheck = (packId: string, documentText: string) =>
+  postDocumentText<ComplianceItem[]>(`/rfp/packs/${packId}/compliance`, documentText);
+
+export const exportUrl = (packId: string, kind: "xlsx" | "docx-clean" | "docx-review") => `${BASE}/rfp/packs/${packId}/export/${kind}`;
 
 // Public embed chat (no auth)
 export const publicChat = (tenant: string, workerId: string, question: string) =>

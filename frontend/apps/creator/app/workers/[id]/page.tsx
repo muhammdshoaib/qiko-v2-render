@@ -5,17 +5,18 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, Bot, Calendar, ExternalLink, FileText, GraduationCap, Phone, SendHorizonal, Trash2,
+  ArrowLeft, Bot, BrainCircuit, Calendar, Check, ExternalLink, FileText, GraduationCap, MessageCircle,
+  Phone, SendHorizonal, Sparkles, Trash2,
 } from "lucide-react";
 import { Badge, Button, Card, CardContent, Input, Label, Skeleton, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import {
   addBehavior, addFaq, addPolicy, addWebsite, ask, batchAnswer, batchExportUrl,
-  deleteDocument, getVapiCredentials, ingest, listAgents, listDocuments, saveVapiCredentials,
+  deleteDocument, getVapiCredentials, ingest, listAgents, listDocuments, listRfpPacks, saveVapiCredentials,
   updateAgentConfig, updateCalendlyEventType, type Agent, type BatchAnswer, type Doc,
 } from "@/lib/api";
 
-const TABS = ["Train", "Connections", "Chat", "Batch"] as const;
+const TABS = ["Overview", "Chat", "Train", "Connections", "Batch"] as const;
 type Tab = (typeof TABS)[number];
 
 function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
@@ -25,7 +26,7 @@ function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
 export default function WorkerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<Tab>("Train");
+  const [tab, setTab] = useState<Tab>("Overview");
   const docs = useQuery({ queryKey: ["documents"], queryFn: listDocuments });
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const worker = agents.data?.find((a) => a.id === id);
@@ -59,6 +60,7 @@ export default function WorkerDetailPage() {
           ))}
         </div>
 
+        {tab === "Overview" && <OverviewTab id={id} worker={worker} />}
         {tab === "Train" && (
           <TrainTab id={id} worker={worker} docs={docs.data} loading={docs.isLoading}
             onKnowledgeChange={refresh} onWorkerChange={refreshAgents} />
@@ -68,6 +70,103 @@ export default function WorkerDetailPage() {
         {tab === "Batch" && <BatchTab />}
       </div>
     </AppShell>
+  );
+}
+
+function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
+  const packs = useQuery({ queryKey: ["rfp-packs", id], queryFn: () => listRfpPacks(id) });
+  const cfg = worker?.config ?? {};
+  const expertise = (cfg.expertise as string) || "General purpose";
+  const capabilities = [
+    "Answers questions using your trained knowledge base",
+    "Handles multiple conversations simultaneously",
+    "Available around the clock without breaks",
+    "Personality friendly tone and communication style",
+    "Never forgets important details or context",
+  ];
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <Card className="border-emerald-500/30 bg-emerald-500/[0.06]">
+          <CardContent className="pt-5 flex items-center gap-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-emerald-500/15 text-emerald-400">
+              <Sparkles className="size-4" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold">Qiko-Sonic <span className="ml-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">ACTIVE</span></p>
+              <p className="text-xs text-muted-foreground">Instant · No setup</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="opacity-60">
+          <CardContent className="pt-5 flex items-center gap-3">
+            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
+              <BrainCircuit className="size-4" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold">Custom <span className="ml-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-400">COMING SOON</span></p>
+              <p className="text-xs text-muted-foreground">Fine-tuned · Your data</p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <BrainCircuit className="size-4 text-primary" /> AI Model Overview
+            <Badge variant="success" className="ml-auto">Active</Badge>
+          </div>
+          <div className="flex items-start gap-3">
+            <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary to-secondary text-white">
+              <Bot className="size-5" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold">{worker?.name ?? "Worker"}</p>
+              <p className="text-xs font-medium text-primary">{expertise}</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                This AI model has been trained to serve as {expertise.toLowerCase().startsWith("a") || expertise.toLowerCase().startsWith("e") ? "an" : "a"} {expertise}.
+                It delivers consistent, knowledgeable responses 24/7.
+              </p>
+            </div>
+          </div>
+          <div className="rounded-lg bg-muted/40 p-4">
+            <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+              <MessageCircle className="size-4" /> Language Response Capabilities
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {capabilities.map((c) => (
+                <div key={c} className="flex items-start gap-2 text-sm text-muted-foreground">
+                  <Check className="size-3.5 mt-0.5 shrink-0 text-emerald-400" /> {c}
+                </div>
+              ))}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {(packs.data?.length ?? 0) > 0 && (
+        <Card>
+          <CardContent className="pt-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold">Tenders</p>
+              <Badge variant="muted">{packs.data!.length} active</Badge>
+            </div>
+            {packs.data!.map((p) => (
+              <Link key={p.id} href={`/workers/${id}/tenders/${p.id}`}
+                className="flex items-center justify-between rounded-lg border border-border/60 p-3 text-sm hover:bg-muted/50">
+                <div>
+                  <p className="font-medium">{p.title}</p>
+                  <p className="text-xs text-muted-foreground">{p.client_name || "No client set"} {p.deadline ? `· Due ${p.deadline}` : ""}</p>
+                </div>
+                <Badge variant="muted">{p.stage}</Badge>
+              </Link>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+    </div>
   );
 }
 
