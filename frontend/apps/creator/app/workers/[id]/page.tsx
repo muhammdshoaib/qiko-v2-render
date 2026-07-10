@@ -12,11 +12,11 @@ import { Badge, Button, Card, CardContent, Input, Label, Skeleton, cn } from "@q
 import { AppShell } from "@/components/app-shell";
 import {
   addBehavior, addFaq, addPolicy, addWebsite, ask, batchAnswer, batchExportUrl,
-  deleteDocument, getVapiCredentials, ingest, listAgents, listDocuments, listRfpPacks, saveVapiCredentials,
-  updateAgentConfig, updateCalendlyEventType, type Agent, type BatchAnswer, type Doc,
+  deleteDocument, getVapiCredentials, ingest, listAgents, listDocuments, listLeads, listRfpPacks,
+  saveVapiCredentials, updateAgentConfig, updateCalendlyEventType, type Agent, type BatchAnswer, type Doc,
 } from "@/lib/api";
 
-const TABS = ["Overview", "Chat", "Train", "Connections", "Batch"] as const;
+const TABS = ["Overview", "Chat", "Train", "CRM", "Connections", "Batch"] as const;
 type Tab = (typeof TABS)[number];
 
 function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
@@ -65,6 +65,7 @@ export default function WorkerDetailPage() {
           <TrainTab id={id} worker={worker} docs={docs.data} loading={docs.isLoading}
             onKnowledgeChange={refresh} onWorkerChange={refreshAgents} />
         )}
+        {tab === "CRM" && <CrmTab />}
         {tab === "Connections" && <ConnectionsTab id={id} worker={worker} />}
         {tab === "Chat" && <ChatTab />}
         {tab === "Batch" && <BatchTab />}
@@ -167,6 +168,33 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
         </Card>
       )}
     </div>
+  );
+}
+
+function CrmTab() {
+  const leads = useQuery({ queryKey: ["leads"], queryFn: listLeads });
+  return (
+    <Card>
+      <CardContent className="pt-6 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold">Captured leads</p>
+          <Badge variant="muted">{leads.data?.length ?? 0}</Badge>
+        </div>
+        {leads.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {leads.data?.map((l) => (
+          <div key={l.id} className="flex items-center justify-between rounded-lg border border-border/60 p-3 text-sm">
+            <div>
+              <p className="font-medium">{l.name}</p>
+              <p className="text-xs text-muted-foreground">{l.email}</p>
+            </div>
+            <Badge variant="muted">{l.kind}</Badge>
+          </div>
+        ))}
+        {leads.data?.length === 0 && (
+          <p className="text-sm text-muted-foreground">No leads captured yet -- they show up here as visitors submit an enterprise or RAG-wired form.</p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

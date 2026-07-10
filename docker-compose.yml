@@ -33,6 +33,11 @@ services:
       redis: {condition: service_healthy}
     restart: unless-stopped
     networks: [app-net]
+    # The shared image's HEALTHCHECK curls localhost:8000/health, but this container runs the
+    # arq worker (no HTTP server on 8000 at all) -- always "unhealthy" in `docker ps`, never
+    # actually broken. Disable the inapplicable inherited check rather than fake an HTTP endpoint.
+    healthcheck:
+      disable: true
 
   creator:
     build:

@@ -137,6 +137,10 @@ export const complianceCheck = (packId: string, documentText: string) =>
 
 export const exportUrl = (packId: string, kind: "xlsx" | "docx-clean" | "docx-review") => `${BASE}/rfp/packs/${packId}/export/${kind}`;
 
+// Leads captured through public forms (enterprise / RAG-wired) -- shown as a lightweight CRM.
+export type Lead = { id: string; kind: string; name: string; email: string; payload: Record<string, unknown>; created_at: string };
+export const listLeads = () => request<Lead[]>("/leads");
+
 // Public embed chat (no auth)
 export const publicChat = (tenant: string, workerId: string, question: string) =>
   request<{ role: string; text: string }>("/public/chat", {

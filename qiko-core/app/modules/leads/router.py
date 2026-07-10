@@ -24,3 +24,10 @@ async def capture(body: LeadBody, tenant: str = Depends(authed_tenant), svc=Depe
         return {"kind": lead.kind, "email": lead.email}
     except LeadError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+
+@router.get("")
+async def list_leads(tenant: str = Depends(authed_tenant), svc=Depends(get_leads)) -> list[dict]:
+    leads = await svc.all(tenant)
+    return [{"id": lead.id, "kind": lead.kind, "name": lead.name, "email": lead.email,
+             "payload": lead.payload, "created_at": lead.created_at.isoformat()} for lead in leads]
