@@ -12,6 +12,14 @@ SYSTEM = (
     "Do not invent facts, dates, names, or figures. If the evidence is insufficient, say so."
 )
 
+# Ingestion is supposed to chunk documents to ~800 chars (app.modules.knowledge.chunking), but a
+# passage that slipped in unchunked (bulk-loaded, or from an older pipeline) can be tens of
+# thousands of chars. One such passage among the retrieved evidence blows up the prompt to a size
+# that made real Bedrock calls take minutes instead of seconds (observed live). Cap defensively
+# here regardless of how the passage got that large -- retrieval should return a snippet, not a
+# whole document.
+_MAX_EVIDENCE_CHARS = 2000
+
 
 @dataclass
 class Generator:
@@ -23,7 +31,8 @@ class Generator:
 
     def build_prompt(self, req: Requirement, verified: list[str] | None = None) -> str:
         evidence = list(req.context) + list(verified or [])
-        context_block = "\n".join(f"- {e}" for e in evidence) if evidence else "(none)"
+        capped = [e[:_MAX_EVIDENCE_CHARS] + ("…" if len(e) > _MAX_EVIDENCE_CHARS else "") for e in evidence]
+        context_block = "\n".join(f"- {e}" for e in capped) if capped else "(none)"
         return f"CONTEXT:\n{context_block}\n\nREQUIREMENT:\n{req.text}\n"
 
     def generate(self, req: Requirement, verified: list[str] | None = None) -> str:

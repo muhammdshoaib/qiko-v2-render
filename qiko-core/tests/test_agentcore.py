@@ -31,6 +31,17 @@ def test_build_prompt_includes_verified():
     assert "- a" in prompt and "- b" in prompt and "REQUIREMENT:" in prompt
 
 
+def test_build_prompt_caps_oversized_evidence():
+    # A passage that skipped chunking (bulk-loaded, older pipeline, etc.) can be tens of
+    # thousands of chars; one of those in the retrieved evidence blew up a real prompt enough to
+    # make Bedrock calls take minutes. build_prompt must never pass an unbounded passage through.
+    gen = Generator(provider=StubProvider())
+    huge = "x" * 50_000
+    req = Requirement(id="B1", text="Q", context=[huge])
+    prompt = gen.build_prompt(req)
+    assert len(prompt) < 10_000
+
+
 # --- critic ---
 def test_grounding_full():
     c = critic.grounding_score("IDG holds ISO 9001 certification valid through 2027.", ISO_EVIDENCE)
