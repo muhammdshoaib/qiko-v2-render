@@ -46,8 +46,16 @@ class BedrockProvider:
 
     def _client(self):  # pragma: no cover - requires AWS credentials/network
         import boto3
+        from botocore.config import Config
 
-        return boto3.client("bedrock-runtime", region_name=self.region)
+        # boto3's defaults (60s read timeout x up to 3 retries) mean one slow/unresponsive
+        # endpoint can block for minutes before the gateway ever gets to try its fallback
+        # provider -- observed live (a 15-requirement tender's answers taking >15 minutes).
+        # Fail fast instead: a couple of short retries, then let the caller fall back.
+        config = Config(connect_timeout=5, read_timeout=20, retries={"max_attempts": 2, "mode": "standard"})
+        if not hasattr(self, "_cached_client"):
+            self._cached_client = boto3.client("bedrock-runtime", region_name=self.region, config=config)
+        return self._cached_client
 
     def generate(self, prompt: str, *, system: str | None = None, temperature: float = 0.2) -> LLMResponse:  # pragma: no cover - network
         messages = [{"role": "user", "content": [{"text": prompt}]}]
