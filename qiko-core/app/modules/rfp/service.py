@@ -148,6 +148,56 @@ class InMemoryRequirementStore:
 
 
 @dataclass
+class CachedAnswer:
+    pack_id: str
+    req_id: str
+    tenant: str
+    answer: str
+    confidence: float
+    decision: str
+    citations: list[str]
+    note: str
+
+
+class PackAnswerStore(Protocol):
+    async def get_all(self, tenant: str, pack_id: str) -> dict[str, CachedAnswer]: ...
+    async def put(self, tenant: str, pack_id: str, req_id: str, answer: CachedAnswer) -> None: ...
+    async def delete_for_pack(self, tenant: str, pack_id: str) -> None: ...
+
+
+@dataclass
+class InMemoryPackAnswerStore:
+    _by_pack: dict[str, dict[str, CachedAnswer]] = field(default_factory=dict)
+
+    async def get_all(self, tenant: str, pack_id: str) -> dict[str, CachedAnswer]:
+        return {k: v for k, v in self._by_pack.get(pack_id, {}).items() if v.tenant == tenant}
+
+    async def put(self, tenant: str, pack_id: str, req_id: str, answer: CachedAnswer) -> None:
+        self._by_pack.setdefault(pack_id, {})[req_id] = answer
+
+    async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
+        self._by_pack.pop(pack_id, None)
+
+
+@dataclass
+class PackAnswerService:
+    store: PackAnswerStore = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.store is None:
+            self.store = InMemoryPackAnswerStore()
+
+    async def get_all(self, tenant: str, pack_id: str) -> dict[str, CachedAnswer]:
+        return await self.store.get_all(tenant, pack_id)
+
+    async def put(self, tenant: str, pack_id: str, req_id: str, answer: CachedAnswer) -> None:
+        await self.store.put(tenant, pack_id, req_id, answer)
+
+    async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
+        await self.store.delete_for_pack(tenant, pack_id)
+
+
+@dataclass
 class RequirementService:
     store: RequirementStore = None  # type: ignore[assignment]
 

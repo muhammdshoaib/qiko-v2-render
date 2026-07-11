@@ -93,6 +93,10 @@ def get_requirements(request: Request):
     return request.app.state.requirements
 
 
+def get_pack_answers(request: Request):
+    return request.app.state.pack_answers
+
+
 def get_assignments(request: Request):
     return request.app.state.assignments
 

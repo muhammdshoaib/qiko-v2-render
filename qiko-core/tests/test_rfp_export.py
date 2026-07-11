@@ -72,6 +72,43 @@ def test_get_answers_json_for_cockpit(client, monkeypatch):
     assert manual["answer"] == "" and "team" in manual["note"].lower()
 
 
+def test_answers_are_cached_and_force_bypasses_cache(client, monkeypatch):
+    c = auth_cookies("cacheco1", "owner")
+    client.post("/api/v1/knowledge/ingest", json={"doc_id": "iso", "text": ISO}, cookies=c)
+    pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender"}, cookies=c).json()
+    payload = '[{"id": "A1", "title": "ISO Certification", "classification": "KB", "requirement": "Describe your ISO 9001 certification."}]'
+    calls = {"n": 0}
+
+    def counting_provider():
+        class P:
+            def generate(self, prompt, *, system=None, temperature=0.2):
+                if "TENDER DOCUMENT" in prompt and "REQUIREMENT" not in prompt:
+                    from app.modules.ai.gateway import LLMResponse
+                    return LLMResponse(text=payload)
+                calls["n"] += 1
+                from app.modules.ai.gateway import LLMResponse
+                return LLMResponse(text="cached answer text")
+        return P()
+
+    monkeypatch.setattr("app.modules.rfp.router.get_provider", counting_provider)
+    # worker.answer() -> AgentCore -> Generator builds its own provider via a separately imported
+    # get_provider() reference -- patch that one too so the answer-generation call is also faked.
+    monkeypatch.setattr("app.modules.agentcore.generator.get_provider", counting_provider)
+    client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
+               files={"file": ("t.txt", io.BytesIO(b"tender text"), "text/plain")})
+
+    first = client.get(f"/api/v1/rfp/packs/{pack['id']}/answers", cookies=c).json()
+    calls_after_first = calls["n"]
+    assert calls_after_first > 0  # A1 is a KB item -- one real generation
+
+    second = client.get(f"/api/v1/rfp/packs/{pack['id']}/answers", cookies=c).json()
+    assert calls["n"] == calls_after_first  # served from cache, no new LLM calls
+    assert second == first
+
+    client.get(f"/api/v1/rfp/packs/{pack['id']}/answers?force=true", cookies=c)
+    assert calls["n"] > calls_after_first  # force= bypasses the cache
+
+
 def test_feedback_approve_and_reject(client):
     c = auth_cookies("fbco1", "owner")
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender"}, cookies=c).json()

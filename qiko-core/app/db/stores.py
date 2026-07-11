@@ -16,6 +16,7 @@ from app.db.models import Assignment as AssignmentRow
 from app.db.models import Conversation as ConversationRow
 from app.db.models import Lead as LeadRow
 from app.db.models import Message as MessageRow
+from app.db.models import PackAnswer as PackAnswerRow
 from app.db.models import PackRequirement as PackRequirementRow
 from app.db.models import Passage as PassageRow
 from app.db.models import PlatformAdmin as PlatformAdminRow
@@ -33,7 +34,7 @@ from app.modules.identity.rbac import Role
 from app.modules.identity.store import User
 from app.modules.knowledge.models import Passage
 from app.modules.leads.service import Lead
-from app.modules.rfp.service import PackRequirement, RfpPack, RfpPackNotFound
+from app.modules.rfp.service import CachedAnswer, PackRequirement, RfpPack, RfpPackNotFound
 from app.modules.teams.service import Team
 
 
@@ -263,6 +264,37 @@ class SqlRequirementStore:
         async with self.sessionmaker() as s, s.begin():
             await s.execute(delete(PackRequirementRow).where(
                 PackRequirementRow.tenant_id == tenant, PackRequirementRow.pack_id == pack_id))
+
+
+@dataclass
+class SqlPackAnswerStore:
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    def _to_domain(self, r: PackAnswerRow) -> CachedAnswer:
+        return CachedAnswer(pack_id=r.pack_id, req_id=r.req_id, tenant=r.tenant_id, answer=r.answer,
+                            confidence=r.confidence, decision=r.decision, citations=r.citations, note=r.note)
+
+    async def get_all(self, tenant: str, pack_id: str) -> dict[str, CachedAnswer]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(select(PackAnswerRow).where(
+                PackAnswerRow.tenant_id == tenant, PackAnswerRow.pack_id == pack_id))).scalars().all()
+            return {r.req_id: self._to_domain(r) for r in rows}
+
+    async def put(self, tenant: str, pack_id: str, req_id: str, answer: CachedAnswer) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(PackAnswerRow, (pack_id, req_id))
+            if row is None:
+                s.add(PackAnswerRow(pack_id=pack_id, req_id=req_id, tenant_id=tenant, answer=answer.answer,
+                                    confidence=answer.confidence, decision=answer.decision,
+                                    citations=answer.citations, note=answer.note))
+            elif row.tenant_id == tenant:
+                row.answer, row.confidence = answer.answer, answer.confidence
+                row.decision, row.citations, row.note = answer.decision, answer.citations, answer.note
+
+    async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            await s.execute(delete(PackAnswerRow).where(
+                PackAnswerRow.tenant_id == tenant, PackAnswerRow.pack_id == pack_id))
 
 
 @dataclass

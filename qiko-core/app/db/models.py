@@ -161,4 +161,19 @@ class Passage(Base):
     doc_id: Mapped[str] = mapped_column(String(128))
     text: Mapped[str] = mapped_column(String)
     embedding: Mapped[list] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PackAnswer(Base):
+    """Cached AI draft for one requirement in one RFP pack, so the cockpit's Sections tab doesn't
+    re-run every LLM call (each one real network latency) on every page visit -- only on first
+    view or an explicit regenerate."""
+    __tablename__ = "rfp_pack_answers"
+    pack_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    req_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    answer: Mapped[str] = mapped_column(String, default="")
+    confidence: Mapped[float] = mapped_column(default=0.0)
+    decision: Mapped[str] = mapped_column(String(32), default="")
+    citations: Mapped[list] = mapped_column(JSON, default=list)
+    note: Mapped[str] = mapped_column(String, default="")
+    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

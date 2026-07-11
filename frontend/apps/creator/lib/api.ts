@@ -142,7 +142,8 @@ export type Answer = {
   answer: string; confidence: number; grounding: number; status: string;
   citations: string[]; note: string;
 };
-export const getAnswers = (packId: string) => request<Answer[]>(`/rfp/packs/${packId}/answers`);
+export const getAnswers = (packId: string, force = false) =>
+  request<Answer[]>(`/rfp/packs/${packId}/answers${force ? "?force=true" : ""}`);
 
 export const submitFeedback = (packId: string, req_id: string, decision: "Approve" | "Edit" | "Reject", comment = "") =>
   request<{ req_id: string; decision: string; saved: boolean }>(`/rfp/packs/${packId}/feedback`, {

@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, ArrowRight, Check, ChevronRight, Download, FileCheck2, FileText,
-  Layers, ShieldCheck, Sparkles, ThumbsDown, ThumbsUp, Trash2, Upload,
+  Layers, RefreshCw, ShieldCheck, Sparkles, ThumbsDown, ThumbsUp, Trash2, Upload,
 } from "lucide-react";
 import { Badge, Button, Card, CardContent, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
@@ -96,7 +96,8 @@ export default function TenderCockpitPage() {
         {tab === "Tender Brief" && <BriefTab packId={packId} documentText={pack.data?.document_text ?? ""} />}
         {tab === "Sections" && view === "list" && (
           <SectionsTab answers={answers.data} loading={answers.isFetching}
-            onOpenSection={(reqId) => { setSection(reqId); setView("editor"); }} />
+            onOpenSection={(reqId) => { setSection(reqId); setView("editor"); }}
+            onRegenerateAll={async () => qc.setQueryData(["rfp-answers", packId], await getAnswers(packId, true))} />
         )}
         {tab === "Sections" && view === "editor" && section && (
           <SectionEditor packId={packId} answer={answers.data?.find((a) => a.req_id === section)}
@@ -298,10 +299,12 @@ function BulletCard({ title, items, color }: { title: string; items: string[]; c
   );
 }
 
-function SectionsTab({ answers, loading, onOpenSection }: {
+function SectionsTab({ answers, loading, onOpenSection, onRegenerateAll }: {
   answers?: Answer[]; loading: boolean;
   onOpenSection: (reqId: string) => void;
+  onRegenerateAll: () => Promise<unknown>;
 }) {
+  const [regenerating, setRegenerating] = useState(false);
   const a = answers ?? [];
   const drafted = a.filter((x) => x.answer).length;
   const tot = a.length || 1;
@@ -313,11 +316,17 @@ function SectionsTab({ answers, loading, onOpenSection }: {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="font-bold text-lg mb-1" style={{ fontFamily: "var(--font-display)" }}>Sections (RFP requirements)</h2>
-        <p className="text-xs text-muted-foreground">Each section is a requirement from the RFP. Every AI draft is for human review before use.</p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h2 className="font-bold text-lg mb-1" style={{ fontFamily: "var(--font-display)" }}>Sections (RFP requirements)</h2>
+          <p className="text-xs text-muted-foreground">Each section is a requirement from the RFP. Every AI draft is for human review before use.</p>
+        </div>
+        <Button size="sm" variant="outline" disabled={regenerating}
+          onClick={() => { setRegenerating(true); onRegenerateAll().finally(() => setRegenerating(false)); }}>
+          <RefreshCw className={cn("size-3.5", regenerating && "animate-spin")} /> {regenerating ? "Regenerating…" : "Regenerate all"}
+        </Button>
       </div>
-      {loading && <p className="text-sm text-muted-foreground">Generating drafts from your knowledge base… this can take a moment.</p>}
+      {(loading || regenerating) && <p className="text-sm text-muted-foreground">Generating drafts from your knowledge base… this can take a moment.</p>}
       <Card>
         <CardContent className="pt-4 pb-4 flex items-center gap-6">
           <div className="flex-[2]">
