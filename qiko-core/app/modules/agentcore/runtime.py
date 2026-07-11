@@ -6,6 +6,7 @@ A worker is a configuration over this engine (provider, threshold, tools, knowle
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 
 from app.modules.agentcore import critic as critic_mod
@@ -30,7 +31,10 @@ class AgentCore:
     async def run(self, req: Requirement, *, tenant: str) -> AgentResult:
         topic = req.topic or req.id
         verified = await self.verified.get(tenant, topic)
-        answer = self.generator.generate(req, verified=verified)
+        # generator.generate() makes a blocking network call to the LLM provider. Run it off the
+        # event loop thread -- otherwise one slow call freezes every other request this process is
+        # handling (health checks included) for its entire duration, not just this one.
+        answer = await asyncio.to_thread(self.generator.generate, req, verified)
         # The critic scores against the retrieved evidence plus any verified prior answers.
         critique = critic_mod.grounding_score(answer, list(req.context) + verified)
         decision = gate_mod.decide(critique, threshold=self.threshold)

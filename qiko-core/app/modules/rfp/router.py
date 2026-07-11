@@ -1,6 +1,7 @@
 """RFP pack HTTP API (tenant-scoped): create/list/get/delete tenders a worker is answering."""
 from __future__ import annotations
 
+import asyncio
 import io
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -89,7 +90,10 @@ async def extract(pack_id: str, file: UploadFile = File(...), tenant: str = Depe
         raise HTTPException(status_code=422, detail=str(e)) from e
 
     try:
-        extracted = extract_requirements(text, get_provider())
+        # extract_requirements() blocks on a synchronous LLM call -- run it off the event loop
+        # thread so a slow tender document doesn't freeze every other request this process is
+        # serving for the whole duration (this took down preprod once already).
+        extracted = await asyncio.to_thread(extract_requirements, text, get_provider())
     except ExtractionError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
@@ -121,7 +125,7 @@ async def ask_bid_context(pack_id: str, body: AskBody, tenant: str = Depends(aut
              "document provided. Be precise about scope, submission format, deadlines, "
              "qualification rules and risks. If the document doesn't state it, say so -- do not guess.")
     prompt = f"TENDER DOCUMENT:\n{pack.document_text[:60_000]}\n\nQUESTION: {body.question}\n\nAnswer from the document only."
-    response = get_provider().generate(prompt, system=system, temperature=0.0)
+    response = await asyncio.to_thread(get_provider().generate, prompt, system=system, temperature=0.0)
     return {"question": body.question, "answer": response.text}
 
 
@@ -150,7 +154,7 @@ async def compliance_check(pack_id: str, file: UploadFile = File(...), tenant: s
     """Extract mandatory pass/fail compliance items from an uploaded tender document."""
     text = await _read_tender_text(pack_id, tenant, file, packs)
     try:
-        return extract_compliance(text, get_provider())
+        return await asyncio.to_thread(extract_compliance, text, get_provider())
     except ComplianceError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
@@ -163,7 +167,7 @@ async def tender_brief(pack_id: str, file: UploadFile = File(...), tenant: str =
     uploaded tender document."""
     text = await _read_tender_text(pack_id, tenant, file, packs)
     try:
-        return extract_brief(text, get_provider())
+        return await asyncio.to_thread(extract_brief, text, get_provider())
     except BriefError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
@@ -171,21 +175,29 @@ async def tender_brief(pack_id: str, file: UploadFile = File(...), tenant: str =
 _STATUS_LABELS = {"auto_accept": "AI-drafted (met internal bar)", "human_review": "AI-drafted, for human review"}
 
 
+_ANSWER_CONCURRENCY = 4  # bounded so a 15-section tender doesn't fire 15 simultaneous LLM calls
+
+
 async def _answer_pack(request: Request, tenant: str, pack_id: str, reqs) -> list[dict]:
     requirements = await reqs.list(tenant, pack_id)
     if not requirements:
         raise HTTPException(status_code=404, detail="no extracted requirements for this pack -- run /extract first")
     worker = build_tenant_worker(request, tenant)
-    out = []
-    for r in requirements:
+    semaphore = asyncio.Semaphore(_ANSWER_CONCURRENCY)
+
+    async def answer_one(r: PackRequirement) -> dict:
         if r.classification != "KB":
-            out.append({"req": r, "answer": "", "confidence": 0.0, "decision": "human_review",
-                       "citations": [], "note": f"{r.classification}: to be completed by the team, not drafted by AI."})
-            continue
-        result = await worker.answer(r.req_id, r.requirement)
-        out.append({"req": r, "answer": result.answer, "confidence": round(result.critique.grounding, 2),
-                   "decision": result.decision.value, "citations": result.citations, "note": ""})
-    return out
+            return {"req": r, "answer": "", "confidence": 0.0, "decision": "human_review",
+                   "citations": [], "note": f"{r.classification}: to be completed by the team, not drafted by AI."}
+        async with semaphore:
+            result = await worker.answer(r.req_id, r.requirement)
+        return {"req": r, "answer": result.answer, "confidence": round(result.critique.grounding, 2),
+               "decision": result.decision.value, "citations": result.citations, "note": ""}
+
+    # Runs the (now off-event-loop) LLM calls concurrently, bounded by the semaphore, instead of
+    # one requirement at a time -- cuts wall-clock time for a multi-section tender roughly in
+    # proportion to the concurrency limit instead of the total requirement count.
+    return list(await asyncio.gather(*(answer_one(r) for r in requirements)))
 
 
 class FeedbackBody(BaseModel):
