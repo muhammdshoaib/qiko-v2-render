@@ -141,12 +141,13 @@ class SqlAgentStore:
 
     def _to_domain(self, r: AgentRow) -> Agent:
         return Agent(id=r.id, tenant=r.tenant_id, name=r.name, atype=r.atype,
-                     status=r.status, config=dict(r.config or {}))
+                     status=r.status, config=dict(r.config or {}), created_at=r.created_at)
 
     async def add(self, agent: Agent) -> Agent:
         async with self.sessionmaker() as s, s.begin():
             s.add(AgentRow(id=agent.id, tenant_id=agent.tenant, name=agent.name,
-                           atype=agent.atype, status=agent.status, config=agent.config))
+                           atype=agent.atype, status=agent.status, config=agent.config,
+                           created_at=agent.created_at))
         return agent
 
     async def list(self, tenant: str) -> list[Agent]:

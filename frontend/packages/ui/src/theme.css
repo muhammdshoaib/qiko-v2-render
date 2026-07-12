@@ -33,7 +33,21 @@
   --ring: oklch(0.65 0.24 275);
   --sidebar: oklch(0.12 0.03 250);
   --sidebar-foreground: oklch(0.98 0 0);
+  --sidebar-primary: oklch(0.65 0.24 275);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.22 0.04 250);
+  --sidebar-accent-foreground: oklch(0.98 0 0);
   --sidebar-border: oklch(0.28 0.04 250);
+  --sidebar-ring: oklch(0.65 0.24 275);
+
+  /* Status pill tokens (worker ready/training/error badges) -- matched from the live site's
+     computed styles, exposed as bg/text pairs like it does rather than a single flat color. */
+  --status-training-bg: oklch(0.25 0.08 85);
+  --status-training-text: oklch(0.80 0.12 85);
+  --status-ready-bg: oklch(0.25 0.10 155);
+  --status-ready-text: oklch(0.80 0.14 155);
+  --status-error-bg: oklch(0.25 0.10 25);
+  --status-error-text: oklch(0.75 0.15 25);
 }
 
 @theme inline {

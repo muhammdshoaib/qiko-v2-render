@@ -3,12 +3,23 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bot, Brain, Lightbulb, Plus, Sparkles, Target } from "lucide-react";
-import { Button, Card, CardContent } from "@qiko/ui";
+import { ArrowRight, Brain, Lightbulb, Plus, Sparkles } from "lucide-react";
+import { Badge, Button } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import { createAgent, listAgents, type Agent } from "@/lib/api";
 
 const WORKER_LIMIT = 3; // matches the qiko-frontend free-plan default
+
+const EMOJIS = ["🚀", "🤖", "⚡", "🎯", "💡", "🛡️", "📊", "🧭"];
+const AVATAR_GRADIENTS = [
+  "from-violet-500 to-purple-600", "from-cyan-500 to-blue-500", "from-emerald-500 to-teal-500",
+  "from-amber-500 to-orange-600", "from-pink-500 to-rose-500", "from-indigo-500 to-blue-600",
+];
+function hashOf(id: string): number {
+  let hash = 0;
+  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return hash;
+}
 
 function workerCategory(a: Agent): string {
   const expertise = a.config?.expertise as string | undefined;
@@ -46,104 +57,119 @@ export default function DashboardPage() {
     return list;
   }, [workers, readyWorkers, trainingWorkers]);
 
+  const cardStyle = { background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" };
+
   return (
     <AppShell title="Dashboard">
-      <div className="flex items-start gap-3 mb-6">
-        <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary to-secondary text-white">
-          <Brain className="size-5" />
-        </span>
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>Command Center</h1>
-          <p className="text-sm text-muted-foreground">Your AI workforce at a glance</p>
-        </div>
-      </div>
+      <div className="p-6 lg:p-8">
+        <div className="mx-auto max-w-6xl">
+          <div className="mb-8 flex items-center gap-3">
+            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-[#6366F1] to-[#22D3EE]">
+              <Brain className="size-5 text-white" />
+            </span>
+            <div>
+              <h1 className="text-2xl font-bold text-white">Command Center</h1>
+              <p className="text-sm text-slate-400">Your AI workforce at a glance</p>
+            </div>
+          </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_22rem] gap-6">
-        <div className="space-y-4">
-          <Card>
-            <CardContent className="pt-6 grid grid-cols-2 sm:grid-cols-4 gap-6">
-              {[
-                { label: "Workers", value: workers.length },
-                { label: "Industries", value: industries },
-                { label: "Ready", value: readyWorkers.length },
-                { label: "Training", value: trainingWorkers.length },
-              ].map((s) => (
-                <div key={s.label}>
-                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">{s.label}</p>
-                  <p className="mt-1 text-2xl font-semibold">{s.value}</p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="pt-6 space-y-4">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <Sparkles className="size-4 text-primary" /> AI Insights
-              </div>
-              <div className="space-y-3">
-                {insights.map((i) => (
-                  <div key={i.title} className="flex items-start gap-3 rounded-lg border border-border/60 p-3">
-                    <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
-                      <Lightbulb className="size-3.5" />
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium">{i.title}</p>
-                      <p className="text-xs text-muted-foreground">{i.body}</p>
-                    </div>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <div className="space-y-6 lg:col-span-2">
+              <div className="grid grid-cols-2 gap-6 rounded-2xl p-5 md:grid-cols-4" style={cardStyle}>
+                {[
+                  { label: "Workers", value: workers.length },
+                  { label: "Industries", value: industries },
+                  { label: "Ready", value: readyWorkers.length },
+                  { label: "Training", value: trainingWorkers.length },
+                ].map((s) => (
+                  <div key={s.label} className="flex flex-col gap-2">
+                    <span className="text-xs uppercase tracking-wider text-slate-500">{s.label}</span>
+                    <span className="text-2xl font-bold text-white">{s.value}</span>
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
-        </div>
 
-        <div className="space-y-4">
-          <Card>
-            <CardContent className="pt-6 space-y-3">
+              <div className="rounded-2xl p-5" style={cardStyle}>
+                <div className="mb-4 flex items-center gap-2">
+                  <Sparkles className="size-4 text-[#6366F1]" />
+                  <h2 className="text-sm font-semibold text-white">AI Insights</h2>
+                </div>
+                <div className="space-y-1">
+                  {insights.map((i) => (
+                    <div key={i.title} className="flex items-start gap-3 rounded-xl p-3 hover:bg-white/[0.03] transition-colors">
+                      <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-[#6366F1]/10 text-[#6366F1]">
+                        <Lightbulb className="size-3.5" />
+                      </span>
+                      <div>
+                        <p className="text-sm font-medium text-white">{i.title}</p>
+                        <p className="text-xs text-slate-400">{i.body}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold">Your Workers</h2>
-                <Link href="/workers" className="text-xs font-medium text-primary hover:underline">View all →</Link>
-              </div>
-              {agents.isLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
-              {readyWorkers.slice(0, 4).map((a) => (
-                <Link key={a.id} href={`/workers/${a.id}`}
-                  className="flex items-center gap-3 rounded-lg border border-border/60 p-3 hover:bg-muted/50 transition-colors">
-                  <span className="relative grid size-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-primary to-secondary text-white">
-                    <Bot className="size-4" />
-                    <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-background bg-emerald-500" />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{a.name}</p>
-                    <p className="truncate text-xs text-muted-foreground">{workerCategory(a)}</p>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold text-white">Your Workers</h2>
+                  <Badge variant="success" className="text-[10px]">{readyWorkers.length} ready</Badge>
+                </div>
+                <Link href="/workers" className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-slate-400 hover:text-white">
+                  View all <ArrowRight className="ml-1 size-3" />
                 </Link>
-              ))}
-              {workers.length === 0 && !agents.isLoading && (
-                <p className="text-xs text-muted-foreground">No workers yet.</p>
-              )}
-              <div className="space-y-2 pt-1">
-                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New worker name..."
-                  className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-                <Button className="w-full" disabled={atLimit || !name || create.isPending} onClick={() => create.mutate()}>
-                  <Plus className="size-4" /> New Worker
-                </Button>
-                {create.isError && <p className="text-xs text-destructive">Plan limit reached or not permitted.</p>}
               </div>
-            </CardContent>
-          </Card>
 
-          <Card className="border-primary/20 bg-primary/[0.04]">
-            <CardContent className="pt-6 flex items-start gap-3">
-              <span className="grid size-8 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
-                <Target className="size-4" />
-              </span>
-              <div>
-                <p className="text-sm font-medium">Pro tip</p>
-                <p className="text-xs text-muted-foreground">Train your worker with real conversations for best results</p>
+              <div className="space-y-3">
+                {agents.isLoading && <p className="text-xs text-slate-400">Loading…</p>}
+                {workers.slice(0, 4).map((a) => {
+                  const h = hashOf(a.id);
+                  return (
+                    <Link key={a.id} href={`/workers/${a.id}`} className="group relative block">
+                      <div className="relative overflow-hidden rounded-2xl p-4 transition-all duration-300 hover:border-white/10" style={cardStyle}>
+                        <div className="flex items-center gap-3">
+                          <div className={`relative flex size-12 items-center justify-center rounded-xl bg-gradient-to-br ${AVATAR_GRADIENTS[h % AVATAR_GRADIENTS.length]} text-xl`}>
+                            <span>{EMOJIS[h % EMOJIS.length]}</span>
+                            {a.status === "ready" && (
+                              <span className="absolute -bottom-0.5 -right-0.5 size-4 rounded-full border-2 border-[#0a0f1a] bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]" />
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <h3 className="truncate font-semibold text-white">{a.name}</h3>
+                            <p className="truncate text-xs text-slate-400">{workerCategory(a)}</p>
+                          </div>
+                          <ArrowRight className="size-4 shrink-0 text-slate-500 transition-all group-hover:text-[#22D3EE]" />
+                        </div>
+                      </div>
+                    </Link>
+                  );
+                })}
+                {workers.length === 0 && !agents.isLoading && (
+                  <p className="text-xs text-slate-400">No workers yet.</p>
+                )}
+
+                <div className="space-y-2 pt-1">
+                  <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New worker name..."
+                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                  <Button className="w-full bg-gradient-to-r from-[#6366F1] to-[#22D3EE] hover:opacity-90" disabled={atLimit || !name || create.isPending} onClick={() => create.mutate()}>
+                    <Plus className="size-4" /> New Worker
+                  </Button>
+                  {create.isError && <p className="text-xs text-destructive">Plan limit reached or not permitted.</p>}
+                </div>
               </div>
-            </CardContent>
-          </Card>
+
+              <div className="rounded-xl p-4" style={{ background: "linear-gradient(135deg, rgba(99,102,241,0.1), rgba(34,211,238,0.05))", border: "1px solid rgba(99,102,241,0.2)" }}>
+                <div className="flex items-start gap-3">
+                  <span className="text-lg">💡</span>
+                  <div>
+                    <p className="text-xs font-medium text-white">Pro tip</p>
+                    <p className="mt-0.5 text-xs text-slate-400">Train your worker with real conversations for best results</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </AppShell>

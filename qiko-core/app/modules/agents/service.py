@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Protocol
 
 from app.modules.billing.plans import Plan, can_create_worker
@@ -26,6 +27,7 @@ class Agent:
     atype: str = "worker"
     status: str = "training"  # training -> ready
     config: dict = field(default_factory=dict)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class AgentStore(Protocol):

@@ -5,8 +5,8 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, Bot, BrainCircuit, Calendar, Check, ExternalLink, FileText, GraduationCap, MessageCircle,
-  Phone, SendHorizonal, Sparkles, Trash2,
+  ArrowLeft, Bot, BrainCircuit, Calendar, Check, ExternalLink, FileText, GraduationCap, Link2, ListChecks,
+  MessageCircle, MessageSquare, Phone, SendHorizonal, Sparkles, Trash2, Users, Zap,
 } from "lucide-react";
 import { Badge, Button, Card, CardContent, Input, Label, Skeleton, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
@@ -16,8 +16,25 @@ import {
   saveVapiCredentials, updateAgentConfig, updateCalendlyEventType, type Agent, type BatchAnswer, type Doc,
 } from "@/lib/api";
 
-const TABS = ["Overview", "Chat", "Train", "CRM", "Connections", "Batch"] as const;
-type Tab = (typeof TABS)[number];
+const TABS = [
+  { id: "Overview", icon: Sparkles, iconColor: "text-cyan-400" },
+  { id: "Chat", icon: MessageSquare, iconColor: "text-slate-400" },
+  { id: "Train", icon: GraduationCap, iconColor: "text-slate-400" },
+  { id: "CRM", icon: Users, iconColor: "text-slate-400" },
+  { id: "Connections", icon: Link2, iconColor: "text-slate-400" },
+  { id: "Batch", icon: ListChecks, iconColor: "text-slate-400" },
+] as const;
+type Tab = (typeof TABS)[number]["id"];
+
+const AVATAR_GRADIENTS = [
+  "from-cyan-500 to-blue-500", "from-violet-500 to-purple-600", "from-emerald-500 to-teal-500",
+  "from-amber-500 to-orange-600", "from-pink-500 to-rose-500", "from-indigo-500 to-blue-600",
+];
+function avatarGradient(id: string): string {
+  let hash = 0;
+  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length];
+}
 
 function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea {...props} className="min-h-24 w-full rounded-md border border-input bg-background p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />;
@@ -35,40 +52,52 @@ export default function WorkerDetailPage() {
 
   return (
     <AppShell title="Worker">
-      <div className="mx-auto max-w-3xl space-y-6">
-        <Link href="/dashboard" className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="size-4" /> Back to workers
-        </Link>
-
-        <div className="flex items-center gap-3">
-          <span className="grid size-12 place-items-center rounded-xl bg-gradient-to-br from-primary to-secondary text-primary-foreground">
-            <Bot className="size-6" />
-          </span>
-          <div>
-            <h1 className="text-xl font-semibold" style={{ fontFamily: "var(--font-display)" }}>{worker?.name ?? "Worker"}</h1>
-            {worker && <Badge variant={worker.status === "ready" ? "success" : "muted"}>{worker.status}</Badge>}
+      <div className="flex h-full flex-col">
+        <div className="relative border-b border-white/5 bg-[#0a0f1a]/80 backdrop-blur-xl">
+          <div className="flex items-center gap-4 px-6 py-4">
+            <Link href="/workers" className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+              <ArrowLeft className="size-4" /> All Workers
+            </Link>
+          </div>
+          <div className="flex items-center gap-4 bg-gradient-to-r from-slate-800/30 to-slate-700/20 px-6 py-4">
+            <div className={cn("flex size-14 shrink-0 items-center justify-center rounded-xl text-xl font-bold text-white shadow-lg bg-gradient-to-br", worker ? avatarGradient(worker.id) : "from-primary to-secondary")}>
+              {worker?.name.charAt(0).toUpperCase() ?? "?"}
+            </div>
+            <div className="flex-1">
+              <h1 className="text-xl font-bold text-white">{worker?.name ?? "Worker"}</h1>
+              <p className="text-sm text-slate-400">{(worker?.config?.expertise as string) || "Worker"}</p>
+            </div>
+            {worker && (
+              <Badge variant={worker.status === "ready" ? "success" : "muted"} dot={worker.status === "ready"} className="capitalize">
+                {worker.status}
+              </Badge>
+            )}
+          </div>
+          <div className="overflow-x-auto px-4 py-2 sm:px-6">
+            <div className="flex w-max items-center gap-2">
+              {TABS.map(({ id: t, icon: Icon, iconColor }) => (
+                <button key={t} onClick={() => setTab(t)}
+                  className={cn("inline-flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 text-sm font-medium transition-all duration-200 sm:px-4",
+                    tab === t ? "bg-slate-800/80 text-white shadow-sm" : "text-slate-300 hover:bg-white/5 hover:text-white")}>
+                  <Icon className={cn("size-4 shrink-0", tab === t ? iconColor : "text-slate-400")} />
+                  <span className="leading-none">{t}</span>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
-        <div className="flex gap-1 border-b border-border overflow-x-auto">
-          {TABS.map((t) => (
-            <button key={t} onClick={() => setTab(t)}
-              className={cn("shrink-0 border-b-2 px-3 py-2 text-sm font-medium transition-colors",
-                tab === t ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
-              {t}
-            </button>
-          ))}
+        <div className="flex-1 overflow-auto p-6">
+          {tab === "Overview" && <OverviewTab id={id} worker={worker} />}
+          {tab === "Train" && (
+            <TrainTab id={id} worker={worker} docs={docs.data} loading={docs.isLoading}
+              onKnowledgeChange={refresh} onWorkerChange={refreshAgents} />
+          )}
+          {tab === "CRM" && <CrmTab />}
+          {tab === "Connections" && <ConnectionsTab id={id} worker={worker} />}
+          {tab === "Chat" && <ChatTab />}
+          {tab === "Batch" && <BatchTab />}
         </div>
-
-        {tab === "Overview" && <OverviewTab id={id} worker={worker} />}
-        {tab === "Train" && (
-          <TrainTab id={id} worker={worker} docs={docs.data} loading={docs.isLoading}
-            onKnowledgeChange={refresh} onWorkerChange={refreshAgents} />
-        )}
-        {tab === "CRM" && <CrmTab />}
-        {tab === "Connections" && <ConnectionsTab id={id} worker={worker} />}
-        {tab === "Chat" && <ChatTab />}
-        {tab === "Batch" && <BatchTab />}
       </div>
     </AppShell>
   );
@@ -89,28 +118,35 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Card className="border-emerald-500/30 bg-emerald-500/[0.06]">
-          <CardContent className="pt-5 flex items-center gap-3">
-            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-emerald-500/15 text-emerald-400">
-              <Sparkles className="size-4" />
+        <div className="relative rounded-xl p-3 sm:p-4 bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border-2 border-emerald-500/50 shadow-lg shadow-emerald-500/10">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <span className="grid size-9 sm:size-10 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500">
+              <Zap className="size-4 sm:size-5 text-white" />
             </span>
-            <div>
-              <p className="text-sm font-semibold">Qiko-Sonic <span className="ml-1 rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-bold text-emerald-400">ACTIVE</span></p>
-              <p className="text-xs text-muted-foreground">Instant · No setup</p>
+            <div className="text-left min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <span className="font-semibold text-sm sm:text-base text-white">Qiko-Sonic</span>
+                <span className="px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-medium bg-emerald-500/30 text-emerald-300 shrink-0">ACTIVE</span>
+              </div>
+              <p className="text-[11px] sm:text-xs text-slate-400">Instant · No setup</p>
             </div>
-          </CardContent>
-        </Card>
-        <Card className="opacity-60">
-          <CardContent className="pt-5 flex items-center gap-3">
-            <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-              <BrainCircuit className="size-4" />
+          </div>
+          <div className="absolute top-2 right-2 size-2 rounded-full bg-emerald-400 animate-pulse" />
+        </div>
+        <div className="relative rounded-xl p-3 sm:p-4 bg-white/[0.01] opacity-70">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <span className="grid size-9 sm:size-10 shrink-0 place-items-center rounded-lg bg-slate-700">
+              <BrainCircuit className="size-4 sm:size-5 text-white" />
             </span>
-            <div>
-              <p className="text-sm font-semibold">Custom <span className="ml-1 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-400">COMING SOON</span></p>
-              <p className="text-xs text-muted-foreground">Fine-tuned · Your data</p>
+            <div className="text-left min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <span className="font-semibold text-sm sm:text-base text-slate-300">Custom</span>
+                <span className="text-[9px] sm:text-[10px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 whitespace-nowrap">COMING SOON</span>
+              </div>
+              <p className="text-[11px] sm:text-xs text-slate-400">Fine-tuned · Your data</p>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        </div>
       </div>
 
       <Card>

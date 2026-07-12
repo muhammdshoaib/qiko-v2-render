@@ -72,20 +72,29 @@ export function CardContent({ className, ...props }: React.HTMLAttributes<HTMLDi
 }
 
 /* ---------- Badge ---------- */
-const badgeVariants = cva("inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium", {
+const badgeVariants = cva("inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium", {
   variants: {
     variant: {
-      default: "bg-primary/10 text-primary",
-      muted: "bg-muted text-muted-foreground",
-      success: "bg-success/15 text-success",
-      destructive: "bg-destructive/10 text-destructive",
+      default: "border-transparent bg-primary/10 text-primary",
+      muted: "border-transparent bg-muted text-muted-foreground",
+      // Matches the live site's worker-status pills exactly: emerald/amber/red with a matching
+      // translucent border, not just a flat fill.
+      success: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400",
+      warning: "border-amber-500/30 bg-amber-500/10 text-amber-400",
+      destructive: "border-destructive/30 bg-destructive/10 text-destructive",
     },
   },
   defaultVariants: { variant: "default" },
 });
-export function Badge({ className, variant, ...props }:
-  React.HTMLAttributes<HTMLSpanElement> & VariantProps<typeof badgeVariants>) {
-  return <span className={cn(badgeVariants({ variant }), className)} {...props} />;
+export function Badge({ className, variant, dot, ...props }:
+  React.HTMLAttributes<HTMLSpanElement> & VariantProps<typeof badgeVariants> & { dot?: boolean }) {
+  const dotColor = variant === "success" ? "bg-emerald-400" : variant === "warning" ? "bg-amber-400" : variant === "destructive" ? "bg-destructive" : "bg-current";
+  return (
+    <span className={cn(badgeVariants({ variant }), className)} {...props}>
+      {dot && <span className={cn("size-1.5 shrink-0 rounded-full animate-pulse", dotColor)} />}
+      {props.children}
+    </span>
+  );
 }
 
 export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

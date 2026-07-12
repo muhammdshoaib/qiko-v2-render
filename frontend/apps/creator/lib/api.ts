@@ -37,7 +37,7 @@ export const logout = () => request("/auth/logout", { method: "POST" });
 export const me = () => request<{ id: string; email: string; role: string }>("/auth/me");
 
 // Agents (workers)
-export type Agent = { id: string; name: string; status: string; atype: string; config: Record<string, unknown> };
+export type Agent = { id: string; name: string; status: string; atype: string; config: Record<string, unknown>; created_at: string };
 export const listAgents = () => request<Agent[]>("/agents");
 export const createAgent = (name: string, plan = "free") =>
   request<Agent>("/agents", { method: "POST", body: JSON.stringify({ name, plan }) });
