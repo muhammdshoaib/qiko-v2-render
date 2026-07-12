@@ -1,20 +1,12 @@
 "use client";
 
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Check, Crown, ExternalLink, Zap } from "lucide-react";
-import { Badge, Button, Card, CardContent, CardHeader, CardTitle, Input, Label, cn } from "@qiko/ui";
+import { Check, Crown, ExternalLink, X, Zap } from "lucide-react";
+import { Badge, Button, Card, CardContent, CardHeader, CardTitle, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
-import { listPlans, subscriptionStatus, type BillingPlan } from "@/lib/api";
+import { listPlans } from "@/lib/api";
 
 export default function BillingPage() {
-  const [customerId, setCustomerId] = useState("");
-  const [lookup, setLookup] = useState("");
-  const sub = useQuery({
-    queryKey: ["subscription", lookup],
-    queryFn: () => subscriptionStatus(lookup),
-    enabled: !!lookup,
-  });
   const plans = useQuery({ queryKey: ["plans"], queryFn: listPlans });
 
   return (
@@ -46,7 +38,7 @@ export default function BillingPage() {
             {plans.data?.map((p) => {
               const isEnterprise = p.name === "Enterprise";
               return (
-                <Card key={p.id} className={cn("relative flex h-full w-full max-w-sm flex-col p-6", isEnterprise ? "border-white/10" : "border-primary")}>
+                <Card key={p.id} className="relative flex h-full w-full max-w-sm flex-col border-[#6366F1]/20 p-6">
                   {isEnterprise && (
                     <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground">
                       Most Popular
@@ -84,59 +76,58 @@ export default function BillingPage() {
             })}
           </div>
 
-          <Card className="mb-6">
-            <CardHeader><CardTitle>Subscription status</CardTitle></CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex gap-2">
-                <div className="flex-1 space-y-1.5"><Label>Stripe customer id</Label>
-                  <Input placeholder="cus_…" value={customerId} onChange={(e) => setCustomerId(e.target.value)} /></div>
-                <div className="flex items-end"><Button onClick={() => setLookup(customerId)} disabled={!customerId}>Check</Button></div>
-              </div>
-              {sub.data && (
-                <div className="flex items-center gap-2 text-sm">
-                  Status: <Badge variant={sub.data.status === "active" ? "success" : "muted"}>{sub.data.status}</Badge>
-                  {sub.data.plan && <span className="text-muted-foreground">plan: {sub.data.plan}</span>}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {plans.data && <FeatureComparison plans={plans.data} />}
+          <FeatureComparison />
         </div>
       </div>
     </AppShell>
   );
 }
 
-function FeatureComparison({ plans }: { plans: BillingPlan[] }) {
-  const allFeatures = Array.from(new Set(plans.flatMap((p) => p.features)));
+// Matches TierFeatureComparison.tsx on stage-app.qiko.ai exactly: fixed Premium/Enterprise rows
+// (not derived from each plan's free-text `features` list, which produced duplicated/garbled
+// rows like a second "3 Digital Workers" line and a stray "Everything in Premium" row).
+const FEATURE_ROWS: { label: string; premium: string | boolean; enterprise: string | boolean }[] = [
+  { label: "Digital Workers", premium: "3", enterprise: "Custom / Scalable" },
+  { label: "Chats", premium: "Unlimited", enterprise: "Unlimited" },
+  { label: "Training Rules", premium: "Unlimited", enterprise: "Unlimited" },
+  { label: "Knowledge Base Auto-Learning", premium: true, enterprise: true },
+  { label: "Calendly Integration", premium: true, enterprise: true },
+  { label: "Voice Call Enablement", premium: true, enterprise: true },
+  { label: "Website Chat Embed", premium: true, enterprise: true },
+  { label: "Custom Knowledge Training", premium: true, enterprise: true },
+  { label: "Custom Model Build (IP Owned)", premium: false, enterprise: true },
+  { label: "Data Tagging & AI Pipeline", premium: false, enterprise: true },
+  { label: "On-Prem Deployment", premium: false, enterprise: true },
+  { label: "Full Model Export (GGUF)", premium: false, enterprise: true },
+  { label: "Dedicated account manager.", premium: false, enterprise: true },
+];
+
+function FeatureCell({ value }: { value: string | boolean }) {
+  if (typeof value === "string") return <span className="text-sm text-foreground">{value}</span>;
+  return value
+    ? <Check className="inline-block size-5 text-emerald-400" />
+    : <X className="inline-block size-5 text-muted-foreground/50" />;
+}
+
+function FeatureComparison() {
   return (
     <Card>
       <CardHeader><CardTitle>Feature Comparison</CardTitle></CardHeader>
       <CardContent>
-        <table className="w-full text-sm">
+        <table className="w-full">
           <thead>
-            <tr className="border-b border-border text-left text-muted-foreground">
-              <th className="py-2 font-medium">Feature</th>
-              {plans.map((p) => <th key={p.id} className="py-2 font-medium">{p.name}</th>)}
+            <tr className="border-b border-border">
+              <th className="py-3 px-4 text-left text-sm font-medium text-muted-foreground">Feature</th>
+              <th className="py-3 px-4 text-center text-sm font-medium text-primary">Premium</th>
+              <th className="py-3 px-4 text-center text-sm font-medium text-purple-400">Enterprise</th>
             </tr>
           </thead>
           <tbody>
-            <tr className="border-b border-border/60">
-              <td className="py-2">Digital Workers</td>
-              {plans.map((p) => (
-                <td key={p.id} className="py-2">{p.worker_limit < 0 ? "Custom / Scalable" : p.worker_limit}</td>
-              ))}
-            </tr>
-            {allFeatures.map((f) => (
-              <tr key={f} className="border-b border-border/60">
-                <td className="py-2">{f}</td>
-                {plans.map((p) => (
-                  <td key={p.id} className="py-2">
-                    {p.features.includes(f) || p.features.includes("Everything in Premium")
-                      ? <Check className="size-4 text-success" /> : <span className="text-muted-foreground">—</span>}
-                  </td>
-                ))}
+            {FEATURE_ROWS.map((row, i) => (
+              <tr key={row.label} className={i % 2 === 0 ? "bg-secondary/30" : ""}>
+                <td className="py-3 px-4"><span className="text-sm text-foreground">{row.label}</span></td>
+                <td className="py-3 px-4 text-center"><FeatureCell value={row.premium} /></td>
+                <td className="py-3 px-4 text-center"><FeatureCell value={row.enterprise} /></td>
               </tr>
             ))}
           </tbody>
