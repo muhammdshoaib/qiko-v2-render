@@ -30,7 +30,7 @@ export function AppShell({ title, children }: { title: string; children: React.R
   }
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex min-h-screen bg-[#050810]">
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex flex-col border-r border-white/10 bg-[#040b1c] shadow-[0_0_40px_rgba(3,8,20,0.8)]",
@@ -45,7 +45,7 @@ export function AppShell({ title, children }: { title: string; children: React.R
           </div>
           <button
             onClick={() => setCollapsed((c) => !c)}
-            className="absolute -right-3 top-1/2 hidden size-7 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-[#111827] text-slate-300 shadow-md transition-all hover:bg-[#1f2937] hover:text-white md:flex"
+            className="absolute -right-3 top-1/2 mr-5 hidden size-7 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-[#111827] text-slate-300 shadow-md transition-all hover:bg-[#1f2937] hover:text-white md:flex"
           >
             <ChevronLeft className={cn("size-4 transition-transform", collapsed && "rotate-180")} />
           </button>

@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Brain, Lightbulb, Plus, Sparkles } from "lucide-react";
+import { ArrowRight, Brain, Lightbulb, Plus, Sparkles, Star } from "lucide-react";
 import { Badge, Button } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import { createAgent, listAgents, type Agent } from "@/lib/api";
@@ -26,8 +26,22 @@ function workerCategory(a: Agent): string {
   return expertise?.trim() || "General";
 }
 
+// Small ramp-shaped sparkline under a stat value -- matches the live site's per-metric mini
+// bar chart (11 bars, rising height + rising opacity left to right), color keyed per metric.
+const SPARK_HEIGHTS = [30, 45, 35, 60, 50, 75, 65, 80, 70, 90, 85];
+function Sparkline({ color }: { color: string }) {
+  return (
+    <div className="flex h-6 items-end gap-0.5">
+      {SPARK_HEIGHTS.map((h, i) => (
+        <div key={i} className="flex-1 rounded-sm" style={{ height: `${h}%`, background: color, opacity: 0.3 + (i / SPARK_HEIGHTS.length) * 0.65 }} />
+      ))}
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const qc = useQueryClient();
+  const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const workers = agents.data ?? [];
@@ -38,7 +52,7 @@ export default function DashboardPage() {
 
   const create = useMutation({
     mutationFn: () => createAgent(name),
-    onSuccess: () => { setName(""); qc.invalidateQueries({ queryKey: ["agents"] }); },
+    onSuccess: () => { setName(""); setCreating(false); qc.invalidateQueries({ queryKey: ["agents"] }); },
   });
 
   const insights = useMemo(() => {
@@ -77,14 +91,15 @@ export default function DashboardPage() {
             <div className="space-y-6 lg:col-span-2">
               <div className="grid grid-cols-2 gap-6 rounded-2xl p-5 md:grid-cols-4" style={cardStyle}>
                 {[
-                  { label: "Workers", value: workers.length },
-                  { label: "Industries", value: industries },
-                  { label: "Ready", value: readyWorkers.length },
-                  { label: "Training", value: trainingWorkers.length },
+                  { label: "Workers", value: workers.length, sparkColor: null },
+                  { label: "Industries", value: industries, sparkColor: null },
+                  { label: "Ready", value: readyWorkers.length, sparkColor: "rgb(16,185,129)" },
+                  { label: "Training", value: trainingWorkers.length, sparkColor: "rgb(255,185,0)" },
                 ].map((s) => (
                   <div key={s.label} className="flex flex-col gap-2">
                     <span className="text-xs uppercase tracking-wider text-slate-500">{s.label}</span>
                     <span className="text-2xl font-bold text-white">{s.value}</span>
+                    {s.sparkColor && <Sparkline color={s.sparkColor} />}
                   </div>
                 ))}
               </div>
@@ -97,8 +112,8 @@ export default function DashboardPage() {
                 <div className="space-y-1">
                   {insights.map((i) => (
                     <div key={i.title} className="flex items-start gap-3 rounded-xl p-3 hover:bg-white/[0.03] transition-colors">
-                      <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-[#6366F1]/10 text-[#6366F1]">
-                        <Lightbulb className="size-3.5" />
+                      <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg" style={{ background: "rgba(16,185,129,0.125)" }}>
+                        <Lightbulb className="size-4" style={{ color: "rgb(16,185,129)" }} />
                       </span>
                       <div>
                         <p className="text-sm font-medium text-white">{i.title}</p>
@@ -136,7 +151,10 @@ export default function DashboardPage() {
                             )}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <h3 className="truncate font-semibold text-white">{a.name}</h3>
+                            <div className="flex items-center gap-2">
+                              <h3 className="truncate font-semibold text-white">{a.name}</h3>
+                              <Star className="size-3 shrink-0 fill-amber-400 text-amber-400" />
+                            </div>
                             <p className="truncate text-xs text-slate-400">{workerCategory(a)}</p>
                           </div>
                           <ArrowRight className="size-4 shrink-0 text-slate-500 transition-all group-hover:text-[#22D3EE]" />
@@ -149,14 +167,30 @@ export default function DashboardPage() {
                   <p className="text-xs text-slate-400">No workers yet.</p>
                 )}
 
-                <div className="space-y-2 pt-1">
-                  <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New worker name..."
-                    className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-                  <Button className="w-full bg-gradient-to-r from-[#6366F1] to-[#22D3EE] hover:opacity-90" disabled={atLimit || !name || create.isPending} onClick={() => create.mutate()}>
-                    <Plus className="size-4" /> New Worker
-                  </Button>
-                  {create.isError && <p className="text-xs text-destructive">Plan limit reached or not permitted.</p>}
-                </div>
+                {creating ? (
+                  <div className="space-y-2 pt-1">
+                    <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="New worker name..."
+                      onKeyDown={(e) => { if (e.key === "Enter" && name && !create.isPending) create.mutate(); if (e.key === "Escape") setCreating(false); }}
+                      className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                    <div className="flex gap-2">
+                      <Button className="flex-1 bg-gradient-to-r from-[#6366F1] to-[#22D3EE] hover:opacity-90" disabled={atLimit || !name || create.isPending} onClick={() => create.mutate()}>
+                        <Plus className="size-4" /> Create
+                      </Button>
+                      <Button variant="outline" onClick={() => { setCreating(false); setName(""); }}>Cancel</Button>
+                    </div>
+                    {create.isError && <p className="text-xs text-destructive">Plan limit reached or not permitted.</p>}
+                  </div>
+                ) : (
+                  <button onClick={() => setCreating(true)} disabled={atLimit}
+                    className="group w-full rounded-2xl border border-dashed border-white/10 p-4 transition-all hover:border-[#6366F1]/50 hover:bg-[#6366F1]/5 disabled:opacity-50">
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/5 transition-colors group-hover:bg-[#6366F1]/20">
+                        <Plus className="size-4 text-slate-400 group-hover:text-[#6366F1]" />
+                      </span>
+                      <span className="text-sm text-slate-400 transition-colors group-hover:text-white">New Worker</span>
+                    </div>
+                  </button>
+                )}
               </div>
 
               <div className="rounded-xl p-4" style={{ background: "linear-gradient(135deg, rgba(99,102,241,0.1), rgba(34,211,238,0.05))", border: "1px solid rgba(99,102,241,0.2)" }}>
