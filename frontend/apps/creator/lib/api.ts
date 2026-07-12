@@ -34,7 +34,10 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
 export const login = (email: string, password: string) =>
   request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
 export const logout = () => request("/auth/logout", { method: "POST" });
-export const me = () => request<{ id: string; email: string; role: string }>("/auth/me");
+export const me = async () => {
+  const res = await request<{ user: { id: string; email: string; role: string } }>("/auth/me");
+  return res.user;
+};
 
 // Agents (workers)
 export type Agent = { id: string; name: string; status: string; atype: string; config: Record<string, unknown>; created_at: string };
