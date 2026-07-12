@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -148,8 +148,13 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
     "Never forgets important details or context",
     "Available around the clock without breaks",
   ];
-  const chatLink = typeof window !== "undefined" ? `${window.location.origin}/embed/${worker?.tenant ?? ""}/${id}` : "";
-  const widgetSnippet = `<script src="${typeof window !== "undefined" ? window.location.origin : ""}/widget.js" data-worker-id="${id}"></script>`;
+  // Computed from window.location, so it must only ever render post-mount -- computing it
+  // during the initial render would make the server-rendered markup (empty origin) mismatch
+  // the client's first paint and trigger a hydration error (React #418).
+  const [origin, setOrigin] = useState("");
+  useEffect(() => setOrigin(window.location.origin), []);
+  const chatLink = origin ? `${origin}/embed/${worker?.tenant ?? ""}/${id}` : "";
+  const widgetSnippet = `<script src="${origin}/widget.js" data-worker-id="${id}"></script>`;
 
   return (
     <div className="space-y-6">
