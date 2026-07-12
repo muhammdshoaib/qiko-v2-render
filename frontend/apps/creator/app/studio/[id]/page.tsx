@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Badge, Button, Card, CardContent } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
+import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import {
   ask, batchAnswer, batchExportUrl, getPackStats, listAgents, listDocuments, listRfpPacks,
   type BatchAnswer, type RfpPack,
@@ -167,9 +168,10 @@ function StudioChat() {
           {messages.length === 0 && <p className="text-sm text-muted-foreground">Ask this worker anything -- it answers grounded in its knowledge base.</p>}
           {messages.map((m, i) => (
             <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${m.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted"}`}>{m.text}</div>
+              <ChatBubble role={m.role} text={m.text} />
             </div>
           ))}
+          {send.isPending && <div className="flex justify-start"><TypingIndicator /></div>}
         </div>
         <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) { send.mutate(text); setText(""); } }} className="flex gap-2">
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask a question..."

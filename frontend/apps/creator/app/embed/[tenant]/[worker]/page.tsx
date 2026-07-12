@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useParams } from "next/navigation";
 import { SendHorizonal } from "lucide-react";
 import { Button, Input, Logo, cn } from "@qiko/ui";
+import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import { publicChat } from "@/lib/api";
 
 type Msg = { role: string; text: string };
@@ -43,13 +44,10 @@ export default function EmbedChatPage() {
         )}
         {messages.map((m, i) => (
           <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
-            <div className={cn("max-w-[85%] rounded-2xl px-3.5 py-2 text-sm",
-              m.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground")}>
-              {m.text}
-            </div>
+            <ChatBubble role={m.role} text={m.text} />
           </div>
         ))}
-        {busy && <p className="text-sm text-muted-foreground">Thinking…</p>}
+        {busy && <div className="flex justify-start"><TypingIndicator /></div>}
       </div>
       <form onSubmit={send} className="flex gap-2 border-t border-border p-3">
         <Input placeholder="Type a message…" value={input} onChange={(e) => setInput(e.target.value)} />

@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Badge, Button, Card, CardContent, Input, Label, Skeleton, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
+import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import {
   addBehavior, addFaq, addPolicy, addWebsite, ask, batchAnswer, batchExportUrl, connectTeamsWebhook,
   createRfpPack, deleteDocument, disconnectTeamsWebhook, getTeamsWebhookStatus, getVapiCredentials,
@@ -768,12 +769,10 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
           {messages.length === 0 && <p className="text-sm text-muted-foreground">Ask a question to see a grounded reply…</p>}
           {messages.map((m, i) => (
             <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
-              <span className={cn("max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap",
-                m.role === "user" ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted rounded-bl-sm")}>
-                {m.text}
-              </span>
+              <ChatBubble role={m.role} text={m.text} />
             </div>
           ))}
+          {busy && <div className="flex justify-start"><TypingIndicator /></div>}
         </div>
         <form onSubmit={(e) => { e.preventDefault(); sendText(input); }} className="flex gap-2">
           <Input placeholder="Ask your worker something…" value={input} onChange={(e) => setInput(e.target.value)} disabled={busy} />

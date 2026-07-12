@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { Badge, Button, Card, CardContent, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
+import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import {
   askBidContext, type Answer, complianceCheck, type ComplianceItem, exportUrl, getAnswers, getRfpPack,
   ingestFile, listDocuments, listRequirements, submitFeedback, tenderBrief, type TenderBrief,
@@ -565,14 +566,11 @@ function ChatTab({ packId, rfpTitle }: { packId: string; rfpTitle: string }) {
       </div>
       <Card className="flex-1 overflow-y-auto p-4 space-y-3 mb-3">
         {thread.map((m, i) => (
-          <div key={i} className={m.role === "user" ? "text-right" : ""}>
-            <div className={cn("inline-block rounded-2xl px-3 py-2 max-w-[85%] text-left text-sm whitespace-pre-wrap",
-              m.role === "user" ? "bg-gradient-to-r from-primary to-cyan-400 text-white" : "bg-white/[0.06]")}>
-              {m.text}
-            </div>
+          <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
+            <ChatBubble role={m.role === "bot" ? "assistant" : "user"} text={m.text} variant="gradient" />
           </div>
         ))}
-        {ask.isPending && <div><div className="inline-block rounded-2xl px-3 py-2 bg-white/[0.06] text-sm text-muted-foreground">…</div></div>}
+        {ask.isPending && <div className="flex justify-start"><TypingIndicator variant="gradient" /></div>}
       </Card>
       <form onSubmit={send} className="flex gap-2">
         <input value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="Ask about the tender…"
