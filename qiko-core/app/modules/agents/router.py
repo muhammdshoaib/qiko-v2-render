@@ -1,6 +1,8 @@
 """Agents HTTP API (tenant-scoped), gated by the subscription plan."""
 from __future__ import annotations
 
+from dataclasses import replace
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
@@ -11,6 +13,21 @@ from app.modules.billing.plans import get_plan
 from app.modules.identity.rbac import Role
 
 router = APIRouter(prefix="/agents", tags=["agents"])
+
+# Config keys that must never round-trip to the client through the generic Agent views below --
+# they're written via their own dedicated endpoints (e.g. vapi-credentials, which returns only a
+# masked preview). Even though the vapi value is encrypted at rest, the general list/get/update
+# endpoints returning the raw ciphertext blob is unnecessary exposure (OWASP sensitive data
+# exposure): no legitimate client need ever reads it from here, and it shouldn't be handed out
+# just because it happens to live in the same free-form config dict as everything else.
+_REDACTED_CONFIG_KEYS = ("vapi_api_key_encrypted",)
+
+
+def _redact(agent: Agent) -> Agent:
+    if not any(k in agent.config for k in _REDACTED_CONFIG_KEYS):
+        return agent
+    cfg = {k: v for k, v in agent.config.items() if k not in _REDACTED_CONFIG_KEYS}
+    return replace(agent, config=cfg)
 
 
 class CreateAgentBody(BaseModel):
@@ -33,7 +50,7 @@ async def create_agent(body: CreateAgentBody, tenant: str = Depends(authed_tenan
 
 @router.get("")
 async def list_agents(tenant: str = Depends(authed_tenant), svc=Depends(get_agents)) -> list[Agent]:
-    return await svc.list(tenant)
+    return [_redact(a) for a in await svc.list(tenant)]
 
 
 class UpdateConfigBody(BaseModel):
@@ -45,7 +62,7 @@ async def update_config(agent_id: str, body: UpdateConfigBody, tenant: str = Dep
                         _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_agents)) -> Agent:
     """Merge-patch the worker's free-form config -- backs the Train wizard's Background/Tone steps."""
     try:
-        return await svc.update_config(tenant, agent_id, body.patch)
+        return _redact(await svc.update_config(tenant, agent_id, body.patch))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
 
@@ -54,7 +71,7 @@ async def update_config(agent_id: str, body: UpdateConfigBody, tenant: str = Dep
 async def mark_ready(agent_id: str, tenant: str = Depends(authed_tenant),
                      _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_agents)) -> Agent:
     try:
-        return await svc.mark_ready(tenant, agent_id)
+        return _redact(await svc.mark_ready(tenant, agent_id))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
 
@@ -115,8 +132,8 @@ async def update_calendly_event_type(agent_id: str, body: CalendlyEventTypeBody,
                                      _role: dict = Depends(require_role(Role.editor)),
                                      svc=Depends(get_agents)) -> Agent:
     try:
-        return await svc.update_config(tenant, agent_id, {
+        return _redact(await svc.update_config(tenant, agent_id, {
             "calendly_event_type": body.calendly_event_type, "calendly_is_linked": True,
-        })
+        }))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
