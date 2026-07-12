@@ -40,7 +40,7 @@ export const me = async () => {
 };
 
 // Agents (workers)
-export type Agent = { id: string; name: string; status: string; atype: string; config: Record<string, unknown>; created_at: string };
+export type Agent = { id: string; tenant: string; name: string; status: string; atype: string; config: Record<string, unknown>; created_at: string };
 export const listAgents = () => request<Agent[]>("/agents");
 export const createAgent = (name: string, plan = "free") =>
   request<Agent>("/agents", { method: "POST", body: JSON.stringify({ name, plan }) });

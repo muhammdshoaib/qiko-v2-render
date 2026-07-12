@@ -5,8 +5,9 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, Bot, BrainCircuit, Calendar, Check, ExternalLink, FileText, GraduationCap, Link2, ListChecks,
-  MessageCircle, MessageSquare, Phone, SendHorizonal, Sparkles, Trash2, Users, Zap,
+  ArrowLeft, Bot, BrainCircuit, Calendar, Check, ChevronUp, CircleCheck, Code, Copy, ExternalLink, FileText,
+  GraduationCap, Globe, Link2, ListChecks, MessageCircle, MessageSquare, Phone, SendHorizonal, Share2, Sparkles,
+  Trash2, Users, Zap,
 } from "lucide-react";
 import { Badge, Button, Card, CardContent, Input, Label, Skeleton, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
@@ -73,6 +74,37 @@ export default function WorkerDetailPage() {
               </Badge>
             )}
           </div>
+          <div className="grid grid-cols-1 gap-3 px-4 py-3 sm:grid-cols-2 sm:px-6">
+            <div className="relative rounded-xl p-3 sm:p-4 bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border-2 border-emerald-500/50 shadow-lg shadow-emerald-500/10">
+              <div className="flex items-center gap-2.5 sm:gap-3">
+                <span className="grid size-9 sm:size-10 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500">
+                  <Zap className="size-4 sm:size-5 text-white" />
+                </span>
+                <div className="text-left min-w-0">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <span className="font-semibold text-sm sm:text-base text-white">Qiko-Sonic</span>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-medium bg-emerald-500/30 text-emerald-300 shrink-0">ACTIVE</span>
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-slate-400">Instant · No setup</p>
+                </div>
+              </div>
+              <div className="absolute top-2 right-2 size-2 rounded-full bg-emerald-400 animate-pulse" />
+            </div>
+            <div className="relative rounded-xl p-3 sm:p-4 bg-white/[0.01] opacity-70">
+              <div className="flex items-center gap-2.5 sm:gap-3">
+                <span className="grid size-9 sm:size-10 shrink-0 place-items-center rounded-lg bg-slate-700">
+                  <BrainCircuit className="size-4 sm:size-5 text-white" />
+                </span>
+                <div className="text-left min-w-0">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <span className="font-semibold text-sm sm:text-base text-slate-300">Custom</span>
+                    <span className="text-[9px] sm:text-[10px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 whitespace-nowrap">COMING SOON</span>
+                  </div>
+                  <p className="text-[11px] sm:text-xs text-slate-400">Fine-tuned · Your data</p>
+                </div>
+              </div>
+            </div>
+          </div>
           <div className="overflow-x-auto px-4 py-2 sm:px-6">
             <div className="flex w-max items-center gap-2">
               {TABS.map(({ id: t, icon: Icon, iconColor }) => (
@@ -105,83 +137,130 @@ export default function WorkerDetailPage() {
 
 function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
   const packs = useQuery({ queryKey: ["rfp-packs", id], queryFn: () => listRfpPacks(id) });
+  const [overviewOpen, setOverviewOpen] = useState(true);
+  const [shareOpen, setShareOpen] = useState(true);
   const cfg = worker?.config ?? {};
   const expertise = (cfg.expertise as string) || "General purpose";
   const capabilities = [
     "Answers questions using your trained knowledge base",
-    "Handles multiple conversations simultaneously",
-    "Available around the clock without breaks",
     "Personality friendly tone and communication style",
+    "Handles multiple conversations simultaneously",
     "Never forgets important details or context",
+    "Available around the clock without breaks",
   ];
+  const chatLink = typeof window !== "undefined" ? `${window.location.origin}/embed/${worker?.tenant ?? ""}/${id}` : "";
+  const widgetSnippet = `<script src="${typeof window !== "undefined" ? window.location.origin : ""}/widget.js" data-worker-id="${id}"></script>`;
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="relative rounded-xl p-3 sm:p-4 bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border-2 border-emerald-500/50 shadow-lg shadow-emerald-500/10">
-          <div className="flex items-center gap-2.5 sm:gap-3">
-            <span className="grid size-9 sm:size-10 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500">
-              <Zap className="size-4 sm:size-5 text-white" />
-            </span>
-            <div className="text-left min-w-0">
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <span className="font-semibold text-sm sm:text-base text-white">Qiko-Sonic</span>
-                <span className="px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-medium bg-emerald-500/30 text-emerald-300 shrink-0">ACTIVE</span>
-              </div>
-              <p className="text-[11px] sm:text-xs text-slate-400">Instant · No setup</p>
-            </div>
-          </div>
-          <div className="absolute top-2 right-2 size-2 rounded-full bg-emerald-400 animate-pulse" />
-        </div>
-        <div className="relative rounded-xl p-3 sm:p-4 bg-white/[0.01] opacity-70">
-          <div className="flex items-center gap-2.5 sm:gap-3">
-            <span className="grid size-9 sm:size-10 shrink-0 place-items-center rounded-lg bg-slate-700">
-              <BrainCircuit className="size-4 sm:size-5 text-white" />
-            </span>
-            <div className="text-left min-w-0">
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <span className="font-semibold text-sm sm:text-base text-slate-300">Custom</span>
-                <span className="text-[9px] sm:text-[10px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 whitespace-nowrap">COMING SOON</span>
-              </div>
-              <p className="text-[11px] sm:text-xs text-slate-400">Fine-tuned · Your data</p>
-            </div>
-          </div>
-        </div>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
+        <p className="text-muted-foreground">Overview of your digital worker&apos;s capabilities and performance</p>
       </div>
 
-      <Card>
-        <CardContent className="pt-6 space-y-4">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            <BrainCircuit className="size-4 text-primary" /> AI Model Overview
-            <Badge variant="success" className="ml-auto">Active</Badge>
-          </div>
-          <div className="flex items-start gap-3">
-            <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-primary to-secondary text-white">
-              <Bot className="size-5" />
+      <div className="overflow-hidden rounded-xl border border-slate-700/50 bg-gradient-to-br from-[#6366F1]/10 via-slate-800/30 to-[#22D3EE]/10">
+        <button onClick={() => setOverviewOpen((o) => !o)}
+          className="flex w-full items-center justify-between px-4 py-4 text-left transition-colors hover:bg-slate-700/20">
+          <div className="flex items-center gap-2 text-base font-semibold">
+            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-[#6366F1] to-[#22D3EE]">
+              <Bot className="size-4 text-white" />
             </span>
-            <div>
-              <p className="text-sm font-semibold">{worker?.name ?? "Worker"}</p>
-              <p className="text-xs font-medium text-primary">{expertise}</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                This AI model has been trained to serve as {expertise.toLowerCase().startsWith("a") || expertise.toLowerCase().startsWith("e") ? "an" : "a"} {expertise}.
-                It delivers consistent, knowledgeable responses 24/7.
+            AI Model Overview
+            <Badge variant="success" className="ml-2 text-xs">Active</Badge>
+          </div>
+          <ChevronUp className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !overviewOpen && "rotate-180")} />
+        </button>
+        {overviewOpen && (
+          <div className="space-y-6 px-4 pb-4">
+            <div className="flex items-start gap-4">
+              <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#6366F1] to-[#22D3EE] shadow-lg shadow-[#6366F1]/20">
+                <BrainCircuit className="size-8 text-white" />
+              </span>
+              <div>
+                <h3 className="text-lg font-bold text-white">{worker?.name ?? "Worker"}</h3>
+                <p className="text-sm font-medium text-cyan-400">{expertise}</p>
+                <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                  This AI model has been trained to serve as {expertise.toLowerCase().startsWith("a") || expertise.toLowerCase().startsWith("e") ? "an" : "a"} {expertise}.
+                  It delivers consistent, knowledgeable responses 24/7.
+                </p>
+              </div>
+            </div>
+            <div className="rounded-xl bg-slate-800/50 p-4">
+              <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
+                <MessageCircle className="size-4 text-cyan-400" /> Language Response Capabilities
+              </h4>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {capabilities.map((c) => (
+                  <div key={c} className="flex items-start gap-2">
+                    <CircleCheck className="mt-0.5 size-4 shrink-0 text-emerald-400" />
+                    <span className="text-sm text-slate-300">{c}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="overflow-hidden rounded-xl border border-slate-700/50 bg-slate-800/30">
+        <button onClick={() => setShareOpen((o) => !o)}
+          className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-slate-700/20">
+          <div className="flex items-center gap-2 text-base font-semibold">
+            <Share2 className="size-4 text-cyan-400" /> Share &amp; Embed
+          </div>
+          <ChevronUp className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !shareOpen && "rotate-180")} />
+        </button>
+        {shareOpen && (
+          <div className="grid grid-cols-1 gap-4 px-4 pb-4 lg:grid-cols-2">
+            <div className="min-w-0 overflow-hidden rounded-xl bg-slate-700/30 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <span className="shrink-0 rounded-lg bg-emerald-500/20 p-1.5">
+                  <Globe className="size-4 text-emerald-400" />
+                </span>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-semibold text-white">Public Chat Link</h4>
+                  <p className="text-xs text-slate-400">Share this link to let anyone chat with your AI</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-slate-600/50 bg-slate-800/80 px-3 py-2">
+                  <p className="truncate font-mono text-sm text-cyan-400">{chatLink}</p>
+                </div>
+                <Button variant="outline" size="sm" className="h-8 shrink-0 border-slate-600 hover:bg-slate-700" onClick={() => navigator.clipboard.writeText(chatLink)}>
+                  <Copy className="size-4" />
+                </Button>
+                <a href={chatLink} target="_blank" rel="noreferrer">
+                  <Button variant="outline" size="sm" className="h-8 shrink-0 border-slate-600 hover:bg-slate-700">
+                    <ExternalLink className="size-4" />
+                  </Button>
+                </a>
+              </div>
+            </div>
+            <div className="min-w-0 overflow-hidden rounded-xl bg-slate-700/30 p-4">
+              <div className="mb-3 flex items-center gap-2">
+                <span className="shrink-0 rounded-lg bg-purple-500/20 p-1.5">
+                  <Code className="size-4 text-purple-400" />
+                </span>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-semibold text-white">Website Widget</h4>
+                  <p className="text-xs text-slate-400">Add this code to embed the chat on your website</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-slate-600/50 bg-slate-800/80 px-3 py-2">
+                  <p className="truncate font-mono text-xs text-purple-400">{widgetSnippet}</p>
+                </div>
+                <Button variant="outline" size="sm" className="h-8 shrink-0 border-slate-600 hover:bg-slate-700" onClick={() => navigator.clipboard.writeText(widgetSnippet)}>
+                  <Copy className="size-4" />
+                </Button>
+              </div>
+              <p className="mt-2 flex items-center gap-1 text-xs text-slate-500">
+                <Sparkles className="size-3" /> Paste before the closing &lt;/body&gt; tag
               </p>
             </div>
           </div>
-          <div className="rounded-lg bg-muted/40 p-4">
-            <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-              <MessageCircle className="size-4" /> Language Response Capabilities
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {capabilities.map((c) => (
-                <div key={c} className="flex items-start gap-2 text-sm text-muted-foreground">
-                  <Check className="size-3.5 mt-0.5 shrink-0 text-emerald-400" /> {c}
-                </div>
-              ))}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+        )}
+      </div>
 
       {(packs.data?.length ?? 0) > 0 && (
         <Card>
