@@ -10,11 +10,11 @@ import {
 import { Badge, Button, Card, CardContent } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import {
-  ask, batchAnswer, batchExportUrl, listAgents, listDocuments, listRfpPacks,
+  ask, batchAnswer, batchExportUrl, getPackStats, listAgents, listDocuments, listRfpPacks,
   type BatchAnswer, type RfpPack,
 } from "@/lib/api";
 
-const TABS = ["Overview", "Chat", "Research"] as const;
+const TABS = ["Overview", "Chat", "Research", "Win/Loss"] as const;
 
 export default function StudioWorkerPage() {
   const { id } = useParams<{ id: string }>();
@@ -51,10 +51,12 @@ export default function StudioWorkerPage() {
 
         {tab === "Overview" && (
           <StudioOverview agentId={id} onOpenResearch={() => setTab("Research")}
-            onOpenKnowledge={() => router.push(`/workers/${id}`)} />
+            onOpenWinLoss={() => setTab("Win/Loss")} onOpenKnowledge={() => router.push(`/workers/${id}`)}
+            onOpenConnections={() => router.push(`/workers/${id}?tab=Connections`)} />
         )}
         {tab === "Chat" && <StudioChat />}
         {tab === "Research" && <StudioResearch />}
+        {tab === "Win/Loss" && <StudioWinLoss agentId={id} />}
       </div>
     </AppShell>
   );
@@ -62,11 +64,23 @@ export default function StudioWorkerPage() {
 
 type UseCase = { title: string; description: string; icon: typeof FileText; status: "active" | "coming_soon"; onClick?: () => void };
 
-function StudioOverview({ agentId, onOpenResearch, onOpenKnowledge }: {
-  agentId: string; onOpenResearch: () => void; onOpenKnowledge: () => void;
+function StudioOverview({ agentId, onOpenResearch, onOpenWinLoss, onOpenKnowledge, onOpenConnections }: {
+  agentId: string; onOpenResearch: () => void; onOpenWinLoss: () => void; onOpenKnowledge: () => void; onOpenConnections: () => void;
 }) {
+  const router = useRouter();
   const packs = useQuery({ queryKey: ["rfp-packs", agentId], queryFn: () => listRfpPacks(agentId) });
   const docs = useQuery({ queryKey: ["documents"], queryFn: listDocuments });
+
+  function openCompliance() {
+    // Compliance Checker lives inside a specific tender's cockpit (it checks THAT tender's
+    // mandatory requirements) -- jump into the most recently created pack, or ask for one first.
+    const target = packs.data?.[0];
+    if (!target) {
+      onOpenResearch();
+      return;
+    }
+    router.push(`/workers/${agentId}/tenders/${target.id}?tab=Compliance`);
+  }
 
   const activeBids = packs.data?.length ?? 0;
   const inReview = packs.data?.filter((p: RfpPack) => p.stage === "review" || p.stage === "final").length ?? 0;
@@ -89,11 +103,11 @@ function StudioOverview({ agentId, onOpenResearch, onOpenKnowledge }: {
     { title: "Section Assignment", description: "Assign and track section ownership across the team",
       icon: ListChecks, status: "active" },
     { title: "Compliance Checker", description: "Validate responses against compliance requirements",
-      icon: Shield, status: "coming_soon" },
+      icon: Shield, status: "active", onClick: openCompliance },
     { title: "Win/Loss Analysis", description: "Track outcomes and improve future responses",
-      icon: TrendingUp, status: "coming_soon" },
+      icon: TrendingUp, status: "active", onClick: onOpenWinLoss },
     { title: "Teams Integration", description: "Notifications and collaboration via Microsoft Teams",
-      icon: Users, status: "coming_soon" },
+      icon: Users, status: "active", onClick: onOpenConnections },
   ];
 
   return (
@@ -164,6 +178,58 @@ function StudioChat() {
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+const LOSS_REASON_LABELS: Record<string, string> = {
+  price: "Price", technical: "Technical fit", relationship: "Relationship", timeline: "Timeline",
+  no_bid_decision: "No-bid decision", other: "Other", unspecified: "Unspecified",
+};
+
+function StudioWinLoss({ agentId }: { agentId: string }) {
+  const stats = useQuery({ queryKey: ["pack-stats", agentId], queryFn: () => getPackStats(agentId) });
+  const s = stats.data;
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        <TrendingUp className="mr-1 inline size-3.5" />
+        Outcomes are recorded from the worker&apos;s Tenders list (mark a tender Won/Lost) -- this rolls them up.
+      </p>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Card><CardContent className="space-y-1 pt-6">
+          <p className="text-xs text-muted-foreground">Win rate</p>
+          <p className="text-xl font-bold">{s?.win_rate != null ? `${Math.round(s.win_rate * 100)}%` : "\u2014"}</p>
+        </CardContent></Card>
+        <Card><CardContent className="space-y-1 pt-6">
+          <p className="text-xs text-muted-foreground">Won / Lost</p>
+          <p className="text-xl font-bold">{s?.won ?? 0} / {s?.lost ?? 0}</p>
+        </CardContent></Card>
+        <Card><CardContent className="space-y-1 pt-6">
+          <p className="text-xs text-muted-foreground">Pipeline value won</p>
+          <p className="text-xl font-bold">${(s?.won_value ?? 0).toLocaleString()}</p>
+        </CardContent></Card>
+        <Card><CardContent className="space-y-1 pt-6">
+          <p className="text-xs text-muted-foreground">Pending decision</p>
+          <p className="text-xl font-bold">{s?.pending ?? 0}</p>
+        </CardContent></Card>
+      </div>
+
+      <Card><CardContent className="space-y-3 pt-6">
+        <p className="text-sm font-semibold">Why we lose</p>
+        {s && Object.keys(s.loss_reasons).length > 0 ? (
+          Object.entries(s.loss_reasons).sort((a, b) => b[1] - a[1]).map(([reason, count]) => (
+            <div key={reason} className="flex items-center justify-between text-sm">
+              <span>{LOSS_REASON_LABELS[reason] ?? reason}</span>
+              <Badge variant="muted">{count}</Badge>
+            </div>
+          ))
+        ) : (
+          <p className="text-sm text-muted-foreground">No lost tenders recorded yet.</p>
+        )}
+      </CardContent></Card>
+    </div>
   );
 }
 

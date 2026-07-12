@@ -12,6 +12,12 @@ from datetime import datetime, timezone
 from typing import Protocol
 
 STAGES = ("parsed", "assigned", "drafting", "review", "final")
+# An outcome is recorded once a submitted tender's result is known -- separate from `stage`
+# (which tracks the drafting pipeline, not the client's decision). "pending" is the implicit
+# default (no outcome recorded yet), so it's not stored as a real DB value, just how a None
+# outcome_status reads in the API/UI.
+OUTCOMES = ("won", "lost", "withdrawn")
+LOSS_REASONS = ("price", "technical", "relationship", "timeline", "no_bid_decision", "other")
 
 
 def _now() -> datetime:
@@ -29,6 +35,11 @@ class RfpPack:
     stage: str = "parsed"
     created_at: datetime = field(default_factory=_now)
     document_text: str = ""
+    # Win/Loss Analysis -- see OUTCOMES/LOSS_REASONS above.
+    outcome: str | None = None
+    outcome_reason: str = ""
+    outcome_value: float | None = None
+    outcome_at: datetime | None = None
 
 
 class RfpPackNotFound(Exception):
@@ -41,6 +52,8 @@ class RfpPackStore(Protocol):
     async def get(self, tenant: str, pack_id: str) -> RfpPack | None: ...
     async def set_stage(self, tenant: str, pack_id: str, stage: str) -> RfpPack: ...
     async def set_document_text(self, tenant: str, pack_id: str, text: str) -> RfpPack: ...
+    async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,
+                          reason: str, value: float | None) -> RfpPack: ...
     async def delete(self, tenant: str, pack_id: str) -> None: ...
 
 
@@ -73,6 +86,15 @@ class InMemoryRfpPackStore:
         if pack is None:
             raise RfpPackNotFound(pack_id)
         pack.document_text = text
+        return pack
+
+    async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,
+                          reason: str, value: float | None) -> RfpPack:
+        pack = await self.get(tenant, pack_id)
+        if pack is None:
+            raise RfpPackNotFound(pack_id)
+        pack.outcome, pack.outcome_reason, pack.outcome_value = outcome, reason, value
+        pack.outcome_at = _now() if outcome else None
         return pack
 
     async def delete(self, tenant: str, pack_id: str) -> None:
@@ -110,6 +132,38 @@ class RfpPackService:
 
     async def set_document_text(self, tenant: str, pack_id: str, text: str) -> RfpPack:
         return await self.store.set_document_text(tenant, pack_id, text)
+
+    async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,
+                          reason: str = "", value: float | None = None) -> RfpPack:
+        if outcome is not None and outcome not in OUTCOMES:
+            raise ValueError(f"invalid outcome '{outcome}', must be one of {OUTCOMES} (or null to clear)")
+        if outcome == "lost" and reason and reason not in LOSS_REASONS:
+            raise ValueError(f"invalid loss reason '{reason}', must be one of {LOSS_REASONS}")
+        return await self.store.set_outcome(tenant, pack_id, outcome=outcome, reason=reason, value=value)
+
+    async def stats(self, tenant: str, *, agent_id: str | None = None) -> dict:
+        """Win/Loss Analysis rollup: win rate, total pipeline value, and a breakdown of why bids
+        were lost -- the thing a sales lead actually wants after a quarter of tenders."""
+        packs = await self.list(tenant, agent_id=agent_id)
+        decided = [p for p in packs if p.outcome in ("won", "lost")]
+        won = [p for p in decided if p.outcome == "won"]
+        lost = [p for p in decided if p.outcome == "lost"]
+        withdrawn = [p for p in packs if p.outcome == "withdrawn"]
+        loss_reasons: dict[str, int] = {}
+        for p in lost:
+            key = p.outcome_reason or "unspecified"
+            loss_reasons[key] = loss_reasons.get(key, 0) + 1
+        return {
+            "total_decided": len(decided),
+            "won": len(won),
+            "lost": len(lost),
+            "withdrawn": len(withdrawn),
+            "pending": len(packs) - len(decided) - len(withdrawn),
+            "win_rate": round(len(won) / len(decided), 3) if decided else None,
+            "won_value": sum(p.outcome_value or 0 for p in won),
+            "lost_value": sum(p.outcome_value or 0 for p in lost),
+            "loss_reasons": loss_reasons,
+        }
 
     async def delete(self, tenant: str, pack_id: str) -> None:
         await self.store.delete(tenant, pack_id)

@@ -15,6 +15,7 @@ from app.core.deps import (
     get_pack_answers,
     get_requirements,
     get_rfp_packs,
+    get_teams_notifier,
     require_role,
 )
 from app.modules.ai.gateway import get_provider
@@ -49,6 +50,14 @@ async def list_packs(agent_id: str | None = None, tenant: str = Depends(authed_t
     return await svc.list(tenant, agent_id=agent_id)
 
 
+@router.get("/stats")
+async def pack_stats(agent_id: str | None = None, tenant: str = Depends(authed_tenant),
+                     svc=Depends(get_rfp_packs)) -> dict:
+    """Win/Loss Analysis rollup (see RfpPackService.stats) -- registered before /{pack_id} so the
+    literal 'stats' path segment can never be swallowed as a pack_id."""
+    return await svc.stats(tenant, agent_id=agent_id)
+
+
 @router.get("/{pack_id}")
 async def get_pack(pack_id: str, tenant: str = Depends(authed_tenant), svc=Depends(get_rfp_packs)) -> RfpPack:
     try:
@@ -70,6 +79,32 @@ async def set_stage(pack_id: str, body: StageBody, tenant: str = Depends(authed_
         raise HTTPException(status_code=404, detail="RFP pack not found") from e
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+class OutcomeBody(BaseModel):
+    outcome: str | None = None  # "won" | "lost" | "withdrawn" | null to clear
+    reason: str = ""  # loss reason, one of rfp.service.LOSS_REASONS -- only meaningful when lost
+    value: float | None = None  # contract value, for "won" pipeline-value reporting
+
+
+@router.put("/{pack_id}/outcome")
+async def set_outcome(pack_id: str, body: OutcomeBody, tenant: str = Depends(authed_tenant),
+                      _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_rfp_packs),
+                      notifier=Depends(get_teams_notifier)) -> RfpPack:
+    """Win/Loss Analysis: record what happened to a submitted tender. Feeds /rfp/packs/stats."""
+    try:
+        pack = await svc.set_outcome(tenant, pack_id, outcome=body.outcome, reason=body.reason, value=body.value)
+    except RfpPackNotFound as e:
+        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    if body.outcome == "won":
+        await notifier.notify(tenant, f"\U0001f389 Tender won: **{pack.title}**"
+                              + (f" (${body.value:,.0f})" if body.value else ""))
+    elif body.outcome == "lost":
+        await notifier.notify(tenant, f"Tender lost: **{pack.title}**"
+                              + (f" -- reason: {body.reason}" if body.reason else ""))
+    return pack
 
 
 @router.delete("/{pack_id}")

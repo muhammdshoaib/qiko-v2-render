@@ -91,6 +91,11 @@ class RfpPack(Base):
     stage: Mapped[str] = mapped_column(String(16), default="parsed")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     document_text: Mapped[str] = mapped_column(String, default="")
+    # Win/Loss Analysis (app.modules.rfp.service.OUTCOMES/LOSS_REASONS)
+    outcome: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    outcome_reason: Mapped[str] = mapped_column(String(32), default="")
+    outcome_value: Mapped[float | None] = mapped_column(nullable=True)
+    outcome_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class PackRequirement(Base):
@@ -176,4 +181,12 @@ class PackAnswer(Base):
     decision: Mapped[str] = mapped_column(String(32), default="")
     citations: Mapped[list] = mapped_column(JSON, default=list)
     note: Mapped[str] = mapped_column(String, default="")
-    generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class TeamsWebhook(Base):
+    """One Microsoft Teams Incoming Webhook per tenant (app.modules.channels.teams_integration).
+    The URL is encrypted at rest -- it grants posting rights into the customer's Teams channel."""
+    __tablename__ = "teams_webhooks"
+    tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    enc_webhook_url: Mapped[str] = mapped_column(String)
+    connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

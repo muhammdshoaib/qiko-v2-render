@@ -82,6 +82,20 @@ class SlackClient:
         return body
 
 
+class TeamsWebhookClient:
+    """Implements TeamsGateway via a Microsoft Teams Incoming Webhook connector. Unlike the other
+    clients here, the URL isn't a fixed base_url from settings -- it's per-tenant (see
+    channels.teams_integration) and passed to each call, so this client takes no constructor args."""
+
+    def __init__(self, client: httpx.Client | None = None):
+        self._client = client
+
+    def send(self, webhook_url: str, text: str) -> None:
+        c = self._client or httpx.Client(timeout=15.0)
+        r = c.post(webhook_url, json={"text": text})
+        r.raise_for_status()
+
+
 class ClickUpClient:
     """Implements ClickUpGateway (create task in a list)."""
 

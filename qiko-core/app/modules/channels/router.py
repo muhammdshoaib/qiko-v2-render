@@ -16,9 +16,11 @@ from app.core.deps import (
     get_slack,
     get_slack_links,
     get_slack_oauth,
+    get_teams_notifier,
     get_whatsapp,
     require_role,
 )
+from app.modules.channels.teams_integration import TeamsWebhookError
 from app.modules.channels.webhooks import verify_hmac_signature
 from app.modules.channels.whatsapp import verify_webhook
 from app.modules.identity.rbac import Role
@@ -156,3 +158,44 @@ def session_get(external_id: str, tenant: str = Depends(authed_tenant), sessions
     if s is None:
         raise HTTPException(status_code=404, detail="no session")
     return {"external_id": external_id, "selected_worker": s.selected_worker, "reply_mode": s.reply_mode}
+
+
+# --- Microsoft Teams Integration (notifications via a per-tenant Incoming Webhook) ---
+class TeamsWebhookBody(BaseModel):
+    webhook_url: str = Field(min_length=8)
+
+
+@router.get("/teams/webhook")
+async def teams_webhook_status(tenant: str = Depends(authed_tenant), notifier=Depends(get_teams_notifier)) -> dict:
+    return await notifier.status(tenant)
+
+
+@router.put("/teams/webhook")
+async def teams_webhook_connect(body: TeamsWebhookBody, tenant: str = Depends(authed_tenant),
+                                _r: dict = _editor, notifier=Depends(get_teams_notifier)) -> dict:
+    """Paste the URL from Teams > channel > Connectors > Incoming Webhook. Stored encrypted --
+    never returned again, same as the Vapi API key (see agents/router.py)."""
+    try:
+        await notifier.connect(tenant, body.webhook_url)
+    except TeamsWebhookError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return await notifier.status(tenant)
+
+
+@router.delete("/teams/webhook")
+async def teams_webhook_disconnect(tenant: str = Depends(authed_tenant), _r: dict = _editor,
+                                   notifier=Depends(get_teams_notifier)) -> dict:
+    await notifier.disconnect(tenant)
+    return {"connected": False}
+
+
+@router.post("/teams/test")
+async def teams_webhook_test(tenant: str = Depends(authed_tenant), _r: dict = _editor,
+                             notifier=Depends(get_teams_notifier)) -> dict:
+    try:
+        await notifier.send_test(tenant)
+    except TeamsWebhookError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception as e:  # webhook URL rejected by Teams, network error, ...
+        raise HTTPException(status_code=502, detail=f"could not reach Teams: {e}") from e
+    return {"sent": True}

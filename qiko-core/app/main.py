@@ -44,6 +44,7 @@ from app.integrations.clients import (
 from app.modules.billing.payment_links import PaymentLinkService
 from app.modules.channels.sessions import ChannelSessionStore
 from app.modules.channels.slack_oauth import InstallationStore, SlackOAuth, WorkspaceLinkStore
+from app.modules.channels.teams_integration import TeamsNotifier
 from app.modules.chat.files import FileGenerator
 from app.modules.identity.admin_rbac import AdminOrg
 from app.modules.identity.onboarding import OtpStore
@@ -106,6 +107,7 @@ async def lifespan(app: FastAPI):
             SqlPackAnswerStore,
             SqlRequirementStore,
             SqlRfpPackStore,
+            SqlTeamsIntegrationStore,
             SqlTeamStore,
             SqlUserStore,
             SqlVectorStore,
@@ -125,6 +127,7 @@ async def lifespan(app: FastAPI):
         app.state.admin_org = AdminOrg(store=SqlAdminOrgStore(sm))  # platform admins survive a redeploy
         app.state.teams = TeamService(store=SqlTeamStore(sm))  # teams/membership survive a redeploy
         app.state.leads = LeadService(get_email_sender(), store=SqlLeadStore(sm))  # leads survive a redeploy
+        app.state.teams_notifier = TeamsNotifier(store=SqlTeamsIntegrationStore(sm))  # webhook survives a redeploy
         set_user_store(SqlUserStore(sm))  # users/sessions/2FA persist to Postgres
     try:
         yield
@@ -179,6 +182,7 @@ def create_app() -> FastAPI:
     app.state.chat = ChatService()
     app.state.teams = TeamService()
     app.state.leads = LeadService(get_email_sender())
+    app.state.teams_notifier = TeamsNotifier()
 
     # Real client if the secret is configured, dev stub otherwise -- same pattern as
     # get_email_sender(). Gmail (as an agent tool, not transactional email) and Speech

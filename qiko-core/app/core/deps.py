@@ -161,6 +161,10 @@ def get_slack_links(request: Request):
     return request.app.state.slack_links
 
 
+def get_teams_notifier(request: Request):
+    return request.app.state.teams_notifier
+
+
 def get_file_generator(request: Request):
     return request.app.state.file_generator
 

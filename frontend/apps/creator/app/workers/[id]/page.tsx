@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -12,9 +12,10 @@ import {
 import { Badge, Button, Card, CardContent, Input, Label, Skeleton, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import {
-  addBehavior, addFaq, addPolicy, addWebsite, ask, batchAnswer, batchExportUrl,
-  deleteDocument, getVapiCredentials, ingest, listAgents, listDocuments, listLeads, listRfpPacks,
-  saveVapiCredentials, updateAgentConfig, updateCalendlyEventType, type Agent, type BatchAnswer, type Doc,
+  addBehavior, addFaq, addPolicy, addWebsite, ask, batchAnswer, batchExportUrl, connectTeamsWebhook,
+  createRfpPack, deleteDocument, disconnectTeamsWebhook, getTeamsWebhookStatus, getVapiCredentials,
+  ingest, listAgents, listDocuments, listLeads, listRfpPacks, saveVapiCredentials, setPackOutcome,
+  testTeamsWebhook, updateAgentConfig, updateCalendlyEventType, type Agent, type BatchAnswer, type Doc, type RfpPack,
 } from "@/lib/api";
 
 const TABS = [
@@ -44,7 +45,9 @@ function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
 export default function WorkerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<Tab>("Overview");
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") as Tab | null;
+  const [tab, setTab] = useState<Tab>(TABS.some((t) => t.id === initialTab) ? (initialTab as Tab) : "Overview");
   const docs = useQuery({ queryKey: ["documents"], queryFn: listDocuments });
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const worker = agents.data?.find((a) => a.id === id);
@@ -268,27 +271,85 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
         )}
       </div>
 
-      {(packs.data?.length ?? 0) > 0 && (
-        <Card>
-          <CardContent className="pt-6 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-semibold">Tenders</p>
-              <Badge variant="muted">{packs.data!.length} active</Badge>
-            </div>
-            {packs.data!.map((p) => (
-              <Link key={p.id} href={`/workers/${id}/tenders/${p.id}`}
-                className="flex items-center justify-between rounded-lg border border-border/60 p-3 text-sm hover:bg-muted/50">
-                <div>
-                  <p className="font-medium">{p.title}</p>
-                  <p className="text-xs text-muted-foreground">{p.client_name || "No client set"} {p.deadline ? `· Due ${p.deadline}` : ""}</p>
-                </div>
-                <Badge variant="muted">{p.stage}</Badge>
-              </Link>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+      <TendersCard agentId={id} packs={packs.data} onChange={() => packs.refetch()} />
     </div>
+  );
+}
+
+const OUTCOME_STYLE: Record<string, string> = {
+  won: "text-emerald-500", lost: "text-red-500", withdrawn: "text-muted-foreground",
+};
+
+function TendersCard({ agentId, packs, onChange }: { agentId: string; packs?: RfpPack[]; onChange: () => void }) {
+  const [creating, setCreating] = useState(false);
+  const [title, setTitle] = useState("");
+  const [clientName, setClientName] = useState("");
+  const [deadline, setDeadline] = useState("");
+  const create = useMutation({
+    mutationFn: () => createRfpPack(agentId, title, clientName, deadline || null),
+    onSuccess: () => { setTitle(""); setClientName(""); setDeadline(""); setCreating(false); onChange(); },
+  });
+  const setOutcome = useMutation({
+    mutationFn: ({ packId, outcome, reason }: { packId: string; outcome: "won" | "lost"; reason?: string }) =>
+      setPackOutcome(packId, outcome, reason),
+    onSuccess: onChange,
+  });
+
+  return (
+    <Card>
+      <CardContent className="pt-6 space-y-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold">Tenders</p>
+          <div className="flex items-center gap-2">
+            <Badge variant="muted">{packs?.length ?? 0}</Badge>
+            <Button size="sm" variant="outline" onClick={() => setCreating((c) => !c)}>
+              {creating ? "Cancel" : "+ New Tender"}
+            </Button>
+          </div>
+        </div>
+
+        {creating && (
+          <div className="space-y-2 rounded-lg border border-border/60 p-3">
+            <Input placeholder="Tender title" value={title} onChange={(e) => setTitle(e.target.value)} />
+            <div className="flex gap-2">
+              <Input placeholder="Client name (optional)" value={clientName} onChange={(e) => setClientName(e.target.value)} />
+              <Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+            </div>
+            <div className="flex justify-end">
+              <Button size="sm" disabled={!title || create.isPending} onClick={() => create.mutate()}>
+                {create.isPending ? "Creating..." : "Create tender"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {(packs?.length ?? 0) === 0 && !creating && (
+          <p className="text-sm text-muted-foreground">No tenders yet -- create one to start drafting responses grounded in this worker&apos;s knowledge base.</p>
+        )}
+
+        {packs?.map((p) => (
+          <div key={p.id} className="flex items-center justify-between rounded-lg border border-border/60 p-3 text-sm hover:bg-muted/50">
+            <Link href={`/workers/${agentId}/tenders/${p.id}`} className="min-w-0 flex-1">
+              <p className="font-medium">{p.title}</p>
+              <p className="text-xs text-muted-foreground">{p.client_name || "No client set"} {p.deadline ? `· Due ${p.deadline}` : ""}</p>
+            </Link>
+            <div className="flex items-center gap-2 shrink-0">
+              {p.outcome ? (
+                <span className={cn("text-xs font-medium capitalize", OUTCOME_STYLE[p.outcome])}>{p.outcome}</span>
+              ) : (
+                <>
+                  <button className="text-xs text-emerald-500 hover:underline"
+                    onClick={() => setOutcome.mutate({ packId: p.id, outcome: "won" })}>Won</button>
+                  <button className="text-xs text-red-500 hover:underline"
+                    onClick={() => setOutcome.mutate({ packId: p.id, outcome: "lost" })}>Lost</button>
+                </>
+              )}
+              <Badge variant="muted">{p.stage}</Badge>
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -319,7 +380,7 @@ function CrmTab() {
   );
 }
 
-const CONNECTIONS_SUBTABS = ["Voice", "Calendly"] as const;
+const CONNECTIONS_SUBTABS = ["Voice", "Calendly", "Teams"] as const;
 
 function ConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
   const [sub, setSub] = useState<(typeof CONNECTIONS_SUBTABS)[number]>("Voice");
@@ -330,12 +391,79 @@ function ConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
           <button key={s} onClick={() => setSub(s)}
             className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
               sub === s ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-            {s === "Voice" ? <Phone className="size-3.5" /> : <Calendar className="size-3.5" />} {s}
+            {s === "Voice" ? <Phone className="size-3.5" /> : s === "Calendly" ? <Calendar className="size-3.5" /> : <Users className="size-3.5" />} {s}
           </button>
         ))}
       </div>
       {sub === "Voice" && <VoiceSubTab id={id} />}
       {sub === "Calendly" && <CalendlySubTab id={id} worker={worker} />}
+      {sub === "Teams" && <TeamsSubTab />}
+    </div>
+  );
+}
+
+function TeamsSubTab() {
+  const qc = useQueryClient();
+  const [url, setUrl] = useState("");
+  const [testResult, setTestResult] = useState<"idle" | "ok" | "error">("idle");
+  const status = useQuery({ queryKey: ["teams-webhook"], queryFn: getTeamsWebhookStatus });
+  const connect = useMutation({
+    mutationFn: () => connectTeamsWebhook(url),
+    onSuccess: () => { setUrl(""); qc.invalidateQueries({ queryKey: ["teams-webhook"] }); },
+  });
+  const disconnect = useMutation({
+    mutationFn: disconnectTeamsWebhook,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["teams-webhook"] }),
+  });
+  const test = useMutation({
+    mutationFn: testTeamsWebhook,
+    onSuccess: () => setTestResult("ok"),
+    onError: () => setTestResult("error"),
+  });
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="font-medium">Microsoft Teams</p>
+        <p className="text-sm text-muted-foreground">Get notified in a Teams channel when a tender is won or lost, and other worker events.</p>
+      </div>
+
+      {!status.data?.connected && (
+        <Card className="border-amber-500/30 bg-amber-500/5"><CardContent className="space-y-2 pt-6 text-sm">
+          <p className="font-medium">Set up an Incoming Webhook</p>
+          <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
+            <li>In Teams, open the channel you want notifications in.</li>
+            <li>Channel menu {"\u2192"} Connectors (or Workflows) {"\u2192"} Incoming Webhook.</li>
+            <li>Name it "Qiko", create it, and copy the webhook URL.</li>
+          </ol>
+        </CardContent></Card>
+      )}
+
+      <Card><CardContent className="space-y-4 pt-6">
+        <p className="text-sm">Status: <span className="font-medium">{status.data?.connected ? "Connected" : "Not connected"}</span></p>
+        {status.data?.connected ? (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" disabled={test.isPending} onClick={() => test.mutate()}>
+              {test.isPending ? "Sending..." : "Send test notification"}
+            </Button>
+            <Button variant="outline" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
+              Disconnect
+            </Button>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            <Label>Webhook URL</Label>
+            <Input placeholder="https://outlook.office.com/webhook/..." value={url} onChange={(e) => setUrl(e.target.value)} />
+            <div className="flex justify-end pt-2">
+              <Button disabled={!url || connect.isPending} onClick={() => connect.mutate()}>
+                {connect.isPending ? "Connecting..." : "Connect"}
+              </Button>
+            </div>
+          </div>
+        )}
+        {testResult === "ok" && <p className="text-xs text-emerald-600">Test notification sent -- check your Teams channel.</p>}
+        {testResult === "error" && <p className="text-xs text-red-500">Could not reach Teams with that webhook URL.</p>}
+      </CardContent></Card>
     </div>
   );
 }

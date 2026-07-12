@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, ArrowRight, Check, ChevronRight, Download, FileCheck2, FileText,
@@ -39,7 +39,9 @@ export default function TenderCockpitPage() {
   const { id, packId } = useParams<{ id: string; packId: string }>();
   const router = useRouter();
   const qc = useQueryClient();
-  const [tab, setTab] = useState<Tab>("Overview");
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab");
+  const [tab, setTab] = useState<Tab>(TABS.includes(initialTab as Tab) ? (initialTab as Tab) : "Overview");
   const [view, setView] = useState<"list" | "editor">("list");
   const [section, setSection] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<Record<string, string>>({});

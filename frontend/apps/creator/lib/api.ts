@@ -56,6 +56,14 @@ export const saveVapiCredentials = (agentId: string, body: { vapi_assistant_id: 
 export const updateCalendlyEventType = (agentId: string, calendly_event_type: string) =>
   request<Agent>(`/agents/${agentId}/calendly-event-type`, { method: "PUT", body: JSON.stringify({ calendly_event_type }) });
 
+// Connections: Microsoft Teams (notifications via a per-tenant Incoming Webhook)
+export type TeamsWebhookStatus = { connected: boolean; connected_at: string | null };
+export const getTeamsWebhookStatus = () => request<TeamsWebhookStatus>("/channels/teams/webhook");
+export const connectTeamsWebhook = (webhook_url: string) =>
+  request<TeamsWebhookStatus>("/channels/teams/webhook", { method: "PUT", body: JSON.stringify({ webhook_url }) });
+export const disconnectTeamsWebhook = () => request<TeamsWebhookStatus>("/channels/teams/webhook", { method: "DELETE" });
+export const testTeamsWebhook = () => request<{ sent: boolean }>("/channels/teams/test", { method: "POST" });
+
 // Knowledge + chat
 export type Doc = { doc_id: string; chunks: number };
 export const ingest = (doc_id: string, text: string) =>
@@ -106,8 +114,24 @@ export const addTeamMember = (teamId: string, user_id: string, role: string) =>
   request<Team>(`/teams/${teamId}/members`, { method: "POST", body: JSON.stringify({ user_id, role }) });
 
 // RFP packs (tenders a worker is answering) + section assignments
-export type RfpPack = { id: string; tenant: string; agent_id: string; title: string; client_name: string; deadline: string | null; stage: string; created_at: string };
+export type RfpPack = {
+  id: string; tenant: string; agent_id: string; title: string; client_name: string; deadline: string | null;
+  stage: string; created_at: string;
+  outcome: "won" | "lost" | "withdrawn" | null; outcome_reason: string; outcome_value: number | null; outcome_at: string | null;
+};
 export const listRfpPacks = (agentId: string) => request<RfpPack[]>(`/rfp/packs?agent_id=${encodeURIComponent(agentId)}`);
+export const createRfpPack = (agentId: string, title: string, client_name = "", deadline: string | null = null) =>
+  request<RfpPack>("/rfp/packs", { method: "POST", body: JSON.stringify({ agent_id: agentId, title, client_name, deadline }) });
+
+// Win/Loss Analysis
+export type PackStats = {
+  total_decided: number; won: number; lost: number; withdrawn: number; pending: number;
+  win_rate: number | null; won_value: number; lost_value: number; loss_reasons: Record<string, number>;
+};
+export const getPackStats = (agentId?: string) =>
+  request<PackStats>(`/rfp/packs/stats${agentId ? `?agent_id=${encodeURIComponent(agentId)}` : ""}`);
+export const setPackOutcome = (packId: string, outcome: "won" | "lost" | "withdrawn" | null, reason = "", value: number | null = null) =>
+  request<RfpPack>(`/rfp/packs/${packId}/outcome`, { method: "PUT", body: JSON.stringify({ outcome, reason, value }) });
 export type PackRequirement = { id: string; pack_id: string; req_id: string; title: string; classification: string; requirement: string };
 export const listRequirements = (packId: string) => request<PackRequirement[]>(`/rfp/packs/${packId}/requirements`);
 export const getRfpPack = (packId: string) => request<RfpPack & { document_text: string }>(`/rfp/packs/${packId}`);
