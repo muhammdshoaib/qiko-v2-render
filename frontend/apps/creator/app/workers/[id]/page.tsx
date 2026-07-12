@@ -154,7 +154,8 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
   const [origin, setOrigin] = useState("");
   useEffect(() => setOrigin(window.location.origin), []);
   const chatLink = origin ? `${origin}/embed/${worker?.tenant ?? ""}/${id}` : "";
-  const widgetSnippet = `<script src="${origin}/widget.js" data-worker-id="${id}"></script>`;
+  // widget.js reads data-tenant + data-worker (+ optional data-base) -- NOT data-worker-id.
+  const widgetSnippet = `<script src="${origin}/widget.js" data-tenant="${worker?.tenant ?? ""}" data-worker="${id}" data-base="${origin}"></script>`;
 
   return (
     <div className="space-y-6">

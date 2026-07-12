@@ -73,6 +73,16 @@ def test_feedback_approves_answer_into_flywheel(client):
     assert r2.status_code == 200
 
 
+def test_feedback_requires_editor_role(client):
+    # Same knowledge-base write as the rfp-pack feedback endpoint -- a viewer must not be able
+    # to plant "verified ground truth" for the whole tenant.
+    c = auth_cookies("feedbackco2", "viewer")
+    r = client.post("/api/v1/agents/feedback",
+                     json={"requirement_id": "q1", "topic": "iso", "approved_text": "should be blocked"},
+                     cookies=c)
+    assert r.status_code == 403
+
+
 def test_batch_export_returns_xlsx(client):
     c = auth_cookies("exportco", "owner")
     r = client.post("/api/v1/agents/batch-export", json={"questions": ["Any question?"]}, cookies=c)

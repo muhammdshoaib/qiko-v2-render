@@ -131,6 +131,38 @@ def test_feedback_rejects_invalid_decision(client):
     assert r.status_code == 422
 
 
+def test_feedback_requires_editor_role(client):
+    # A viewer must not be able to plant "verified ground truth" into the tenant's knowledge
+    # base -- writing feedback needs the same Editor-or-above bar as every other mutation.
+    owner = auth_cookies("fbco3", "owner")
+    pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender"}, cookies=owner).json()
+    viewer = auth_cookies("fbco3", "viewer")
+    r = client.post(f"/api/v1/rfp/packs/{pack['id']}/feedback", cookies=viewer,
+                    json={"req_id": "B1", "decision": "Approve", "comment": "should be blocked"})
+    assert r.status_code == 403
+
+
+def test_feedback_404s_for_nonexistent_pack(client):
+    c = auth_cookies("fbco4", "owner")
+    r = client.post("/api/v1/rfp/packs/does-not-exist/feedback", cookies=c,
+                    json={"req_id": "B1", "decision": "Approve", "comment": "text"})
+    assert r.status_code == 404
+
+
+def test_force_regenerate_answers_requires_editor_role(client, monkeypatch):
+    c, pack, fake_get_provider = _setup_pack_with_requirements(client, "fbco5")
+    monkeypatch.setattr("app.modules.rfp.router.get_provider", fake_get_provider)
+    client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
+               files={"file": ("t.txt", io.BytesIO(b"tender text"), "text/plain")})
+
+    viewer = auth_cookies("fbco5", "viewer")
+    r = client.get(f"/api/v1/rfp/packs/{pack['id']}/answers", params={"force": "true"}, cookies=viewer)
+    assert r.status_code == 403
+    # a plain (non-forced) read stays available to a viewer
+    r2 = client.get(f"/api/v1/rfp/packs/{pack['id']}/answers", cookies=viewer)
+    assert r2.status_code == 200
+
+
 def test_export_docx_clean_and_review(client, monkeypatch):
     c, pack, fake_get_provider = _setup_pack_with_requirements(client, "exportco2")
     monkeypatch.setattr("app.modules.rfp.router.get_provider", fake_get_provider)

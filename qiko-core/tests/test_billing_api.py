@@ -46,3 +46,12 @@ def test_team_plan_and_invoices(client):
     team = client.post("/api/v1/teams", json={"owner_id": "o"}, cookies=C).json()
     assert client.get(f"/api/v1/billing/team/{team['team_id']}/plan", cookies=C).json()["plan"] == "free"
     assert client.get("/api/v1/billing/invoices", cookies=C).json() == []
+
+
+def test_team_plan_blocks_cross_tenant_access(client):
+    # BOLA regression guard: another tenant must not be able to read bill's team billing plan
+    # (which also discloses its member list) just by knowing/guessing its team_id.
+    team = client.post("/api/v1/teams", json={"owner_id": "o"}, cookies=C).json()
+    other = auth_cookies("billglobex", "owner")
+    r = client.get(f"/api/v1/billing/team/{team['team_id']}/plan", cookies=other)
+    assert r.status_code == 404

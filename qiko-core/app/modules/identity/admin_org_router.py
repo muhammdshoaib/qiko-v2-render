@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core.deps import current_claims, get_admin_org
+from app.core.deps import current_claims, get_admin_org, require_platform_admin
 from app.modules.identity.admin_rbac import AdminAuthzError, AdminRole
 
 router = APIRouter(prefix="/admin/org", tags=["admin"])
@@ -65,6 +65,9 @@ async def remove(email: str, claims: dict = Depends(current_claims), org=Depends
 
 
 @router.get("/role/{email}")
-async def role_of(email: str, _claims: dict = Depends(current_claims), org=Depends(get_admin_org)) -> dict:
+async def role_of(email: str, _role=Depends(require_platform_admin()), org=Depends(get_admin_org)) -> dict:
+    """Whether an arbitrary email is a platform admin (and which role) is only the platform
+    admin org's own business -- any authenticated tenant customer being able to query it would
+    leak who has platform-wide access (OWASP API3 excessive data exposure)."""
     role = await org.role_of(email)
     return {"email": email, "role": role.value if role else None}

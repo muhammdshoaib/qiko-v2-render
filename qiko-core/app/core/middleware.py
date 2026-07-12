@@ -37,15 +37,26 @@ class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, *, limiter: RateLimiter) -> None:
+    """A single global per-path budget is far too permissive for brute-force-sensitive endpoints
+    (login, password reset, OTP): `strict_limiter` applies a much tighter budget to any request
+    path starting with one of `strict_paths`, falling back to `limiter` for everything else."""
+
+    def __init__(self, app, *, limiter: RateLimiter, strict_limiter: RateLimiter | None = None,
+                strict_paths: tuple[str, ...] = ()) -> None:
         super().__init__(app)
         self.limiter = limiter
+        self.strict_limiter = strict_limiter
+        self.strict_paths = strict_paths
 
     def _key(self, request: Request) -> str:
         client = request.client.host if request.client else "unknown"
         return f"{client}:{request.url.path}"
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        if not self.limiter.allow(self._key(request)):
+        key = self._key(request)
+        if not self.limiter.allow(key):
             return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
+        if self.strict_limiter and request.url.path.startswith(self.strict_paths):
+            if not self.strict_limiter.allow(key):
+                return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
         return await call_next(request)

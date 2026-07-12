@@ -57,6 +57,30 @@ def test_rate_limit_middleware_returns_429():
     assert c.get("/ping").status_code == 429
 
 
+def test_rate_limit_middleware_strict_path_gets_tighter_budget():
+    # /ping falls under the generic (generous) limit; /echo is a "login-like" strict path with
+    # its own much smaller budget, even though both share the same generic limiter headroom.
+    c = _app_with(RateLimitMiddleware, limiter=InMemoryRateLimiter(limit=100),
+                 strict_limiter=InMemoryRateLimiter(limit=1), strict_paths=("/echo",))
+    assert c.get("/ping").status_code == 200
+    assert c.get("/ping").status_code == 200  # generic limit (100) not remotely hit
+    assert c.post("/echo", json={}).status_code == 200
+    assert c.post("/echo", json={}).status_code == 429  # strict limit (1) hit on the 2nd call
+
+
+def test_login_endpoint_has_its_own_strict_rate_limit(client):
+    # Regression guard for the real app wiring, not just the middleware unit: /auth/login must be
+    # in the configured strict_paths, not just covered by the generous global default.
+    from app.core.config import get_settings
+
+    assert get_settings().auth_rate_limit_per_minute < get_settings().rate_limit_per_minute
+    limit = get_settings().auth_rate_limit_per_minute
+    responses = [client.post("/api/v1/auth/login", json={"email": "x@x.com", "password": "wrong"})
+                for _ in range(limit + 2)]
+    assert responses[-1].status_code == 429
+    assert any(r.status_code == 401 for r in responses[:limit])  # legit attempts still 401, not 429
+
+
 def test_request_size_limit_middleware():
     c = _app_with(RequestSizeLimitMiddleware, max_bytes=10)
     assert c.post("/echo", json={"x": "y"}).status_code == 200         # small

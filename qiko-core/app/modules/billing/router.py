@@ -147,13 +147,15 @@ def list_payment_links(email: str, _tenant: str = Depends(authed_tenant),
 
 
 @router.get("/team/{team_id}/plan")
-async def team_billing_plan(team_id: str, _tenant: str = Depends(authed_tenant),
+async def team_billing_plan(team_id: str, tenant: str = Depends(authed_tenant),
                             subs=Depends(get_subscriptions), teams=Depends(get_teams)) -> dict:
-    try:
-        members = list(await teams.members(team_id))
-    except KeyError as e:
-        raise HTTPException(status_code=404, detail="team not found") from e
-    return {"team_id": team_id, "plan": team_plan(members, subs).name}
+    # Same cross-tenant BOLA class as teams/router.py: TeamService.members() takes a bare team_id
+    # with no tenant check of its own, so without this an outsider could read another tenant's
+    # team membership + billing plan just by knowing/guessing its team_id.
+    team = await teams.get(team_id)
+    if team is None or team.tenant != tenant:
+        raise HTTPException(status_code=404, detail="team not found")
+    return {"team_id": team_id, "plan": team_plan(list(team.members), subs).name}
 
 
 @router.get("/invoices")

@@ -9,8 +9,9 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from app.core.deps import authed_tenant, build_tenant_worker
+from app.core.deps import authed_tenant, build_tenant_worker, require_role
 from app.modules.chat.files import build_xlsx
+from app.modules.identity.rbac import Role
 
 router = APIRouter(prefix="/agents", tags=["agentcore"])
 
@@ -54,10 +55,15 @@ async def batch_answer(body: BatchAskBody, request: Request, tenant: str = Depen
 
 
 @router.post("/feedback")
-async def feedback(body: FeedbackBody, request: Request, tenant: str = Depends(authed_tenant)) -> dict:
+async def feedback(body: FeedbackBody, request: Request, tenant: str = Depends(authed_tenant),
+                   _role: dict = Depends(require_role(Role.editor))) -> dict:
     """Human approves or edits an answer -> it becomes verified ground truth for that topic, so
     future answers are grounded in it instead of re-guessing (the same review->flywheel loop the
-    original IDG worker used, now a generic capability every worker gets for free)."""
+    original IDG worker used, now a generic capability every worker gets for free).
+
+    Writes into the tenant's knowledge base, so it needs the same Editor-or-above bar as every
+    other content-mutating endpoint -- a viewer role must not be able to plant "verified ground
+    truth" that every future answer in the tenant gets grounded against."""
     worker = build_tenant_worker(request, tenant)
     await worker.approve(body.requirement_id, body.approved_text, topic=body.topic)
     return {"verified": True}

@@ -24,6 +24,25 @@ def test_teams_router(client):
     assert client.post(f"/api/v1/teams/{tid}/members", json={"user_id": "u3", "role": "owner"}, cookies=C).status_code == 400
 
 
+def test_teams_router_blocks_cross_tenant_access(client):
+    # BOLA regression guard: another tenant must not be able to read or mutate acme's team just
+    # by guessing/observing its team_id -- every team_id-scoped route must 404 for an outsider.
+    team = client.post("/api/v1/teams", json={"owner_id": "owner"}, cookies=C).json()
+    tid = team["team_id"]
+    other = auth_cookies("globex", "admin")
+
+    assert client.get(f"/api/v1/teams/{tid}/members", cookies=other).status_code == 404
+    assert client.post(f"/api/v1/teams/{tid}/members", json={"user_id": "mallory", "role": "admin"},
+                       cookies=other).status_code == 404
+    assert client.put(f"/api/v1/teams/{tid}/members/owner", json={"role": "viewer"}, cookies=other).status_code == 404
+    assert client.delete(f"/api/v1/teams/{tid}/members/owner", cookies=other).status_code == 404
+    assert client.post(f"/api/v1/teams/{tid}/invites", json={"email": "mallory@evil.com"},
+                       cookies=other).status_code == 404
+
+    # acme's own admin still works against its own team
+    assert client.get(f"/api/v1/teams/{tid}/members", cookies=C).status_code == 200
+
+
 def test_leads_router(client):
     ok = client.post("/api/v1/leads", json={"kind": "enterprise", "name": "Acme", "email": "b@acme.com"}, cookies=C)
     assert ok.status_code == 200 and ok.json()["kind"] == "enterprise"

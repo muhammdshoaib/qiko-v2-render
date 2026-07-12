@@ -73,6 +73,12 @@ class TeamService:
         team = Team(id=uuid.uuid4().hex[:12], tenant=tenant, members={owner_id: Role.owner})
         return await self.store.add(team)
 
+    async def get(self, team_id: str) -> Team | None:
+        """Public lookup (unlike `_get`, doesn't raise) -- callers that need to check tenant
+        ownership before doing anything else (see teams/router.py) need this rather than the
+        KeyError-raising internal helper."""
+        return await self.store.get(team_id)
+
     async def _get(self, team_id: str) -> Team:
         team = await self.store.get(team_id)
         if team is None:

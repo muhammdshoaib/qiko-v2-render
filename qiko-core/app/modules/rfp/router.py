@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from app.core.deps import (
     authed_tenant,
     build_tenant_worker,
+    current_claims,
     get_pack_answers,
     get_requirements,
     get_rfp_packs,
@@ -18,7 +19,7 @@ from app.core.deps import (
 )
 from app.modules.ai.gateway import get_provider
 from app.modules.chat.files import build_docx, build_xlsx
-from app.modules.identity.rbac import Role
+from app.modules.identity.rbac import Role, role_allows
 from app.modules.knowledge.parsing import UnsupportedDocumentError, extract_text
 from app.modules.rfp.brief import BriefError, extract_brief
 from app.modules.rfp.compliance import ComplianceError, extract_compliance
@@ -232,11 +233,17 @@ class FeedbackBody(BaseModel):
 
 @router.post("/{pack_id}/feedback")
 async def submit_feedback(pack_id: str, body: FeedbackBody, request: Request,
-                          tenant: str = Depends(authed_tenant)) -> dict:
+                          tenant: str = Depends(authed_tenant),
+                          _role: dict = Depends(require_role(Role.editor)),
+                          packs=Depends(get_rfp_packs)) -> dict:
     """Human sign-off on an AI draft. Approve/Edit writes the (possibly edited) text back to the
     knowledge base as trusted ground truth for this requirement type -- the feedback flywheel
     (see AgentCore.record_feedback) -- so the next tender's draft for a similar requirement type
     starts from what a human already approved. Reject records the decision without touching the KB."""
+    try:
+        await packs.get(tenant, pack_id)
+    except RfpPackNotFound as e:
+        raise HTTPException(status_code=404, detail="RFP pack not found") from e
     if body.decision not in {"Approve", "Edit", "Reject"}:
         raise HTTPException(status_code=422, detail="decision must be Approve, Edit, or Reject")
     if body.decision in {"Approve", "Edit"} and body.comment.strip():
@@ -247,11 +254,15 @@ async def submit_feedback(pack_id: str, body: FeedbackBody, request: Request,
 
 @router.get("/{pack_id}/answers")
 async def get_answers(pack_id: str, request: Request, force: bool = False,
-                      tenant: str = Depends(authed_tenant), reqs=Depends(get_requirements),
-                      answers=Depends(get_pack_answers)) -> list[dict]:
+                      tenant: str = Depends(authed_tenant), claims: dict = Depends(current_claims),
+                      reqs=Depends(get_requirements), answers=Depends(get_pack_answers)) -> list[dict]:
     """JSON form of the same answer-pack pipeline the exports use -- powers the tender cockpit's
     Sections tab (AI draft + confidence/grounding + citations + status per requirement).
-    force=true bypasses the cache and re-drafts every KB requirement (Regenerate all)."""
+    force=true bypasses the cache and re-drafts every KB requirement (Regenerate all) -- a real
+    LLM call per requirement, so (unlike the plain cached read) it needs Editor-or-above, not just
+    any authenticated viewer, to avoid unbounded regeneration cost from a read-only role."""
+    if force and not role_allows(claims.get("role", "viewer"), Role.editor):
+        raise HTTPException(status_code=403, detail="insufficient role to regenerate answers")
     answered = await _answer_pack(request, tenant, pack_id, reqs, answers, force=force)
     return [{
         "req_id": a["req"].req_id, "req_title": a["req"].title, "classification": a["req"].classification,

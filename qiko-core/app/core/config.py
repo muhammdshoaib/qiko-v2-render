@@ -80,6 +80,9 @@ class Settings(BaseSettings):
     # API hardening
     cors_allow_origins: list[str] = ["http://localhost:3000"]
     rate_limit_per_minute: int = 120
+    # /auth/login is a credential-stuffing/brute-force target -- the generic per-path limit above
+    # (120/min) is far too permissive for it specifically, so it gets its own much tighter budget.
+    auth_rate_limit_per_minute: int = 10
     max_request_bytes: int = 10 * 1024 * 1024  # 10 MB
 
     # Auth

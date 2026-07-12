@@ -154,7 +154,11 @@ def create_app() -> FastAPI:
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestSizeLimitMiddleware, max_bytes=settings.max_request_bytes)
     app.add_middleware(RateLimitMiddleware,
-                       limiter=InMemoryRateLimiter(limit=settings.rate_limit_per_minute))
+                       limiter=InMemoryRateLimiter(limit=settings.rate_limit_per_minute),
+                       strict_limiter=InMemoryRateLimiter(limit=settings.auth_rate_limit_per_minute),
+                       strict_paths=("/api/v1/auth/login", "/api/v1/auth/refresh",
+                                    "/api/v1/auth/2fa", "/api/v1/auth/signup",
+                                    "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password"))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allow_origins,
