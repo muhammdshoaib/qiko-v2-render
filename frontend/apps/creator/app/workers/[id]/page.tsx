@@ -127,8 +127,8 @@ export default function WorkerDetailPage() {
           )}
           {tab === "CRM" && <CrmTab />}
           {tab === "Connections" && <ConnectionsTab id={id} worker={worker} />}
-          {tab === "Chat" && <ChatTab />}
-          {tab === "Batch" && <BatchTab />}
+          {tab === "Chat" && <ChatTab id={id} worker={worker} />}
+          {tab === "Batch" && <BatchTab id={id} />}
         </div>
       </div>
     </AppShell>
@@ -599,21 +599,23 @@ function KnowledgeStep({ id, docs, loading, onChange }: { id: string; docs?: Doc
   );
 }
 
-function ChatTab() {
+function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
   const [conversationId] = useState(() => `test-${Date.now()}`);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<{ role: string; text: string }[]>([]);
   const [busy, setBusy] = useState(false);
+  // Config-driven, not hardcoded to any one worker: set via PUT /agents/{id}/config
+  // (config.quick_prompts) so any specialised worker (pre-sales writer, tender assistant, ...)
+  // can offer its own starting points instead of a blank "ask anything" box.
+  const quickPrompts = (worker?.config?.quick_prompts as string[] | undefined) ?? [];
 
-  async function send(e: React.FormEvent) {
-    e.preventDefault();
-    if (!input) return;
-    const q = input;
+  async function sendText(q: string) {
+    if (!q || busy) return;
     setInput("");
     setMessages((m) => [...m, { role: "user", text: q }]);
     setBusy(true);
     try {
-      const reply = await ask(conversationId, q);
+      const reply = await ask(conversationId, q, id);
       setMessages((m) => [...m, reply]);
     } finally {
       setBusy(false);
@@ -624,18 +626,28 @@ function ChatTab() {
     <Card>
       <CardContent className="pt-6 space-y-4">
         <p className="text-sm text-muted-foreground">Test how this worker answers, grounded in the knowledge you&apos;ve added.</p>
+        {messages.length === 0 && quickPrompts.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {quickPrompts.map((p) => (
+              <button key={p} type="button" onClick={() => sendText(p)}
+                className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground">
+                {p}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="min-h-40 space-y-2 rounded-md border border-border p-3">
           {messages.length === 0 && <p className="text-sm text-muted-foreground">Ask a question to see a grounded reply…</p>}
           {messages.map((m, i) => (
             <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
-              <span className={cn("max-w-[85%] rounded-2xl px-3 py-2 text-sm",
+              <span className={cn("max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap",
                 m.role === "user" ? "bg-primary text-primary-foreground rounded-br-sm" : "bg-muted rounded-bl-sm")}>
                 {m.text}
               </span>
             </div>
           ))}
         </div>
-        <form onSubmit={send} className="flex gap-2">
+        <form onSubmit={(e) => { e.preventDefault(); sendText(input); }} className="flex gap-2">
           <Input placeholder="Ask your worker something…" value={input} onChange={(e) => setInput(e.target.value)} disabled={busy} />
           <Button type="submit" disabled={busy || !input}><SendHorizonal className="size-4" /></Button>
         </form>
@@ -644,16 +656,16 @@ function ChatTab() {
   );
 }
 
-function BatchTab() {
+function BatchTab({ id }: { id: string }) {
   const [raw, setRaw] = useState("");
   const questions = raw.split("\n").map((q) => q.trim()).filter(Boolean);
-  const run = useMutation({ mutationFn: () => batchAnswer(questions) });
+  const run = useMutation({ mutationFn: () => batchAnswer(questions, id) });
   const [exporting, setExporting] = useState(false);
 
   async function onExport() {
     setExporting(true);
     try {
-      const url = await batchExportUrl(questions);
+      const url = await batchExportUrl(questions, id);
       const a = document.createElement("a");
       a.href = url;
       a.download = "worker-answers.xlsx";

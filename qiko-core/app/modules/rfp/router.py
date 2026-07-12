@@ -198,7 +198,10 @@ async def _answer_pack(request: Request, tenant: str, pack_id: str, reqs, answer
     requirements = await reqs.list(tenant, pack_id)
     if not requirements:
         raise HTTPException(status_code=404, detail="no extracted requirements for this pack -- run /extract first")
-    worker = build_tenant_worker(request, tenant)
+    # Answer as the specific worker this tender belongs to, not a generic tenant-wide one -- so a
+    # pack owned by e.g. a "Pre Sales Writer" agent drafts in that worker's own voice/threshold.
+    pack = await request.app.state.rfp_packs.get(tenant, pack_id)
+    worker = await build_tenant_worker(request, tenant, agent_id=pack.agent_id if pack else None)
     semaphore = asyncio.Semaphore(_ANSWER_CONCURRENCY)
     cached = {} if force else await answers.get_all(tenant, pack_id)
 
@@ -241,13 +244,13 @@ async def submit_feedback(pack_id: str, body: FeedbackBody, request: Request,
     (see AgentCore.record_feedback) -- so the next tender's draft for a similar requirement type
     starts from what a human already approved. Reject records the decision without touching the KB."""
     try:
-        await packs.get(tenant, pack_id)
+        pack = await packs.get(tenant, pack_id)
     except RfpPackNotFound as e:
         raise HTTPException(status_code=404, detail="RFP pack not found") from e
     if body.decision not in {"Approve", "Edit", "Reject"}:
         raise HTTPException(status_code=422, detail="decision must be Approve, Edit, or Reject")
     if body.decision in {"Approve", "Edit"} and body.comment.strip():
-        worker = build_tenant_worker(request, tenant)
+        worker = await build_tenant_worker(request, tenant, agent_id=pack.agent_id)
         await worker.approve(body.req_id, body.comment.strip())
     return {"req_id": body.req_id, "decision": body.decision, "saved": True}
 

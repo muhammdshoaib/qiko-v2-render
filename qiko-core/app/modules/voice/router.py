@@ -15,11 +15,12 @@ class SpeakBody(BaseModel):
     conversation_id: str = Field(min_length=1)
     audio_b64: str = Field(min_length=1)
     topic: str | None = None
+    agent_id: str | None = None
 
 
 @router.post("/speak")
 async def speak(body: SpeakBody, request: Request, tenant: str = Depends(authed_tenant), pipeline=Depends(get_voice)) -> dict:
-    worker = build_tenant_worker(request, tenant)
+    worker = await build_tenant_worker(request, tenant, agent_id=body.agent_id)
     result = await pipeline.speak(worker, body.conversation_id, base64.b64decode(body.audio_b64), topic=body.topic)
     return {"transcript": result.transcript, "answer": result.answer,
             "audio_b64": base64.b64encode(result.audio).decode()}

@@ -185,8 +185,14 @@ def get_clickup(request: Request):
     return request.app.state.clickup
 
 
-def build_tenant_worker(request: Request, tenant: str):
-    """Assemble a per-tenant Worker over the shared knowledge service + agentcore (agentic-first).
+async def build_tenant_worker(request: Request, tenant: str, agent_id: str | None = None):
+    """Assemble a Worker over the shared knowledge service + agentcore (agentic-first).
+
+    Without `agent_id` this builds the generic tenant-wide config (unchanged default behaviour).
+    With it, the specific Agent's own config (system_prompt / gate_threshold / retrieval_k, set
+    via PUT /agents/{id}/config) is applied -- so two workers in the same tenant with different
+    specialities (e.g. an RFP requirement-answering worker vs. a pre-sales content-writing worker)
+    actually run different prompts/thresholds instead of silently sharing one identical worker.
     The feedback flywheel (verified answers) persists to Postgres when USE_DB_STORES is on, so
     human-approved answers survive a redeploy instead of living only in process memory."""
     from app.modules.agentcore.generator import Generator
@@ -199,6 +205,20 @@ def build_tenant_worker(request: Request, tenant: str):
         from app.db.stores import SqlVerifiedStore
 
         verified = SqlVerifiedStore(request.app.state.sessionmaker)
-    return Worker(config=WorkerConfig(name=f"w-{tenant}", tenant=tenant),
-                  knowledge=request.app.state.knowledge,
-                  agent=AgentCore(generator=Generator(), verified=verified))
+
+    cfg = {}
+    if agent_id:
+        agent = await request.app.state.agents.get(tenant, agent_id)
+        if agent is not None:
+            cfg = agent.config
+    kwargs = {"name": f"w-{tenant}-{agent_id}" if agent_id else f"w-{tenant}", "tenant": tenant}
+    if "gate_threshold" in cfg:
+        kwargs["gate_threshold"] = cfg["gate_threshold"]
+    if "retrieval_k" in cfg:
+        kwargs["retrieval_k"] = cfg["retrieval_k"]
+    if cfg.get("system_prompt"):
+        kwargs["system_prompt"] = cfg["system_prompt"]
+    worker_config = WorkerConfig(**kwargs)
+    return Worker(config=worker_config, knowledge=request.app.state.knowledge,
+                  agent=AgentCore(generator=Generator(system_prompt=worker_config.system_prompt),
+                                  threshold=worker_config.gate_threshold, verified=verified))

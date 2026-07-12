@@ -18,6 +18,7 @@ router = APIRouter(prefix="/agents", tags=["agentcore"])
 
 class BatchAskBody(BaseModel):
     questions: list[str] = Field(min_length=1, max_length=200)
+    agent_id: str | None = None  # which specific worker is answering -- see build_tenant_worker
 
 
 class BatchAnswer(BaseModel):
@@ -33,10 +34,11 @@ class FeedbackBody(BaseModel):
     requirement_id: str = Field(min_length=1)
     approved_text: str = Field(min_length=1)
     topic: str | None = None
+    agent_id: str | None = None
 
 
 async def _run_batch(request: Request, tenant: str, body: BatchAskBody) -> list[BatchAnswer]:
-    worker = build_tenant_worker(request, tenant)
+    worker = await build_tenant_worker(request, tenant, agent_id=body.agent_id)
     out: list[BatchAnswer] = []
     for i, question in enumerate(body.questions):
         result = await worker.answer(f"q{i + 1}", question)
@@ -64,7 +66,7 @@ async def feedback(body: FeedbackBody, request: Request, tenant: str = Depends(a
     Writes into the tenant's knowledge base, so it needs the same Editor-or-above bar as every
     other content-mutating endpoint -- a viewer role must not be able to plant "verified ground
     truth" that every future answer in the tenant gets grounded against."""
-    worker = build_tenant_worker(request, tenant)
+    worker = await build_tenant_worker(request, tenant, agent_id=body.agent_id)
     await worker.approve(body.requirement_id, body.approved_text, topic=body.topic)
     return {"verified": True}
 

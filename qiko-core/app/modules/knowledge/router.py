@@ -57,11 +57,13 @@ class EvaluateBody(BaseModel):
     doc_id: str = Field(min_length=1)
     criterion: str = Field(min_length=1)
     topic: str | None = None
+    agent_id: str | None = None
 
 
 @router.post("/evaluate")
 async def evaluate(body: EvaluateBody, request: Request, tenant: str = Depends(authed_tenant),
                    svc=Depends(get_knowledge)) -> dict:
-    agent = build_tenant_worker(request, tenant).agent  # agentcore (grounded + gated)
+    worker = await build_tenant_worker(request, tenant, agent_id=body.agent_id)
+    agent = worker.agent  # agentcore (grounded + gated)
     result = await evaluate_document(agent, svc, tenant, body.doc_id, body.criterion, topic=body.topic)
     return {"decision": result.decision.value, "answer": result.answer, "grounding": result.critique.grounding}

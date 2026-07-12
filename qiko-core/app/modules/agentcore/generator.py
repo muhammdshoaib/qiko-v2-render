@@ -24,6 +24,10 @@ _MAX_EVIDENCE_CHARS = 2000
 @dataclass
 class Generator:
     provider: LLMProvider = None  # type: ignore[assignment]
+    # Per-worker override (see WorkerConfig.system_prompt / Agent.config["system_prompt"]) -- a
+    # tender-answering worker and a pre-sales-writing worker are the same engine but must not
+    # sound like the same person. Falls back to the generic bid-response-writer prompt.
+    system_prompt: str | None = None
 
     def __post_init__(self) -> None:
         if self.provider is None:
@@ -37,4 +41,4 @@ class Generator:
 
     def generate(self, req: Requirement, verified: list[str] | None = None) -> str:
         prompt = self.build_prompt(req, verified)
-        return self.provider.generate(prompt, system=SYSTEM).text.strip()
+        return self.provider.generate(prompt, system=self.system_prompt or SYSTEM).text.strip()

@@ -13,11 +13,12 @@ class AskBody(BaseModel):
     conversation_id: str = Field(min_length=1)
     question: str = Field(min_length=1)
     topic: str | None = None
+    agent_id: str | None = None  # which specific worker is answering -- see build_tenant_worker
 
 
 @router.post("/ask")
 async def ask(body: AskBody, request: Request, tenant: str = Depends(authed_tenant), chat=Depends(get_chat)) -> dict:
-    worker = build_tenant_worker(request, tenant)  # answer via agentcore (grounded + gated)
+    worker = await build_tenant_worker(request, tenant, agent_id=body.agent_id)  # agentcore (grounded + gated)
     msg = await chat.ask(worker, body.conversation_id, body.question, topic=body.topic)
     return {"role": msg.role, "text": msg.text}
 

@@ -66,21 +66,21 @@ export const ingest = (doc_id: string, text: string) =>
 export const listDocuments = () => request<Doc[]>("/knowledge/documents");
 export const deleteDocument = (docId: string) =>
   request<{ removed: number }>(`/knowledge/documents/${encodeURIComponent(docId)}`, { method: "DELETE" });
-export const ask = (conversation_id: string, question: string) =>
+export const ask = (conversation_id: string, question: string, agent_id?: string) =>
   request<{ role: string; text: string }>("/chat/ask", {
     method: "POST",
-    body: JSON.stringify({ conversation_id, question }),
+    body: JSON.stringify({ conversation_id, question, agent_id }),
   });
 
 // Grounded batch answering (confidence + citations + human-review gate) + xlsx export
 export type BatchAnswer = { id: string; question: string; answer: string; confidence: number; decision: string; citations: string[] };
-export const batchAnswer = (questions: string[]) =>
-  request<BatchAnswer[]>("/agents/batch-answer", { method: "POST", body: JSON.stringify({ questions }) });
-export async function batchExportUrl(questions: string[]): Promise<string> {
+export const batchAnswer = (questions: string[], agent_id?: string) =>
+  request<BatchAnswer[]>("/agents/batch-answer", { method: "POST", body: JSON.stringify({ questions, agent_id }) });
+export async function batchExportUrl(questions: string[], agent_id?: string): Promise<string> {
   const res = await fetch(`${BASE}/agents/batch-export`, {
     method: "POST", credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ questions }),
+    body: JSON.stringify({ questions, agent_id }),
   });
   if (!res.ok) throw new ApiError(res.status, await res.text());
   return URL.createObjectURL(await res.blob());
