@@ -3,12 +3,14 @@
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { ArrowRight, MessageSquare, Plus, Radar } from "lucide-react";
+import { ArrowRight, BarChart3, MessageSquare, Plus, Radar } from "lucide-react";
 import { Button } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import {
-  listAgents, listDocuments, listRfpPacks, listSalesOpportunities, type Agent, type RfpPack, type SalesOpportunity,
+  getFinanceAnalytics, listAgents, listDocuments, listRfpPacks, listSalesOpportunities,
+  type Agent, type FinanceAnalytics, type RfpPack, type SalesOpportunity,
 } from "@/lib/api";
+import { normalizeFinanceSummary } from "@/components/finance/utils";
 
 function workerCategory(a: Agent): string {
   const expertise = a.config?.expertise as string | undefined;
@@ -20,6 +22,11 @@ function workerCategory(a: Agent): string {
 // by atype, same field the Creator side uses to pick a worker's build wizard.
 function isSalesIntelligenceWorker(a: Agent): boolean {
   return a.atype === "sales_intelligence";
+}
+
+// The Financial Analyst worker has its own analytics dashboard under /studio/[id]/finance.
+function isFinanceWorker(a: Agent): boolean {
+  return a.atype === "finance";
 }
 
 function formatCompactCurrency(value: number, currency = "GBP"): string {
@@ -43,7 +50,7 @@ export default function StudioPage() {
     queries: deployed.map((a) => ({
       queryKey: ["rfp-packs", a.id],
       queryFn: () => listRfpPacks(a.id),
-      enabled: !isSalesIntelligenceWorker(a),
+      enabled: !isSalesIntelligenceWorker(a) && !isFinanceWorker(a),
     })),
   });
   const opportunitiesQ = useQueries({
@@ -51,6 +58,14 @@ export default function StudioPage() {
       queryKey: ["sales-opportunities", a.id],
       queryFn: () => listSalesOpportunities(a.id),
       enabled: isSalesIntelligenceWorker(a),
+      retry: false,
+    })),
+  });
+  const financeQ = useQueries({
+    queries: deployed.map((a) => ({
+      queryKey: ["finance-analytics", a.id, "all"],
+      queryFn: () => getFinanceAnalytics(a.id),
+      enabled: isFinanceWorker(a),
       retry: false,
     })),
   });
@@ -101,11 +116,29 @@ export default function StudioPage() {
                   {items.map((a) => {
                     const idx = deployed.findIndex((d) => d.id === a.id);
                     const salesIntel = isSalesIntelligenceWorker(a);
+                    const finance = isFinanceWorker(a);
 
                     let metrics: { label: string; value: string }[];
                     let useCaseCount: number;
                     let href: string;
-                    if (salesIntel) {
+                    if (finance) {
+                      const analytics: FinanceAnalytics | undefined = financeQ[idx]?.data;
+                      const s = normalizeFinanceSummary(analytics?.summary);
+                      const props = (analytics?.properties ?? []).filter((p) => (p.income ?? 0) || (p.expenses ?? 0));
+                      const propertyCount = s.propertyCount || props.length;
+                      const riskProps = props.filter((p) => Number(p.riskScore ?? 0) > 0);
+                      const avgRisk = riskProps.length
+                        ? Math.round(riskProps.reduce((sum, p) => sum + Number(p.riskScore ?? 0), 0) / riskProps.length)
+                        : 0;
+                      metrics = [
+                        { label: "Properties", value: propertyCount > 0 ? String(propertyCount) : "—" },
+                        { label: "Total Income", value: s.totalIncome > 0 ? formatCompactCurrency(s.totalIncome) : "—" },
+                        { label: "Net Profit", value: s.netProfit ? formatCompactCurrency(s.netProfit) : "—" },
+                        { label: "Avg Risk", value: avgRisk > 0 ? `${avgRisk}/100` : "—" },
+                      ];
+                      useCaseCount = 3;
+                      href = `/studio/${a.id}/finance`;
+                    } else if (salesIntel) {
                       const opps: SalesOpportunity[] = opportunitiesQ[idx]?.data?.opportunities ?? [];
                       const newFound = opps.filter((o) => o.stage === "ingested").length;
                       const qualified = opps.filter((o) => o.stage === "qualified" || o.stage === "validated").length;
@@ -144,7 +177,11 @@ export default function StudioPage() {
                         <div className="px-6 pt-6 pb-4">
                           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div className="flex items-center gap-3.5">
-                              {salesIntel ? (
+                              {finance ? (
+                                <span className="flex size-11 shrink-0 items-center justify-center rounded-xl" style={{ background: "rgba(34,197,94,0.08)", border: "1px solid rgba(34,197,94,0.18)" }}>
+                                  <BarChart3 className="size-5 text-emerald-400" />
+                                </span>
+                              ) : salesIntel ? (
                                 <span className="flex size-11 shrink-0 items-center justify-center rounded-xl" style={{ background: "rgba(34,211,238,0.08)", border: "1px solid rgba(34,211,238,0.18)" }}>
                                   <Radar className="size-5 text-cyan-400" />
                                 </span>

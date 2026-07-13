@@ -33,7 +33,7 @@ def _redact(agent: Agent) -> Agent:
 # Known worker verticals. "worker" is the generic default; the others unlock a bespoke Studio
 # cockpit (e.g. "sales_intelligence" -> tender ingestion + qualification + Salesforce push).
 # Server-validated allowlist -- a client can't invent an arbitrary atype.
-AGENT_TYPES = {"worker", "sales_intelligence"}
+AGENT_TYPES = {"worker", "sales_intelligence", "finance"}
 
 
 class CreateAgentBody(BaseModel):

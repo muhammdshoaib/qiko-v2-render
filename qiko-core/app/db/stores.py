@@ -18,6 +18,8 @@ from app.db.models import Assignment as AssignmentRow
 from app.db.models import Contact as ContactRow
 from app.db.models import Conversation as ConversationRow
 from app.db.models import CrmAction as CrmActionRow
+from app.db.models import FinanceChatMessage as FinanceChatMessageRow
+from app.db.models import FinanceFile as FinanceFileRow
 from app.db.models import Lead as LeadRow
 from app.db.models import Message as MessageRow
 from app.db.models import PackAnswer as PackAnswerRow
@@ -40,6 +42,7 @@ from app.modules.assignments.service import Assignment, AssignmentNotFound
 from app.modules.channels.teams_integration import TeamsIntegration
 from app.modules.chat.service import ConversationSummary, Message
 from app.modules.crm.service import Contact, CrmAction
+from app.modules.finance.models import FinanceChatMessage, FinanceFile
 from app.modules.identity.admin_rbac import AdminRole
 from app.modules.identity.rbac import Role
 from app.modules.identity.store import User
@@ -883,3 +886,86 @@ class SqlSalesforceConnectionStore:
             row.connected_by_user_id, row.last_error = conn.connected_by_user_id, conn.last_error
             row.connected_at = conn.connected_at
         return conn
+
+
+# --- Finance vertical (app.modules.finance) --------------------------------------------------
+# Postgres-backed replacements for the in-memory finance stores, behind the same Protocols.
+# Every query is tenant + agent scoped (BOLA-safe) exactly like the sales-intelligence stores.
+
+
+def _finance_file_from_row(r: FinanceFileRow) -> FinanceFile:
+    return FinanceFile(
+        id=r.id, tenant=r.tenant_id, agent_id=r.agent_id, file_name=r.file_name,
+        source_name=r.source_name, namespace=r.namespace, size_bytes=r.size_bytes,
+        row_count=r.row_count, currency=r.currency, expense_rows=list(r.expense_rows or []),
+        income_rows=list(r.income_rows or []), uploaded_at=r.uploaded_at)
+
+
+@dataclass
+class SqlFinanceFileStore:
+    """Persists uploaded finance workbooks + their parsed rows per worker -- previously in-memory
+    only, so the portfolio data and analytics were wiped on every redeploy."""
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def add(self, file: FinanceFile) -> FinanceFile:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(FinanceFileRow(
+                id=file.id, tenant_id=file.tenant, agent_id=file.agent_id, file_name=file.file_name,
+                source_name=file.source_name, namespace=file.namespace, size_bytes=file.size_bytes,
+                row_count=file.row_count, currency=file.currency, expense_rows=file.expense_rows,
+                income_rows=file.income_rows, uploaded_at=file.uploaded_at))
+        return file
+
+    async def get(self, tenant: str, agent_id: str, file_id: str) -> FinanceFile | None:
+        async with self.sessionmaker() as s:
+            row = await s.get(FinanceFileRow, file_id)
+            if row is None or row.tenant_id != tenant or row.agent_id != agent_id:
+                return None
+            return _finance_file_from_row(row)
+
+    async def list_for_agent(self, tenant: str, agent_id: str) -> list[FinanceFile]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(select(FinanceFileRow).where(
+                FinanceFileRow.tenant_id == tenant, FinanceFileRow.agent_id == agent_id
+            ).order_by(FinanceFileRow.uploaded_at.desc()))).scalars().all()
+            return [_finance_file_from_row(r) for r in rows]
+
+    async def delete(self, tenant: str, agent_id: str, ids: list[str]) -> list[str]:
+        deleted: list[str] = []
+        async with self.sessionmaker() as s, s.begin():
+            for file_id in ids:
+                row = await s.get(FinanceFileRow, file_id)
+                if row is not None and row.tenant_id == tenant and row.agent_id == agent_id:
+                    await s.delete(row)
+                    deleted.append(file_id)
+        return deleted
+
+
+@dataclass
+class SqlFinanceChatStore:
+    """Persists the Financial Analyst chat history per worker -- previously in-memory only."""
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def add(self, message: FinanceChatMessage) -> FinanceChatMessage:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(FinanceChatMessageRow(id=message.id, tenant_id=message.tenant, agent_id=message.agent_id,
+                                        role=message.role, content=message.content,
+                                        created_at=message.created_at))
+        return message
+
+    async def list_for_agent(self, tenant: str, agent_id: str,
+                             limit: int | None = None) -> list[FinanceChatMessage]:
+        async with self.sessionmaker() as s:
+            q = select(FinanceChatMessageRow).where(
+                FinanceChatMessageRow.tenant_id == tenant, FinanceChatMessageRow.agent_id == agent_id
+            ).order_by(FinanceChatMessageRow.created_at)
+            rows = (await s.execute(q)).scalars().all()
+            items = [FinanceChatMessage(id=r.id, tenant=r.tenant_id, agent_id=r.agent_id, role=r.role,
+                                        content=r.content, created_at=r.created_at) for r in rows]
+            return items[-limit:] if limit else items
+
+    async def clear(self, tenant: str, agent_id: str) -> int:
+        async with self.sessionmaker() as s, s.begin():
+            result = await s.execute(delete(FinanceChatMessageRow).where(
+                FinanceChatMessageRow.tenant_id == tenant, FinanceChatMessageRow.agent_id == agent_id))
+            return result.rowcount or 0

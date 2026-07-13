@@ -24,12 +24,13 @@ export default function StudioWorkerPage() {
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const worker = agents.data?.find((a) => a.id === id);
 
-  // The Sales Intelligence worker has its own dedicated cockpit (own top bar, left nav, chat
-  // panel) rather than this generic RFP-pack tab layout -- bounce there if landed on directly.
+  // The Sales Intelligence and Finance workers each have their own dedicated dashboards rather than
+  // this generic RFP-pack tab layout -- bounce there if landed on directly.
   useEffect(() => {
     if (worker?.atype === "sales_intelligence") router.replace(`/studio/${id}/sales-intelligence`);
+    else if (worker?.atype === "finance") router.replace(`/studio/${id}/finance`);
   }, [worker?.atype, id, router]);
-  if (worker?.atype === "sales_intelligence") return null;
+  if (worker?.atype === "sales_intelligence" || worker?.atype === "finance") return null;
 
   return (
     <AppShell title="Studio">

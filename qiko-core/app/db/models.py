@@ -343,3 +343,35 @@ class SalesIntelSalesforceConnection(Base):
     connected_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String, nullable=True)
     connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class FinanceFile(Base):
+    """One uploaded property-portfolio workbook + its parsed income/expense rows for a worker
+    (app.modules.finance). The raw upload bytes are never stored -- only the normalized rows the
+    analytics engine needs, as JSON, so the dashboard/chat can recompute without re-reading."""
+    __tablename__ = "finance_files"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    file_name: Mapped[str] = mapped_column(String(255))
+    source_name: Mapped[str] = mapped_column(String(255))
+    namespace: Mapped[str] = mapped_column(String(255))
+    size_bytes: Mapped[int] = mapped_column(default=0)
+    row_count: Mapped[int] = mapped_column(default=0)
+    currency: Mapped[str] = mapped_column(String(8), default="GBP")
+    expense_rows: Mapped[list] = mapped_column(JSON, default=list)
+    income_rows: Mapped[list] = mapped_column(JSON, default=list)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    __table_args__ = (Index("ix_finance_files_agent", "tenant_id", "agent_id", "uploaded_at"),)
+
+
+class FinanceChatMessage(Base):
+    """One Financial Analyst chat turn for a worker (app.modules.finance)."""
+    __tablename__ = "finance_chat_messages"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    __table_args__ = (Index("ix_finance_chat_agent_created", "tenant_id", "agent_id", "created_at"),)

@@ -42,7 +42,7 @@ export const me = async () => {
 // Agents (workers)
 export type Agent = { id: string; tenant: string; name: string; status: string; atype: string; config: Record<string, unknown>; created_at: string };
 export const listAgents = () => request<Agent[]>("/agents");
-export const createAgent = (name: string, atype: "worker" | "sales_intelligence" = "worker") =>
+export const createAgent = (name: string, atype: "worker" | "sales_intelligence" | "finance" = "worker") =>
   request<Agent>("/agents", { method: "POST", body: JSON.stringify({ name, atype }) });
 export const markReady = (id: string) => request<Agent>(`/agents/${id}/ready`, { method: "POST" });
 export const updateAgentConfig = (id: string, patch: Record<string, unknown>) =>
@@ -431,3 +431,109 @@ export type BillingPlan = { id: number; name: string; price_id: string; amount: 
 export const listPlans = () => request<BillingPlan[]>("/billing/plans");
 export const startCheckout = (customerId: string, plan: string, priceId: string) =>
   request<{ url: string }>("/billing/checkout", { method: "POST", body: JSON.stringify({ customer_id: customerId, plan, price_id: priceId }) });
+
+// ── Finance (Financial Analyst) ──────────────────────────────────────────────
+// Excel portfolio-analytics worker. The backend `finance` module is being built in parallel in
+// qiko-core (app/modules/finance/router.py) under `/finance/{agentId}/...` on the `/api/v1` prefix,
+// mirroring the existing per-agent module convention (app.modules.crm / app.modules.sales_intelligence:
+// tenant-scoped via authed_tenant, plain camelCase resource dicts). These types/functions encode the
+// *assumed* contract, taken 1:1 from the original Excel-Agent data shape (qiko-frontend `lib/ELApi.ts`:
+// ELUserAnalyticsResponse / ELUserProperty / ELUserFinanceFile / ELChatResponse / ELHistoryResponse),
+// pending the real router. TODO(finance-backend): reconcile field names once router.py exists --
+// likely divergences flagged inline below.
+
+/** One row from the `summary: [...]` array of keyed metrics (mirrors ELUserAnalyticsSummaryMetric).
+ * The backend may instead return a flat object (legacy ELUserAnalyticsSummary); the client normalizes
+ * both -- see components/finance/utils.ts:normalizeFinanceSummary. */
+export type FinanceSummaryMetric = { key: string; label?: string; value?: number | string; formatted?: string; subtitle?: string };
+export type FinanceSummary = FinanceSummaryMetric[] | {
+  propertyCount?: number; vendorCount?: number; totalIncome?: number; totalExpenses?: number;
+  netProfit?: number; outstanding?: number; expenseBreakdown?: { net?: number; vat?: number };
+};
+
+export type FinanceExpenseCategory = { category: string; amount: number };
+export type FinanceTopVendor = { vendorName: string; amount: number };
+
+/** Per-property analytics row (mirrors ELUserProperty). */
+export type FinanceProperty = {
+  propertyId?: string; name?: string; income?: number; expenses?: number; netProfit?: number;
+  marginPercent?: number; outstanding?: number; costToIncomeRatio?: number; riskScore?: number;
+  riskLevel?: string; profitabilityClass?: string;
+  expenseCategories?: FinanceExpenseCategory[]; topVendors?: FinanceTopVendor[];
+};
+
+export type FinanceChartVendor = { vendorName: string; amount: number; sharePercent?: number };
+export type FinanceChartIncomeExpense = { propertyId?: string; propertyName: string; income: number; expenses: number };
+export type FinanceCharts = {
+  incomeVsExpensesByProperty?: FinanceChartIncomeExpense[];
+  topVendorsBySpend?: FinanceChartVendor[];
+  // Some fields (profitabilityClassification, expenseCategories drilldown details) are optional/richer
+  // in the original; the dashboard derives its donuts from properties[] when absent.
+  [key: string]: unknown;
+};
+
+/** One insight inside a trend section (mirrors the { title, insightText } shape). */
+export type FinanceTrendInsight = { title?: string; text?: string; insightText?: string };
+export type FinanceTrendSection = { section?: string; title?: string; insights?: FinanceTrendInsight[] };
+/** trends is typically `{ trends: FinanceTrendSection[] }` or `FinanceTrendSection[]`. */
+export type FinanceTrends = { trends?: FinanceTrendSection[] } | FinanceTrendSection[] | Record<string, unknown>;
+
+export type FinanceAnalytics = {
+  status?: string;
+  files?: { label: string; namespace: string; rowCount: number }[];
+  totalFiles?: number;
+  totalRows?: number;
+  currency?: string;
+  dateRange?: { from?: string; to?: string; label?: string };
+  summary?: FinanceSummary;
+  properties?: FinanceProperty[];
+  charts?: FinanceCharts;
+  insights?: Record<string, unknown> | unknown[];
+  trends?: FinanceTrends;
+};
+
+export type FinanceFile = { id: string; label: string; namespace: string; rowCount: number; uploadedAt: string };
+export type FinanceFilesResponse = { files: FinanceFile[]; totalFiles: number; totalRows: number };
+export type FinanceChatMessage = { role: "user" | "assistant"; text: string };
+export type FinanceChatResponse = { reply: string; sourcesUsed?: string[]; rowsRetrieved?: number };
+export type FinanceHistoryItem = { role: "user" | "assistant"; content: string; timestamp: number };
+export type FinanceHistoryResponse = { count: number; history: FinanceHistoryItem[] };
+
+export const getFinanceAnalytics = (agentId: string, query: { from?: string; to?: string; month?: string } = {}) => {
+  const q = new URLSearchParams();
+  if (query.from) q.set("from", query.from);
+  if (query.to) q.set("to", query.to);
+  if (query.month) q.set("month", query.month);
+  const s = q.toString();
+  return request<FinanceAnalytics>(`/finance/${agentId}/analytics${s ? `?${s}` : ""}`);
+};
+
+export const listFinanceFiles = (agentId: string) => request<FinanceFilesResponse>(`/finance/${agentId}/files`);
+
+// Deletes the given uploaded workbook namespaces. TODO(finance-backend): confirm whether DELETE
+// carries a body (ids) or uses per-id path params -- assumed body { ids } here, echoing ELApi.
+export const deleteFinanceFiles = (agentId: string, ids: string[]) =>
+  request<{ success: boolean; deleted: string[]; deletedCount: number }>(`/finance/${agentId}/files`, {
+    method: "DELETE", body: JSON.stringify({ ids }),
+  });
+
+export async function uploadFinanceFile(agentId: string, file: File): Promise<{ fileName: string; namespace?: string; totalRows?: number }> {
+  const csrf = csrfToken();
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}/finance/${agentId}/upload`, {
+    method: "POST", credentials: "include", body: form,
+    headers: csrf ? { "x-csrf-token": csrf } : undefined,
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
+export const financeChat = (agentId: string, message: string) =>
+  request<FinanceChatResponse>(`/finance/${agentId}/chat`, { method: "POST", body: JSON.stringify({ message }) });
+
+export const getFinanceHistory = (agentId: string, limit = 100) =>
+  request<FinanceHistoryResponse>(`/finance/${agentId}/history?limit=${limit}`);
+
+export const clearFinanceHistory = (agentId: string) =>
+  request<{ success: boolean }>(`/finance/${agentId}/history`, { method: "DELETE" });

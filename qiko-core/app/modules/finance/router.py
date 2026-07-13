@@ -1,0 +1,99 @@
+"""Finance vertical HTTP API -- tenant-scoped, per-agent.
+
+Route shape follows qiko-core's per-agent module convention (see app.modules.sales_intelligence.
+router): `/finance/{agent_id}/...` under the `/api/v1` prefix. It supersedes the external
+excel-agent-server surface consumed by qiko-frontend ELApi.ts (POST /api/upload, GET /api/files,
+POST /api/user/files/delete, GET /api/user, POST /api/chat, GET/DELETE /api/history).
+
+All endpoints are tenant-scoped via `authed_tenant` (BOLA-safe -- tenant comes from the verified
+access-token claims, never a client header). Mutations (upload/delete/chat) require the editor
+role. Uploads are validated for content-type + size before parsing (OWASP: untrusted file input).
+"""
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from pydantic import BaseModel, Field
+
+from app.core.deps import authed_tenant, require_role
+from app.modules.finance.service import MAX_UPLOAD_BYTES, FinanceError, FinanceUploadError
+from app.modules.identity.rbac import Role
+
+router = APIRouter(prefix="/finance", tags=["finance"])
+
+
+def get_finance(request: Request):
+    return request.app.state.finance
+
+
+@router.post("/{agent_id}/upload", status_code=201)
+async def upload(agent_id: str, file: UploadFile = File(...), title: str | None = Form(default=None),
+                 description: str | None = Form(default=None),  # noqa: ARG001 -- accepted, not stored as data
+                 tenant: str = Depends(authed_tenant), _role: dict = Depends(require_role(Role.editor)),
+                 svc=Depends(get_finance)) -> dict:
+    # Read with a hard cap so a huge upload can't exhaust memory (defence beyond the global
+    # request-size middleware). Filename is never trusted -- the service sanitizes it.
+    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="file exceeds the 10MB limit")
+    try:
+        stored = await svc.upload(tenant, agent_id, data, filename=file.filename,
+                                  content_type=file.content_type, source_name=title)
+    except FinanceUploadError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return {
+        "fileName": stored.file_name, "sourceName": stored.source_name, "size": stored.size_bytes,
+        "namespace": stored.namespace, "totalRows": stored.row_count, "indexed": True,
+        "recordsStored": stored.row_count,
+    }
+
+
+@router.get("/{agent_id}/files")
+async def files(agent_id: str, tenant: str = Depends(authed_tenant), svc=Depends(get_finance)) -> dict:
+    return await svc.list_files(tenant, agent_id)
+
+
+class DeleteFilesBody(BaseModel):
+    ids: list[str] | str = Field(...)
+
+
+@router.delete("/{agent_id}/files")
+async def delete_files(agent_id: str, body: DeleteFilesBody, tenant: str = Depends(authed_tenant),
+                       _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_finance)) -> dict:
+    ids = body.ids if isinstance(body.ids, list) else [body.ids]
+    ids = [str(i).strip() for i in ids if str(i).strip()]
+    if not ids:
+        raise HTTPException(status_code=422, detail="at least one file id is required")
+    return await svc.delete_files(tenant, agent_id, ids)
+
+
+@router.get("/{agent_id}/analytics")
+async def analytics(agent_id: str, request: Request, tenant: str = Depends(authed_tenant),
+                    svc=Depends(get_finance)) -> dict:
+    frm = request.query_params.get("from")
+    to = request.query_params.get("to")
+    return await svc.analytics(tenant, agent_id, frm=frm, to=to)
+
+
+class ChatBody(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+
+@router.post("/{agent_id}/chat")
+async def chat(agent_id: str, body: ChatBody, tenant: str = Depends(authed_tenant),
+               _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_finance)) -> dict:
+    try:
+        return await svc.chat(tenant, agent_id, body.message)
+    except FinanceError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@router.get("/{agent_id}/history")
+async def history(agent_id: str, limit: int = 100, tenant: str = Depends(authed_tenant),
+                  svc=Depends(get_finance)) -> dict:
+    return await svc.history(tenant, agent_id, limit=max(1, min(200, limit)))
+
+
+@router.delete("/{agent_id}/history")
+async def clear_history(agent_id: str, tenant: str = Depends(authed_tenant),
+                        _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_finance)) -> dict:
+    return await svc.clear_history(tenant, agent_id)

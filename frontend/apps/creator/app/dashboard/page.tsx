@@ -43,7 +43,7 @@ export default function DashboardPage() {
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
-  const [atype, setAtype] = useState<"worker" | "sales_intelligence">("worker");
+  const [atype, setAtype] = useState<"worker" | "sales_intelligence" | "finance">("worker");
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const workers = agents.data ?? [];
   const readyWorkers = workers.filter((a) => a.status === "ready");
@@ -177,6 +177,7 @@ export default function DashboardPage() {
                       {([
                         { key: "worker", label: "General worker", desc: "Chat, knowledge, RFP" },
                         { key: "sales_intelligence", label: "Sales Intelligence", desc: "Tender ingestion + Salesforce" },
+                        { key: "finance", label: "Financial Analyst", desc: "Excel portfolio analytics" },
                       ] as const).map((t) => (
                         <button key={t.key} type="button" onClick={() => setAtype(t.key)}
                           className={`rounded-lg border p-2 text-left transition-colors ${atype === t.key ? "border-[#6366F1] bg-[#6366F1]/10" : "border-white/10 hover:border-white/20"}`}>

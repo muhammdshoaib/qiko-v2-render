@@ -76,6 +76,8 @@ from app.modules.sales_intelligence.service import OpportunityMutationService, O
 from app.modules.agentcore.batch_router import router as batch_router
 from app.modules.excel.router import router as excel_router
 from app.modules.excel.service import ExcelService
+from app.modules.finance.router import router as finance_router
+from app.modules.finance.service import FinanceService
 from app.modules.health.router import router as health_router
 from app.modules.identity.admin_org_router import router as admin_org_router
 from app.modules.identity.onboarding_router import router as onboarding_router
@@ -111,6 +113,8 @@ async def lifespan(app: FastAPI):
             SqlAssignmentStore,
             SqlChatStore,
             SqlContactStore,
+            SqlFinanceChatStore,
+            SqlFinanceFileStore,
             SqlIngestionSourceStore,
             SqlLeadStore,
             SqlOpportunityStore,
@@ -148,6 +152,9 @@ async def lifespan(app: FastAPI):
             connections=si_connections, activity_logs=si_activity_logs)
         app.state.salesforce_push = SalesforcePushService(
             auth=app.state.salesforce_auth, activity_logs=si_activity_logs)
+        # Finance vertical: uploaded workbooks (parsed rows) + analyst chat history survive a
+        # redeploy. The LLM provider is the same configured gateway used elsewhere.
+        app.state.finance = FinanceService(files=SqlFinanceFileStore(sm), chats=SqlFinanceChatStore(sm))
         app.state.agents = AgentService(store=SqlAgentStore(sm))  # workers survive a redeploy
         app.state.rfp_packs = RfpPackService(store=SqlRfpPackStore(sm))
         app.state.requirements = RequirementService(store=SqlRequirementStore(sm))
@@ -215,6 +222,7 @@ def create_app() -> FastAPI:
                                                                  activity_logs=app.state.sales_intel.activity_logs)
     app.state.salesforce_auth = SalesforceAuthService()
     app.state.salesforce_push = SalesforcePushService(auth=app.state.salesforce_auth)
+    app.state.finance = FinanceService()
     app.state.teams = TeamService()
     app.state.leads = LeadService(get_email_sender())
     app.state.teams_notifier = TeamsNotifier()
@@ -253,7 +261,7 @@ def create_app() -> FastAPI:
               chat_router, teams_router, leads_router, billing_router, channels_router, excel_router,
               voice_router, signal_router, public_chat_router, sources_router, twofa_router,
               onboarding_router, admin_org_router, batch_router, marketing_router, crm_router,
-              sales_intelligence_router):
+              sales_intelligence_router, finance_router):
         app.include_router(r, prefix="/api/v1")
     return app
 
