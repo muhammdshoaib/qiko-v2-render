@@ -17,7 +17,7 @@ def _setup_pack_with_requirements(client, tenant: str):
         {"id": "A2", "title": "Pricing", "classification": "MANUAL", "requirement": "Complete pricing schedule."},
     ])
 
-    def fake_get_provider():
+    def fake_get_provider(**_kwargs):
         class P:
             def generate(self, prompt, *, system=None, temperature=0.2):
                 from app.modules.ai.gateway import LLMResponse
@@ -79,7 +79,7 @@ def test_answers_are_cached_and_force_bypasses_cache(client, monkeypatch):
     payload = '[{"id": "A1", "title": "ISO Certification", "classification": "KB", "requirement": "Describe your ISO 9001 certification."}]'
     calls = {"n": 0}
 
-    def counting_provider():
+    def counting_provider(**_kwargs):
         class P:
             def generate(self, prompt, *, system=None, temperature=0.2):
                 if "TENDER DOCUMENT" in prompt and "REQUIREMENT" not in prompt:

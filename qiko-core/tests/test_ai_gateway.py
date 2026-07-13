@@ -23,6 +23,14 @@ def test_bedrock_provider_uses_config_defaults():
     p = BedrockProvider()
     assert p.model_id == "eu.anthropic.claude-sonnet-4-5"  # default profile 'eu'
     assert p.region == "eu-central-1"
+    assert p.read_timeout == 20  # fast per-requirement hot path default
+
+
+def test_bedrock_provider_read_timeout_override():
+    # extraction/compliance/brief/ask are one-shot whole-document calls that need longer than the
+    # per-requirement default -- see rfp/router.py's _DOCUMENT_READ_TIMEOUT.
+    p = BedrockProvider(read_timeout=90)
+    assert p.read_timeout == 90
 
 
 # --- fallback ---
@@ -52,6 +60,12 @@ def test_get_provider_wraps_bedrock_with_stub_fallback():
     assert isinstance(p, FallbackProvider)
     assert isinstance(p.primary, BedrockProvider)
     assert isinstance(p.fallback, StubProvider)
+
+
+def test_get_provider_read_timeout_override_reaches_bedrock_provider():
+    p = get_provider(read_timeout=90)
+    assert isinstance(p, FallbackProvider)
+    assert p.primary.read_timeout == 90
 
 
 # --- embeddings ---

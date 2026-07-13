@@ -24,14 +24,14 @@ def test_ask_requires_document_first(client):
 
 def test_extract_persists_document_text_for_later_ask(client, monkeypatch):
     monkeypatch.setattr("app.modules.rfp.router.get_provider",
-                        lambda: _CannedProvider('[{"id":"A1","title":"Deadline","classification":"KB","requirement":"State the deadline."}]'))
+                        lambda **_kw: _CannedProvider('[{"id":"A1","title":"Deadline","classification":"KB","requirement":"State the deadline."}]'))
     c = auth_cookies("bidctx2", "owner")
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "T"}, cookies=c).json()
     client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
                files={"file": ("t.txt", io.BytesIO(TENDER_TEXT.encode()), "text/plain")})
 
     monkeypatch.setattr("app.modules.rfp.router.get_provider",
-                        lambda: _CannedProvider("The submission deadline is 2026-08-01."))
+                        lambda **_kw: _CannedProvider("The submission deadline is 2026-08-01."))
     r = client.post(f"/api/v1/rfp/packs/{pack['id']}/ask", cookies=c, json={"question": "When is it due?"})
     assert r.status_code == 200
     assert "2026-08-01" in r.json()["answer"]

@@ -67,7 +67,7 @@ def test_extract_brief_rejects_missing_summary():
 
 # --- API-level ---
 def test_compliance_and_brief_endpoints(client, monkeypatch):
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda: _CannedProvider(COMPLIANCE_JSON))
+    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _CannedProvider(COMPLIANCE_JSON))
     c = auth_cookies("compbrief", "owner")
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender Z"}, cookies=c).json()
 
@@ -75,14 +75,14 @@ def test_compliance_and_brief_endpoints(client, monkeypatch):
                     files={"file": ("t.txt", io.BytesIO(TENDER_TEXT.encode()), "text/plain")})
     assert r.status_code == 200 and r.json()[0]["category"] == "Legal"
 
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda: _CannedProvider(BRIEF_JSON))
+    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _CannedProvider(BRIEF_JSON))
     r2 = client.post(f"/api/v1/rfp/packs/{pack['id']}/brief", cookies=c,
                      files={"file": ("t.txt", io.BytesIO(TENDER_TEXT.encode()), "text/plain")})
     assert r2.status_code == 200 and r2.json()["summary"]
 
 
 def test_compliance_404_for_missing_pack(client, monkeypatch):
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda: _CannedProvider(COMPLIANCE_JSON))
+    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _CannedProvider(COMPLIANCE_JSON))
     c = auth_cookies("compbrief2", "owner")
     r = client.post("/api/v1/rfp/packs/missing/compliance", cookies=c,
                     files={"file": ("t.txt", io.BytesIO(b"text"), "text/plain")})

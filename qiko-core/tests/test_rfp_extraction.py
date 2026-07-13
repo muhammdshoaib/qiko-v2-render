@@ -57,7 +57,7 @@ def test_extract_requirements_rejects_empty_array():
 
 # --- API-level: full upload -> extract -> list round trip ---
 def test_rfp_extract_endpoint_round_trip(client, monkeypatch):
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda: _CannedProvider(SAMPLE_JSON))
+    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _CannedProvider(SAMPLE_JSON))
 
     c = auth_cookies("extractco", "owner")
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender X"}, cookies=c).json()
@@ -74,7 +74,7 @@ def test_rfp_extract_endpoint_round_trip(client, monkeypatch):
 
 
 def test_rfp_extract_rejects_unsupported_file_type(client, monkeypatch):
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda: _CannedProvider(SAMPLE_JSON))
+    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _CannedProvider(SAMPLE_JSON))
     c = auth_cookies("extractco2", "owner")
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender Y"}, cookies=c).json()
     r = client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
@@ -83,7 +83,7 @@ def test_rfp_extract_rejects_unsupported_file_type(client, monkeypatch):
 
 
 def test_rfp_extract_404_for_missing_pack(client, monkeypatch):
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda: _CannedProvider(SAMPLE_JSON))
+    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _CannedProvider(SAMPLE_JSON))
     c = auth_cookies("extractco3", "owner")
     r = client.post("/api/v1/rfp/packs/missing/extract", cookies=c,
                     files={"file": ("tender.txt", io.BytesIO(b"text"), "text/plain")})

@@ -33,6 +33,15 @@ class BedrockProvider:
     model: str = ""
     profile: str = ""
     region: str = ""
+    # boto3's defaults (60s read timeout x up to 3 retries) mean one slow/unresponsive endpoint
+    # can block for minutes before the gateway ever gets to try its fallback provider -- observed
+    # live (a 15-requirement tender's answers taking >15 minutes). Fail fast instead: a couple of
+    # short retries, then let the caller fall back. 20s is right for the hot path (one small
+    # per-requirement answer at a time), but is too tight for a single one-shot call over a whole
+    # tender document (extraction/compliance/brief -- see rfp/router.py), which legitimately needs
+    # longer to read tens of thousands of chars and produce a complete structured response; those
+    # call sites build their own BedrockProvider(read_timeout=...) instead of using this default.
+    read_timeout: int = 20
 
     def __post_init__(self) -> None:
         s = get_settings()
@@ -48,11 +57,8 @@ class BedrockProvider:
         import boto3
         from botocore.config import Config
 
-        # boto3's defaults (60s read timeout x up to 3 retries) mean one slow/unresponsive
-        # endpoint can block for minutes before the gateway ever gets to try its fallback
-        # provider -- observed live (a 15-requirement tender's answers taking >15 minutes).
-        # Fail fast instead: a couple of short retries, then let the caller fall back.
-        config = Config(connect_timeout=5, read_timeout=20, retries={"max_attempts": 2, "mode": "standard"})
+        config = Config(connect_timeout=5, read_timeout=self.read_timeout,
+                        retries={"max_attempts": 2, "mode": "standard"})
         if not hasattr(self, "_cached_client"):
             self._cached_client = boto3.client("bedrock-runtime", region_name=self.region, config=config)
         return self._cached_client

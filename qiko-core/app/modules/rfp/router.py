@@ -29,6 +29,11 @@ from app.modules.rfp.service import CachedAnswer, PackRequirement, RfpPack, RfpP
 
 router = APIRouter(prefix="/rfp/packs", tags=["rfp"])
 
+# extract/ask/compliance/brief are one-shot calls over a whole tender document (tens of thousands
+# of chars in, a full structured response out) -- the gateway's default read_timeout (20s) is
+# tuned for the fast per-requirement answering hot path and is routinely too tight for these.
+_DOCUMENT_READ_TIMEOUT = 90
+
 
 class CreatePackBody(BaseModel):
     agent_id: str = Field(min_length=1)
@@ -137,7 +142,7 @@ async def extract(pack_id: str, file: UploadFile = File(...), tenant: str = Depe
         # extract_requirements() blocks on a synchronous LLM call -- run it off the event loop
         # thread so a slow tender document doesn't freeze every other request this process is
         # serving for the whole duration (this took down preprod once already).
-        extracted = await asyncio.to_thread(extract_requirements, text, get_provider())
+        extracted = await asyncio.to_thread(extract_requirements, text, get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
     except ExtractionError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
@@ -172,7 +177,8 @@ async def ask_bid_context(pack_id: str, body: AskBody, tenant: str = Depends(aut
              "document provided. Be precise about scope, submission format, deadlines, "
              "qualification rules and risks. If the document doesn't state it, say so -- do not guess.")
     prompt = f"TENDER DOCUMENT:\n{pack.document_text[:60_000]}\n\nQUESTION: {body.question}\n\nAnswer from the document only."
-    response = await asyncio.to_thread(get_provider().generate, prompt, system=system, temperature=0.0)
+    response = await asyncio.to_thread(get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT).generate,
+                                       prompt, system=system, temperature=0.0)
     return {"question": body.question, "answer": response.text}
 
 
@@ -201,7 +207,7 @@ async def compliance_check(pack_id: str, file: UploadFile = File(...), tenant: s
     """Extract mandatory pass/fail compliance items from an uploaded tender document."""
     text = await _read_tender_text(pack_id, tenant, file, packs)
     try:
-        return await asyncio.to_thread(extract_compliance, text, get_provider())
+        return await asyncio.to_thread(extract_compliance, text, get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
     except ComplianceError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
@@ -214,7 +220,7 @@ async def tender_brief(pack_id: str, file: UploadFile = File(...), tenant: str =
     uploaded tender document."""
     text = await _read_tender_text(pack_id, tenant, file, packs)
     try:
-        return await asyncio.to_thread(extract_brief, text, get_provider())
+        return await asyncio.to_thread(extract_brief, text, get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
     except BriefError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 

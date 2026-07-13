@@ -59,19 +59,23 @@ class FallbackProvider:
             return self.fallback.generate(prompt, system=system, temperature=temperature)
 
 
-def _build_one(name: str) -> LLMProvider:
+def _build_one(name: str, *, read_timeout: int | None = None) -> LLMProvider:
     if name == "bedrock":
         from app.modules.ai.bedrock import BedrockProvider
 
-        return BedrockProvider()
+        return BedrockProvider() if read_timeout is None else BedrockProvider(read_timeout=read_timeout)
     return StubProvider()
 
 
-def get_provider() -> LLMProvider:
+def get_provider(*, read_timeout: int | None = None) -> LLMProvider:
     """Build the provider from config: primary (default Bedrock) wrapped with a configured
-    fallback. Model, Region and inference profile are config, not code (ADR-007/008)."""
+    fallback. Model, Region and inference profile are config, not code (ADR-007/008).
+
+    `read_timeout` overrides the default (tuned for the fast per-requirement answering hot path)
+    for one-shot, whole-document calls (extraction/compliance/brief) that legitimately need
+    longer -- see BedrockProvider.read_timeout."""
     s = get_settings()
-    primary = _build_one(s.ai_provider)
+    primary = _build_one(s.ai_provider, read_timeout=read_timeout)
     if s.ai_fallback_provider and s.ai_fallback_provider != s.ai_provider:
-        return FallbackProvider(primary, _build_one(s.ai_fallback_provider))
+        return FallbackProvider(primary, _build_one(s.ai_fallback_provider, read_timeout=read_timeout))
     return primary
