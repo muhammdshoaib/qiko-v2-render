@@ -42,8 +42,8 @@ export const me = async () => {
 // Agents (workers)
 export type Agent = { id: string; tenant: string; name: string; status: string; atype: string; config: Record<string, unknown>; created_at: string };
 export const listAgents = () => request<Agent[]>("/agents");
-export const createAgent = (name: string, plan = "free") =>
-  request<Agent>("/agents", { method: "POST", body: JSON.stringify({ name, plan }) });
+export const createAgent = (name: string, atype: "worker" | "sales_intelligence" = "worker") =>
+  request<Agent>("/agents", { method: "POST", body: JSON.stringify({ name, atype }) });
 export const markReady = (id: string) => request<Agent>(`/agents/${id}/ready`, { method: "POST" });
 export const updateAgentConfig = (id: string, patch: Record<string, unknown>) =>
   request<Agent>(`/agents/${id}/config`, { method: "PUT", body: JSON.stringify({ patch }) });
@@ -248,6 +248,168 @@ export const updateCrmAction = (actionId: string, status: string) =>
 
 export const syncCrmContactToSalesforce = (contactId: string) =>
   request<{ synced: boolean; salesforce_id: string | null }>(`/crm/contacts/${contactId}/sync-salesforce`, { method: "POST" });
+
+// Sales Intelligence (IDG Sales) -- opportunity ingestion/qualification/review/Salesforce-push
+// worker. Backend module is being built in parallel (expected at app.modules.sales_intelligence
+// in qiko-core, mirrored on app.modules.crm's per-agent REST shape: `/sales-intelligence/{agentId}/...`
+// for agent-scoped reads, plain resource dicts in camelCase (not the old Laravel
+// {success,data,errors} envelope) -- these functions encode that *assumed* contract pending the
+// real router; endpoint names/paths are taken 1:1 from the Laravel IdgSalesController's public
+// methods (sources, updateSource, scanUngm, scanTed, opportunities, opportunity, createOpportunity,
+// updateOpportunity, opportunityHistory, archiveOpportunity, restoreOpportunity, deleteOpportunity,
+// activityLogs, scanHistory, review, saveNotes, salesforceStatus, salesforceConnect,
+// salesforceDisconnect, pushToSalesforce) and its Resources (IdgSalesOpportunityResource,
+// IdgSalesIngestionSourceResource, IdgSalesActivityLogResource).
+export const OPPORTUNITY_STAGES = [
+  "ingested", "qualifying", "qualified", "awaiting_review", "validated",
+  "ready_salesforce", "push_pending", "pushed", "rejected", "push_failed",
+] as const;
+export type OpportunityStage = (typeof OPPORTUNITY_STAGES)[number];
+export type Recommendation = "Bid" | "Review" | "No Bid";
+
+export type SalesIntelSource = {
+  id: number; agentId: string; sourceKey: "ted" | "ungm"; name: string; type: string;
+  status: "active" | "inactive" | "paused" | string; authStatus: string | null;
+  scanCadence: string; scanIntervalMinutes: number; lastScanStatus: string | null;
+  lastScanAt: string | null; nextScanAt: string | null; opportunitiesFound: number;
+  lastError: string | null; config: Record<string, unknown>; createdAt: string; updatedAt: string;
+};
+
+export type OpportunityContact = { name: string | null; email: string | null; phone: string | null };
+
+export type OpportunityDetail = {
+  overview: {
+    deadlineAt: string | null; estimatedValue: number | null; currency: string | null;
+    country: string | null; category: string | null; buyer: string | null; source: string | null;
+    sourceUrl: string | null; publishedAt: string | null; extractionConfidence: number | null;
+    securityClearance: string | null; contacts: OpportunityContact[]; framework: string | null;
+    contractDuration: string | null; technology: string | null; reference: string | null;
+    noticeType: string | null;
+  };
+  summary: {
+    executiveSummary: string | null; riskSummary: string | null; opportunitySummary: string | null;
+    requirements: string[]; deliverables: string[];
+  };
+  qualification: {
+    overallScore: number | null; recommendation: Recommendation | null; confidence: number | null;
+    dimensions: Record<string, number>; aiReasoning: string | null; recommendations: string[];
+    reasons: string[]; risks: string[]; rejectionReasons: string[];
+  };
+  completed: {
+    isComplete: boolean; stage: OpportunityStage; humanReviewStatus: string | null;
+    reviewedBy: { id: number; userName: string; email: string } | null; reviewedAt: string | null;
+    salesforcePushStatus: string | null; salesforceOpportunityId: string | null;
+    salesforcePushedAt: string | null; salesforcePushError: string | null; completedAt: string | null;
+  };
+  notes: { humanReviewNotes: string | null; updatedAt: string | null };
+};
+
+export type SalesOpportunity = {
+  id: number; agentId: string; externalId: string | null; sourceKey: "ted" | "ungm" | string;
+  source: string | null; sourceUrl: string | null; isManual: boolean; title: string;
+  buyer: string | null; country: string | null; region: string | null; category: string | null;
+  estimatedValue: number | null; currency: string | null; publishedAt: string | null;
+  deadlineAt: string | null; stage: OpportunityStage; recommendation: Recommendation | null;
+  qualificationScore: number | null; confidence: number | null; competitorReadiness: number | null;
+  qualificationSummary: string | null; qualificationReasons: string[]; qualificationDimensions: Record<string, number>;
+  qualificationRecommendations: string[]; rejectionReasons: string[]; risks: string[]; missingFields: string[];
+  humanReviewStatus: string | null; humanReviewNotes: string | null;
+  reviewedBy: { id: number; userName: string; email: string } | null; reviewedAt: string | null;
+  archivedAt: string | null; isArchived: boolean;
+  salesforcePushStatus: string | null; salesforceOpportunityId: string | null;
+  salesforcePushedAt: string | null; salesforcePushError: string | null;
+  createdAt: string; updatedAt: string; detail?: OpportunityDetail;
+};
+
+export type SalesActivityLog = {
+  id: number; opportunityId: number | null; actorUserId: number | null;
+  actor: { id: number; userName: string; email: string } | null; activityType: string;
+  action: string; detail: string | null; tone: "success" | "info" | "warning" | "error" | string;
+  changes: Record<string, unknown> | null; metadata: Record<string, unknown> | null;
+  createdAt: string; updatedAt: string;
+};
+
+export type SalesScanHistoryEntry = {
+  id: number; sourceKey: string; status: string; opportunitiesFound: number;
+  startedAt: string | null; finishedAt: string | null; error: string | null;
+};
+
+export type SalesforceConnectionStatus = {
+  connected: boolean; instanceUrl: string | null; status: "connected" | "disconnected" | string;
+  connectedAt: string | null; lastPushAt: string | null;
+};
+
+const siQuery = (params: Record<string, string | number | boolean | undefined>) => {
+  const q = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== "" && v !== null) q.set(k, String(v));
+  const s = q.toString();
+  return s ? `?${s}` : "";
+};
+
+export const listSalesSources = (agentId: string) =>
+  request<{ sources: SalesIntelSource[] }>(`/sales-intelligence/${agentId}/sources`);
+export const updateSalesSource = (agentId: string, sourceKey: "ted" | "ungm", status: string) =>
+  request<{ source: SalesIntelSource }>(`/sales-intelligence/${agentId}/sources/${sourceKey}`, {
+    method: "PATCH", body: JSON.stringify({ source_key: sourceKey, status }),
+  });
+export const scanTedSource = (agentId: string, body: Record<string, unknown> = {}) =>
+  request<{ scanned: boolean; found: number }>(`/sales-intelligence/${agentId}/scan/ted`, {
+    method: "POST", body: JSON.stringify(body),
+  });
+export const scanUngmSource = (agentId: string, body: Record<string, unknown> = {}) =>
+  request<{ scanned: boolean; found: number }>(`/sales-intelligence/${agentId}/scan/ungm`, {
+    method: "POST", body: JSON.stringify(body),
+  });
+
+export type SalesOpportunityFilters = {
+  stage?: OpportunityStage; recommendation?: Recommendation; source_key?: string; title?: string;
+  search?: string; limit?: number; include_archived?: boolean; archived_only?: boolean;
+};
+export const listSalesOpportunities = (agentId: string, filters: SalesOpportunityFilters = {}) =>
+  request<{ opportunities: SalesOpportunity[]; summary: Record<string, unknown> }>(
+    `/sales-intelligence/${agentId}/opportunities${siQuery(filters)}`,
+  );
+export const getSalesOpportunity = (agentId: string, opportunityId: number | string) =>
+  request<{ opportunity: SalesOpportunity }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}`);
+export const createSalesOpportunity = (agentId: string, payload: Record<string, unknown>) =>
+  request<{ opportunity: SalesOpportunity }>(`/sales-intelligence/${agentId}/opportunities`, {
+    method: "POST", body: JSON.stringify(payload),
+  });
+export const updateSalesOpportunity = (agentId: string, opportunityId: number | string, payload: Record<string, unknown>) =>
+  request<{ opportunity: SalesOpportunity }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}`, {
+    method: "PATCH", body: JSON.stringify(payload),
+  });
+export const getSalesOpportunityHistory = (agentId: string, opportunityId: number | string) =>
+  request<{ history: SalesActivityLog[] }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}/history`);
+export const archiveSalesOpportunity = (agentId: string, opportunityId: number | string) =>
+  request<{ opportunity: SalesOpportunity }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}/archive`, { method: "POST" });
+export const restoreSalesOpportunity = (agentId: string, opportunityId: number | string) =>
+  request<{ opportunity: SalesOpportunity }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}/restore`, { method: "POST" });
+export const deleteSalesOpportunity = (agentId: string, opportunityId: number | string) =>
+  request<{ deleted: boolean }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}`, { method: "DELETE" });
+
+export const getSalesActivityLogs = (agentId: string, params: { opportunity_id?: number; page?: number; per_page?: number } = {}) =>
+  request<{ logs: SalesActivityLog[]; total: number }>(`/sales-intelligence/${agentId}/activity-logs${siQuery(params)}`);
+export const getSalesScanHistory = (agentId: string, params: { source_key?: string; per_page?: number } = {}) =>
+  request<{ history: SalesScanHistoryEntry[] }>(`/sales-intelligence/${agentId}/scan-history${siQuery(params)}`);
+
+export const reviewSalesOpportunity = (agentId: string, opportunityId: number | string, decision: "approve" | "reject", notes = "") =>
+  request<{ opportunity: SalesOpportunity }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}/review`, {
+    method: "POST", body: JSON.stringify({ decision, notes }),
+  });
+export const saveSalesOpportunityNotes = (agentId: string, opportunityId: number | string, notes: string) =>
+  request<{ opportunity: SalesOpportunity }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}/notes`, {
+    method: "POST", body: JSON.stringify({ notes }),
+  });
+
+export const getSalesforceStatus = (agentId: string) =>
+  request<{ salesforce: SalesforceConnectionStatus }>(`/sales-intelligence/${agentId}/salesforce/status`);
+export const connectSalesIntelSalesforce = (agentId: string) =>
+  request<{ authorizeUrl: string }>(`/sales-intelligence/${agentId}/salesforce/connect`, { method: "POST" });
+export const disconnectSalesIntelSalesforce = (agentId: string) =>
+  request<{ salesforce: SalesforceConnectionStatus }>(`/sales-intelligence/${agentId}/salesforce/disconnect`, { method: "POST" });
+export const pushOpportunityToSalesforce = (agentId: string, opportunityId: number | string) =>
+  request<{ opportunity: SalesOpportunity }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}/push-to-salesforce`, { method: "POST" });
 
 // Public embed chat (no auth)
 export const publicChat = (tenant: string, workerId: string, question: string) =>

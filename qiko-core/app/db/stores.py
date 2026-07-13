@@ -6,6 +6,7 @@ redeploy), which the in-memory stubs did not.
 """
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -24,6 +25,10 @@ from app.db.models import PackRequirement as PackRequirementRow
 from app.db.models import Passage as PassageRow
 from app.db.models import PlatformAdmin as PlatformAdminRow
 from app.db.models import RfpPack as RfpPackRow
+from app.db.models import SalesIntelActivityLog as SalesIntelActivityLogRow
+from app.db.models import SalesIntelIngestionSource as SalesIntelIngestionSourceRow
+from app.db.models import SalesIntelOpportunity as SalesIntelOpportunityRow
+from app.db.models import SalesIntelSalesforceConnection as SalesIntelSalesforceConnectionRow
 from app.db.models import Team as TeamRow
 from app.db.models import TeamMember as TeamMemberRow
 from app.db.models import Tenant as TenantRow
@@ -41,6 +46,13 @@ from app.modules.identity.store import User
 from app.modules.knowledge.models import Passage
 from app.modules.leads.service import Lead
 from app.modules.rfp.service import CachedAnswer, PackRequirement, RfpPack, RfpPackNotFound
+from app.modules.sales_intelligence.models import (
+    ActivityLog,
+    IngestionSource,
+    Opportunity,
+    SalesforceConnection,
+    _apply_opportunity_filters,
+)
 from app.modules.teams.service import Team
 
 
@@ -633,3 +645,241 @@ class SqlActionStore:
             return CrmAction(id=row.id, tenant=row.tenant_id, contact_id=row.contact_id, title=row.title,
                              action_type=row.action_type, description=row.description or "",
                              priority=row.priority, status=row.status, created_at=row.created_at)
+
+
+# --- IDG Sales Intelligence (app.modules.sales_intelligence) ---------------------------------
+# Postgres-backed replacements for the in-memory stores in
+# app.modules.sales_intelligence.models, behind the same Protocols. Every query is tenant-scoped
+# (BOLA-safe) exactly like the CRM stores above.
+
+
+def _ingestion_source_from_row(r: SalesIntelIngestionSourceRow) -> IngestionSource:
+    return IngestionSource(
+        id=r.id, tenant=r.tenant_id, agent_id=r.agent_id, source_key=r.source_key, name=r.name,
+        type=r.type, status=r.status, auth_status=r.auth_status, scan_cadence=r.scan_cadence,
+        last_scan_status=r.last_scan_status, last_scan_at=r.last_scan_at,
+        opportunities_found=r.opportunities_found, last_error=r.last_error, config=dict(r.config or {}),
+        created_at=r.created_at, updated_at=r.updated_at)
+
+
+@dataclass
+class SqlIngestionSourceStore:
+    """Persists UNGM/TED ingestion-source config per worker -- previously in-memory only, so the
+    enabled/disabled state and last-scan metadata were wiped on every redeploy."""
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def get_or_create(self, tenant: str, agent_id: str, source_key: str, defaults: dict) -> IngestionSource:
+        async with self.sessionmaker() as s, s.begin():
+            row = (await s.execute(select(SalesIntelIngestionSourceRow).where(
+                SalesIntelIngestionSourceRow.tenant_id == tenant,
+                SalesIntelIngestionSourceRow.agent_id == agent_id,
+                SalesIntelIngestionSourceRow.source_key == source_key))).scalars().first()
+            if row is None:
+                row = SalesIntelIngestionSourceRow(id=uuid.uuid4().hex[:12], tenant_id=tenant, agent_id=agent_id,
+                                                   source_key=source_key, **defaults)
+                s.add(row)
+                await s.flush()
+            return _ingestion_source_from_row(row)
+
+    async def get(self, tenant: str, agent_id: str, source_key: str) -> IngestionSource | None:
+        async with self.sessionmaker() as s:
+            row = (await s.execute(select(SalesIntelIngestionSourceRow).where(
+                SalesIntelIngestionSourceRow.tenant_id == tenant,
+                SalesIntelIngestionSourceRow.agent_id == agent_id,
+                SalesIntelIngestionSourceRow.source_key == source_key))).scalars().first()
+            return _ingestion_source_from_row(row) if row else None
+
+    async def list_for_agent(self, tenant: str, agent_id: str) -> list[IngestionSource]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(select(SalesIntelIngestionSourceRow).where(
+                SalesIntelIngestionSourceRow.tenant_id == tenant,
+                SalesIntelIngestionSourceRow.agent_id == agent_id))).scalars().all()
+            return [_ingestion_source_from_row(r) for r in rows]
+
+    async def list_active(self, tenant: str | None = None) -> list[IngestionSource]:
+        async with self.sessionmaker() as s:
+            q = select(SalesIntelIngestionSourceRow).where(SalesIntelIngestionSourceRow.status == "active")
+            if tenant is not None:
+                q = q.where(SalesIntelIngestionSourceRow.tenant_id == tenant)
+            rows = (await s.execute(q)).scalars().all()
+            return [_ingestion_source_from_row(r) for r in rows]
+
+    async def update(self, source: IngestionSource) -> IngestionSource:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(SalesIntelIngestionSourceRow, source.id)
+            if row is not None and row.tenant_id == source.tenant:
+                row.name, row.type, row.status = source.name, source.type, source.status
+                row.auth_status, row.scan_cadence = source.auth_status, source.scan_cadence
+                row.last_scan_status, row.last_scan_at = source.last_scan_status, source.last_scan_at
+                row.opportunities_found, row.last_error = source.opportunities_found, source.last_error
+                row.config, row.updated_at = source.config, source.updated_at
+        return source
+
+
+def _opportunity_from_row(r: SalesIntelOpportunityRow) -> Opportunity:
+    return Opportunity(
+        id=r.id, tenant=r.tenant_id, agent_id=r.agent_id, external_id=r.external_id, source_key=r.source_key,
+        source_name=r.source_name, source_url=r.source_url, title=r.title, buyer=r.buyer, country=r.country,
+        region=r.region, category=r.category, estimated_value=r.estimated_value, currency=r.currency,
+        published_at=r.published_at, deadline_at=r.deadline_at, stage=r.stage, recommendation=r.recommendation,
+        qualification_score=r.qualification_score, confidence=r.confidence,
+        competitor_readiness=r.competitor_readiness, qualification_summary=r.qualification_summary,
+        qualification_reasons=list(r.qualification_reasons or []),
+        qualification_dimensions=dict(r.qualification_dimensions or {}),
+        qualification_recommendations=list(r.qualification_recommendations or []),
+        rejection_reasons=list(r.rejection_reasons or []), risks=list(r.risks or []),
+        missing_fields=list(r.missing_fields or []), human_review_status=r.human_review_status,
+        human_review_notes=r.human_review_notes, reviewed_by_user_id=r.reviewed_by_user_id,
+        reviewed_at=r.reviewed_at, updated_by=r.updated_by, archived_at=r.archived_at, archived_by=r.archived_by,
+        deleted_at=r.deleted_at, deleted_by=r.deleted_by, salesforce_push_status=r.salesforce_push_status,
+        salesforce_opportunity_id=r.salesforce_opportunity_id, salesforce_pushed_at=r.salesforce_pushed_at,
+        salesforce_push_error=r.salesforce_push_error, raw_payload=dict(r.raw_payload or {}),
+        created_at=r.created_at, updated_at=r.updated_at)
+
+
+def _apply_opportunity_columns(row: SalesIntelOpportunityRow, o: Opportunity) -> None:
+    row.source_name, row.source_url, row.title = o.source_name, o.source_url, o.title
+    row.buyer, row.country, row.region, row.category = o.buyer, o.country, o.region, o.category
+    row.estimated_value, row.currency = o.estimated_value, o.currency
+    row.published_at, row.deadline_at = o.published_at, o.deadline_at
+    row.stage, row.recommendation = o.stage, o.recommendation
+    row.qualification_score, row.confidence = o.qualification_score, o.confidence
+    row.competitor_readiness, row.qualification_summary = o.competitor_readiness, o.qualification_summary
+    row.qualification_reasons, row.qualification_dimensions = o.qualification_reasons, o.qualification_dimensions
+    row.qualification_recommendations = o.qualification_recommendations
+    row.rejection_reasons, row.risks, row.missing_fields = o.rejection_reasons, o.risks, o.missing_fields
+    row.human_review_status, row.human_review_notes = o.human_review_status, o.human_review_notes
+    row.reviewed_by_user_id, row.reviewed_at = o.reviewed_by_user_id, o.reviewed_at
+    row.updated_by = o.updated_by
+    row.archived_at, row.archived_by = o.archived_at, o.archived_by
+    row.deleted_at, row.deleted_by = o.deleted_at, o.deleted_by
+    row.salesforce_push_status, row.salesforce_opportunity_id = o.salesforce_push_status, o.salesforce_opportunity_id
+    row.salesforce_pushed_at, row.salesforce_push_error = o.salesforce_pushed_at, o.salesforce_push_error
+    row.raw_payload, row.updated_at = o.raw_payload, o.updated_at
+
+
+@dataclass
+class SqlOpportunityStore:
+    """Persists UNGM/TED tender opportunities per worker -- the ingestion/qualification/review
+    pipeline's source of truth, previously lost on every redeploy when it was in-memory only."""
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def find_by_external_id(self, tenant: str, agent_id: str, source_key: str,
+                                  external_id: str) -> Opportunity | None:
+        async with self.sessionmaker() as s:
+            row = (await s.execute(select(SalesIntelOpportunityRow).where(
+                SalesIntelOpportunityRow.tenant_id == tenant, SalesIntelOpportunityRow.agent_id == agent_id,
+                SalesIntelOpportunityRow.source_key == source_key,
+                SalesIntelOpportunityRow.external_id == external_id))).scalars().first()
+            return _opportunity_from_row(row) if row else None
+
+    async def add(self, opp: Opportunity) -> Opportunity:
+        async with self.sessionmaker() as s, s.begin():
+            row = SalesIntelOpportunityRow(id=opp.id, tenant_id=opp.tenant, agent_id=opp.agent_id,
+                                           external_id=opp.external_id, source_key=opp.source_key,
+                                           source_name=opp.source_name, created_at=opp.created_at)
+            _apply_opportunity_columns(row, opp)
+            s.add(row)
+        return opp
+
+    async def update(self, opp: Opportunity) -> Opportunity:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(SalesIntelOpportunityRow, opp.id)
+            if row is not None and row.tenant_id == opp.tenant and row.agent_id == opp.agent_id:
+                _apply_opportunity_columns(row, opp)
+        return opp
+
+    async def get(self, tenant: str, agent_id: str, opp_id: str) -> Opportunity | None:
+        async with self.sessionmaker() as s:
+            row = await s.get(SalesIntelOpportunityRow, opp_id)
+            if row is None or row.tenant_id != tenant or row.agent_id != agent_id:
+                return None
+            return _opportunity_from_row(row)
+
+    async def list_for_agent(self, tenant: str, agent_id: str, **filters) -> list[Opportunity]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(select(SalesIntelOpportunityRow).where(
+                SalesIntelOpportunityRow.tenant_id == tenant,
+                SalesIntelOpportunityRow.agent_id == agent_id))).scalars().all()
+            items = [_opportunity_from_row(r) for r in rows]
+            return _apply_opportunity_filters(items, filters)
+
+
+@dataclass
+class SqlActivityLogStore:
+    """Persists the sales-intelligence audit trail (source status, scans, opportunity changes)
+    per worker -- the history/scan-history views, previously in-memory only."""
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    def _to_domain(self, r: SalesIntelActivityLogRow) -> ActivityLog:
+        return ActivityLog(id=r.id, tenant=r.tenant_id, agent_id=r.agent_id, action=r.action,
+                           opportunity_id=r.opportunity_id, actor_user_id=r.actor_user_id,
+                           activity_type=r.activity_type, detail=r.detail, tone=r.tone,
+                           metadata=dict(r.metadata_json or {}), created_at=r.created_at)
+
+    async def add(self, log: ActivityLog) -> ActivityLog:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(SalesIntelActivityLogRow(id=log.id, tenant_id=log.tenant, agent_id=log.agent_id,
+                                           opportunity_id=log.opportunity_id, actor_user_id=log.actor_user_id,
+                                           activity_type=log.activity_type, action=log.action, detail=log.detail,
+                                           tone=log.tone, metadata_json=log.metadata, created_at=log.created_at))
+        return log
+
+    async def list_for_agent(self, tenant: str, agent_id: str, **filters) -> list[ActivityLog]:
+        async with self.sessionmaker() as s:
+            q = select(SalesIntelActivityLogRow).where(SalesIntelActivityLogRow.tenant_id == tenant,
+                                                       SalesIntelActivityLogRow.agent_id == agent_id)
+            if filters.get("opportunity_id"):
+                q = q.where(SalesIntelActivityLogRow.opportunity_id == filters["opportunity_id"])
+            if filters.get("activity_type"):
+                q = q.where(SalesIntelActivityLogRow.activity_type == filters["activity_type"])
+            if filters.get("action"):
+                q = q.where(SalesIntelActivityLogRow.action == filters["action"])
+            q = q.order_by(SalesIntelActivityLogRow.created_at.desc())
+            limit = filters.get("limit")
+            if limit:
+                q = q.limit(limit)
+            rows = (await s.execute(q)).scalars().all()
+            return [self._to_domain(r) for r in rows]
+
+
+@dataclass
+class SqlSalesforceConnectionStore:
+    """Persists each worker's Salesforce OAuth connection (authorization_code + PKCE, with
+    refresh). Access/refresh tokens arrive already Fernet-encrypted from the service layer
+    (app.modules.sales_intelligence.salesforce, mirroring the Laravel model's `'encrypted'`
+    cast), so the ciphertext is written verbatim into the enc_* columns and returned verbatim --
+    no double-encryption. The service decrypts on use via app.core.crypto.decrypt."""
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    def _to_domain(self, r: SalesIntelSalesforceConnectionRow) -> SalesforceConnection:
+        return SalesforceConnection(tenant=r.tenant_id, agent_id=r.agent_id, status=r.status,
+                                    instance_url=r.instance_url, access_token=r.enc_access_token,
+                                    refresh_token=r.enc_refresh_token, token_type=r.token_type,
+                                    token_expires_at=r.token_expires_at, salesforce_user_id=r.salesforce_user_id,
+                                    salesforce_org_id=r.salesforce_org_id,
+                                    connected_by_user_id=r.connected_by_user_id, last_error=r.last_error,
+                                    connected_at=r.connected_at)
+
+    async def get_or_create(self, tenant: str, agent_id: str) -> SalesforceConnection:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(SalesIntelSalesforceConnectionRow, (tenant, agent_id))
+            if row is None:
+                row = SalesIntelSalesforceConnectionRow(tenant_id=tenant, agent_id=agent_id)
+                s.add(row)
+                await s.flush()
+            return self._to_domain(row)
+
+    async def update(self, conn: SalesforceConnection) -> SalesforceConnection:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(SalesIntelSalesforceConnectionRow, (conn.tenant, conn.agent_id))
+            if row is None:
+                row = SalesIntelSalesforceConnectionRow(tenant_id=conn.tenant, agent_id=conn.agent_id)
+                s.add(row)
+            row.status, row.instance_url = conn.status, conn.instance_url
+            row.enc_access_token, row.enc_refresh_token = conn.access_token, conn.refresh_token
+            row.token_type, row.token_expires_at = conn.token_type, conn.token_expires_at
+            row.salesforce_user_id, row.salesforce_org_id = conn.salesforce_user_id, conn.salesforce_org_id
+            row.connected_by_user_id, row.last_error = conn.connected_by_user_id, conn.last_error
+            row.connected_at = conn.connected_at
+        return conn

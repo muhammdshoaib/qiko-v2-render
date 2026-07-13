@@ -70,6 +70,9 @@ from app.modules.chat.router import router as chat_router
 from app.modules.chat.service import ChatService
 from app.modules.crm.router import router as crm_router
 from app.modules.crm.service import CrmService
+from app.modules.sales_intelligence.router import router as sales_intelligence_router
+from app.modules.sales_intelligence.salesforce import SalesforceAuthService, SalesforcePushService
+from app.modules.sales_intelligence.service import OpportunityMutationService, OpportunityService
 from app.modules.agentcore.batch_router import router as batch_router
 from app.modules.excel.router import router as excel_router
 from app.modules.excel.service import ExcelService
@@ -102,15 +105,19 @@ async def lifespan(app: FastAPI):
         # Flip the live app from in-memory to the Postgres-backed stores (async end-to-end).
         from app.db.stores import (
             SqlActionStore,
+            SqlActivityLogStore,
             SqlAdminOrgStore,
             SqlAgentStore,
             SqlAssignmentStore,
             SqlChatStore,
             SqlContactStore,
+            SqlIngestionSourceStore,
             SqlLeadStore,
+            SqlOpportunityStore,
             SqlPackAnswerStore,
             SqlRequirementStore,
             SqlRfpPackStore,
+            SqlSalesforceConnectionStore,
             SqlTeamsIntegrationStore,
             SqlTeamStore,
             SqlUserStore,
@@ -124,6 +131,23 @@ async def lifespan(app: FastAPI):
         app.state.sources = KnowledgeSources(app.state.knowledge)
         app.state.chat = ChatService(store=SqlChatStore(sm))
         app.state.crm = CrmService(app.state.chat, contacts=SqlContactStore(sm), actions=SqlActionStore(sm))
+        # Sales Intelligence: opportunities/sources/activity + Salesforce connections survive a
+        # redeploy. The mutation service and Salesforce services share the same DB-backed stores
+        # so all four API surfaces read/write one source of truth (Salesforce tokens stay
+        # Fernet-encrypted at rest via app.core.crypto -- see SqlSalesforceConnectionStore).
+        si_sources = SqlIngestionSourceStore(sm)
+        si_opportunities = SqlOpportunityStore(sm)
+        si_activity_logs = SqlActivityLogStore(sm)
+        si_connections = SqlSalesforceConnectionStore(sm)
+        app.state.sales_intel = OpportunityService(
+            scan_interval_minutes=get_settings().idg_sales_scan_interval_minutes,
+            sources=si_sources, opportunities=si_opportunities, activity_logs=si_activity_logs)
+        app.state.sales_intel_mutation = OpportunityMutationService(
+            opportunities=si_opportunities, activity_logs=si_activity_logs)
+        app.state.salesforce_auth = SalesforceAuthService(
+            connections=si_connections, activity_logs=si_activity_logs)
+        app.state.salesforce_push = SalesforcePushService(
+            auth=app.state.salesforce_auth, activity_logs=si_activity_logs)
         app.state.agents = AgentService(store=SqlAgentStore(sm))  # workers survive a redeploy
         app.state.rfp_packs = RfpPackService(store=SqlRfpPackStore(sm))
         app.state.requirements = RequirementService(store=SqlRequirementStore(sm))
@@ -186,6 +210,11 @@ def create_app() -> FastAPI:
     app.state.assignments = AssignmentService()
     app.state.chat = ChatService()
     app.state.crm = CrmService(app.state.chat)
+    app.state.sales_intel = OpportunityService(scan_interval_minutes=settings.idg_sales_scan_interval_minutes)
+    app.state.sales_intel_mutation = OpportunityMutationService(opportunities=app.state.sales_intel.opportunities,
+                                                                 activity_logs=app.state.sales_intel.activity_logs)
+    app.state.salesforce_auth = SalesforceAuthService()
+    app.state.salesforce_push = SalesforcePushService(auth=app.state.salesforce_auth)
     app.state.teams = TeamService()
     app.state.leads = LeadService(get_email_sender())
     app.state.teams_notifier = TeamsNotifier()
@@ -223,7 +252,8 @@ def create_app() -> FastAPI:
     for r in (identity_router, knowledge_router, agents_router, rfp_router, assignments_router, admin_router,
               chat_router, teams_router, leads_router, billing_router, channels_router, excel_router,
               voice_router, signal_router, public_chat_router, sources_router, twofa_router,
-              onboarding_router, admin_org_router, batch_router, marketing_router, crm_router):
+              onboarding_router, admin_org_router, batch_router, marketing_router, crm_router,
+              sales_intelligence_router):
         app.include_router(r, prefix="/api/v1")
     return app
 

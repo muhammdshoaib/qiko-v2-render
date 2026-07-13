@@ -62,6 +62,24 @@ class Settings(BaseSettings):
     ga4_property_id: str = ""
     ga4_access_token: str = ""
     voice_model: str = "amazon.nova-sonic-v1:0"
+
+    # Salesforce OAuth (authorization_code + PKCE, matching the real IDG Sales Salesforce
+    # Connected App flow -- NOT the client_credentials shape used by app.integrations.clients.
+    # SalesforceClient/app.modules.crm's generic per-worker connection; see
+    # app.modules.sales_intelligence.salesforce for the authorization_code implementation).
+    salesforce_client_id: str = ""
+    salesforce_client_secret: str = ""
+    salesforce_redirect_uri: str = ""
+    salesforce_login_base_url: str = "https://login.salesforce.com"
+    salesforce_scopes: str = "api refresh_token offline_access"
+    salesforce_api_version: str = "v59.0"
+    salesforce_default_stage_name: str = "Prospecting"
+    salesforce_external_id_field: str = ""
+    salesforce_frontend_success_path: str = "/app/studio/{agentId}"
+    frontend_url: str = "http://127.0.0.1:5173"
+
+    # IDG Sales Intelligence (app.modules.sales_intelligence)
+    idg_sales_scan_interval_minutes: int = 1
     public_base_url: str = "http://localhost:3000"
     # Share the auth/CSRF cookies across subdomains (e.g. ".preprod.qiko.ai" so both
     # preprod.qiko.ai and admin.preprod.qiko.ai see the same session). Empty = host-only

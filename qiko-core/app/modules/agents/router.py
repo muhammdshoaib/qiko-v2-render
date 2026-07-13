@@ -30,8 +30,15 @@ def _redact(agent: Agent) -> Agent:
     return replace(agent, config=cfg)
 
 
+# Known worker verticals. "worker" is the generic default; the others unlock a bespoke Studio
+# cockpit (e.g. "sales_intelligence" -> tender ingestion + qualification + Salesforce push).
+# Server-validated allowlist -- a client can't invent an arbitrary atype.
+AGENT_TYPES = {"worker", "sales_intelligence"}
+
+
 class CreateAgentBody(BaseModel):
     name: str = Field(min_length=1)
+    atype: str = "worker"
 
 
 @router.post("")
@@ -40,10 +47,12 @@ async def create_agent(body: CreateAgentBody, tenant: str = Depends(authed_tenan
                        subs=Depends(get_subscriptions)) -> Agent:
     # The plan is looked up server-side from the tenant's real subscription -- never trust a
     # client-supplied plan name here, or any tenant could self-upgrade past the free-tier limit.
+    if body.atype not in AGENT_TYPES:
+        raise HTTPException(status_code=422, detail="invalid atype")
     sub = subs.status(tenant)
     plan = get_plan(sub.plan if sub and sub.status == "active" else "free")
     try:
-        return await svc.create(tenant, body.name, plan)
+        return await svc.create(tenant, body.name, plan, atype=body.atype)
     except PlanLimitError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
 

@@ -43,6 +43,7 @@ export default function DashboardPage() {
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
+  const [atype, setAtype] = useState<"worker" | "sales_intelligence">("worker");
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const workers = agents.data ?? [];
   const readyWorkers = workers.filter((a) => a.status === "ready");
@@ -51,8 +52,8 @@ export default function DashboardPage() {
   const atLimit = workers.length >= WORKER_LIMIT;
 
   const create = useMutation({
-    mutationFn: () => createAgent(name),
-    onSuccess: () => { setName(""); setCreating(false); qc.invalidateQueries({ queryKey: ["agents"] }); },
+    mutationFn: () => createAgent(name, atype),
+    onSuccess: () => { setName(""); setAtype("worker"); setCreating(false); qc.invalidateQueries({ queryKey: ["agents"] }); },
   });
 
   const insights = useMemo(() => {
@@ -172,6 +173,18 @@ export default function DashboardPage() {
                     <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="New worker name..."
                       onKeyDown={(e) => { if (e.key === "Enter" && name && !create.isPending) create.mutate(); if (e.key === "Escape") setCreating(false); }}
                       className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                    <div className="grid grid-cols-2 gap-2">
+                      {([
+                        { key: "worker", label: "General worker", desc: "Chat, knowledge, RFP" },
+                        { key: "sales_intelligence", label: "Sales Intelligence", desc: "Tender ingestion + Salesforce" },
+                      ] as const).map((t) => (
+                        <button key={t.key} type="button" onClick={() => setAtype(t.key)}
+                          className={`rounded-lg border p-2 text-left transition-colors ${atype === t.key ? "border-[#6366F1] bg-[#6366F1]/10" : "border-white/10 hover:border-white/20"}`}>
+                          <span className="block text-xs font-semibold text-white">{t.label}</span>
+                          <span className="block text-[10px] text-slate-400">{t.desc}</span>
+                        </button>
+                      ))}
+                    </div>
                     <div className="flex gap-2">
                       <Button className="flex-1 bg-gradient-to-r from-[#6366F1] to-[#22D3EE] hover:opacity-90" disabled={atLimit || !name || create.isPending} onClick={() => create.mutate()}>
                         <Plus className="size-4" /> Create

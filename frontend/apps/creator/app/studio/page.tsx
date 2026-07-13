@@ -3,14 +3,31 @@
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { ArrowRight, MessageSquare, Plus } from "lucide-react";
+import { ArrowRight, MessageSquare, Plus, Radar } from "lucide-react";
 import { Button } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
-import { listAgents, listDocuments, listRfpPacks, type Agent, type RfpPack } from "@/lib/api";
+import {
+  listAgents, listDocuments, listRfpPacks, listSalesOpportunities, type Agent, type RfpPack, type SalesOpportunity,
+} from "@/lib/api";
 
 function workerCategory(a: Agent): string {
   const expertise = a.config?.expertise as string | undefined;
   return expertise?.trim() || "General";
+}
+
+// The Sales Intelligence worker (IdgSalesController's opportunity pipeline) has its own cockpit
+// under /studio/[id]/sales-intelligence instead of the generic RFP-pack tab layout -- identified
+// by atype, same field the Creator side uses to pick a worker's build wizard.
+function isSalesIntelligenceWorker(a: Agent): boolean {
+  return a.atype === "sales_intelligence";
+}
+
+function formatCompactCurrency(value: number, currency = "GBP"): string {
+  try {
+    return new Intl.NumberFormat("en-GB", { style: "currency", currency, notation: "compact", maximumFractionDigits: 1 }).format(value);
+  } catch {
+    return `£${(value / 1000000).toFixed(1)}M`;
+  }
 }
 
 export default function StudioPage() {
@@ -26,6 +43,15 @@ export default function StudioPage() {
     queries: deployed.map((a) => ({
       queryKey: ["rfp-packs", a.id],
       queryFn: () => listRfpPacks(a.id),
+      enabled: !isSalesIntelligenceWorker(a),
+    })),
+  });
+  const opportunitiesQ = useQueries({
+    queries: deployed.map((a) => ({
+      queryKey: ["sales-opportunities", a.id],
+      queryFn: () => listSalesOpportunities(a.id),
+      enabled: isSalesIntelligenceWorker(a),
+      retry: false,
     })),
   });
   const docsQ = useQuery({ queryKey: ["documents"], queryFn: listDocuments });
@@ -74,24 +100,62 @@ export default function StudioPage() {
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                   {items.map((a) => {
                     const idx = deployed.findIndex((d) => d.id === a.id);
-                    const packs: RfpPack[] = packsQ[idx]?.data ?? [];
-                    const activeBids = packs.length;
-                    const inReview = packs.filter((p) => p.stage === "review" || p.stage === "final").length;
-                    const avgReadiness = activeBids > 0 ? Math.round((inReview / activeBids) * 100) : 0;
-                    const nextDeadline = packs.map((p) => p.deadline).filter(Boolean).sort()[0] ?? null;
+                    const salesIntel = isSalesIntelligenceWorker(a);
+
+                    let metrics: { label: string; value: string }[];
+                    let useCaseCount: number;
+                    let href: string;
+                    if (salesIntel) {
+                      const opps: SalesOpportunity[] = opportunitiesQ[idx]?.data?.opportunities ?? [];
+                      const newFound = opps.filter((o) => o.stage === "ingested").length;
+                      const qualified = opps.filter((o) => o.stage === "qualified" || o.stage === "validated").length;
+                      const awaitingReview = opps.filter((o) => o.stage === "awaiting_review").length;
+                      const pipelineValue = opps
+                        .filter((o) => !["rejected", "push_failed"].includes(o.stage))
+                        .reduce((sum, o) => sum + (o.estimatedValue ?? 0), 0);
+                      metrics = [
+                        { label: "New Found", value: String(newFound) },
+                        { label: "Qualified", value: String(qualified) },
+                        { label: "Awaiting Review", value: String(awaitingReview) },
+                        { label: "Pipeline Value", value: pipelineValue > 0 ? formatCompactCurrency(pipelineValue) : "—" },
+                      ];
+                      useCaseCount = 5;
+                      href = `/studio/${a.id}/sales-intelligence`;
+                    } else {
+                      const packs: RfpPack[] = packsQ[idx]?.data ?? [];
+                      const activeBids = packs.length;
+                      const inReview = packs.filter((p) => p.stage === "review" || p.stage === "final").length;
+                      const avgReadiness = activeBids > 0 ? Math.round((inReview / activeBids) * 100) : 0;
+                      const nextDeadline = packs.map((p) => p.deadline).filter(Boolean).sort()[0] ?? null;
+                      metrics = [
+                        { label: "Active Bids", value: String(activeBids) },
+                        { label: "Avg Readiness", value: activeBids > 0 ? `${avgReadiness}%` : "—" },
+                        { label: "Data volume", value: `${dataVolume} chunks` },
+                        { label: "Next Bid", value: nextDeadline ?? "—" },
+                      ];
+                      useCaseCount = 3;
+                      href = `/studio/${a.id}`;
+                    }
+
                     return (
-                      <button key={a.id} onClick={() => router.push(`/studio/${a.id}`)}
+                      <button key={a.id} onClick={() => router.push(href)}
                         className="group w-full overflow-hidden rounded-2xl border border-white/[0.06] text-left transition-all duration-300 hover:border-indigo-500/30 hover:shadow-[0_0_60px_-15px_rgba(99,102,241,0.12)]"
                         style={{ background: "linear-gradient(165deg, rgba(255,255,255,0.024) 0%, rgba(255,255,255,0.004) 100%)" }}>
                         <div className="px-6 pt-6 pb-4">
                           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div className="flex items-center gap-3.5">
-                              <span className="flex size-11 shrink-0 items-center justify-center rounded-xl" style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.15)" }}>
-                                <MessageSquare className="size-5 text-indigo-400" />
-                              </span>
+                              {salesIntel ? (
+                                <span className="flex size-11 shrink-0 items-center justify-center rounded-xl" style={{ background: "rgba(34,211,238,0.08)", border: "1px solid rgba(34,211,238,0.18)" }}>
+                                  <Radar className="size-5 text-cyan-400" />
+                                </span>
+                              ) : (
+                                <span className="flex size-11 shrink-0 items-center justify-center rounded-xl" style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.15)" }}>
+                                  <MessageSquare className="size-5 text-indigo-400" />
+                                </span>
+                              )}
                               <div>
                                 <h3 className="text-[15px] font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>{a.name}</h3>
-                                <p className="mt-0.5 text-[11px] text-slate-500">{category.toLowerCase().replace(/\s+/g, "_")}</p>
+                                <p className="mt-0.5 text-[11px] text-slate-500">{a.atype || category.toLowerCase().replace(/\s+/g, "_")}</p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2 self-start sm:self-auto">
@@ -102,18 +166,17 @@ export default function StudioPage() {
                             </div>
                           </div>
                           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
-                            {[
-                              { label: "Active Bids", value: String(activeBids) },
-                              { label: "Avg Readiness", value: activeBids > 0 ? `${avgReadiness}%` : "—" },
-                              { label: "Data volume", value: `${dataVolume} chunks` },
-                              { label: "Next Bid", value: nextDeadline ?? "—" },
-                            ].map((m) => (
+                            {metrics.map((m) => (
                               <div key={m.label} className="rounded-lg border border-white/[0.04] bg-white/[0.02] px-3 py-2.5">
                                 <p className="text-[17px] font-bold text-white" style={{ fontFamily: "var(--font-display)" }}>{m.value}</p>
                                 <p className="mt-0.5 text-[9px] text-slate-500">{m.label}</p>
                               </div>
                             ))}
                           </div>
+                        </div>
+                        <div className="flex items-center justify-between border-t border-white/[0.05] px-6 py-3 text-[11px] text-slate-500">
+                          <span>{useCaseCount} active use cases</span>
+                          <span>Last active 2h ago</span>
                         </div>
                       </button>
                     );

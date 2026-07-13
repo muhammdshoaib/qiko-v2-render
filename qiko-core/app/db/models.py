@@ -228,3 +228,118 @@ class CrmAction(Base):
     priority: Mapped[str] = mapped_column(String(16), default="normal")
     status: Mapped[str] = mapped_column(String(16), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class SalesIntelIngestionSource(Base):
+    """UNGM/TED ingestion source config per worker (app.modules.sales_intelligence), ported from
+    idg_sales_ingestion_sources."""
+    __tablename__ = "sales_intel_ingestion_sources"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    source_key: Mapped[str] = mapped_column(String(80))
+    name: Mapped[str] = mapped_column(String(255))
+    type: Mapped[str] = mapped_column(String(40), default="portal")
+    status: Mapped[str] = mapped_column(String(40), default="inactive")
+    auth_status: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    scan_cadence: Mapped[str] = mapped_column(String(80), default="manual")
+    last_scan_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    last_scan_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    opportunities_found: Mapped[int] = mapped_column(default=0)
+    last_error: Mapped[str | None] = mapped_column(String, nullable=True)
+    config: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    __table_args__ = (Index("ix_sales_intel_source_agent", "tenant_id", "agent_id", "source_key", unique=True),)
+
+
+class SalesIntelOpportunity(Base):
+    """A UNGM/TED tender opportunity for one worker (app.modules.sales_intelligence), ported from
+    idg_sales_opportunities."""
+    __tablename__ = "sales_intel_opportunities"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    external_id: Mapped[str] = mapped_column(String(255))
+    source_key: Mapped[str] = mapped_column(String(80))
+    source_name: Mapped[str] = mapped_column(String(255))
+    source_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    title: Mapped[str] = mapped_column(String(1024))
+    buyer: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    country: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    region: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    category: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    estimated_value: Mapped[float | None] = mapped_column(nullable=True)
+    currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    stage: Mapped[str] = mapped_column(String(80), default="ingested")
+    recommendation: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    qualification_score: Mapped[int | None] = mapped_column(nullable=True)
+    confidence: Mapped[int | None] = mapped_column(nullable=True)
+    competitor_readiness: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    qualification_summary: Mapped[str | None] = mapped_column(String, nullable=True)
+    qualification_reasons: Mapped[list] = mapped_column(JSON, default=list)
+    qualification_dimensions: Mapped[dict] = mapped_column(JSON, default=dict)
+    qualification_recommendations: Mapped[list] = mapped_column(JSON, default=list)
+    rejection_reasons: Mapped[list] = mapped_column(JSON, default=list)
+    risks: Mapped[list] = mapped_column(JSON, default=list)
+    missing_fields: Mapped[list] = mapped_column(JSON, default=list)
+    human_review_status: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    human_review_notes: Mapped[str | None] = mapped_column(String, nullable=True)
+    reviewed_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    archived_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deleted_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    salesforce_push_status: Mapped[str] = mapped_column(String(40), default="not_started")
+    salesforce_opportunity_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    salesforce_pushed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    salesforce_push_error: Mapped[str | None] = mapped_column(String, nullable=True)
+    raw_payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    __table_args__ = (
+        Index("ix_sales_intel_opp_source_external", "tenant_id", "agent_id", "source_key", "external_id", unique=True),
+        Index("ix_sales_intel_opp_agent_stage", "tenant_id", "agent_id", "stage"),
+    )
+
+
+class SalesIntelActivityLog(Base):
+    """Audit trail entry for one worker's sales-intelligence activity (source status, scan, or
+    opportunity change), ported from idg_sales_activity_logs."""
+    __tablename__ = "sales_intel_activity_logs"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    opportunity_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    actor_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    activity_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    action: Mapped[str] = mapped_column(String(120))
+    detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    tone: Mapped[str] = mapped_column(String(40), default="info")
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    __table_args__ = (Index("ix_sales_intel_log_agent_created", "tenant_id", "agent_id", "created_at"),)
+
+
+class SalesIntelSalesforceConnection(Base):
+    """One Salesforce OAuth connection (authorization_code + PKCE, with refresh) per worker,
+    ported from idg_sales_salesforce_connections. Tokens are encrypted at rest via
+    app.core.crypto -- see app.modules.sales_intelligence.salesforce."""
+    __tablename__ = "sales_intel_salesforce_connections"
+    tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    agent_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    status: Mapped[str] = mapped_column(String(40), default="disconnected")
+    instance_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    enc_access_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    enc_refresh_token: Mapped[str | None] = mapped_column(String, nullable=True)
+    token_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    salesforce_user_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    salesforce_org_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    connected_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String, nullable=True)
+    connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
