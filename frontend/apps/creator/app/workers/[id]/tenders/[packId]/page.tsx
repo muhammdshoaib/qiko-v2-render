@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { Badge, Button, Card, CardContent, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
-import { ChatBubble, TypingIndicator } from "@/components/chat-message";
+import { AnswerMarkdown, ChatBubble, TypingIndicator } from "@/components/chat-message";
 import {
   askBidContext, type Answer, complianceCheck, type ComplianceItem, exportUrl, getAnswers, getRfpPack,
   ingestFile, listDocuments, listRequirements, submitFeedback, tenderBrief, type TenderBrief,
@@ -302,13 +302,49 @@ function BulletCard({ title, items, color }: { title: string; items: string[]; c
   );
 }
 
+// A dotted req_id ("B1.1") groups under its parent ("B1") -- same convention the extraction
+// prompt uses (rfp/extraction.py) so a section with multiple distinct numbered sub-requirements
+// becomes one foldable row with its own independently-reviewable sub-sections, matching the
+// reference idg.qiko.ai cockpit, instead of one flat row per sub-item.
+function parentIdOf(reqId: string): string {
+  const i = reqId.indexOf(".");
+  return i === -1 ? reqId : reqId.slice(0, i);
+}
+
+// The extraction prompt encodes "Parent Title — Own Title" into a dotted item's title so the
+// group header has a real name instead of a bare id.
+function splitTitle(title: string): { parentTitle: string | null; ownTitle: string } {
+  const sep = title.indexOf(" \u2014 ");
+  if (sep === -1) return { parentTitle: null, ownTitle: title };
+  return { parentTitle: title.slice(0, sep), ownTitle: title.slice(sep + 3) };
+}
+
+type SectionGroup = { parentId: string; parentTitle: string; items: Answer[] };
+
+function groupSections(answers: Answer[]): SectionGroup[] {
+  const order: string[] = [];
+  const byParent = new Map<string, Answer[]>();
+  for (const a of answers) {
+    const pid = parentIdOf(a.req_id);
+    if (!byParent.has(pid)) { byParent.set(pid, []); order.push(pid); }
+    byParent.get(pid)!.push(a);
+  }
+  return order.map((parentId) => {
+    const items = byParent.get(parentId)!;
+    const withParentTitle = items.map((it) => splitTitle(it.req_title).parentTitle).find(Boolean);
+    return { parentId, parentTitle: withParentTitle || splitTitle(items[0].req_title).ownTitle, items };
+  });
+}
+
 function SectionsTab({ answers, loading, onOpenSection, onRegenerateAll }: {
   answers?: Answer[]; loading: boolean;
   onOpenSection: (reqId: string) => void;
   onRegenerateAll: () => Promise<unknown>;
 }) {
   const [regenerating, setRegenerating] = useState(false);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const a = answers ?? [];
+  const groups = groupSections(a);
   const drafted = a.filter((x) => x.answer).length;
   const tot = a.length || 1;
   const avg = (arr: number[]) => (arr.length ? Math.round((arr.reduce((s, v) => s + (v || 0), 0) / arr.length) * 100) : 0);
@@ -364,26 +400,88 @@ function SectionsTab({ answers, loading, onOpenSection, onRegenerateAll }: {
             <tr><th className="text-left p-3">#</th><th className="text-left p-3">Section</th><th className="text-left p-3">Gaps</th><th className="text-left p-3">Status</th><th className="p-3" /></tr>
           </thead>
           <tbody>
-            {a.map((x) => (
-              <tr key={x.req_id} className="border-t border-border hover:bg-white/[0.02] cursor-pointer transition-colors"
-                onClick={() => onOpenSection(x.req_id)}>
-                <td className="p-3 text-muted-foreground align-top">{x.req_id}</td>
-                <td className="p-3">
-                  <span className="font-medium">{x.req_title}</span>
-                  {x.note && <div className="text-[11px] text-muted-foreground mt-0.5">{x.note}</div>}
-                </td>
-                <td className="p-3 text-xs">
-                  {x.note ? <span className="text-muted-foreground">—</span> : <span className="text-muted-foreground">None</span>}
-                </td>
-                <td className="p-3 text-xs">
-                  {(() => { const [c, l] = STATUS_STYLE[statusOf(x)] ?? ["#94a3b8", statusOf(x)];
-                    return <span className="inline-flex items-center gap-1" style={{ color: c }}>{statusOf(x) === "answered" && <Check className="size-3.5" />}{l}</span>; })()}
-                </td>
-                <td className="p-3 text-right">
-                  <span className="text-[#a5b4fc] text-sm inline-flex items-center gap-1">Open <ChevronRight className="size-3.5" /></span>
-                </td>
-              </tr>
-            ))}
+            {groups.map((g) => {
+              const hasSubSections = g.items.length > 1;
+              const isOpen = expanded[g.parentId] ?? false;
+              const anyGap = g.items.some((x) => !!x.note);
+              const anyEscalated = g.items.some((x) => statusOf(x) === "escalate_human");
+              return (
+                <>
+                  <tr key={g.parentId} className={cn("border-t border-border transition-colors",
+                    !hasSubSections && "hover:bg-white/[0.02] cursor-pointer")}
+                    onClick={hasSubSections ? undefined : () => onOpenSection(g.items[0].req_id)}>
+                    <td className="p-3 text-muted-foreground align-top">{g.parentId}</td>
+                    <td className="p-3">
+                      <span className="font-medium inline-flex items-center gap-1.5">
+                        {hasSubSections && (
+                          <ChevronRight className={cn("size-3.5 text-muted-foreground transition-transform", isOpen && "rotate-90")} />
+                        )}
+                        {g.parentTitle}
+                        {hasSubSections && <span className="text-[11px] text-muted-foreground">({g.items.length} sub-sections)</span>}
+                      </span>
+                      {!hasSubSections && g.items[0].note && (
+                        <div className="text-[11px] text-muted-foreground mt-0.5">{g.items[0].note}</div>
+                      )}
+                    </td>
+                    <td className="p-3 text-xs">
+                      {anyGap
+                        ? <span className="inline-flex items-center gap-1 text-amber-400"><ShieldCheck className="size-3" /> KB gap</span>
+                        : <span className="text-muted-foreground">—</span>}
+                    </td>
+                    <td className="p-3 text-xs">
+                      {hasSubSections
+                        ? (anyEscalated
+                            ? <span className="inline-flex items-center gap-1" style={{ color: STATUS_STYLE.escalate_human[0] }}>{STATUS_STYLE.escalate_human[1]}</span>
+                            : <span className="inline-flex items-center gap-1" style={{ color: STATUS_STYLE.answered[0] }}><Check className="size-3.5" />{STATUS_STYLE.answered[1]}</span>)
+                        : (() => { const [c, l] = STATUS_STYLE[statusOf(g.items[0])] ?? ["#94a3b8", statusOf(g.items[0])];
+                            return <span className="inline-flex items-center gap-1" style={{ color: c }}>{statusOf(g.items[0]) === "answered" && <Check className="size-3.5" />}{l}</span>; })()}
+                    </td>
+                    <td className="p-3 text-right">
+                      {hasSubSections ? (
+                        <button className="text-[#a5b4fc] text-sm" onClick={(e) => { e.stopPropagation(); setExpanded((s) => ({ ...s, [g.parentId]: !isOpen })); }}>
+                          {isOpen ? "Collapse" : "Expand"}
+                        </button>
+                      ) : (
+                        <span className="text-[#a5b4fc] text-sm inline-flex items-center gap-1">Open <ChevronRight className="size-3.5" /></span>
+                      )}
+                    </td>
+                  </tr>
+                  {hasSubSections && isOpen && g.items.map((x) => (
+                    <tr key={x.req_id} className="border-t border-border/60 bg-white/[0.015] hover:bg-white/[0.03] cursor-pointer transition-colors"
+                      onClick={() => onOpenSection(x.req_id)}>
+                      <td className="p-3 pl-8 align-top">
+                        <span className="rounded-md bg-primary/15 px-1.5 py-0.5 text-[11px] font-medium text-primary">{x.req_id}</span>
+                      </td>
+                      <td className="p-3" colSpan={3}>
+                        <div className="font-medium">{splitTitle(x.req_title).ownTitle}</div>
+                        <div className="mt-1 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+                          {x.answer && (
+                            <>
+                              <span className="inline-flex items-center gap-1">conf
+                                <span className="h-1 w-10 rounded-full bg-white/10 overflow-hidden inline-block">
+                                  <span className="h-full block bg-emerald-400" style={{ width: `${Math.round(x.confidence * 100)}%` }} />
+                                </span> {Math.round(x.confidence * 100)}%
+                              </span>
+                              <span className="inline-flex items-center gap-1">grounding
+                                <span className="h-1 w-10 rounded-full bg-white/10 overflow-hidden inline-block">
+                                  <span className="h-full block bg-cyan-400" style={{ width: `${Math.round(x.grounding * 100)}%` }} />
+                                </span> {Math.round(x.grounding * 100)}%
+                              </span>
+                            </>
+                          )}
+                          {x.note && <span className="inline-flex items-center gap-1 text-amber-400"><ShieldCheck className="size-3" /> gaps</span>}
+                          {(() => { const [c, l] = STATUS_STYLE[statusOf(x)] ?? ["#94a3b8", statusOf(x)];
+                            return <span style={{ color: c }}>{l}</span>; })()}
+                        </div>
+                      </td>
+                      <td className="p-3 text-right">
+                        <span className="text-[#a5b4fc] text-sm inline-flex items-center gap-1">Open <ChevronRight className="size-3.5" /></span>
+                      </td>
+                    </tr>
+                  ))}
+                </>
+              );
+            })}
           </tbody>
         </table>
       </Card>
@@ -408,17 +506,45 @@ function SectionEditor({ packId, answer, draft, onDraftChange, onBack }: {
   const hasAI = !!answer.answer;
   const reqLines = (answer.requirement || "").split("\n").map((s) => s.trim()).filter(Boolean);
 
+  const gapLines = (answer.note || "").split(/\n|(?<=\.)\s+(?=[A-Z])/).map((s) => s.trim()).filter(Boolean);
+  const { parentTitle, ownTitle } = splitTitle(answer.req_title);
+
   return (
     <div className="space-y-4">
       <button onClick={onBack} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
         <ArrowLeft className="size-4" /> Back to sections
       </button>
       <div className="flex items-center justify-between">
-        <h2 className="font-bold text-lg" style={{ fontFamily: "var(--font-display)" }}>{answer.req_id}: {answer.req_title}</h2>
-        <span className="px-2 py-0.5 rounded-full text-xs bg-white/[0.06]" style={{ color: statusColor }}>{statusLabel}</span>
+        <div>
+          <h2 className="font-bold text-lg" style={{ fontFamily: "var(--font-display)" }}>
+            <span className="mr-2 rounded-md bg-primary/15 px-1.5 py-0.5 text-xs font-medium text-primary align-middle">{answer.req_id}</span>
+            {ownTitle}
+          </h2>
+          {parentTitle && <p className="text-xs text-muted-foreground mt-0.5">{parentTitle} · validate this sub-section on its own.</p>}
+        </div>
+        <div className="flex items-center gap-2">
+          {hasAI && (
+            <>
+              <span className="rounded-full px-2 py-0.5 text-xs bg-emerald-500/10 text-emerald-400">conf {Math.round(answer.confidence * 100)}%</span>
+              <span className="rounded-full px-2 py-0.5 text-xs bg-cyan-500/10 text-cyan-400">grounding {Math.round(answer.grounding * 100)}%</span>
+            </>
+          )}
+          <span className="px-2 py-0.5 rounded-full text-xs bg-white/[0.06]" style={{ color: statusColor }}>{statusLabel}</span>
+        </div>
       </div>
-      {answer.note && (
-        <div className="text-xs rounded-lg p-2.5 border border-border bg-white/[0.03] text-muted-foreground">{answer.note}</div>
+      {gapLines.length > 0 && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/[0.06] p-3">
+          <p className="mb-1.5 flex items-center gap-1.5 text-sm font-semibold text-amber-400">
+            <ShieldCheck className="size-3.5" /> Gaps for human input
+          </p>
+          <ul className="space-y-0.5">
+            {gapLines.map((line, i) => (
+              <li key={i} className="flex gap-2 text-xs text-amber-200/90">
+                <span className="text-amber-400">•</span><span>{line}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
       {reqLines.length > 0 && (
         <Card className="border-primary/30 bg-primary/[0.06]">
@@ -444,7 +570,9 @@ function SectionEditor({ packId, answer, draft, onDraftChange, onBack }: {
                 <p className="font-semibold text-sm">AI suggestion</p>
                 <p className="text-[11px] text-muted-foreground">{answer.citations.length} KB source(s)</p>
               </div>
-              <div className="text-sm leading-relaxed max-h-[50vh] overflow-y-auto whitespace-pre-wrap text-slate-200">{answer.answer}</div>
+              <div className="max-h-[50vh] overflow-y-auto text-sm leading-relaxed text-slate-200">
+                <AnswerMarkdown text={answer.answer} />
+              </div>
               <div className="mt-3 border-t border-border pt-2">
                 <p className="text-[11px] text-muted-foreground mb-1">Sources</p>
                 <div className="flex flex-wrap gap-1">

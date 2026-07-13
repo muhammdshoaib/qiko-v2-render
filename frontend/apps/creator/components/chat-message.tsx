@@ -47,6 +47,37 @@ export function ChatBubble({ role, text, variant = "default" }: {
   );
 }
 
+/** Same markdown rendering as ChatBubble, but for a full-width content block rather than a
+ * cramped chat bubble (the tender cockpit's AI-suggestion panel, not a chat message) -- slightly
+ * more generous spacing, otherwise identical: real headings/bold/lists instead of raw markdown syntax. */
+export function AnswerMarkdown({ text }: { text: string }) {
+  return (
+    <Markdown
+      components={{
+        p: ({ children }) => <p className="mb-3 leading-relaxed last:mb-0">{children}</p>,
+        ul: ({ children }) => <ul className="mb-3 ml-4 list-disc space-y-1 last:mb-0">{children}</ul>,
+        ol: ({ children }) => <ol className="mb-3 ml-4 list-decimal space-y-1 last:mb-0">{children}</ol>,
+        li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+        h1: ({ children }) => <p className="mb-1.5 mt-3 font-bold first:mt-0">{children}</p>,
+        h2: ({ children }) => <p className="mb-1.5 mt-3 font-semibold first:mt-0">{children}</p>,
+        h3: ({ children }) => <p className="mb-1 mt-2 text-[0.95em] font-semibold first:mt-0">{children}</p>,
+        strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+        a: ({ children, href }) => (
+          <a href={href} target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:opacity-80">
+            {children}
+          </a>
+        ),
+        code: ({ children }) => (
+          <code className="rounded bg-black/10 px-1 py-0.5 font-mono text-[0.85em] dark:bg-white/10">{children}</code>
+        ),
+        hr: () => <hr className="my-3 border-current/10" />,
+      }}
+    >
+      {text}
+    </Markdown>
+  );
+}
+
 /** Three staggered bouncing dots -- shown while a worker is generating a reply. Replaces a
  * static "Thinking..." string, which gave no sense that anything was actually happening. */
 export function TypingIndicator({ variant = "default" }: { variant?: "default" | "gradient" }) {

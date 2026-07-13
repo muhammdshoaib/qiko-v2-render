@@ -22,13 +22,22 @@ SYSTEM = (
     "You are a bid/RFP analyst. Read the tender document text and extract every discrete "
     "requirement or section a bidder must respond to. Return ONLY a JSON array (no prose, no "
     "markdown fences), where each item has exactly these keys: "
-    '"id" (short section id like "A1" or "B3", inferred from the document\'s own numbering if '
-    'present, otherwise sequential), "title" (short section title), '
-    '"classification" (one of "KB", "DATA", "MANUAL", "COMPLIANCE" -- KB = a narrative answer '
-    "can be grounded in a knowledge base; DATA = requires the bidder's own factual data (CVs, "
-    "pricing, equipment lists); MANUAL = a prescribed form/template completed outside the AI; "
-    'COMPLIANCE = a pass/fail confirmation or signature), and "requirement" (the verbatim or '
-    "closely-paraphrased requirement text)."
+    '"id" (a section id inferred from the document\'s own numbering if present, otherwise '
+    'sequential -- use a short top-level id like "A1" or "B3" for a section with no distinct '
+    'numbered sub-parts, but if the section itself contains multiple clearly distinct numbered '
+    'or lettered sub-requirements (e.g. the source text reads "B1.1 Contractor\'s Organogram" '
+    'and "B1.2 Contractor\'s Organisation" under a "B1" heading), emit ONE ITEM PER SUB-PART with '
+    'a dotted id ("B1.1", "B1.2", ...) instead of one item for the whole section -- each becomes '
+    "its own independently gradeable answer, which is what a human reviewer actually needs; do "
+    'not invent sub-parts that are not clearly present in the source), "title" (for a dotted id, '
+    'prefix the sub-part\'s own title with the parent heading\'s title and " \u2014 ", e.g. '
+    '"Organisational Structure & Manpower \u2014 Contractor\'s Organogram" for id "B1.1" under '
+    'heading "B1 Organisational Structure & Manpower"; for a non-dotted id, just the section '
+    'title), "classification" (one of "KB", "DATA", "MANUAL", "COMPLIANCE" -- KB = a narrative '
+    "answer can be grounded in a knowledge base; DATA = requires the bidder's own factual data "
+    "(CVs, pricing, equipment lists); MANUAL = a prescribed form/template completed outside the "
+    'AI; COMPLIANCE = a pass/fail confirmation or signature), and "requirement" (the verbatim or '
+    "closely-paraphrased requirement text for that item)."
 )
 
 _JSON_ARRAY = re.compile(r"\[.*\]", re.DOTALL)
