@@ -68,6 +68,8 @@ from app.modules.channels.whatsapp import WhatsAppAdapter
 from app.modules.chat.public_router import router as public_chat_router
 from app.modules.chat.router import router as chat_router
 from app.modules.chat.service import ChatService
+from app.modules.crm.router import router as crm_router
+from app.modules.crm.service import CrmService
 from app.modules.agentcore.batch_router import router as batch_router
 from app.modules.excel.router import router as excel_router
 from app.modules.excel.service import ExcelService
@@ -99,10 +101,12 @@ async def lifespan(app: FastAPI):
     if get_settings().use_db_stores:
         # Flip the live app from in-memory to the Postgres-backed stores (async end-to-end).
         from app.db.stores import (
+            SqlActionStore,
             SqlAdminOrgStore,
             SqlAgentStore,
             SqlAssignmentStore,
             SqlChatStore,
+            SqlContactStore,
             SqlLeadStore,
             SqlPackAnswerStore,
             SqlRequirementStore,
@@ -119,6 +123,7 @@ async def lifespan(app: FastAPI):
         app.state.excel = ExcelService(app.state.knowledge)
         app.state.sources = KnowledgeSources(app.state.knowledge)
         app.state.chat = ChatService(store=SqlChatStore(sm))
+        app.state.crm = CrmService(app.state.chat, contacts=SqlContactStore(sm), actions=SqlActionStore(sm))
         app.state.agents = AgentService(store=SqlAgentStore(sm))  # workers survive a redeploy
         app.state.rfp_packs = RfpPackService(store=SqlRfpPackStore(sm))
         app.state.requirements = RequirementService(store=SqlRequirementStore(sm))
@@ -180,6 +185,7 @@ def create_app() -> FastAPI:
     app.state.pack_answers = PackAnswerService()
     app.state.assignments = AssignmentService()
     app.state.chat = ChatService()
+    app.state.crm = CrmService(app.state.chat)
     app.state.teams = TeamService()
     app.state.leads = LeadService(get_email_sender())
     app.state.teams_notifier = TeamsNotifier()
@@ -217,7 +223,7 @@ def create_app() -> FastAPI:
     for r in (identity_router, knowledge_router, agents_router, rfp_router, assignments_router, admin_router,
               chat_router, teams_router, leads_router, billing_router, channels_router, excel_router,
               voice_router, signal_router, public_chat_router, sources_router, twofa_router,
-              onboarding_router, admin_org_router, batch_router, marketing_router):
+              onboarding_router, admin_org_router, batch_router, marketing_router, crm_router):
         app.include_router(r, prefix="/api/v1")
     return app
 

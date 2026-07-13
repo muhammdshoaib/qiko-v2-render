@@ -160,6 +160,66 @@ def test_rfp_extract_chunks_a_large_document_and_merges_results(client, monkeypa
     assert {"A1", "B1"}.issubset(ids)  # both chunks' requirements made it into the merged result
 
 
+def _fake_httpx_get(status_code=200, content=b"", headers=None):
+    import httpx
+
+    def fake_get(url, **kwargs):
+        return httpx.Response(status_code, content=content, headers=headers or {}, request=httpx.Request("GET", url))
+    return fake_get
+
+
+def test_rfp_extract_url_fetches_and_extracts(client, monkeypatch):
+    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _CannedProvider(SAMPLE_JSON))
+    monkeypatch.setattr("socket.gethostbyname", lambda host: "93.184.216.34")  # a public IP, no real DNS
+    html = b"<html><body><h1>Tender</h1><p>Describe your experience.</p></body></html>"
+    monkeypatch.setattr("httpx.get", _fake_httpx_get(200, html, {"content-type": "text/html"}))
+
+    c = auth_cookies("urlco", "owner")
+    pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender from URL"}, cookies=c).json()
+    r = client.post(f"/api/v1/rfp/packs/{pack['id']}/extract-url", cookies=c, json={"url": "https://tenders.example.com/boc-2171"})
+    assert r.status_code == 200
+    assert len(r.json()) == 2
+
+    fetched = client.get(f"/api/v1/rfp/packs/{pack['id']}", cookies=c).json()
+    assert "Describe your experience" in fetched["document_text"]
+
+
+def test_rfp_extract_url_rejects_private_addresses(client):
+    c = auth_cookies("urlco2", "owner")
+    pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "T"}, cookies=c).json()
+    for bad_url in ("http://localhost:8000/admin", "http://127.0.0.1/secret", "http://169.254.169.254/latest/meta-data/"):
+        r = client.post(f"/api/v1/rfp/packs/{pack['id']}/extract-url", cookies=c, json={"url": bad_url})
+        assert r.status_code == 422, bad_url
+
+
+def test_rfp_extract_url_rejects_non_http_scheme(client):
+    c = auth_cookies("urlco3", "owner")
+    pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "T"}, cookies=c).json()
+    r = client.post(f"/api/v1/rfp/packs/{pack['id']}/extract-url", cookies=c, json={"url": "file:///etc/passwd"})
+    assert r.status_code == 422
+
+
+def test_rfp_extract_url_surfaces_fetch_failure(client, monkeypatch):
+    import httpx
+
+    monkeypatch.setattr("socket.gethostbyname", lambda host: "93.184.216.34")
+
+    def fake_get(url, **kwargs):
+        raise httpx.ConnectError("connection refused")
+    monkeypatch.setattr("httpx.get", fake_get)
+
+    c = auth_cookies("urlco4", "owner")
+    pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "T"}, cookies=c).json()
+    r = client.post(f"/api/v1/rfp/packs/{pack['id']}/extract-url", cookies=c, json={"url": "https://tenders.example.com/gone"})
+    assert r.status_code == 422
+
+
+def test_rfp_extract_url_404_for_missing_pack(client):
+    c = auth_cookies("urlco5", "owner")
+    r = client.post("/api/v1/rfp/packs/missing/extract-url", cookies=c, json={"url": "https://tenders.example.com/x"})
+    assert r.status_code == 404
+
+
 def test_rfp_extract_one_bad_chunk_does_not_sink_the_others(client, monkeypatch):
     marker_a = "UNIQUE_MARKER_GOOD"
     big_doc = (marker_a + " " + "filler " * 6000) + "\n\n" + ("BAD_CHUNK " + "filler " * 6000)

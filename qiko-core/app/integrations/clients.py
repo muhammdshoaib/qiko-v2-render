@@ -194,3 +194,59 @@ class GA4Client:
             record.update({met_names[i]: v["value"] for i, v in enumerate(row.get("metricValues", []))})
             rows.append(record)
         return rows
+
+
+class SalesforceAuthError(Exception):
+    pass
+
+
+class SalesforceClient:
+    """Implements SalesforceGateway (app.modules.crm.salesforce).
+
+    Deliberately the same "simplest real integration shape" as Calendly/ClickUp above, not a
+    full authorization_code OAuth flow: each tenant creates their own Salesforce Connected App
+    (Setup -> App Manager -> New Connected App, enable OAuth, "Client Credentials Flow") and
+    pastes its client id/secret + their org's instance URL here -- exactly the same 3-value
+    paste UX as the Vapi voice connection. Client Credentials is a server-to-server OAuth2 grant
+    (no user redirect/consent screen), which is what a reusable, per-tenant integration needs;
+    a full authorization_code flow would require Qiko itself to be a registered, security-reviewed
+    ISV app in Salesforce's marketplace, which is a much bigger lift for the same outcome here."""
+
+    def __init__(self, client_id: str, client_secret: str, instance_url: str, client: httpx.Client | None = None):
+        self._client_id = client_id
+        self._client_secret = client_secret
+        self._instance_url = instance_url.rstrip("/")
+        self._c = client or httpx.Client(timeout=15.0)
+
+    def _access_token(self) -> str:
+        r = self._c.post(f"{self._instance_url}/services/oauth2/token", data={
+            "grant_type": "client_credentials", "client_id": self._client_id, "client_secret": self._client_secret,
+        })
+        if r.status_code != 200:
+            raise SalesforceAuthError(f"Salesforce token request failed: {r.status_code} {r.text}")
+        return r.json()["access_token"]
+
+    def test_connection(self) -> dict:
+        """Verify the credentials by fetching a token and hitting the cheapest possible endpoint."""
+        token = self._access_token()
+        r = self._c.get(f"{self._instance_url}/services/data/", headers={"Authorization": f"Bearer {token}"})
+        r.raise_for_status()
+        return {"ok": True, "versions": len(r.json())}
+
+    def create_lead(self, *, last_name: str, company: str, email: str | None = None,
+                    phone: str | None = None, description: str | None = None) -> dict:
+        """Push a CRM contact as a Salesforce Lead. `last_name` and `company` are the only two
+        fields Salesforce's Lead object requires."""
+        token = self._access_token()
+        body = {"LastName": last_name or "Unknown", "Company": company}
+        if email:
+            body["Email"] = email
+        if phone:
+            body["Phone"] = phone
+        if description:
+            body["Description"] = description
+        r = self._c.post(f"{self._instance_url}/services/data/v59.0/sobjects/Lead",
+                         headers={"Authorization": f"Bearer {token}"}, json=body)
+        if r.status_code != 201:
+            raise SalesforceAuthError(f"Salesforce Lead creation failed: {r.status_code} {r.text}")
+        return r.json()

@@ -58,3 +58,25 @@ def test_xlsx_real_extraction():
 def test_unsupported_type_rejected():
     with pytest.raises(UnsupportedDocumentError):
         extract_text("malware.exe", b"MZ")
+
+
+def test_html_strips_tags_and_keeps_visible_text():
+    html = b"""
+    <html><head><title>ignored</title><style>.x{color:red}</style></head>
+    <body>
+      <h1>Tender BOC 2171</h1>
+      <p>Provision of Static Security Services.</p>
+      <script>var secret = "should not appear";</script>
+      <ul><li>Deadline: 2026-08-01</li><li>Location: Iraq</li></ul>
+    </body></html>
+    """
+    out = extract_text("page.html", html)
+    assert "Tender BOC 2171" in out
+    assert "Provision of Static Security Services." in out
+    assert "Deadline: 2026-08-01" in out
+    assert "should not appear" not in out
+    assert "color:red" not in out
+
+
+def test_htm_extension_also_supported():
+    assert "hello" in extract_text("page.htm", b"<p>hello</p>")

@@ -25,6 +25,7 @@ from app.modules.knowledge.parsing import UnsupportedDocumentError, extract_text
 from app.modules.rfp.brief import BriefError, extract_brief
 from app.modules.rfp.compliance import ComplianceError, extract_compliance
 from app.modules.rfp.extraction import ExtractionError, chunk_document, extract_requirements
+from app.modules.rfp.scoring import ScoringError, score_opportunity
 from app.modules.rfp.service import CachedAnswer, PackRequirement, RfpPack, RfpPackNotFound
 
 router = APIRouter(prefix="/rfp/packs", tags=["rfp"])
@@ -164,6 +165,21 @@ async def _extract_requirements_chunked(text: str) -> list[dict]:
     return merged
 
 
+async def _extract_and_save(tenant: str, pack_id: str, text: str, packs, reqs, answers) -> list[PackRequirement]:
+    try:
+        extracted = await _extract_requirements_chunked(text)
+    except ExtractionError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+    # Persisted so /ask can ground follow-up questions in the source document later, without
+    # re-uploading it.
+    await packs.set_document_text(tenant, pack_id, text)
+    # A new extraction can rewrite req_ids/content entirely -- drop any cached answers from a
+    # previous extraction so the cockpit doesn't show drafts for stale requirements.
+    await answers.delete_for_pack(tenant, pack_id)
+    return await reqs.save_extracted(tenant, pack_id, extracted)
+
+
 @router.post("/{pack_id}/extract")
 async def extract(pack_id: str, file: UploadFile = File(...), tenant: str = Depends(authed_tenant),
                   _role: dict = Depends(require_role(Role.editor)), packs=Depends(get_rfp_packs),
@@ -180,18 +196,71 @@ async def extract(pack_id: str, file: UploadFile = File(...), tenant: str = Depe
     except UnsupportedDocumentError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
-    try:
-        extracted = await _extract_requirements_chunked(text)
-    except ExtractionError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
+    return await _extract_and_save(tenant, pack_id, text, packs, reqs, answers)
 
-    # Persisted so /ask can ground follow-up questions in the source document later, without
-    # re-uploading it.
-    await packs.set_document_text(tenant, pack_id, text)
-    # A new extraction can rewrite req_ids/content entirely -- drop any cached answers from a
-    # previous extraction so the cockpit doesn't show drafts for stale requirements.
-    await answers.delete_for_pack(tenant, pack_id)
-    return await reqs.save_extracted(tenant, pack_id, extracted)
+
+class ExtractUrlBody(BaseModel):
+    url: str = Field(min_length=1, pattern=r"^https?://")
+
+
+def _assert_public_url(url: str) -> None:
+    """Basic SSRF guard (OWASP A10/API7): this URL is fetched server-side on an editor's say-so,
+    so it must not be usable to probe internal infrastructure -- loopback, private/link-local
+    ranges, and the cloud metadata endpoint are all rejected. Not exhaustive (DNS rebinding after
+    this check is a known residual risk of any hostname-based allowlist), but redirects are
+    disabled below specifically so a validated URL can't be used to hop to a disallowed one."""
+    import ipaddress
+    import socket
+    from urllib.parse import urlparse
+
+    host = urlparse(url).hostname
+    if not host:
+        raise HTTPException(status_code=422, detail="invalid URL")
+    try:
+        addr = socket.gethostbyname(host)
+        ip = ipaddress.ip_address(addr)
+    except (socket.gaierror, ValueError) as e:
+        raise HTTPException(status_code=422, detail=f"could not resolve host: {e}") from e
+    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast:
+        raise HTTPException(status_code=422, detail="that URL points to a non-public address, which is not allowed")
+
+
+@router.post("/{pack_id}/extract-url")
+async def extract_from_url(pack_id: str, body: ExtractUrlBody, tenant: str = Depends(authed_tenant),
+                           _role: dict = Depends(require_role(Role.editor)), packs=Depends(get_rfp_packs),
+                           reqs=Depends(get_requirements), answers=Depends(get_pack_answers)) -> list[PackRequirement]:
+    """Same as /extract, but sourced from a tender published on a webpage instead of an uploaded
+    file -- fetches the URL, extracts its text (HTML or a direct PDF/DOCX link both work, since
+    extract_text dispatches on the response's actual content type), and runs the same chunked
+    extraction pipeline. No separate scraping infrastructure: one tender page is one request."""
+    try:
+        await packs.get(tenant, pack_id)
+    except RfpPackNotFound as e:
+        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+
+    import httpx
+
+    _assert_public_url(body.url)
+    try:
+        # Redirects deliberately NOT followed -- a redirect target skips the public-address
+        # check above, which would defeat it.
+        resp = await asyncio.to_thread(httpx.get, body.url, timeout=20.0, follow_redirects=False,
+                                       headers={"User-Agent": "Mozilla/5.0 (compatible; QikoBot/1.0)"})
+        resp.raise_for_status()
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=422, detail=f"could not fetch that URL: {e}") from e
+
+    content_type = resp.headers.get("content-type", "")
+    filename = ("page.pdf" if "pdf" in content_type else "page.docx" if "officedocument" in content_type
+               else "page.html" if "html" in content_type or not content_type else (body.url.rsplit("/", 1)[-1] or "page.html"))
+    try:
+        text = extract_text(filename, resp.content)
+    except UnsupportedDocumentError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    if not text.strip():
+        raise HTTPException(status_code=422, detail="that URL had no extractable text")
+
+    return await _extract_and_save(tenant, pack_id, text, packs, reqs, answers)
 
 
 class AskBody(BaseModel):
@@ -261,6 +330,32 @@ async def tender_brief(pack_id: str, file: UploadFile = File(...), tenant: str =
     try:
         return await asyncio.to_thread(extract_brief, text, get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
     except BriefError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+
+
+@router.post("/{pack_id}/score")
+async def score(pack_id: str, request: Request, tenant: str = Depends(authed_tenant),
+                _role: dict = Depends(require_role(Role.editor)), packs=Depends(get_rfp_packs)) -> dict:
+    """Qualify this opportunity against the pack's worker's own criteria (Agent.config's
+    "opportunity_criteria" -- set via the generic PUT /agents/{id}/config, same as any other
+    worker setting, so this is reusable across workers/clients rather than one hardcoded rubric).
+
+    Scores the tender document already on file for this pack (from /extract or /extract-url) --
+    this is meant to run *before* committing to a full draft-every-section pass, so it doesn't
+    require a fresh upload."""
+    try:
+        pack = await packs.get(tenant, pack_id)
+    except RfpPackNotFound as e:
+        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    if not pack.document_text:
+        raise HTTPException(status_code=422, detail="no tender document on file for this pack -- run /extract or /extract-url first")
+
+    agent = await request.app.state.agents.get(tenant, pack.agent_id) if pack.agent_id else None
+    criteria = list((agent.config.get("opportunity_criteria") if agent else None) or [])
+    try:
+        return await asyncio.to_thread(score_opportunity, pack.document_text, criteria,
+                                       get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+    except ScoringError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
 

@@ -20,7 +20,7 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 # endpoints returning the raw ciphertext blob is unnecessary exposure (OWASP sensitive data
 # exposure): no legitimate client need ever reads it from here, and it shouldn't be handed out
 # just because it happens to live in the same free-form config dict as everything else.
-_REDACTED_CONFIG_KEYS = ("vapi_api_key_encrypted",)
+_REDACTED_CONFIG_KEYS = ("vapi_api_key_encrypted", "salesforce_client_secret_encrypted")
 
 
 def _redact(agent: Agent) -> Agent:
@@ -137,3 +137,84 @@ async def update_calendly_event_type(agent_id: str, body: CalendlyEventTypeBody,
         }))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
+
+
+class SalesforceCredentialsBody(BaseModel):
+    client_id: str = Field(min_length=1)
+    client_secret: str = Field(min_length=1)
+    instance_url: str = Field(min_length=1, pattern=r"^https://")
+
+
+def _salesforce_view(agent: Agent) -> dict:
+    cfg = agent.config
+    return {
+        "salesforce_credentials_added": bool(cfg.get("salesforce_credentials_added")),
+        "instance_url": cfg.get("salesforce_instance_url") or "",
+        "client_id_masked": _mask(cfg.get("salesforce_client_id") or ""),
+    }
+
+
+@router.post("/{agent_id}/salesforce-credentials")
+async def save_salesforce_credentials(agent_id: str, body: SalesforceCredentialsBody,
+                                      tenant: str = Depends(authed_tenant),
+                                      _role: dict = Depends(require_role(Role.editor)),
+                                      svc=Depends(get_agents)) -> dict:
+    """Salesforce connection: client credentials grant against the tenant's own Connected App --
+    see integrations/clients.py:SalesforceClient for why this shape (not a redirect OAuth flow)."""
+    try:
+        agent = await svc.update_config(tenant, agent_id, {
+            "salesforce_client_id": body.client_id,
+            "salesforce_client_secret_encrypted": encrypt(body.client_secret),
+            "salesforce_instance_url": body.instance_url.rstrip("/"),
+            "salesforce_credentials_added": True,
+        })
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="agent not found") from e
+    return _salesforce_view(agent)
+
+
+@router.get("/{agent_id}/salesforce-credentials")
+async def get_salesforce_credentials(agent_id: str, tenant: str = Depends(authed_tenant),
+                                     svc=Depends(get_agents)) -> dict:
+    agent = await svc.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    return _salesforce_view(agent)
+
+
+@router.delete("/{agent_id}/salesforce-credentials")
+async def disconnect_salesforce(agent_id: str, tenant: str = Depends(authed_tenant),
+                                _role: dict = Depends(require_role(Role.editor)),
+                                svc=Depends(get_agents)) -> dict:
+    try:
+        await svc.update_config(tenant, agent_id, {
+            "salesforce_client_id": None, "salesforce_client_secret_encrypted": None,
+            "salesforce_instance_url": None, "salesforce_credentials_added": False,
+        })
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="agent not found") from e
+    return {"disconnected": True}
+
+
+@router.post("/{agent_id}/salesforce-credentials/test")
+async def test_salesforce_credentials(agent_id: str, tenant: str = Depends(authed_tenant),
+                                      _role: dict = Depends(require_role(Role.editor)),
+                                      svc=Depends(get_agents)) -> dict:
+    import asyncio
+
+    from app.core.crypto import decrypt
+    from app.integrations.clients import SalesforceAuthError, SalesforceClient
+
+    agent = await svc.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    cfg = agent.config
+    if not cfg.get("salesforce_credentials_added"):
+        raise HTTPException(status_code=422, detail="no Salesforce connection configured for this worker")
+    client = SalesforceClient(client_id=cfg["salesforce_client_id"],
+                              client_secret=decrypt(cfg["salesforce_client_secret_encrypted"]),
+                              instance_url=cfg["salesforce_instance_url"])
+    try:
+        return await asyncio.to_thread(client.test_connection)
+    except SalesforceAuthError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e

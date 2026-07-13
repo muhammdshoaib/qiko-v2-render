@@ -12,11 +12,13 @@ import {
 import { Badge, Button, Card, CardContent, Input, Label, Skeleton, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
+import { CrmPipeline } from "@/components/crm-pipeline";
 import {
   addBehavior, addFaq, addPolicy, addWebsite, ask, batchAnswer, batchExportUrl, connectTeamsWebhook,
-  createRfpPack, deleteDocument, disconnectTeamsWebhook, getTeamsWebhookStatus, getVapiCredentials,
-  ingest, listAgents, listDocuments, listLeads, listRfpPacks, saveVapiCredentials, setPackOutcome,
-  testTeamsWebhook, updateAgentConfig, updateCalendlyEventType, type Agent, type BatchAnswer, type Doc, type RfpPack,
+  createRfpPack, deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, getSalesforceCredentials,
+  getTeamsWebhookStatus, getVapiCredentials, ingest, listAgents, listDocuments, listRfpPacks,
+  saveSalesforceCredentials, saveVapiCredentials, setPackOutcome, testSalesforceConnection, testTeamsWebhook,
+  updateAgentConfig, updateCalendlyEventType, type Agent, type BatchAnswer, type Doc, type RfpPack,
 } from "@/lib/api";
 
 const TABS = [
@@ -129,7 +131,7 @@ export default function WorkerDetailPage() {
             <TrainTab id={id} worker={worker} docs={docs.data} loading={docs.isLoading}
               onKnowledgeChange={refresh} onWorkerChange={refreshAgents} />
           )}
-          {tab === "CRM" && <CrmTab />}
+          {tab === "CRM" && <CrmTab id={id} />}
           {tab === "Connections" && <ConnectionsTab id={id} worker={worker} />}
           {tab === "Chat" && <ChatTab id={id} worker={worker} />}
           {tab === "Batch" && <BatchTab id={id} />}
@@ -354,34 +356,15 @@ function TendersCard({ agentId, packs, onChange }: { agentId: string; packs?: Rf
   );
 }
 
-function CrmTab() {
-  const leads = useQuery({ queryKey: ["leads"], queryFn: listLeads });
+function CrmTab({ id }: { id: string }) {
   return (
-    <Card>
-      <CardContent className="pt-6 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold">Captured leads</p>
-          <Badge variant="muted">{leads.data?.length ?? 0}</Badge>
-        </div>
-        {leads.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
-        {leads.data?.map((l) => (
-          <div key={l.id} className="flex items-center justify-between rounded-lg border border-border/60 p-3 text-sm">
-            <div>
-              <p className="font-medium">{l.name}</p>
-              <p className="text-xs text-muted-foreground">{l.email}</p>
-            </div>
-            <Badge variant="muted">{l.kind}</Badge>
-          </div>
-        ))}
-        {leads.data?.length === 0 && (
-          <p className="text-sm text-muted-foreground">No leads captured yet -- they show up here as visitors submit an enterprise or RAG-wired form.</p>
-        )}
-      </CardContent>
-    </Card>
+    <div className="h-[70vh]">
+      <CrmPipeline agentId={id} />
+    </div>
   );
 }
 
-const CONNECTIONS_SUBTABS = ["Voice", "Calendly", "Teams"] as const;
+const CONNECTIONS_SUBTABS = ["Voice", "Calendly", "Teams", "Salesforce"] as const;
 
 function ConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
   const [sub, setSub] = useState<(typeof CONNECTIONS_SUBTABS)[number]>("Voice");
@@ -392,13 +375,91 @@ function ConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
           <button key={s} onClick={() => setSub(s)}
             className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
               sub === s ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-            {s === "Voice" ? <Phone className="size-3.5" /> : s === "Calendly" ? <Calendar className="size-3.5" /> : <Users className="size-3.5" />} {s}
+            {s === "Voice" ? <Phone className="size-3.5" /> : s === "Calendly" ? <Calendar className="size-3.5" /> : s === "Teams" ? <Users className="size-3.5" /> : <Share2 className="size-3.5" />} {s}
           </button>
         ))}
       </div>
       {sub === "Voice" && <VoiceSubTab id={id} />}
       {sub === "Calendly" && <CalendlySubTab id={id} worker={worker} />}
       {sub === "Teams" && <TeamsSubTab />}
+      {sub === "Salesforce" && <SalesforceSubTab id={id} />}
+    </div>
+  );
+}
+
+function SalesforceSubTab({ id }: { id: string }) {
+  const qc = useQueryClient();
+  const [clientId, setClientId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
+  const [instanceUrl, setInstanceUrl] = useState("");
+  const [testResult, setTestResult] = useState<"idle" | "ok" | "error">("idle");
+  const creds = useQuery({ queryKey: ["salesforce-credentials", id], queryFn: () => getSalesforceCredentials(id) });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["salesforce-credentials", id] });
+  const save = useMutation({
+    mutationFn: () => saveSalesforceCredentials(id, { client_id: clientId, client_secret: clientSecret, instance_url: instanceUrl }),
+    onSuccess: () => { setClientSecret(""); invalidate(); },
+  });
+  const disconnect = useMutation({ mutationFn: () => disconnectSalesforce(id), onSuccess: invalidate });
+  const test = useMutation({
+    mutationFn: () => testSalesforceConnection(id),
+    onSuccess: () => setTestResult("ok"),
+    onError: () => setTestResult("error"),
+  });
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="font-medium">Salesforce</p>
+        <p className="text-sm text-muted-foreground">Sync this worker&apos;s CRM pipeline contacts to Salesforce as Leads.</p>
+      </div>
+
+      {!creds.data?.salesforce_credentials_added && (
+        <Card className="border-amber-500/30 bg-amber-500/5"><CardContent className="space-y-2 pt-6 text-sm">
+          <p className="font-medium">Connected App required</p>
+          <p className="text-muted-foreground">Create a Connected App in your Salesforce org with the Client Credentials OAuth flow enabled, then paste its details here. This is the same connection for every worker -- nothing here is specific to one client.</p>
+          <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
+            <li>Salesforce Setup {"\u2192"} App Manager {"\u2192"} New Connected App.</li>
+            <li>Enable OAuth Settings, add the <b>Client Credentials Flow</b>, and run as an integration user.</li>
+            <li>Copy the Consumer Key (Client ID) and Consumer Secret (Client Secret).</li>
+          </ol>
+        </CardContent></Card>
+      )}
+
+      <Card><CardContent className="space-y-4 pt-6">
+        <p className="text-sm">Status: <span className="font-medium">{creds.data?.salesforce_credentials_added ? `Connected to ${creds.data.instance_url}` : "Not connected"}</span></p>
+        {creds.data?.salesforce_credentials_added ? (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" disabled={test.isPending} onClick={() => test.mutate()}>
+              {test.isPending ? "Testing..." : "Test connection"}
+            </Button>
+            <Button variant="outline" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
+              Disconnect
+            </Button>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-1.5">
+              <Label>Instance URL</Label>
+              <Input placeholder="https://yourorg.my.salesforce.com" value={instanceUrl} onChange={(e) => setInstanceUrl(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Client ID (Consumer Key)</Label>
+              <Input value={clientId} onChange={(e) => setClientId(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Client Secret (Consumer Secret)</Label>
+              <Input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} />
+            </div>
+            <div className="flex justify-end">
+              <Button disabled={!clientId || !clientSecret || !instanceUrl || save.isPending} onClick={() => save.mutate()}>
+                {save.isPending ? "Connecting..." : "Connect"}
+              </Button>
+            </div>
+          </>
+        )}
+        {testResult === "ok" && <p className="text-xs text-emerald-600">Connection works.</p>}
+        {testResult === "error" && <p className="text-xs text-red-500">Couldn&apos;t authenticate with Salesforce -- check the client id/secret and instance URL.</p>}
+      </CardContent></Card>
     </div>
   );
 }

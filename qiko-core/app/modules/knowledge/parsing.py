@@ -11,7 +11,7 @@ import io
 import json
 import re
 
-SUPPORTED = {"txt", "md", "csv", "json", "jsonl", "pdf", "docx", "xlsx", "xls"}
+SUPPORTED = {"txt", "md", "csv", "json", "jsonl", "pdf", "docx", "xlsx", "xls", "html", "htm"}
 
 
 class UnsupportedDocumentError(Exception):
@@ -88,10 +88,54 @@ def _read_pdf(data: bytes) -> str:  # pragma: no cover - exercised via integrati
     return "\n".join(page.extract_text() or "" for page in reader.pages)
 
 
+class _HtmlTextExtractor:
+    """Minimal HTML -> text (stdlib html.parser, no new dependency): drops <script>/<style>,
+    keeps visible text, and inserts a newline at block-level tag boundaries so paragraphs and
+    headings don't run together -- good enough for "paste a tender webpage URL", which just
+    needs readable text fed into the same chunk/extract pipeline as an uploaded document."""
+    _BLOCK_TAGS = {"p", "div", "br", "li", "tr", "h1", "h2", "h3", "h4", "h5", "h6", "section", "article"}
+    _SKIP_TAGS = {"script", "style", "noscript", "head"}
+
+    def __init__(self) -> None:
+        from html.parser import HTMLParser
+
+        self._chunks: list[str] = []
+        self._skip_depth = 0
+
+        class _Parser(HTMLParser):
+            def handle_starttag(p_self, tag, attrs):  # noqa: N805 - HTMLParser convention
+                if tag in self._SKIP_TAGS:
+                    self._skip_depth += 1
+                elif tag in self._BLOCK_TAGS:
+                    self._chunks.append("\n")
+
+            def handle_endtag(p_self, tag):  # noqa: N805
+                if tag in self._SKIP_TAGS:
+                    self._skip_depth = max(0, self._skip_depth - 1)
+                elif tag in self._BLOCK_TAGS:
+                    self._chunks.append("\n")
+
+            def handle_data(p_self, data):  # noqa: N805
+                if self._skip_depth == 0 and data.strip():
+                    self._chunks.append(data)
+
+        self._parser = _Parser()
+
+    def extract(self, html: str) -> str:
+        self._parser.feed(html)
+        self._parser.close()
+        return "".join(self._chunks)
+
+
+def _read_html(data: bytes) -> str:
+    return _HtmlTextExtractor().extract(data.decode("utf-8", "ignore"))
+
+
 _EXTRACTORS = {
     "txt": _read_text, "md": _read_text, "csv": _read_csv,
     "json": _read_json, "jsonl": _read_jsonl,
     "docx": _read_docx, "xlsx": _read_xlsx, "xls": _read_xlsx, "pdf": _read_pdf,
+    "html": _read_html, "htm": _read_html,
 }
 
 

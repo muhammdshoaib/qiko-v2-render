@@ -11,8 +11,8 @@ import { Badge, Button, Card, CardContent, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import { AnswerMarkdown, ChatBubble, TypingIndicator } from "@/components/chat-message";
 import {
-  askBidContext, type Answer, complianceCheck, type ComplianceItem, exportUrl, getAnswers, getRfpPack,
-  ingestFile, listDocuments, listRequirements, submitFeedback, tenderBrief, type TenderBrief,
+  askBidContext, type Answer, complianceCheck, type ComplianceItem, exportUrl, extractFromUrl, getAnswers, getRfpPack,
+  ingestFile, listDocuments, listRequirements, scoreOpportunity, submitFeedback, tenderBrief, type TenderBrief,
 } from "@/lib/api";
 
 const TABS = ["Overview", "Sources", "Tender Brief", "Sections", "Compliance", "Chat", "Export"] as const;
@@ -93,7 +93,7 @@ export default function TenderCockpitPage() {
         </div>
 
         {tab === "Overview" && (
-          <OverviewTab answers={answers.data} pack={pack.data} onOpenTab={openTab} />
+          <OverviewTab packId={packId} answers={answers.data} pack={pack.data} onOpenTab={openTab} />
         )}
         {tab === "Sources" && <SourcesTab docs={sources.data} loading={sources.isLoading} onIngested={() => qc.invalidateQueries({ queryKey: ["documents"] })} />}
         {tab === "Tender Brief" && <BriefTab packId={packId} documentText={pack.data?.document_text ?? ""} />}
@@ -127,8 +127,8 @@ function outcomeCard(label: string, value: string, sub: string, color?: string) 
   );
 }
 
-function OverviewTab({ answers, pack, onOpenTab }: {
-  answers?: Answer[]; pack?: { title: string; client_name: string; deadline: string | null; document_text: string };
+function OverviewTab({ packId, answers, pack, onOpenTab }: {
+  packId: string; answers?: Answer[]; pack?: { title: string; client_name: string; deadline: string | null; document_text: string };
   onOpenTab: (t: Tab) => void;
 }) {
   const total = answers?.length ?? 0;
@@ -136,6 +136,14 @@ function OverviewTab({ answers, pack, onOpenTab }: {
   const review = answers?.filter((a) => a.classification === "KB" && a.status !== "auto_accept").length ?? 0;
   const srcs = new Set<string>();
   answers?.forEach((a) => a.citations.forEach((c) => srcs.add(c)));
+
+  const score = useMutation({ mutationFn: () => scoreOpportunity(packId) });
+  const qc = useQueryClient();
+  const [tenderUrl, setTenderUrl] = useState("");
+  const importUrl = useMutation({
+    mutationFn: () => extractFromUrl(packId, tenderUrl),
+    onSuccess: () => { setTenderUrl(""); qc.invalidateQueries({ queryKey: ["rfp-pack", packId] }); qc.invalidateQueries({ queryKey: ["rfp-requirements", packId] }); },
+  });
 
   return (
     <div className="space-y-4">
@@ -159,17 +167,49 @@ function OverviewTab({ answers, pack, onOpenTab }: {
               <Button size="sm" onClick={() => onOpenTab("Sections")}><Layers className="size-3.5" /> Review answers</Button>
               <Button size="sm" variant="outline" onClick={() => onOpenTab("Tender Brief")}><FileText className="size-3.5" /> Tender brief</Button>
             </div>
+            {!pack?.document_text && (
+              <form onSubmit={(e) => { e.preventDefault(); if (tenderUrl.trim()) importUrl.mutate(); }}
+                className="flex gap-2 pt-2 border-t border-border">
+                <input value={tenderUrl} onChange={(e) => setTenderUrl(e.target.value)}
+                  placeholder="Or paste the tender's webpage URL to import it…"
+                  className="flex-1 rounded-lg border border-input bg-background px-3 py-2 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                <Button type="submit" size="sm" variant="outline" disabled={!tenderUrl.trim() || importUrl.isPending}>
+                  {importUrl.isPending ? "Importing…" : "Import"}
+                </Button>
+              </form>
+            )}
+            {importUrl.isError && <p className="text-xs text-red-400">Couldn&apos;t import that URL -- check it&apos;s a public, reachable page.</p>}
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-6 space-y-2">
-            <p className="text-sm font-semibold">How it works</p>
-            <ul className="text-xs text-muted-foreground space-y-2 list-none">
-              <li>Answers are drafted only from your knowledge base, with cited sources.</li>
-              <li>A second model checks each draft against the evidence as an internal quality gate.</li>
-              <li>Drafts that do not clear the internal bar are sent for human review, never auto-accepted.</li>
-              <li>Your approvals and edits are written back to strengthen the next bid.</li>
-            </ul>
+          <CardContent className="pt-6 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold">Should we bid this?</p>
+              <Button size="sm" variant="outline" disabled={score.isPending || !pack?.document_text} onClick={() => score.mutate()}>
+                {score.isPending ? "Scoring…" : "Score opportunity"}
+              </Button>
+            </div>
+            {!score.data && !score.isPending && (
+              <p className="text-xs text-muted-foreground">Qualify this opportunity against this worker&apos;s own criteria (set in Settings) before committing to a full draft.</p>
+            )}
+            {score.data && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xl font-bold" style={{ fontFamily: "var(--font-display)", color: score.data.qualified ? "#34d399" : "#fbbf24" }}>{score.data.score}</span>
+                  <span className="text-xs text-muted-foreground">/100 · {score.data.qualified ? "Worth pursuing" : "Marginal fit"}</span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed">{score.data.rationale}</p>
+                <ul className="text-xs space-y-1 list-none">
+                  {score.data.criteria_results.map((cr, i) => (
+                    <li key={i} className="flex gap-1.5 items-start">
+                      <span className={cr.met ? "text-emerald-400" : "text-amber-400"}>{cr.met ? "✓" : "△"}</span>
+                      <span className="text-muted-foreground">{cr.criterion}{cr.note ? ` — ${cr.note}` : ""}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {score.isError && <p className="text-xs text-red-400">Couldn&apos;t score this opportunity -- try again in a moment.</p>}
           </CardContent>
         </Card>
       </div>

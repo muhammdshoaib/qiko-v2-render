@@ -101,6 +101,10 @@ def get_assignments(request: Request):
     return request.app.state.assignments
 
 
+def get_crm(request: Request):
+    return request.app.state.crm
+
+
 def get_chat(request: Request):
     return request.app.state.chat
 

@@ -26,7 +26,7 @@ async def public_chat(body: PublicChatBody, request: Request) -> dict:
         raise HTTPException(status_code=404, detail="worker not found")
     worker = await build_tenant_worker(request, body.tenant, agent_id=body.worker_id)  # this worker's own config
     try:
-        msg = await public_ask(worker, request.app.state.chat, user_email=body.user_email,
+        msg = await public_ask(worker, request.app.state.chat, agent_id=body.worker_id, user_email=body.user_email,
                                question=body.question, agent_ready=(agent.status == "ready"),
                                studio=body.studio)
     except AgentNotReadyError as e:

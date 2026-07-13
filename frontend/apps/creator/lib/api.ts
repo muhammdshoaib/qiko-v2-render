@@ -56,6 +56,17 @@ export const saveVapiCredentials = (agentId: string, body: { vapi_assistant_id: 
 export const updateCalendlyEventType = (agentId: string, calendly_event_type: string) =>
   request<Agent>(`/agents/${agentId}/calendly-event-type`, { method: "PUT", body: JSON.stringify({ calendly_event_type }) });
 
+// Connections: Salesforce (client-credentials grant against the tenant's own Connected App --
+// reusable per-worker, same shape as Vapi, not customer-specific -- see integrations/clients.py)
+export type SalesforceCredentials = { salesforce_credentials_added: boolean; instance_url: string; client_id_masked: string };
+export const getSalesforceCredentials = (agentId: string) => request<SalesforceCredentials>(`/agents/${agentId}/salesforce-credentials`);
+export const saveSalesforceCredentials = (agentId: string, body: { client_id: string; client_secret: string; instance_url: string }) =>
+  request<SalesforceCredentials>(`/agents/${agentId}/salesforce-credentials`, { method: "POST", body: JSON.stringify(body) });
+export const disconnectSalesforce = (agentId: string) =>
+  request<{ disconnected: boolean }>(`/agents/${agentId}/salesforce-credentials`, { method: "DELETE" });
+export const testSalesforceConnection = (agentId: string) =>
+  request<{ ok: boolean }>(`/agents/${agentId}/salesforce-credentials/test`, { method: "POST" });
+
 // Connections: Microsoft Teams (notifications via a per-tenant Incoming Webhook)
 export type TeamsWebhookStatus = { connected: boolean; connected_at: string | null };
 export const getTeamsWebhookStatus = () => request<TeamsWebhookStatus>("/channels/teams/webhook");
@@ -164,6 +175,14 @@ export const complianceCheck = (packId: string, documentText: string) =>
 
 export const exportUrl = (packId: string, kind: "xlsx" | "docx-clean" | "docx-review") => `${BASE}/rfp/packs/${packId}/export/${kind}`;
 
+export type OpportunityScore = {
+  score: number; qualified: boolean; rationale: string;
+  criteria_results: { criterion: string; met: boolean; note: string }[];
+};
+export const scoreOpportunity = (packId: string) => request<OpportunityScore>(`/rfp/packs/${packId}/score`, { method: "POST" });
+export const extractFromUrl = (packId: string, url: string) =>
+  request<unknown[]>(`/rfp/packs/${packId}/extract-url`, { method: "POST", body: JSON.stringify({ url }) });
+
 export type Answer = {
   req_id: string; req_title: string; classification: string; requirement: string;
   answer: string; confidence: number; grounding: number; status: string;
@@ -193,6 +212,42 @@ export async function ingestFile(docId: string, file: File): Promise<{ chunks: n
 // Leads captured through public forms (enterprise / RAG-wired) -- shown as a lightweight CRM.
 export type Lead = { id: string; kind: string; name: string; email: string; payload: Record<string, unknown>; created_at: string };
 export const listLeads = () => request<Lead[]>("/leads");
+
+// CRM / Sales Pipeline -- real prospects derived from a worker's own chat history (app.modules.crm).
+export type CrmContact = {
+  id: string; agentId: string; conversationId: string | null; name: string; email: string | null;
+  phone: string | null; status: "new" | "contacted" | "interested" | "quoted" | "converted" | "lost";
+  estimatedValue: number; currency: string; aiSummary: string | null; sentiment: string | null;
+  keyTopics: string[]; createdAt: string; updatedAt: string;
+};
+export type CrmPipeline = { contacts: CrmContact[]; total: number; dashboard: { statusBreakdown: Record<string, number> } };
+export const getCrmPipeline = (agentId: string) => request<CrmPipeline>(`/crm/${agentId}`);
+
+export type CrmTimelineEvent = { type: string; role: string; title: string; summary: string; timestamp: string };
+export type CrmAction = { id: string; contactId: string; actionType: string; title: string; description: string; priority: string; status: string; createdAt: string };
+export type CrmContactDetail = {
+  contact: CrmContact; timeline: CrmTimelineEvent[]; actions: CrmAction[]; bookings: unknown[];
+  stats: { messageCount: number; voiceCallCount: number; emailCount: number };
+};
+export const getCrmContact = (contactId: string) => request<CrmContactDetail>(`/crm/contacts/${contactId}`);
+
+export const updateCrmContact = (contactId: string, patch: Partial<{
+  name: string; email: string; phone: string; status: string; estimated_value: number;
+}>) => request<CrmContact>(`/crm/contacts/${contactId}`, { method: "PATCH", body: JSON.stringify(patch) });
+
+export const generateCrmSummary = (contactId: string) =>
+  request<CrmContact>(`/crm/contacts/${contactId}/summary`, { method: "POST" });
+
+export const addCrmAction = (contactId: string, title: string, opts: { actionType?: string; description?: string; priority?: string } = {}) =>
+  request<CrmAction>(`/crm/contacts/${contactId}/actions`, {
+    method: "POST", body: JSON.stringify({ title, action_type: opts.actionType, description: opts.description, priority: opts.priority }),
+  });
+
+export const updateCrmAction = (actionId: string, status: string) =>
+  request<CrmAction>(`/crm/actions/${actionId}`, { method: "PATCH", body: JSON.stringify({ status }) });
+
+export const syncCrmContactToSalesforce = (contactId: string) =>
+  request<{ synced: boolean; salesforce_id: string | null }>(`/crm/contacts/${contactId}/sync-salesforce`, { method: "POST" });
 
 // Public embed chat (no auth)
 export const publicChat = (tenant: string, workerId: string, question: string) =>

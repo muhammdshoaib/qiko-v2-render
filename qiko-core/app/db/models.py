@@ -190,3 +190,41 @@ class TeamsWebhook(Base):
     tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     enc_webhook_url: Mapped[str] = mapped_column(String)
     connected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class Contact(Base):
+    """A prospect who has talked to one of a tenant's workers -- the CRM/Sales Pipeline tab's
+    real data source (app.modules.crm), replacing what was a client-side mock in the earlier
+    qiko-frontend build. One contact per (agent, conversation): created lazily the first time a
+    worker's pipeline is viewed, so no separate capture step is needed for the common case."""
+    __tablename__ = "crm_contacts"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    conversation_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    name: Mapped[str] = mapped_column(String(255), default="Anonymous")
+    email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="new")  # pipeline stage
+    estimated_value: Mapped[int] = mapped_column(default=0)  # cents
+    currency: Mapped[str] = mapped_column(String(8), default="USD")
+    ai_summary: Mapped[str | None] = mapped_column(String, nullable=True)
+    sentiment: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    key_topics: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    __table_args__ = (Index("ix_crm_contact_tenant_agent", "tenant_id", "agent_id"),)
+
+
+class CrmAction(Base):
+    """A follow-up action suggested or logged against a CRM contact ("Next Actions" in the pipeline UI)."""
+    __tablename__ = "crm_actions"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    contact_id: Mapped[str] = mapped_column(ForeignKey("crm_contacts.id"), index=True)
+    action_type: Mapped[str] = mapped_column(String(32), default="custom")
+    title: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str | None] = mapped_column(String, nullable=True)
+    priority: Mapped[str] = mapped_column(String(16), default="normal")
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

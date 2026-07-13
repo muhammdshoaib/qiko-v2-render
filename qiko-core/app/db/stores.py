@@ -14,7 +14,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Agent as AgentRow
 from app.db.models import Assignment as AssignmentRow
+from app.db.models import Contact as ContactRow
 from app.db.models import Conversation as ConversationRow
+from app.db.models import CrmAction as CrmActionRow
 from app.db.models import Lead as LeadRow
 from app.db.models import Message as MessageRow
 from app.db.models import PackAnswer as PackAnswerRow
@@ -31,7 +33,8 @@ from app.db.models import VerifiedAnswer
 from app.modules.agents.service import Agent
 from app.modules.assignments.service import Assignment, AssignmentNotFound
 from app.modules.channels.teams_integration import TeamsIntegration
-from app.modules.chat.service import Message
+from app.modules.chat.service import ConversationSummary, Message
+from app.modules.crm.service import Contact, CrmAction
 from app.modules.identity.admin_rbac import AdminRole
 from app.modules.identity.rbac import Role
 from app.modules.identity.store import User
@@ -398,13 +401,22 @@ class SqlChatStore:
                 select(MessageRow).where(MessageRow.tenant_id == tenant,
                                          MessageRow.conversation_id == conversation_id)
                 .order_by(MessageRow.id))).scalars().all()
-            msgs = [Message(role=r.role, text=r.body) for r in rows]
+            msgs = [Message(role=r.role, text=r.body, created_at=r.created_at) for r in rows]
             return msgs[-limit:] if limit else msgs
 
     async def clear(self, tenant: str, conversation_id: str) -> None:
         async with self.sessionmaker() as s, s.begin():
             await s.execute(delete(MessageRow).where(MessageRow.tenant_id == tenant,
                                                      MessageRow.conversation_id == conversation_id))
+
+    async def list_for_agent(self, tenant: str, agent_id: str) -> list[ConversationSummary]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(ConversationRow).where(ConversationRow.tenant_id == tenant,
+                                              ConversationRow.agent_id == agent_id)
+                .order_by(ConversationRow.created_at))).scalars().all()
+            return [ConversationSummary(id=r.id, user_id=r.user_id, agent_id=r.agent_id, created_at=r.created_at)
+                   for r in rows]
 
 
 @dataclass
@@ -535,3 +547,89 @@ class SqlTeamsIntegrationStore:
             row = await s.get(TeamsWebhookRow, tenant)
             if row is not None:
                 await s.delete(row)
+
+
+def _contact_from_row(r: ContactRow) -> Contact:
+    return Contact(id=r.id, tenant=r.tenant_id, agent_id=r.agent_id, conversation_id=r.conversation_id,
+                   name=r.name, email=r.email, phone=r.phone, status=r.status,
+                   estimated_value=r.estimated_value, currency=r.currency, ai_summary=r.ai_summary,
+                   sentiment=r.sentiment, key_topics=list(r.key_topics or []),
+                   created_at=r.created_at, updated_at=r.updated_at)
+
+
+@dataclass
+class SqlContactStore:
+    """Persists CRM/Sales Pipeline contacts -- real data derived from a worker's own chat
+    history, replacing what was a client-side-only mock in the earlier qiko-frontend build."""
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def get(self, tenant: str, contact_id: str) -> Contact | None:
+        async with self.sessionmaker() as s:
+            row = await s.get(ContactRow, contact_id)
+            return _contact_from_row(row) if row and row.tenant_id == tenant else None
+
+    async def get_by_conversation(self, tenant: str, agent_id: str, conversation_id: str) -> Contact | None:
+        async with self.sessionmaker() as s:
+            row = (await s.execute(
+                select(ContactRow).where(ContactRow.tenant_id == tenant, ContactRow.agent_id == agent_id,
+                                         ContactRow.conversation_id == conversation_id))).scalars().first()
+            return _contact_from_row(row) if row else None
+
+    async def add(self, contact: Contact) -> Contact:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(ContactRow(id=contact.id, tenant_id=contact.tenant, agent_id=contact.agent_id,
+                             conversation_id=contact.conversation_id, name=contact.name, email=contact.email,
+                             phone=contact.phone, status=contact.status, estimated_value=contact.estimated_value,
+                             currency=contact.currency, ai_summary=contact.ai_summary, sentiment=contact.sentiment,
+                             key_topics=contact.key_topics, created_at=contact.created_at,
+                             updated_at=contact.updated_at))
+        return contact
+
+    async def update(self, contact: Contact) -> Contact:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(ContactRow, contact.id)
+            if row is not None:
+                row.name, row.email, row.phone = contact.name, contact.email, contact.phone
+                row.status, row.estimated_value = contact.status, contact.estimated_value
+                row.ai_summary, row.sentiment = contact.ai_summary, contact.sentiment
+                row.key_topics, row.updated_at = contact.key_topics, contact.updated_at
+        return contact
+
+    async def list_for_agent(self, tenant: str, agent_id: str) -> list[Contact]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(ContactRow).where(ContactRow.tenant_id == tenant,
+                                         ContactRow.agent_id == agent_id))).scalars().all()
+            return [_contact_from_row(r) for r in rows]
+
+
+@dataclass
+class SqlActionStore:
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def add(self, action: CrmAction) -> CrmAction:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(CrmActionRow(id=action.id, tenant_id=action.tenant, contact_id=action.contact_id,
+                               action_type=action.action_type, title=action.title,
+                               description=action.description, priority=action.priority,
+                               status=action.status, created_at=action.created_at))
+        return action
+
+    async def list_for_contact(self, tenant: str, contact_id: str) -> list[CrmAction]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(CrmActionRow).where(CrmActionRow.tenant_id == tenant,
+                                           CrmActionRow.contact_id == contact_id))).scalars().all()
+            return [CrmAction(id=r.id, tenant=r.tenant_id, contact_id=r.contact_id, title=r.title,
+                              action_type=r.action_type, description=r.description or "",
+                              priority=r.priority, status=r.status, created_at=r.created_at) for r in rows]
+
+    async def update_status(self, tenant: str, action_id: str, status: str) -> CrmAction | None:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(CrmActionRow, action_id)
+            if row is None or row.tenant_id != tenant:
+                return None
+            row.status = status
+            return CrmAction(id=row.id, tenant=row.tenant_id, contact_id=row.contact_id, title=row.title,
+                             action_type=row.action_type, description=row.description or "",
+                             priority=row.priority, status=row.status, created_at=row.created_at)

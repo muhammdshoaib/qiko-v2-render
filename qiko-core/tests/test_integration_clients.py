@@ -3,11 +3,14 @@ response parsing using httpx.MockTransport — no network, no credentials."""
 import json
 
 import httpx
+import pytest
 
 from app.integrations.clients import (
     CalendlyClient,
     ClickUpClient,
     GA4Client,
+    SalesforceAuthError,
+    SalesforceClient,
     SignalEngineClient,
     SlackClient,
     StripeClient,
@@ -106,3 +109,67 @@ def test_ga4_run_report_parses_rows():
     rows = GA4Client(property_id="123", client=_client("https://analyticsdata.googleapis.com/v1beta", handler)).run_report(
         "2026-07-01", "2026-07-07", ["sessions"], ["pagePath"])
     assert rows == [{"pagePath": "/", "sessions": "100"}]
+
+
+def _sf_mock(handler) -> httpx.Client:
+    return httpx.Client(transport=httpx.MockTransport(handler))
+
+
+def test_salesforce_test_connection_fetches_token_then_calls_data_endpoint():
+    calls = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append(str(req.url))
+        if req.url.path == "/services/oauth2/token":
+            body = req.content.decode()
+            assert "grant_type=client_credentials" in body and "client_id=cid1" in body
+            return httpx.Response(200, json={"access_token": "tok123"})
+        assert req.headers["Authorization"] == "Bearer tok123"
+        return httpx.Response(200, json=[{"version": "59.0"}])
+
+    c = SalesforceClient(client_id="cid1", client_secret="secret1",
+                         instance_url="https://acme.my.salesforce.com", client=_sf_mock(handler))
+    result = c.test_connection()
+    assert result == {"ok": True, "versions": 1}
+    assert calls[0].endswith("/services/oauth2/token")
+    assert calls[1].endswith("/services/data/")
+
+
+def test_salesforce_test_connection_raises_on_bad_credentials():
+    def handler(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": "invalid_client"})
+
+    c = SalesforceClient(client_id="cid1", client_secret="wrong",
+                         instance_url="https://acme.my.salesforce.com", client=_sf_mock(handler))
+    with pytest.raises(SalesforceAuthError):
+        c.test_connection()
+
+
+def test_salesforce_create_lead_sends_required_fields():
+    seen = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/services/oauth2/token":
+            return httpx.Response(200, json={"access_token": "tok123"})
+        seen["url"] = str(req.url)
+        seen["body"] = json.loads(req.content)
+        return httpx.Response(201, json={"id": "00Q1", "success": True})
+
+    c = SalesforceClient(client_id="cid1", client_secret="secret1",
+                         instance_url="https://acme.my.salesforce.com/", client=_sf_mock(handler))
+    result = c.create_lead(last_name="Jane Doe", company="Acme Inc", email="jane@acme.com", phone="555-1234")
+    assert result["id"] == "00Q1"
+    assert seen["url"].endswith("/services/data/v59.0/sobjects/Lead")
+    assert seen["body"] == {"LastName": "Jane Doe", "Company": "Acme Inc", "Email": "jane@acme.com", "Phone": "555-1234"}
+
+
+def test_salesforce_create_lead_raises_on_failure():
+    def handler(req: httpx.Request) -> httpx.Response:
+        if req.url.path == "/services/oauth2/token":
+            return httpx.Response(200, json={"access_token": "tok123"})
+        return httpx.Response(400, json=[{"message": "Required fields are missing"}])
+
+    c = SalesforceClient(client_id="cid1", client_secret="secret1",
+                         instance_url="https://acme.my.salesforce.com", client=_sf_mock(handler))
+    with pytest.raises(SalesforceAuthError):
+        c.create_lead(last_name="", company="Acme")

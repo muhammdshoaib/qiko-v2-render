@@ -29,14 +29,19 @@ def studio_context_blocks(studio: dict | None) -> list[str]:
     return blocks
 
 
-async def public_ask(worker: Worker, chat: ChatService, *, user_email: str, question: str,
+async def public_ask(worker: Worker, chat: ChatService, *, agent_id: str, user_email: str, question: str,
                      agent_ready: bool, topic: str | None = None, studio: dict | None = None) -> Message:
     """Answer a public/embed chat turn. Requires the agent to be ready; merges Studio context
-    into the grounded requirement before running agentcore."""
+    into the grounded requirement before running agentcore.
+
+    `agent_id` is the real agent id (as used everywhere else a worker is referenced, e.g. the
+    CRM pipeline / Sections tab URLs) -- NOT worker.name (its display name, which is what this
+    used to key the conversation by, so every public-embed chat silently recorded itself under
+    the wrong agent and could never be found by anything looking up "this worker's contacts")."""
     if not agent_ready:
         raise AgentNotReadyError("agent is not ready for public chat")
     tenant = worker.config.tenant
-    cid = await chat.find_or_create(tenant, user_email, worker.name)
+    cid = await chat.find_or_create(tenant, user_email, agent_id)
     await chat.post(tenant, cid, "user", question)
 
     extra = studio_context_blocks(studio)

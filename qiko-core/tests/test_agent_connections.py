@@ -74,3 +74,82 @@ def test_connections_require_editor_role(client):
     }).status_code == 403
     assert client.put("/api/v1/agents/x/calendly-event-type", cookies=c,
                       json={"calendly_event_type": "y"}).status_code == 403
+
+
+def test_salesforce_credentials_save_and_masked_retrieve(client):
+    c = auth_cookies("sfco", "owner")
+    agent = client.post("/api/v1/agents", json={"name": "IDG Sales"}, cookies=c).json()
+
+    save = client.post(f"/api/v1/agents/{agent['id']}/salesforce-credentials", cookies=c, json={
+        "client_id": "3MVG9...client", "client_secret": "supersecret", "instance_url": "https://acme.my.salesforce.com",
+    })
+    assert save.status_code == 200
+    body = save.json()
+    assert body["salesforce_credentials_added"] is True
+    assert body["instance_url"] == "https://acme.my.salesforce.com"
+    assert "supersecret" not in save.text
+    assert body["client_id_masked"] and body["client_id_masked"] != "3MVG9...client"
+
+    fetched = client.get(f"/api/v1/agents/{agent['id']}/salesforce-credentials", cookies=c)
+    assert fetched.status_code == 200 and fetched.json()["salesforce_credentials_added"] is True
+    assert "supersecret" not in fetched.text
+
+    listed = client.get("/api/v1/agents", cookies=c)
+    assert "salesforce_client_secret_encrypted" not in listed.text
+
+
+def test_salesforce_credentials_rejects_non_https_instance_url(client):
+    c = auth_cookies("sfco2", "owner")
+    agent = client.post("/api/v1/agents", json={"name": "IDG"}, cookies=c).json()
+    r = client.post(f"/api/v1/agents/{agent['id']}/salesforce-credentials", cookies=c, json={
+        "client_id": "cid", "client_secret": "secret", "instance_url": "http://not-https.example.com",
+    })
+    assert r.status_code == 422
+
+
+def test_salesforce_disconnect_clears_credentials(client):
+    c = auth_cookies("sfco3", "owner")
+    agent = client.post("/api/v1/agents", json={"name": "IDG"}, cookies=c).json()
+    client.post(f"/api/v1/agents/{agent['id']}/salesforce-credentials", cookies=c, json={
+        "client_id": "cid", "client_secret": "secret", "instance_url": "https://acme.my.salesforce.com",
+    })
+
+    disconnected = client.delete(f"/api/v1/agents/{agent['id']}/salesforce-credentials", cookies=c)
+    assert disconnected.status_code == 200 and disconnected.json()["disconnected"] is True
+
+    fetched = client.get(f"/api/v1/agents/{agent['id']}/salesforce-credentials", cookies=c).json()
+    assert fetched["salesforce_credentials_added"] is False and fetched["instance_url"] == ""
+
+
+def test_salesforce_test_connection_requires_credentials_first(client):
+    c = auth_cookies("sfco4", "owner")
+    agent = client.post("/api/v1/agents", json={"name": "IDG"}, cookies=c).json()
+    r = client.post(f"/api/v1/agents/{agent['id']}/salesforce-credentials/test", cookies=c)
+    assert r.status_code == 422
+
+
+def test_salesforce_test_connection_succeeds(client, monkeypatch):
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def test_connection(self):
+            return {"ok": True, "versions": 5}
+
+    monkeypatch.setattr("app.integrations.clients.SalesforceClient", _FakeClient)
+    c = auth_cookies("sfco5", "owner")
+    agent = client.post("/api/v1/agents", json={"name": "IDG"}, cookies=c).json()
+    client.post(f"/api/v1/agents/{agent['id']}/salesforce-credentials", cookies=c, json={
+        "client_id": "cid", "client_secret": "secret", "instance_url": "https://acme.my.salesforce.com",
+    })
+    r = client.post(f"/api/v1/agents/{agent['id']}/salesforce-credentials/test", cookies=c)
+    assert r.status_code == 200 and r.json() == {"ok": True, "versions": 5}
+
+
+def test_salesforce_connections_require_editor_role(client):
+    c = auth_cookies("sfco6", "viewer")
+    assert client.post("/api/v1/agents/x/salesforce-credentials", cookies=c, json={
+        "client_id": "a", "client_secret": "b", "instance_url": "https://x.salesforce.com",
+    }).status_code == 403
+    assert client.delete("/api/v1/agents/x/salesforce-credentials", cookies=c).status_code == 403
+    assert client.post("/api/v1/agents/x/salesforce-credentials/test", cookies=c).status_code == 403
