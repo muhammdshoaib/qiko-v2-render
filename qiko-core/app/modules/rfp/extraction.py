@@ -83,7 +83,7 @@ def _parse_llm_json_array(text: str) -> list[dict]:
     return parsed
 
 
-def _validate_items(raw_items: list) -> list[dict]:
+def _validate_items(raw_items: list, *, id_prefix: str = "") -> list[dict]:
     out: list[dict] = []
     for i, item in enumerate(raw_items):
         if not isinstance(item, dict):
@@ -93,7 +93,7 @@ def _validate_items(raw_items: list) -> list[dict]:
         except ValidationError:
             continue  # drop malformed items, keep the well-formed ones
         out.append({
-            "id": validated.id or f"R{i + 1}",
+            "id": validated.id or f"{id_prefix}R{i + 1}",
             "title": validated.title or f"Section {i + 1}",
             "classification": validated.classification,
             "requirement": validated.requirement,
@@ -101,11 +101,16 @@ def _validate_items(raw_items: list) -> list[dict]:
     return out
 
 
-def extract_requirements(tender_text: str, provider: LLMProvider, *, max_chars: int = 60_000) -> list[dict]:
+def extract_requirements(tender_text: str, provider: LLMProvider, *, max_chars: int = 60_000,
+                         id_prefix: str = "") -> list[dict]:
     """Extract a document-agnostic requirements list from raw tender text.
 
     Returns a list of {id, title, classification, requirement} dicts, schema-validated (malformed
     items dropped individually). Retries once if the model's response can't be parsed at all.
+
+    `id_prefix` disambiguates the fallback id ("R1", "R2", ...) used when the model omits one --
+    only relevant when this is called once per chunk of a larger document (see chunk_document /
+    extract_requirements_from_document) so two chunks' fallback ids can't collide.
     """
     truncated = tender_text[:max_chars]
     last_error: Exception | None = None
@@ -113,10 +118,44 @@ def extract_requirements(tender_text: str, provider: LLMProvider, *, max_chars: 
         try:
             response = provider.generate(f"TENDER DOCUMENT:\n{truncated}", system=SYSTEM, temperature=0.0)
             raw_items = _parse_llm_json_array(response.text)
-            out = _validate_items(raw_items)
+            out = _validate_items(raw_items, id_prefix=id_prefix)
             if out:
                 return out
             last_error = ExtractionError("no valid requirements after schema validation")
         except ExtractionError as e:
             last_error = e
     raise last_error or ExtractionError("no requirements could be extracted from this document")
+
+
+def chunk_document(text: str, *, max_chars: int = 25_000, overlap_chars: int = 1_500) -> list[str]:
+    """Split a long tender document into overlapping chunks so extraction no longer needs one LLM
+    call to cover the entire document in a single completion. A tender in the tens of thousands
+    of chars was routinely hitting Bedrock's read timeout in one shot -- both the prompt (a whole
+    document) and the expected completion (every requirement, sub-split where applicable) got too
+    large to finish reliably within any reasonable timeout. Splitting into smaller, independent
+    chunks that extract in parallel (see rfp/router.py) fixes both: each call is faster and the
+    document is no longer truncated at a fixed char budget regardless of its real length.
+
+    Splits on a paragraph boundary within the tail of the window where possible, so a requirement
+    's text isn't cut mid-sentence; a bit of overlap between consecutive chunks means a section
+    straddling a boundary is still fully visible in at least one chunk (extract_requirements_from_
+    document dedupes by id, so seeing the same section twice is harmless)."""
+    if len(text) <= max_chars:
+        return [text]
+    chunks: list[str] = []
+    start = 0
+    n = len(text)
+    while start < n:
+        end = min(start + max_chars, n)
+        if end < n:
+            search_from = start + int(max_chars * 0.8)
+            boundary = text.rfind("\n\n", search_from, end)
+            if boundary == -1:
+                boundary = text.rfind("\n", search_from, end)
+            if boundary != -1 and boundary > start:
+                end = boundary
+        chunks.append(text[start:end])
+        if end >= n:
+            break
+        start = max(end - overlap_chars, 0)
+    return chunks

@@ -24,7 +24,7 @@ from app.modules.identity.rbac import Role, role_allows
 from app.modules.knowledge.parsing import UnsupportedDocumentError, extract_text
 from app.modules.rfp.brief import BriefError, extract_brief
 from app.modules.rfp.compliance import ComplianceError, extract_compliance
-from app.modules.rfp.extraction import ExtractionError, extract_requirements
+from app.modules.rfp.extraction import ExtractionError, chunk_document, extract_requirements
 from app.modules.rfp.service import CachedAnswer, PackRequirement, RfpPack, RfpPackNotFound
 
 router = APIRouter(prefix="/rfp/packs", tags=["rfp"])
@@ -122,6 +122,48 @@ async def delete_pack(pack_id: str, tenant: str = Depends(authed_tenant),
     return {"deleted": pack_id}
 
 
+_EXTRACT_CONCURRENCY = 4  # bounded so a huge tender doesn't fire a dozen simultaneous LLM calls
+
+
+async def _extract_requirements_chunked(text: str) -> list[dict]:
+    """Split a large tender document into independent chunks and extract each in parallel,
+    instead of one call over the whole document -- see extraction.chunk_document for why: a
+    single call over tens of thousands of chars (both the prompt and the expected completion,
+    every requirement sub-split where applicable) was routinely hitting Bedrock's read timeout,
+    even a generous one. Smaller, parallel chunks are both faster per call and no longer subject
+    to extract_requirements' fixed max_chars truncation regardless of the document's real length.
+
+    Chunk results are merged and deduped by id -- the overlap between consecutive chunks means a
+    section straddling a boundary can appear in two chunks; the first occurrence wins."""
+    chunks = chunk_document(text)
+    if len(chunks) == 1:
+        return await asyncio.to_thread(extract_requirements, chunks[0], get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+
+    semaphore = asyncio.Semaphore(_EXTRACT_CONCURRENCY)
+
+    async def extract_chunk(i: int, chunk: str) -> list[dict]:
+        async with semaphore:
+            try:
+                return await asyncio.to_thread(extract_requirements, chunk,
+                                               get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT),
+                                               id_prefix=f"c{i}-")
+            except ExtractionError:
+                return []  # one bad/timed-out chunk shouldn't sink requirements found in the rest
+
+    results = await asyncio.gather(*(extract_chunk(i, c) for i, c in enumerate(chunks)))
+    merged: list[dict] = []
+    seen_ids: set[str] = set()
+    for chunk_items in results:
+        for item in chunk_items:
+            if item["id"] in seen_ids:
+                continue
+            seen_ids.add(item["id"])
+            merged.append(item)
+    if not merged:
+        raise ExtractionError("no requirements could be extracted from this document")
+    return merged
+
+
 @router.post("/{pack_id}/extract")
 async def extract(pack_id: str, file: UploadFile = File(...), tenant: str = Depends(authed_tenant),
                   _role: dict = Depends(require_role(Role.editor)), packs=Depends(get_rfp_packs),
@@ -139,10 +181,7 @@ async def extract(pack_id: str, file: UploadFile = File(...), tenant: str = Depe
         raise HTTPException(status_code=422, detail=str(e)) from e
 
     try:
-        # extract_requirements() blocks on a synchronous LLM call -- run it off the event loop
-        # thread so a slow tender document doesn't freeze every other request this process is
-        # serving for the whole duration (this took down preprod once already).
-        extracted = await asyncio.to_thread(extract_requirements, text, get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+        extracted = await _extract_requirements_chunked(text)
     except ExtractionError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 

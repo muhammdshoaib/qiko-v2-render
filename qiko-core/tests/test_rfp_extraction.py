@@ -4,7 +4,7 @@ import json
 import pytest
 
 from app.modules.ai.gateway import LLMResponse
-from app.modules.rfp.extraction import ExtractionError, extract_requirements
+from app.modules.rfp.extraction import ExtractionError, chunk_document, extract_requirements
 
 from tests.helpers import auth_cookies
 
@@ -55,6 +55,46 @@ def test_extract_requirements_rejects_empty_array():
         extract_requirements("tender text", _CannedProvider("[]"))
 
 
+def test_extract_requirements_id_prefix_disambiguates_fallback_ids():
+    # No "id" in either item -- both would fall back to "R1"/"R2" without a prefix, colliding
+    # with another chunk's fallback ids once merged (see _extract_requirements_chunked).
+    raw = json.dumps([{"title": "A", "classification": "KB", "requirement": "do a"},
+                      {"title": "B", "classification": "KB", "requirement": "do b"}])
+    items = extract_requirements("tender text", _CannedProvider(raw), id_prefix="c3-")
+    assert [i["id"] for i in items] == ["c3-R1", "c3-R2"]
+
+
+# --- chunk_document ---
+def test_chunk_document_returns_single_chunk_for_short_text():
+    assert chunk_document("short document", max_chars=1000) == ["short document"]
+
+
+def test_chunk_document_splits_long_text_into_overlapping_chunks():
+    text = "\n\n".join(f"Section {i}. " + ("word " * 200) for i in range(20))
+    chunks = chunk_document(text, max_chars=2000, overlap_chars=200)
+    assert len(chunks) > 1
+    # every chunk fits the budget (the paragraph-boundary search can only shrink it, not grow it)
+    assert all(len(c) <= 2000 for c in chunks)
+    # consecutive chunks overlap: the tail of one reappears at the head of the next
+    for a, b in zip(chunks, chunks[1:]):
+        assert a[-100:] in b or b.startswith(a[-50:])
+
+
+def test_chunk_document_prefers_paragraph_boundaries():
+    text = ("A" * 900) + "\n\n" + ("B" * 900) + "\n\n" + ("C" * 900)
+    chunks = chunk_document(text, max_chars=1000, overlap_chars=50)
+    # each chunk should end right at a paragraph boundary, not mid-run of letters
+    assert chunks[0].rstrip("\n") == "A" * 900
+    assert all(len(c) <= 1000 for c in chunks)
+
+
+def test_chunk_document_covers_the_whole_document():
+    text = "\n\n".join(f"para {i} " + ("x" * 500) for i in range(15))
+    chunks = chunk_document(text, max_chars=1500, overlap_chars=100)
+    assert "".join(chunks[0:1])[:20] == text[:20]  # starts at the beginning
+    assert text[-20:] in chunks[-1]  # the tail is covered by the last chunk
+
+
 # --- API-level: full upload -> extract -> list round trip ---
 def test_rfp_extract_endpoint_round_trip(client, monkeypatch):
     monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _CannedProvider(SAMPLE_JSON))
@@ -88,3 +128,55 @@ def test_rfp_extract_404_for_missing_pack(client, monkeypatch):
     r = client.post("/api/v1/rfp/packs/missing/extract", cookies=c,
                     files={"file": ("tender.txt", io.BytesIO(b"text"), "text/plain")})
     assert r.status_code == 404
+
+
+def test_rfp_extract_chunks_a_large_document_and_merges_results(client, monkeypatch):
+    """A document over chunk_document's default max_chars (25k) must be split into multiple
+    chunks, each extracted independently and in parallel, with the results merged -- not
+    truncated to one call's worth of the document like before."""
+    marker_a, marker_b = "UNIQUE_MARKER_ALPHA", "UNIQUE_MARKER_BETA"
+    # Two paragraphs, each padded well past the chunk budget on its own, so this document is
+    # guaranteed to split into (at least) two chunks -- one containing each marker.
+    big_doc = (marker_a + " " + "filler " * 6000) + "\n\n" + (marker_b + " " + "filler " * 6000)
+
+    class _RespondingByMarker:
+        def generate(self, prompt, *, system=None, temperature=0.2):
+            if marker_a in prompt:
+                return LLMResponse(text=json.dumps([{"id": "A1", "title": "From chunk A",
+                                                      "classification": "KB", "requirement": "req a"}]))
+            if marker_b in prompt:
+                return LLMResponse(text=json.dumps([{"id": "B1", "title": "From chunk B",
+                                                      "classification": "KB", "requirement": "req b"}]))
+            return LLMResponse(text="[]")
+
+    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _RespondingByMarker())
+    c = auth_cookies("extractco4", "owner")
+    pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Big Tender"}, cookies=c).json()
+
+    upload = client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
+                         files={"file": ("big.txt", io.BytesIO(big_doc.encode()), "text/plain")})
+    assert upload.status_code == 200
+    ids = {item["req_id"] for item in upload.json()}
+    assert {"A1", "B1"}.issubset(ids)  # both chunks' requirements made it into the merged result
+
+
+def test_rfp_extract_one_bad_chunk_does_not_sink_the_others(client, monkeypatch):
+    marker_a = "UNIQUE_MARKER_GOOD"
+    big_doc = (marker_a + " " + "filler " * 6000) + "\n\n" + ("BAD_CHUNK " + "filler " * 6000)
+
+    class _OneChunkFails:
+        def generate(self, prompt, *, system=None, temperature=0.2):
+            if marker_a in prompt:
+                return LLMResponse(text=json.dumps([{"id": "A1", "title": "Good", "classification": "KB",
+                                                      "requirement": "req a"}]))
+            return LLMResponse(text="not valid json at all")  # this chunk always fails to parse
+
+    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _OneChunkFails())
+    c = auth_cookies("extractco5", "owner")
+    pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Partial Tender"}, cookies=c).json()
+
+    upload = client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
+                         files={"file": ("big.txt", io.BytesIO(big_doc.encode()), "text/plain")})
+    assert upload.status_code == 200
+    ids = {item["req_id"] for item in upload.json()}
+    assert "A1" in ids  # the good chunk's requirement survives even though the other chunk failed
