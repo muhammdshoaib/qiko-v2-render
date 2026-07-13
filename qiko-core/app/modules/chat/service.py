@@ -89,9 +89,20 @@ class ChatService:
     async def post(self, tenant: str, conversation_id: str, role: str, text: str) -> Message:
         return await self.store.append(tenant, conversation_id, role, text)
 
-    async def ask(self, worker: Worker, conversation_id: str, question: str, *, topic: str | None = None) -> Message:
-        """Record the user turn, answer via the worker (agentcore), record and return the reply."""
+    async def ask(self, worker: Worker, conversation_id: str, question: str, *, topic: str | None = None,
+                  agent_id: str | None = None) -> Message:
+        """Record the user turn, answer via the worker (agentcore), record and return the reply.
+
+        `agent_id` (the real agent id, not worker.name -- see public.py's public_ask for why
+        that distinction matters) is used to explicitly create the conversation up front if it
+        doesn't exist yet, so a caller that never calls /chat/conversations first (e.g. the
+        dashboard's own test-chat, which mints its own client-side conversation id) still gets
+        it attributed to the right agent -- otherwise it silently defaults to a generic "public"
+        agent and nothing that looks this worker's conversations up by id (the CRM pipeline)
+        would ever find it."""
         tenant = worker.config.tenant
+        if agent_id:
+            await self.store.ensure(tenant, conversation_id, agent_id=agent_id)
         await self.post(tenant, conversation_id, "user", question)
         result = await worker.answer(conversation_id, question, topic=topic)
         return await self.post(tenant, conversation_id, "assistant", result.answer)
