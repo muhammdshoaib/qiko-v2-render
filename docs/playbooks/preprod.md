@@ -8,17 +8,24 @@ its own database and secrets. Mirrors live as closely as possible.
 from AWS SSM under the preprod prefix. Postgres has automated backups + PITR.
 
 ## Deploy
-Every push to `main` triggers `.github/workflows/deploy-preprod.yml`: GitHub Actions fast-forwards
-the `preprod` branch, then dispatches `.github/deploy/redeploy-preprod.sh` to the preprod host via
-**AWS SSM Run Command** (not a host-side systemd watcher). The workflow health-checks the result
-and rolls back automatically on failure.
+Every push to `main` triggers `.github/workflows/deploy-preprod.yml`. Because the org disables
+deploy keys, code is shipped to the host via **S3** (not a host-side git pull): GitHub Actions
+packages a `git archive` tarball, uploads it to `s3://qiko-v2-preprod-deploy-064247010239/preprod/`
+(keeping the prior artifact as `deploy-previous.tar.gz` for rollback), then dispatches
+`.github/deploy/redeploy-preprod.sh` to the host via **AWS SSM Run Command**. The host downloads
+`deploy-latest.tar.gz`, atomically swaps it into `/opt/docker/qiko/platform` (persistent state
+lives in named docker volumes, independent of the dir), rebuilds, and runs migrations. The
+workflow health-checks and, on failure, restores `deploy-previous.tar.gz` and redeploys.
 
-To deploy manually (e.g. re-running after a transient failure), run the same script directly on
-the host:
+IAM: the CI user `qiko-ci-deploy` has S3 read/write on the deploy prefix; the host role
+`qiko-preprod-ec2` has S3 read on it.
+
+To deploy manually (e.g. re-running after a transient failure), re-run the workflow
+(`gh workflow run deploy-preprod.yml`) or, on the host, run the same script directly — it pulls
+the latest artifact from S3:
 ```bash
 # on the preprod host
-cd /opt/docker/qiko/platform
-bash .github/deploy/redeploy-preprod.sh
+bash /opt/docker/qiko/platform/.github/deploy/redeploy-preprod.sh
 ```
 
 ## Secrets (AWS SSM)
