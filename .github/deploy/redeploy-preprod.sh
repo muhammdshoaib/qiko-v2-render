@@ -24,6 +24,16 @@ if [ ! -f "$BASE/platform.staging/docker-compose.yml" ]; then
   echo "FATAL: artifact missing docker-compose.yml -- refusing to swap" >&2; exit 1
 fi
 
+# Preserve the live .env across the swap. It's the source of truth once set (contains
+# POSTGRES_PASSWORD, SESSION_SECRET, Bedrock/Stripe/SMTP config, PUBLIC_API_BASE baked into the
+# frontend build). The git-archive artifact never contains it (gitignored), and the SSM param is
+# only a bootstrap fallback for a fresh host -- so keep the existing one rather than clobber it.
+PRESERVED_ENV=""
+if [ -f "$BASE/platform/.env" ]; then
+  PRESERVED_ENV=$(mktemp)
+  cp "$BASE/platform/.env" "$PRESERVED_ENV"
+fi
+
 rm -rf "$BASE/platform.prev"
 [ -d "$BASE/platform" ] && mv "$BASE/platform" "$BASE/platform.prev"
 mv "$BASE/platform.staging" "$BASE/platform"
@@ -31,12 +41,26 @@ mv "$BASE/platform.staging" "$BASE/platform"
 cd "$BASE/platform" || exit 1
 export COMPOSE_PROJECT_NAME=qiko-preprod
 
-# 3. Env comes from SSM Parameter Store, never baked into the artifact.
-aws ssm get-parameter --region "$REGION" --name /qiko/preprod/ENV --with-decryption \
-  --query Parameter.Value --output text > .env
+# 3. Restore the preserved .env; only bootstrap from SSM if the host has none yet.
+if [ -n "$PRESERVED_ENV" ]; then
+  cp "$PRESERVED_ENV" .env
+else
+  aws ssm get-parameter --region "$REGION" --name /qiko/preprod/ENV --with-decryption \
+    --query Parameter.Value --output text > .env
+fi
+if ! grep -q '^POSTGRES_PASSWORD=' .env; then
+  echo "FATAL: .env is missing POSTGRES_PASSWORD -- refusing to deploy with a broken env" >&2
+  exit 1
+fi
 
 C="docker compose -f docker-compose.yml -f docker-compose.preprod.yml"
-$C up -d --build
+# Build must succeed -- a failed build must never be silently swallowed (set -e is not on, so
+# check explicitly) or the deploy would "succeed" while serving the previous stale images.
+if ! $C build; then
+  echo "FATAL: docker compose build failed" >&2
+  exit 1
+fi
+$C up -d --force-recreate
 sleep 25
 
 # 4. Migrations with retry: qiko-core can still be restarting right after `up -d --build`, and a
