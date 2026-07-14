@@ -22,13 +22,17 @@ class StripeClient:
         key = secret_key or get_settings().stripe_secret_key
         self._c = _client("https://api.stripe.com/v1", {"Authorization": f"Bearer {key}"}, client)
 
-    def create_checkout_session(self, *, customer_id: str, price_id: str, promo: str | None = None) -> str:
+    def create_checkout_session(self, *, customer_id: str, price_id: str, promo: str | None = None,
+                                client_reference_id: str | None = None) -> str:
         base = get_settings().public_base_url
         data = {"mode": "subscription", "customer": customer_id,
                 "line_items[0][price]": price_id, "line_items[0][quantity]": "1",
                 "success_url": f"{base}/checkout/success", "cancel_url": f"{base}/checkout/cancel"}
         if promo:
             data["discounts[0][promotion_code]"] = promo
+        if client_reference_id:
+            # Ties the resulting Stripe customer back to our tenant on the webhook (server-side).
+            data["client_reference_id"] = client_reference_id
         r = self._c.post("/checkout/sessions", data=data)
         r.raise_for_status()
         return r.json()["url"]

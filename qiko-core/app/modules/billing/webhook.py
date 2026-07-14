@@ -7,8 +7,12 @@ from __future__ import annotations
 import hashlib
 import hmac
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from app.modules.channels.webhooks import IdempotencyGuard
+
+if TYPE_CHECKING:
+    from app.modules.billing.subscriptions import SubscriptionService
 
 
 def _parse_sig_header(header: str) -> tuple[str, str]:
@@ -57,6 +61,9 @@ class InvoiceStore:
 class StripeWebhookHandler:
     invoices: InvoiceStore = field(default_factory=InvoiceStore)
     idempotency: IdempotencyGuard = field(default_factory=IdempotencyGuard)
+    # Optional so the handler stays usable/testable standalone; wired in app.main so the webhook
+    # can link tenant<->Stripe-customer and activate the subscription on checkout completion.
+    subscriptions: "SubscriptionService | None" = None
 
     def handle(self, event: dict) -> str:
         """Process a (already signature-verified) event; returns the action taken."""
@@ -73,5 +80,17 @@ class StripeWebhookHandler:
                 status=obj.get("status", "open")))
             return "invoice_synced"
         if etype == "checkout.session.completed":
+            # We set client_reference_id=tenant when creating the checkout session
+            # (subscriptions.start_checkout), so Stripe echoes it back here. That -- never client
+            # input -- is the tenant the new Stripe customer belongs to. Stay defensive: any
+            # missing field is a no-op rather than a crash (a webhook must not 500 on odd shapes).
+            tenant = obj.get("client_reference_id") or ""
+            stripe_customer_id = obj.get("customer") or ""
+            if self.subscriptions is not None and tenant and stripe_customer_id:
+                # Plan carried on session metadata if the checkout set it; else a sensible default.
+                plan = (obj.get("metadata") or {}).get("plan") or "pro"
+                self.subscriptions.link_customer(tenant, stripe_customer_id)
+                self.subscriptions.activate(tenant, plan)
+                return "subscription_activated"
             return "checkout_completed"
         return "ignored"

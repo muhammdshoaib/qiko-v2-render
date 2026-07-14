@@ -41,24 +41,28 @@ class ActivateBody(BaseModel):
     plan: str = "pro"
 
 
-@router.get("/subscription/{customer_id}")
-def subscription_status(customer_id: str, _tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
-    sub = subs.status(customer_id)
+# Every lifecycle endpoint below derives its subject from `authed_tenant` (the verified token
+# claim) and NEVER from a client-supplied id. That structurally closes the cross-tenant BOLA
+# (OWASP A01/API1): there is simply no request field a caller could set to act on another
+# tenant's subscription. The `customer_id` echoed back in responses is the tenant, kept only for
+# client-shape continuity.
+@router.get("/subscription")
+def subscription_status(tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
+    sub = subs.status(tenant)
     if not sub:
-        return {"customer_id": customer_id, "status": "none"}
-    return {"customer_id": customer_id, "plan": sub.plan, "status": sub.status,
+        return {"customer_id": tenant, "status": "none"}
+    return {"customer_id": tenant, "plan": sub.plan, "status": sub.status,
             "cancel_at_period_end": sub.cancel_at_period_end}
 
 
-@router.post("/subscription/{customer_id}/activate")
-def activate(customer_id: str, body: ActivateBody, _tenant: str = Depends(authed_tenant),
+@router.post("/subscription/activate")
+def activate(body: ActivateBody, tenant: str = Depends(authed_tenant),
              _role: dict = Depends(require_role(Role.admin)), subs=Depends(get_subscriptions)) -> dict:
-    sub = subs.activate(customer_id, body.plan)
-    return {"customer_id": customer_id, "plan": sub.plan, "status": sub.status}
+    sub = subs.activate(tenant, body.plan)
+    return {"customer_id": tenant, "plan": sub.plan, "status": sub.status}
 
 
 class CheckoutBody(BaseModel):
-    customer_id: str
     plan: str = "pro"
     price_id: str = "price_default"
     promo: str | None = None
@@ -85,37 +89,37 @@ def plans() -> list[dict]:
 
 
 @router.post("/checkout")
-def checkout(body: CheckoutBody, _tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
+def checkout(body: CheckoutBody, tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
     try:
-        return {"url": subs.start_checkout(body.customer_id, body.plan, price_id=body.price_id, promo=body.promo)}
+        return {"url": subs.start_checkout(tenant, body.plan, price_id=body.price_id, promo=body.promo)}
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail="payment provider error") from e
 
 
-@router.get("/portal/{customer_id}")
-def portal(customer_id: str, _tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
+@router.get("/portal")
+def portal(tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
     try:
-        return {"url": subs.portal_url(customer_id)}
+        return {"url": subs.portal_url(tenant)}
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail="payment provider error") from e
 
 
-@router.post("/subscription/{customer_id}/cancel")
-def cancel(customer_id: str, _tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
+@router.post("/subscription/cancel")
+def cancel(tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
     try:
-        sub = subs.cancel(customer_id)
+        sub = subs.cancel(tenant)
     except KeyError as e:
         raise HTTPException(status_code=404, detail="no subscription") from e
-    return {"customer_id": customer_id, "status": sub.status, "cancel_at_period_end": sub.cancel_at_period_end}
+    return {"customer_id": tenant, "status": sub.status, "cancel_at_period_end": sub.cancel_at_period_end}
 
 
-@router.post("/subscription/{customer_id}/resume")
-def resume(customer_id: str, _tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
+@router.post("/subscription/resume")
+def resume(tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
     try:
-        sub = subs.resume(customer_id)
+        sub = subs.resume(tenant)
     except (KeyError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    return {"customer_id": customer_id, "status": sub.status, "cancel_at_period_end": sub.cancel_at_period_end}
+    return {"customer_id": tenant, "status": sub.status, "cancel_at_period_end": sub.cancel_at_period_end}
 
 
 class PaymentLinkBody(BaseModel):

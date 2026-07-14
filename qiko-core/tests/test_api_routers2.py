@@ -69,11 +69,11 @@ def test_checkout_and_portal_convert_gateway_failures_to_502():
 
     subs = SubscriptionService(FailingGateway())
     with pytest.raises(HTTPException) as e1:
-        checkout(CheckoutBody(customer_id="cus1", plan="pro"), _tenant="t", subs=subs)
+        checkout(CheckoutBody(plan="pro"), tenant="t", subs=subs)
     assert e1.value.status_code == 502
 
     with pytest.raises(HTTPException) as e2:
-        portal("cus1", _tenant="t", subs=subs)
+        portal(tenant="t", subs=subs)
     assert e2.value.status_code == 502
 
 
@@ -82,8 +82,19 @@ def test_billing_webhook_public_and_subscription(client):
     evt = {"id": "evt1", "type": "invoice.paid",
            "data": {"object": {"id": "in1", "customer": "cus1", "amount_paid": 5000, "status": "paid"}}}
     assert client.post("/api/v1/billing/webhook/stripe", json=evt).json()["action"] == "invoice_synced"
-    client.post("/api/v1/billing/subscription/cus1/activate", json={"plan": "pro"}, cookies=C)
-    assert client.get("/api/v1/billing/subscription/cus1", cookies=C).json()["status"] == "active"
+    # Subscription subject is the authed tenant ("acme" for C), not a client-supplied id.
+    client.post("/api/v1/billing/subscription/activate", json={"plan": "pro"}, cookies=C)
+    assert client.get("/api/v1/billing/subscription", cookies=C).json()["status"] == "active"
+
+
+def test_billing_webhook_checkout_links_tenant_and_activates(client):
+    # checkout.session.completed carries client_reference_id (our tenant) + the real Stripe
+    # customer id; the handler links them and activates the tenant's subscription server-side.
+    evt = {"id": "evt_ck1", "type": "checkout.session.completed",
+           "data": {"object": {"id": "cs_1", "customer": "cus_live_1",
+                                "client_reference_id": "acme", "metadata": {"plan": "pro"}}}}
+    assert client.post("/api/v1/billing/webhook/stripe", json=evt).json()["action"] == "subscription_activated"
+    assert client.get("/api/v1/billing/subscription", cookies=C).json()["status"] == "active"
 
 
 def test_channels_whatsapp_public(client):

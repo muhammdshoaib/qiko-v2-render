@@ -423,14 +423,20 @@ export type LabsContactBody = { name: string; work_email: string; company: strin
 export const submitLabsContact = (body: LabsContactBody) =>
   request<{ success: boolean; message: string }>("/marketing/labs-contact", { method: "POST", body: JSON.stringify(body) });
 
-// Billing
-export type Subscription = { customer_id: string; plan?: string; status: string };
-export const subscriptionStatus = (customerId: string) =>
-  request<Subscription>(`/billing/subscription/${encodeURIComponent(customerId)}`);
+// Billing -- the subscription subject is the authenticated tenant, derived server-side from the
+// session cookie. No customer/tenant id is ever sent from the client (that was a cross-tenant
+// BOLA); `customer_id` in the response is the caller's own tenant, kept for shape continuity.
+export type Subscription = { customer_id: string; plan?: string; status: string; cancel_at_period_end?: boolean };
+export const subscriptionStatus = () => request<Subscription>("/billing/subscription");
 export type BillingPlan = { id: number; name: string; price_id: string; amount: number; interval: string; display_price: string; worker_limit: number; features: string[] };
 export const listPlans = () => request<BillingPlan[]>("/billing/plans");
-export const startCheckout = (customerId: string, plan: string, priceId: string) =>
-  request<{ url: string }>("/billing/checkout", { method: "POST", body: JSON.stringify({ customer_id: customerId, plan, price_id: priceId }) });
+export const startCheckout = (plan: string, priceId: string) =>
+  request<{ url: string }>("/billing/checkout", { method: "POST", body: JSON.stringify({ plan, price_id: priceId }) });
+export const billingPortal = () => request<{ url: string }>("/billing/portal");
+export const cancelSubscription = () =>
+  request<Subscription>("/billing/subscription/cancel", { method: "POST" });
+export const resumeSubscription = () =>
+  request<Subscription>("/billing/subscription/resume", { method: "POST" });
 
 // ── Finance (Financial Analyst) ──────────────────────────────────────────────
 // Excel portfolio-analytics worker. The backend `finance` module is being built in parallel in

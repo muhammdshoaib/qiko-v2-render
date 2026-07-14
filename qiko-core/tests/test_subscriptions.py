@@ -3,7 +3,7 @@ from app.modules.billing.subscriptions import SubscriptionService
 
 
 class FakeStripe:
-    def create_checkout_session(self, *, customer_id, price_id, promo):
+    def create_checkout_session(self, *, customer_id, price_id, promo, client_reference_id=None):
         return f"https://checkout.stripe/{customer_id}/{price_id}?promo={promo}"
 
     def billing_portal_url(self, *, customer_id):

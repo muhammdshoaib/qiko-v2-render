@@ -232,7 +232,9 @@ def create_app() -> FastAPI:
     # (TTS/STT) have no real client yet, so those two stay stubbed.
     stripe_gateway = StripeClient() if settings.stripe_secret_key else StubStripeGateway()
     app.state.subscriptions = SubscriptionService(stripe_gateway)
-    app.state.stripe_webhook = StripeWebhookHandler()
+    # Give the webhook the subscription service so checkout.session.completed can link the tenant
+    # (from the session's client_reference_id) to its real Stripe customer id and activate.
+    app.state.stripe_webhook = StripeWebhookHandler(subscriptions=app.state.subscriptions)
     app.state.whatsapp = WhatsAppAdapter(
         WhatsAppClient() if settings.whatsapp_access_token else StubWhatsAppGateway())
     app.state.excel = ExcelService(app.state.knowledge)
