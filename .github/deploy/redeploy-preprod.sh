@@ -1,28 +1,46 @@
 #!/bin/bash
 # Runs ON the preprod EC2 box via SSM Run Command (invoked by .github/workflows/deploy-preprod.yml).
+# Code is delivered via S3 (org policy disables deploy keys, so the box no longer git-pulls):
+# CI uploads a `git archive` tarball to S3, this script downloads + atomically swaps it in.
 set -uxo pipefail
-cd /opt/docker/qiko/platform || exit 1
-export COMPOSE_PROJECT_NAME=qiko-preprod
-export GIT_SSH_COMMAND="ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no"
-git fetch origin preprod -q && git reset --hard origin/preprod -q
 
-# This script rewrites itself via the git reset above. Bash does not reliably re-read a running
-# script's source after the underlying file changes mid-execution (the interpreter can keep
-# stale buffered/offset state), which silently dropped the migration-retry logic below on a real
-# deploy this sprint (build+deploy succeeded, alembic never ran, no error). Re-exec a fresh bash
-# process against the just-pulled file so every line below always reflects what's on disk.
-if [ -z "${REDEPLOY_REEXECED:-}" ]; then
-  export REDEPLOY_REEXECED=1
-  exec bash "$0" "$@"
+BUCKET="qiko-v2-preprod-deploy-064247010239"
+REGION="eu-central-1"
+KEY="preprod/deploy-latest.tar.gz"
+BASE="/opt/docker/qiko"
+
+# 1. Fetch the code artifact CI just uploaded.
+aws s3 cp "s3://$BUCKET/$KEY" /tmp/qiko-v2-deploy.tar.gz --region "$REGION" \
+  || { echo "FATAL: could not download s3://$BUCKET/$KEY" >&2; exit 1; }
+
+# 2. Extract to a staging dir, then atomically swap. All persistent state lives in named docker
+#    volumes (postgres_data, caddy_data, caddy_config) that are independent of this directory, so
+#    a full swap is safe and also drops files deleted upstream (unlike an in-place overlay).
+rm -rf "$BASE/platform.staging"
+mkdir -p "$BASE/platform.staging"
+tar xzf /tmp/qiko-v2-deploy.tar.gz -C "$BASE/platform.staging" \
+  || { echo "FATAL: extract failed" >&2; exit 1; }
+if [ ! -f "$BASE/platform.staging/docker-compose.yml" ]; then
+  echo "FATAL: artifact missing docker-compose.yml -- refusing to swap" >&2; exit 1
 fi
 
-aws ssm get-parameter --region me-central-1 --name /qiko/preprod/ENV --with-decryption --query Parameter.Value --output text > .env
+rm -rf "$BASE/platform.prev"
+[ -d "$BASE/platform" ] && mv "$BASE/platform" "$BASE/platform.prev"
+mv "$BASE/platform.staging" "$BASE/platform"
+
+cd "$BASE/platform" || exit 1
+export COMPOSE_PROJECT_NAME=qiko-preprod
+
+# 3. Env comes from SSM Parameter Store, never baked into the artifact.
+aws ssm get-parameter --region "$REGION" --name /qiko/preprod/ENV --with-decryption \
+  --query Parameter.Value --output text > .env
+
 C="docker compose -f docker-compose.yml -f docker-compose.preprod.yml"
 $C up -d --build
 sleep 25
-# Retry migrations for a while: qiko-core can still be restarting (old container terminating,
-# new one not yet accepting exec) right after `up -d --build`, and a failed migration must never
-# be silently swallowed (see git history) -- so this loop is verbose and the final failure is fatal.
+
+# 4. Migrations with retry: qiko-core can still be restarting right after `up -d --build`, and a
+#    failed migration must never be silently swallowed -- the final failure is fatal.
 migrated=0
 for i in 1 2 3 4 5 6 7 8; do
   if $C exec -T qiko-core alembic upgrade head; then
@@ -36,4 +54,5 @@ if [ "$migrated" -ne 1 ]; then
   echo "FATAL: alembic upgrade head did not succeed after 8 attempts" >&2
   exit 1
 fi
+
 $C ps --format "{{.Service}} {{.State}} {{.Status}}"
