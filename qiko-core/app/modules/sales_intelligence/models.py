@@ -194,6 +194,9 @@ class OpportunityStore(Protocol):
     async def update(self, opp: Opportunity) -> Opportunity: ...
     async def get(self, tenant: str, agent_id: str, opp_id: str) -> Opportunity | None: ...
     async def list_for_agent(self, tenant: str, agent_id: str, **filters) -> list[Opportunity]: ...
+    # Cross-tenant sweep used by the background deadline-reminder scheduler: every live (non-archived,
+    # non-deleted) opportunity that carries a submission deadline, across all tenants/agents.
+    async def list_with_deadline(self) -> list[Opportunity]: ...
 
 
 class ActivityLogStore(Protocol):
@@ -260,6 +263,10 @@ class InMemoryOpportunityStore:
     async def list_for_agent(self, tenant: str, agent_id: str, **filters) -> list[Opportunity]:
         items = [o for o in self._by_id.values() if o.tenant == tenant and o.agent_id == agent_id]
         return _apply_opportunity_filters(items, filters)
+
+    async def list_with_deadline(self) -> list[Opportunity]:
+        return [o for o in self._by_id.values()
+                if o.deadline_at is not None and not o.is_archived() and not o.is_deleted()]
 
 
 def _apply_opportunity_filters(items: list[Opportunity], filters: dict) -> list[Opportunity]:

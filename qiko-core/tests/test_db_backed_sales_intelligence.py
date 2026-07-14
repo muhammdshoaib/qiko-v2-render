@@ -120,6 +120,28 @@ async def test_opportunity_update_and_list_filters_exclude_archived_and_deleted(
     assert (await store2.get("acme", "ag1", "op1")).stage == "validated"
 
 
+async def test_opportunity_list_with_deadline_is_cross_tenant_and_excludes_archived_deleted(db_path):
+    from datetime import datetime, timedelta, timezone
+
+    sm, _ = await _sessionmaker(db_path)
+    store = SqlOpportunityStore(sm)
+    soon = datetime.now(timezone.utc) + timedelta(days=2)
+    # two live opportunities with deadlines, in DIFFERENT tenants (the scheduler sweeps globally)
+    await store.add(_opp(id="d1", tenant="acme", external_id="e1", deadline_at=soon))
+    await store.add(_opp(id="d2", tenant="beta", external_id="e2", deadline_at=soon))
+    # excluded: no deadline / archived / soft-deleted
+    await store.add(_opp(id="d3", external_id="e3", deadline_at=None))
+    archived = _opp(id="d4", external_id="e4", deadline_at=soon)
+    archived.archived_at = datetime.now(timezone.utc)
+    await store.add(archived)
+    deleted = _opp(id="d5", external_id="e5", deadline_at=soon)
+    deleted.deleted_at = datetime.now(timezone.utc)
+    await store.add(deleted)
+
+    with_deadline = await store.list_with_deadline()
+    assert {o.id for o in with_deadline} == {"d1", "d2"}
+
+
 async def test_activity_log_add_list_filters_order_and_scope(db_path):
     sm, _ = await _sessionmaker(db_path)
     store = SqlActivityLogStore(sm)

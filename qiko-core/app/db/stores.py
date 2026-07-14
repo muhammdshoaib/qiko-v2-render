@@ -813,6 +813,16 @@ class SqlOpportunityStore:
             items = [_opportunity_from_row(r) for r in rows]
             return _apply_opportunity_filters(items, filters)
 
+    async def list_with_deadline(self) -> list[Opportunity]:
+        # Cross-tenant: the deadline-reminder scheduler filters stage/threshold itself, so the
+        # store only excludes archived/soft-deleted rows and those without a deadline.
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(select(SalesIntelOpportunityRow).where(
+                SalesIntelOpportunityRow.deadline_at.is_not(None),
+                SalesIntelOpportunityRow.archived_at.is_(None),
+                SalesIntelOpportunityRow.deleted_at.is_(None)))).scalars().all()
+            return [_opportunity_from_row(r) for r in rows]
+
 
 @dataclass
 class SqlActivityLogStore:

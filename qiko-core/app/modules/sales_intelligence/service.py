@@ -229,6 +229,19 @@ class OpportunityService:
         if self.notifier is not None:
             await self.notifier.notify_deadline_reminder(opportunity, due_in_days)
 
+    async def record_deadline_reminder(self, opportunity: Opportunity, due_in_days: int) -> ActivityLog:
+        """Fire the deadline reminder AND persist the audit/dedupe marker in one step -- used by the
+        background scheduler sweep (app.modules.sales_intelligence.scheduler). The activity-log row
+        (action `opportunity_deadline_reminded`) doubles as the "already reminded today" marker, so
+        the sweep needs no extra schema. `send_deadline_reminder` stays a pure notification hook."""
+        await self.send_deadline_reminder(opportunity, due_in_days)
+        return await self._log(
+            opportunity.tenant, opportunity.agent_id, "opportunity_deadline_reminded",
+            f"Deadline reminder sent -- {due_in_days} day(s) until submission deadline.",
+            tone="info", opportunity_id=opportunity.id,
+            metadata={"dueInDays": due_in_days,
+                      "deadlineAt": opportunity.deadline_at.isoformat() if opportunity.deadline_at else None})
+
     async def record_human_review(self, opportunity: Opportunity, decision: str, notes: str | None,
                                   actor_user_id: str | None) -> Opportunity:
         stage = {"approved": "validated", "rejected": "rejected"}.get(decision, "awaiting_review")
