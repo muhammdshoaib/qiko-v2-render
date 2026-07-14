@@ -27,6 +27,7 @@ from app.modules.sales_intelligence.models import (
     SOURCE_KEYS,
     SOURCE_STATUSES,
 )
+from app.modules.sales_intelligence.notifications import SalesNotificationService
 from app.modules.sales_intelligence.qualification import QualificationService
 
 
@@ -62,6 +63,7 @@ class OpportunityService:
     sources: IngestionSourceStore = None  # type: ignore[assignment]
     opportunities: OpportunityStore = None  # type: ignore[assignment]
     activity_logs: ActivityLogStore = None  # type: ignore[assignment]
+    notifier: SalesNotificationService | None = None
     scan_interval_minutes: int = 1
 
     def __post_init__(self) -> None:
@@ -188,6 +190,10 @@ class OpportunityService:
                                 metadata={"source_key": source_key, "external_id": external_id,
                                          "recommendation": opportunity.recommendation})
 
+                # Notification trigger: a freshly-ingested opportunity that needs human validation.
+                if is_new and self.notifier is not None and opportunity.stage == "awaiting_review":
+                    await self.notifier.notify_review_required(opportunity)
+
             source.last_scan_status = "success"
             source.last_scan_at = _now()
             source.opportunities_found = len(upserted)
@@ -212,7 +218,16 @@ class OpportunityService:
             await self.sources.update(source)
             await self._log(tenant, agent_id, f"{source_key}_scan_failed", str(e), tone="danger",
                             actor_user_id=actor_user_id, metadata={"source_key": source_key})
+            # Notification trigger: scan failed.
+            if self.notifier is not None:
+                await self.notifier.notify_scan_failed(tenant, agent_id, source_key, str(e))
             raise
+
+    async def send_deadline_reminder(self, opportunity: Opportunity, due_in_days: int) -> None:
+        """Deadline-reminder notification trigger -- a thin hook the scheduler can call later
+        (mirrors IdgSalesDeadlineReminderService). No-op if no notifier is wired."""
+        if self.notifier is not None:
+            await self.notifier.notify_deadline_reminder(opportunity, due_in_days)
 
     async def record_human_review(self, opportunity: Opportunity, decision: str, notes: str | None,
                                   actor_user_id: str | None) -> Opportunity:
@@ -259,6 +274,7 @@ class OpportunityMutationService:
     qualification: QualificationService = field(default_factory=QualificationService)
     opportunities: OpportunityStore = None  # type: ignore[assignment]
     activity_logs: ActivityLogStore = None  # type: ignore[assignment]
+    notifier: SalesNotificationService | None = None
 
     def __post_init__(self) -> None:
         if self.opportunities is None:
@@ -308,6 +324,42 @@ class OpportunityMutationService:
                         f"Manually created opportunity: {opportunity.title}", tone="success", actor_user_id=actor_user_id,
                         metadata={"source_key": source_key, "source_name": source_name,
                                  "external_id": opportunity.external_id, "run_qualification": run_qualification})
+        # Notification trigger: a manually-created opportunity that needs human validation.
+        if self.notifier is not None and opportunity.stage == "awaiting_review":
+            await self.notifier.notify_review_required(opportunity)
+        return opportunity
+
+    async def assign_reviewer(self, opportunity: Opportunity, reviewer_user_id: str | None,
+                              reviewer_name: str | None, actor_user_id: str | None = None) -> Opportunity:
+        """Assign (or clear) a reviewer on an opportunity. Port of
+        IdgSalesOpportunityMutationService::assignReviewer -- writes an audit-trail activity log
+        (assigned/unassigned) and, when a reviewer is set, fires the reviewer-assigned notification."""
+        previous_reviewer_id = opportunity.assigned_reviewer_user_id
+        assigned = bool(reviewer_user_id) or bool(reviewer_name)
+        opportunity.assigned_reviewer_user_id = reviewer_user_id
+        opportunity.assigned_reviewer_name = reviewer_name
+        opportunity.assigned_by_user_id = actor_user_id if assigned else None
+        opportunity.assigned_at = _now() if assigned else None
+        opportunity.updated_by = actor_user_id
+        opportunity.updated_at = _now()
+        opportunity = await self.opportunities.update(opportunity)
+
+        label = reviewer_name or reviewer_user_id or ""
+        await self._log(
+            opportunity.tenant, opportunity.agent_id, opportunity.id,
+            "opportunity_reviewer_assigned" if assigned else "opportunity_reviewer_unassigned",
+            (f"Reviewer assigned on opportunity: {opportunity.title}" if assigned
+             else f"Reviewer cleared on opportunity: {opportunity.title}"),
+            tone="info", actor_user_id=actor_user_id,
+            metadata={"previous_reviewer_user_id": previous_reviewer_id,
+                      "assigned_reviewer_user_id": reviewer_user_id,
+                      "assigned_reviewer_name": reviewer_name,
+                      "assigned_by_user_id": opportunity.assigned_by_user_id,
+                      "assigned_at": opportunity.assigned_at.isoformat() if opportunity.assigned_at else None,
+                      "reviewer": label})
+
+        if assigned and reviewer_user_id and self.notifier is not None:
+            await self.notifier.notify_reviewer_assigned(opportunity, reviewer_user_id, actor_user_id)
         return opportunity
 
     async def archive(self, opportunity: Opportunity, actor_user_id: str | None = None) -> Opportunity:

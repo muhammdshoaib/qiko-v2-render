@@ -7,15 +7,17 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, LayoutGrid, MessageSquare, Radar, Sparkles, TableProperties, Upload, X } from "lucide-react";
+import { ArrowLeft, Bell, LayoutGrid, MessageSquare, Radar, Sparkles, TableProperties, Upload, X } from "lucide-react";
 import { cn } from "@qiko/ui";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
+import { NotificationBell } from "@/components/sales-intelligence/notification-bell";
 import { ask } from "@/lib/api";
 
-export type CockpitSection = "overview" | "pipeline" | "ingestion" | "log";
+export type CockpitSection = "overview" | "pipeline" | "ingestion" | "log" | "notifications";
 
 const NAV_ITEMS: { section: CockpitSection; label: string; sub: string; icon: typeof LayoutGrid; group: "OVERVIEW" | "USE CASES" }[] = [
   { section: "overview", label: "Overview", sub: "DASHBOARD", icon: LayoutGrid, group: "OVERVIEW" },
+  { section: "notifications", label: "Notifications", sub: "INBOX", icon: Bell, group: "OVERVIEW" },
   { section: "pipeline", label: "Opportunity Pipeline", sub: "PIPELINE", icon: TableProperties, group: "USE CASES" },
   { section: "ingestion", label: "Ingestion", sub: "SOURCES", icon: Radar, group: "USE CASES" },
   { section: "log", label: "Salesforce Push Log", sub: "LOG", icon: Upload, group: "USE CASES" },
@@ -58,10 +60,13 @@ export function CockpitShell({ agentId, workerName, active, children }: {
             <span className="size-1.5 rounded-full bg-emerald-400" /> Active
           </span>
         </div>
-        <button onClick={() => setChatOpen((v) => !v)} aria-expanded={chatOpen} aria-label="Toggle chat panel"
-          className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-400">
-          <MessageSquare className="size-3.5" /> Chat
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <NotificationBell category="sales_intelligence" />
+          <button onClick={() => setChatOpen((v) => !v)} aria-expanded={chatOpen} aria-label="Toggle chat panel"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-400">
+            <MessageSquare className="size-3.5" /> Chat
+          </button>
+        </div>
       </header>
 
       <div className="flex min-h-0 flex-1">

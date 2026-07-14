@@ -70,6 +70,9 @@ from app.modules.chat.router import router as chat_router
 from app.modules.chat.service import ChatService
 from app.modules.crm.router import router as crm_router
 from app.modules.crm.service import CrmService
+from app.modules.notifications.router import router as notifications_router
+from app.modules.notifications.service import NotificationService
+from app.modules.sales_intelligence.notifications import SalesNotificationService
 from app.modules.sales_intelligence.router import router as sales_intelligence_router
 from app.modules.sales_intelligence.salesforce import SalesforceAuthService, SalesforcePushService
 from app.modules.sales_intelligence.service import OpportunityMutationService, OpportunityService
@@ -117,6 +120,7 @@ async def lifespan(app: FastAPI):
             SqlFinanceFileStore,
             SqlIngestionSourceStore,
             SqlLeadStore,
+            SqlNotificationStore,
             SqlOpportunityStore,
             SqlPackAnswerStore,
             SqlRequirementStore,
@@ -143,15 +147,21 @@ async def lifespan(app: FastAPI):
         si_opportunities = SqlOpportunityStore(sm)
         si_activity_logs = SqlActivityLogStore(sm)
         si_connections = SqlSalesforceConnectionStore(sm)
+        # Generic in-app notification inbox (reusable across verticals) + the SI trigger wrapper
+        # that the scan/review/assign/push flows call. In-product only (no email/FCM push).
+        app.state.notifications = NotificationService(store=SqlNotificationStore(sm))
+        sales_notifier = SalesNotificationService(notifications=app.state.notifications)
+        app.state.sales_notifier = sales_notifier
         app.state.sales_intel = OpportunityService(
             scan_interval_minutes=get_settings().idg_sales_scan_interval_minutes,
-            sources=si_sources, opportunities=si_opportunities, activity_logs=si_activity_logs)
+            sources=si_sources, opportunities=si_opportunities, activity_logs=si_activity_logs,
+            notifier=sales_notifier)
         app.state.sales_intel_mutation = OpportunityMutationService(
-            opportunities=si_opportunities, activity_logs=si_activity_logs)
+            opportunities=si_opportunities, activity_logs=si_activity_logs, notifier=sales_notifier)
         app.state.salesforce_auth = SalesforceAuthService(
             connections=si_connections, activity_logs=si_activity_logs)
         app.state.salesforce_push = SalesforcePushService(
-            auth=app.state.salesforce_auth, activity_logs=si_activity_logs)
+            auth=app.state.salesforce_auth, activity_logs=si_activity_logs, notifier=sales_notifier)
         # Finance vertical: uploaded workbooks (parsed rows) + analyst chat history survive a
         # redeploy. The LLM provider is the same configured gateway used elsewhere.
         app.state.finance = FinanceService(files=SqlFinanceFileStore(sm), chats=SqlFinanceChatStore(sm))
@@ -217,11 +227,17 @@ def create_app() -> FastAPI:
     app.state.assignments = AssignmentService()
     app.state.chat = ChatService()
     app.state.crm = CrmService(app.state.chat)
-    app.state.sales_intel = OpportunityService(scan_interval_minutes=settings.idg_sales_scan_interval_minutes)
+    # Generic in-app notification inbox (reusable across verticals) + the SI trigger wrapper.
+    app.state.notifications = NotificationService()
+    app.state.sales_notifier = SalesNotificationService(notifications=app.state.notifications)
+    app.state.sales_intel = OpportunityService(scan_interval_minutes=settings.idg_sales_scan_interval_minutes,
+                                               notifier=app.state.sales_notifier)
     app.state.sales_intel_mutation = OpportunityMutationService(opportunities=app.state.sales_intel.opportunities,
-                                                                 activity_logs=app.state.sales_intel.activity_logs)
+                                                                 activity_logs=app.state.sales_intel.activity_logs,
+                                                                 notifier=app.state.sales_notifier)
     app.state.salesforce_auth = SalesforceAuthService()
-    app.state.salesforce_push = SalesforcePushService(auth=app.state.salesforce_auth)
+    app.state.salesforce_push = SalesforcePushService(auth=app.state.salesforce_auth,
+                                                      notifier=app.state.sales_notifier)
     app.state.finance = FinanceService()
     app.state.teams = TeamService()
     app.state.leads = LeadService(get_email_sender())
@@ -263,7 +279,7 @@ def create_app() -> FastAPI:
               chat_router, teams_router, leads_router, billing_router, channels_router, excel_router,
               voice_router, signal_router, public_chat_router, sources_router, twofa_router,
               onboarding_router, admin_org_router, batch_router, marketing_router, crm_router,
-              sales_intelligence_router, finance_router):
+              sales_intelligence_router, finance_router, notifications_router):
         app.include_router(r, prefix="/api/v1")
     return app
 

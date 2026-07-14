@@ -12,11 +12,13 @@ import {
   saveSalesOpportunityNotes, updateSalesOpportunity, type OpportunityDetail,
 } from "@/lib/api";
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
+import { AssignReviewerControl } from "@/components/sales-intelligence/assign-reviewer-control";
+import { DecisionHistoryView } from "@/components/sales-intelligence/decision-history-view";
 import {
   formatDate, formatMoney, recommendationBadgeClass, scoreColor, stageBadgeClass, STAGE_LABELS,
 } from "@/components/sales-intelligence/utils";
 
-const TABS = ["Overview", "Summary", "Qualification", "Notes", "Status"] as const;
+const TABS = ["Overview", "Summary", "Qualification", "Reviewer", "Notes", "Status"] as const;
 
 export default function OpportunityDetailPage() {
   const { id: agentId, oppId } = useParams<{ id: string; oppId: string }>();
@@ -125,6 +127,12 @@ export default function OpportunityDetailPage() {
         {tab === "Overview" && <OverviewTab opp={opp} detail={detail} />}
         {tab === "Summary" && <SummaryTab detail={detail} />}
         {tab === "Qualification" && <QualificationTab detail={detail} />}
+        {tab === "Reviewer" && (
+          <div className="space-y-4">
+            <AssignReviewerControl agentId={agentId} opp={opp} onSaved={invalidate} />
+            <DecisionHistoryView agentId={agentId} opportunityId={oppId} />
+          </div>
+        )}
         {tab === "Notes" && <NotesTab agentId={agentId} oppId={oppId} detail={detail} onSaved={invalidate} />}
         {tab === "Status" && <StatusTab opp={opp} detail={detail} />}
       </div>

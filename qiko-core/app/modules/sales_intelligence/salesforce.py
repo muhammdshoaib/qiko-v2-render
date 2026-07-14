@@ -36,6 +36,7 @@ from app.modules.sales_intelligence.models import (
     SalesforceConnection,
     SalesforceConnectionStore,
 )
+from app.modules.sales_intelligence.notifications import SalesNotificationService
 
 
 def _now() -> datetime:
@@ -237,6 +238,7 @@ class SalesforcePushService:
     auth: SalesforceAuthService
     activity_logs: ActivityLogStore = field(default_factory=InMemoryActivityLogStore)
     client: httpx.Client | None = None
+    notifier: SalesNotificationService | None = None
 
     def _http(self) -> httpx.Client:
         return self.client or httpx.Client(timeout=45.0)
@@ -285,6 +287,9 @@ class SalesforcePushService:
                 detail=f"Pushed to Salesforce Opportunity {sf_id}", tone="success",
                 metadata={"salesforceOpportunityId": sf_id, "salesforce_id": sf_id, "instance_url": connection.instance_url},
             ))
+            # Notification trigger: Salesforce sync successful.
+            if self.notifier is not None:
+                await self.notifier.notify_salesforce_sync_success(opportunity, sf_id)
             return opportunity
         except Exception as e:
             message = str(e)
@@ -298,6 +303,9 @@ class SalesforcePushService:
                 opportunity_id=opportunity.id, actor_user_id=actor_user_id, action="salesforce_push_failed",
                 detail=message, tone="danger", metadata={"opportunity_id": opportunity.id},
             ))
+            # Notification trigger: Salesforce sync failed.
+            if self.notifier is not None:
+                await self.notifier.notify_salesforce_sync_failed(opportunity, message)
             raise
 
     def _map_opportunity_payload(self, opportunity) -> dict:

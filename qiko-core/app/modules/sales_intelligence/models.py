@@ -116,6 +116,10 @@ class Opportunity:
     human_review_notes: str | None = None
     reviewed_by_user_id: str | None = None
     reviewed_at: datetime | None = None
+    assigned_reviewer_user_id: str | None = None
+    assigned_reviewer_name: str | None = None
+    assigned_by_user_id: str | None = None
+    assigned_at: datetime | None = None
     updated_by: str | None = None
     archived_at: datetime | None = None
     archived_by: str | None = None

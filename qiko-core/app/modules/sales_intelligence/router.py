@@ -70,7 +70,9 @@ def _opportunity_out(o, *, detail_service=None) -> dict:
         "qualificationReasons": o.qualification_reasons, "qualificationDimensions": o.qualification_dimensions,
         "qualificationRecommendations": o.qualification_recommendations, "rejectionReasons": o.rejection_reasons,
         "risks": o.risks, "missingFields": o.missing_fields, "humanReviewStatus": o.human_review_status,
-        "humanReviewNotes": o.human_review_notes, "reviewedAt": o.reviewed_at, "archivedAt": o.archived_at,
+        "humanReviewNotes": o.human_review_notes, "reviewedAt": o.reviewed_at,
+        "assignedReviewerUserId": o.assigned_reviewer_user_id, "assignedReviewerName": o.assigned_reviewer_name,
+        "assignedByUserId": o.assigned_by_user_id, "assignedAt": o.assigned_at, "archivedAt": o.archived_at,
         "isArchived": o.is_archived(), "deletedAt": o.deleted_at,
         "salesforcePushStatus": o.salesforce_push_status, "salesforceOpportunityId": o.salesforce_opportunity_id,
         "salesforcePushedAt": o.salesforce_pushed_at, "salesforcePushError": o.salesforce_push_error,
@@ -86,6 +88,23 @@ def _log_out(log) -> dict:
         "id": log.id, "agentId": log.agent_id, "opportunityId": log.opportunity_id, "actorUserId": log.actor_user_id,
         "activityType": log.activity_type, "action": log.action, "detail": log.detail, "tone": log.tone,
         "changes": (log.metadata or {}).get("changes"), "metadata": log.metadata, "createdAt": log.created_at,
+    }
+
+
+_DECISION_LABELS = {"approved": "Approved", "rejected": "Rejected", "needs_review": "Override"}
+
+
+def _decision_out(log) -> dict:
+    """Shape one human-review activity-log entry as a decision-history record -- port of
+    IdgSalesDecisionHistoryResource (decision + label + reviewer + timestamp)."""
+    metadata = log.metadata or {}
+    decision = metadata.get("decision") if isinstance(metadata.get("decision"), str) else None
+    return {
+        "id": log.id, "agentId": log.agent_id, "opportunityId": log.opportunity_id,
+        "action": log.action, "decision": decision,
+        "decisionLabel": _DECISION_LABELS.get(decision, decision.replace("_", " ").title() if decision else "Decision"),
+        "detail": log.detail, "tone": log.tone, "reviewerUserId": log.actor_user_id,
+        "metadata": metadata, "createdAt": log.created_at,
     }
 
 
@@ -344,6 +363,33 @@ async def review(agent_id: str, opportunity_id: str, body: ReviewBody, tenant: s
     o = await _get_opportunity_or_404(svc, tenant, agent_id, opportunity_id)
     o = await svc.record_human_review(o, body.decision, body.notes, _actor_user_id(claims))
     return {"opportunity": _opportunity_out(o)}
+
+
+class AssignReviewerBody(BaseModel):
+    # Faithful to source (user_id), plus a free-text name fallback since the V2 teams module
+    # isn't enumerable per-tenant yet. Both null == clear the reviewer.
+    user_id: str | None = None
+    name: str | None = None
+
+
+@router.patch("/{agent_id}/opportunities/{opportunity_id}/assign-reviewer")
+async def assign_reviewer(agent_id: str, opportunity_id: str, body: AssignReviewerBody,
+                          tenant: str = Depends(authed_tenant), claims: dict = Depends(require_role(Role.editor)),
+                          svc=Depends(get_sales_intel), mutation=Depends(get_sales_intel_mutation)) -> dict:
+    o = await _get_opportunity_or_404(svc, tenant, agent_id, opportunity_id)
+    o = await mutation.assign_reviewer(o, body.user_id, body.name, _actor_user_id(claims))
+    return {"opportunity": _opportunity_out(o)}
+
+
+@router.get("/{agent_id}/opportunities/{opportunity_id}/decisions")
+async def opportunity_decisions(agent_id: str, opportunity_id: str, limit: int = 100,
+                                tenant: str = Depends(authed_tenant), svc=Depends(get_sales_intel)) -> dict:
+    """Decision History -- the approve/reject/override audit trail for one opportunity, derived
+    from the `human_review_recorded` activity logs (mirrors IdgSalesController::decisionHistory)."""
+    await _get_opportunity_or_404(svc, tenant, agent_id, opportunity_id)
+    logs = await svc.activity_logs.list_for_agent(tenant, agent_id, opportunity_id=opportunity_id,
+                                                  action="human_review_recorded", limit=max(1, min(200, limit)))
+    return {"opportunityId": opportunity_id, "decisions": [_decision_out(log) for log in logs]}
 
 
 class NotesBody(BaseModel):

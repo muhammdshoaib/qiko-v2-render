@@ -289,6 +289,10 @@ class SalesIntelOpportunity(Base):
     human_review_notes: Mapped[str | None] = mapped_column(String, nullable=True)
     reviewed_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    assigned_reviewer_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    assigned_reviewer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    assigned_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    assigned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     archived_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -343,6 +347,28 @@ class SalesIntelSalesforceConnection(Base):
     connected_by_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_error: Mapped[str | None] = mapped_column(String, nullable=True)
     connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class Notification(Base):
+    """A generic in-app notification for one tenant (app.modules.notifications), ported from the
+    qiko-backend origin/idg-sales `notifications` table. Reusable across verticals (Sales
+    Intelligence wires its triggers now; Pre-Sales will reuse the same table): `category` names
+    the source module and `type` the event. `user_id` is optional -- NULL means tenant-wide
+    (every user in the tenant sees it); a value scopes it to one recipient. `read_at` NULL == unread."""
+    __tablename__ = "notifications"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    category: Mapped[str] = mapped_column(String(64), default="general")
+    type: Mapped[str] = mapped_column(String(64))
+    title: Mapped[str] = mapped_column(String(255))
+    body: Mapped[str] = mapped_column(String, default="")
+    agent_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    opportunity_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    __table_args__ = (Index("ix_notifications_tenant_user_created", "tenant_id", "user_id", "created_at"),)
 
 
 class FinanceFile(Base):

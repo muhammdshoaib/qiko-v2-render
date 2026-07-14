@@ -22,6 +22,7 @@ from app.db.models import FinanceChatMessage as FinanceChatMessageRow
 from app.db.models import FinanceFile as FinanceFileRow
 from app.db.models import Lead as LeadRow
 from app.db.models import Message as MessageRow
+from app.db.models import Notification as NotificationRow
 from app.db.models import PackAnswer as PackAnswerRow
 from app.db.models import PackRequirement as PackRequirementRow
 from app.db.models import Passage as PassageRow
@@ -48,6 +49,7 @@ from app.modules.identity.rbac import Role
 from app.modules.identity.store import User
 from app.modules.knowledge.models import Passage
 from app.modules.leads.service import Lead
+from app.modules.notifications.models import Notification
 from app.modules.rfp.service import CachedAnswer, PackRequirement, RfpPack, RfpPackNotFound
 from app.modules.sales_intelligence.models import (
     ActivityLog,
@@ -733,7 +735,9 @@ def _opportunity_from_row(r: SalesIntelOpportunityRow) -> Opportunity:
         rejection_reasons=list(r.rejection_reasons or []), risks=list(r.risks or []),
         missing_fields=list(r.missing_fields or []), human_review_status=r.human_review_status,
         human_review_notes=r.human_review_notes, reviewed_by_user_id=r.reviewed_by_user_id,
-        reviewed_at=r.reviewed_at, updated_by=r.updated_by, archived_at=r.archived_at, archived_by=r.archived_by,
+        reviewed_at=r.reviewed_at, assigned_reviewer_user_id=r.assigned_reviewer_user_id,
+        assigned_reviewer_name=r.assigned_reviewer_name, assigned_by_user_id=r.assigned_by_user_id,
+        assigned_at=r.assigned_at, updated_by=r.updated_by, archived_at=r.archived_at, archived_by=r.archived_by,
         deleted_at=r.deleted_at, deleted_by=r.deleted_by, salesforce_push_status=r.salesforce_push_status,
         salesforce_opportunity_id=r.salesforce_opportunity_id, salesforce_pushed_at=r.salesforce_pushed_at,
         salesforce_push_error=r.salesforce_push_error, raw_payload=dict(r.raw_payload or {}),
@@ -753,6 +757,8 @@ def _apply_opportunity_columns(row: SalesIntelOpportunityRow, o: Opportunity) ->
     row.rejection_reasons, row.risks, row.missing_fields = o.rejection_reasons, o.risks, o.missing_fields
     row.human_review_status, row.human_review_notes = o.human_review_status, o.human_review_notes
     row.reviewed_by_user_id, row.reviewed_at = o.reviewed_by_user_id, o.reviewed_at
+    row.assigned_reviewer_user_id, row.assigned_reviewer_name = o.assigned_reviewer_user_id, o.assigned_reviewer_name
+    row.assigned_by_user_id, row.assigned_at = o.assigned_by_user_id, o.assigned_at
     row.updated_by = o.updated_by
     row.archived_at, row.archived_by = o.archived_at, o.archived_by
     row.deleted_at, row.deleted_by = o.deleted_at, o.deleted_by
@@ -969,3 +975,82 @@ class SqlFinanceChatStore:
             result = await s.execute(delete(FinanceChatMessageRow).where(
                 FinanceChatMessageRow.tenant_id == tenant, FinanceChatMessageRow.agent_id == agent_id))
             return result.rowcount or 0
+
+
+# --- Notifications (app.modules.notifications) -----------------------------------------------
+# Postgres-backed replacement for the in-memory notification store. Generic/reusable across
+# verticals; every query is tenant-scoped and recipient-scoped (BOLA-safe): a row is visible when
+# it is tenant-wide (user_id IS NULL) or addressed to the caller's own verified user_id.
+
+
+def _notification_from_row(r: NotificationRow) -> Notification:
+    return Notification(id=r.id, tenant=r.tenant_id, type=r.type, title=r.title, body=r.body,
+                        category=r.category, user_id=r.user_id, agent_id=r.agent_id,
+                        opportunity_id=r.opportunity_id, metadata=dict(r.metadata_json or {}),
+                        read_at=r.read_at, created_at=r.created_at)
+
+
+def _notification_visible(user_id: str | None):
+    from sqlalchemy import or_
+
+    return or_(NotificationRow.user_id.is_(None), NotificationRow.user_id == user_id)
+
+
+@dataclass
+class SqlNotificationStore:
+    """Persists the generic in-app notification inbox -- previously in-memory only, so notifications
+    were wiped on every redeploy. Shared by all verticals behind the NotificationStore protocol."""
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def add(self, notification: Notification) -> Notification:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(NotificationRow(id=notification.id, tenant_id=notification.tenant, user_id=notification.user_id,
+                                  category=notification.category, type=notification.type, title=notification.title,
+                                  body=notification.body, agent_id=notification.agent_id,
+                                  opportunity_id=notification.opportunity_id, metadata_json=notification.metadata,
+                                  read_at=notification.read_at, created_at=notification.created_at))
+        return notification
+
+    async def get(self, tenant: str, notification_id: str) -> Notification | None:
+        async with self.sessionmaker() as s:
+            row = await s.get(NotificationRow, notification_id)
+            return _notification_from_row(row) if row and row.tenant_id == tenant else None
+
+    async def list_for_user(self, tenant: str, user_id: str | None, *, category: str | None = None,
+                            unread_only: bool = False, limit: int | None = None) -> list[Notification]:
+        async with self.sessionmaker() as s:
+            q = select(NotificationRow).where(NotificationRow.tenant_id == tenant,
+                                              _notification_visible(user_id))
+            if category is not None:
+                q = q.where(NotificationRow.category == category)
+            if unread_only:
+                q = q.where(NotificationRow.read_at.is_(None))
+            q = q.order_by(NotificationRow.created_at.desc())
+            if limit:
+                q = q.limit(limit)
+            rows = (await s.execute(q)).scalars().all()
+            return [_notification_from_row(r) for r in rows]
+
+    async def mark_read(self, tenant: str, notification_id: str, user_id: str | None) -> Notification | None:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(NotificationRow, notification_id)
+            if row is None or row.tenant_id != tenant or (row.user_id is not None and row.user_id != user_id):
+                return None
+            if row.read_at is None:
+                row.read_at = datetime.now(timezone.utc)
+            return _notification_from_row(row)
+
+    async def mark_all_read(self, tenant: str, user_id: str | None, *, category: str | None = None) -> int:
+        async with self.sessionmaker() as s, s.begin():
+            q = select(NotificationRow).where(NotificationRow.tenant_id == tenant,
+                                              _notification_visible(user_id), NotificationRow.read_at.is_(None))
+            if category is not None:
+                q = q.where(NotificationRow.category == category)
+            rows = (await s.execute(q)).scalars().all()
+            now = datetime.now(timezone.utc)
+            for row in rows:
+                row.read_at = now
+            return len(rows)
+
+    async def unread_count(self, tenant: str, user_id: str | None, *, category: str | None = None) -> int:
+        return len(await self.list_for_user(tenant, user_id, category=category, unread_only=True))

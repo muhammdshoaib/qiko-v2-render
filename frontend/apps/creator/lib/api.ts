@@ -315,6 +315,8 @@ export type SalesOpportunity = {
   qualificationRecommendations: string[]; rejectionReasons: string[]; risks: string[]; missingFields: string[];
   humanReviewStatus: string | null; humanReviewNotes: string | null;
   reviewedBy: { id: number; userName: string; email: string } | null; reviewedAt: string | null;
+  assignedReviewerUserId: string | null; assignedReviewerName: string | null;
+  assignedByUserId: string | null; assignedAt: string | null;
   archivedAt: string | null; isArchived: boolean;
   salesforcePushStatus: string | null; salesforceOpportunityId: string | null;
   salesforcePushedAt: string | null; salesforcePushError: string | null;
@@ -410,6 +412,44 @@ export const disconnectSalesIntelSalesforce = (agentId: string) =>
   request<{ salesforce: SalesforceConnectionStatus }>(`/sales-intelligence/${agentId}/salesforce/disconnect`, { method: "POST" });
 export const pushOpportunityToSalesforce = (agentId: string, opportunityId: number | string) =>
   request<{ opportunity: SalesOpportunity }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}/push-to-salesforce`, { method: "POST" });
+
+// Assign Reviewer -- PATCH assign-reviewer (editor role). Pass both null to clear the reviewer.
+export const assignSalesReviewer = (
+  agentId: string, opportunityId: number | string, body: { user_id?: string | null; name?: string | null },
+) =>
+  request<{ opportunity: SalesOpportunity }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}/assign-reviewer`, {
+    method: "PATCH", body: JSON.stringify(body),
+  });
+
+// Decision History -- the approve/reject/override audit trail for one opportunity.
+export type SalesDecision = {
+  id: string; agentId: string; opportunityId: string | null; action: string;
+  decision: "approved" | "rejected" | "needs_review" | string | null; decisionLabel: string;
+  detail: string | null; tone: string; reviewerUserId: string | null;
+  metadata: Record<string, unknown>; createdAt: string;
+};
+export const getSalesOpportunityDecisions = (agentId: string, opportunityId: number | string) =>
+  request<{ opportunityId: string; decisions: SalesDecision[] }>(
+    `/sales-intelligence/${agentId}/opportunities/${opportunityId}/decisions`,
+  );
+
+// Generic in-app notifications (app.modules.notifications) -- tenant-scoped inbox, reusable across
+// verticals. Sales Intelligence wires its triggers server-side (review-required, Salesforce sync
+// success/failed, scan-failed, deadline-reminder). In-product only (no email/FCM push).
+export type NotificationCategory = "sales_intelligence" | "general" | string;
+export type Notification = {
+  id: string; category: NotificationCategory; type: string; title: string; body: string;
+  agentId: string | null; opportunityId: string | null; metadata: Record<string, unknown>;
+  read: boolean; readAt: string | null; createdAt: string;
+};
+export const listNotifications = (params: { category?: NotificationCategory; unread_only?: boolean; limit?: number } = {}) =>
+  request<{ notifications: Notification[]; unreadCount: number }>(`/notifications${siQuery(params)}`);
+export const getUnreadNotificationCount = (category?: NotificationCategory) =>
+  request<{ unreadCount: number }>(`/notifications/unread-count${siQuery({ category })}`);
+export const markNotificationRead = (id: string) =>
+  request<{ notification: Notification }>(`/notifications/${id}/read`, { method: "POST" });
+export const markAllNotificationsRead = (category?: NotificationCategory) =>
+  request<{ updated: number }>(`/notifications/read-all${siQuery({ category })}`, { method: "POST" });
 
 // Public embed chat (no auth)
 export const publicChat = (tenant: string, workerId: string, question: string) =>
