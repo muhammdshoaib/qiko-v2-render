@@ -48,6 +48,35 @@ def test_webhook_connect_rejects_non_https_url(client):
     assert r.status_code == 422
 
 
+def test_webhook_connect_rejects_non_teams_hosts_ssrf(client):
+    # SSRF guard (OWASP A01/API7): an https:// URL is not enough -- it must be a genuine Microsoft
+    # Teams webhook host, so an editor can't point the server-side POST at internal infrastructure.
+    fake = _FakeGateway()
+    client.app.state.teams_notifier.gateway = fake
+    for bad in (
+        "https://169.254.169.254/latest/meta-data/",   # cloud metadata endpoint
+        "https://localhost/webhook",
+        "https://internal-service.svc.cluster.local/hook",
+        "https://evil.example.com/webhook",             # attacker-controlled host
+        "https://outlook.office.com.evil.com/webhook",  # suffix-spoofing attempt
+    ):
+        r = client.put("/api/v1/channels/teams/webhook", json={"webhook_url": bad}, cookies=C)
+        assert r.status_code == 422, bad
+    # and nothing was ever sent to a rejected URL
+    assert fake.sent == []
+
+
+def test_webhook_connect_accepts_teams_workflow_host(client):
+    # Modern Teams "Workflows" webhooks live on *.webhook.office.com / *.logic.azure.com.
+    for good in (
+        "https://acme.webhook.office.com/webhookb2/abc",
+        "https://prod-12.westeurope.logic.azure.com/workflows/xyz/triggers/manual/paths/invoke",
+    ):
+        r = client.put("/api/v1/channels/teams/webhook", json={"webhook_url": good}, cookies=C)
+        assert r.status_code == 200, good
+        assert r.json()["connected"] is True
+
+
 def test_webhook_test_without_a_connection_404s_as_422(client):
     r = client.post("/api/v1/channels/teams/test", cookies=auth_cookies("teamsco2", "owner"))
     assert r.status_code == 422

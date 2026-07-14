@@ -17,12 +17,35 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
+from urllib.parse import urlparse
 
 from app.core.crypto import decrypt, encrypt
 
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+# SSRF allow-list (OWASP A01 SSRF / API7): the webhook URL is fetched server-side on an editor's
+# say-so, so it must not be usable to POST into arbitrary internal infrastructure. A Microsoft
+# Teams Incoming Webhook / Workflows URL always lives on one of these Microsoft-owned hosts, so we
+# allow-list by host suffix rather than only checking the scheme (which let any https:// host --
+# including http(s)://169.254.169.254 or an internal service -- through before).
+_TEAMS_WEBHOOK_HOST_SUFFIXES = (
+    ".webhook.office.com",   # modern Teams connector webhooks (<tenant>.webhook.office.com)
+    "outlook.office.com",    # legacy Office 365 connector webhooks
+    "outlook.office365.com",
+    ".logic.azure.com",      # Power Automate / Workflows "Post to a channel" flows
+)
+
+
+def _is_allowed_teams_host(webhook_url: str) -> bool:
+    parsed = urlparse(webhook_url)
+    if parsed.scheme != "https" or not parsed.hostname:
+        return False
+    host = parsed.hostname.lower()
+    return any(host == suffix.lstrip(".") or host.endswith(suffix)
+               for suffix in _TEAMS_WEBHOOK_HOST_SUFFIXES)
 
 
 @dataclass
@@ -85,6 +108,10 @@ class TeamsNotifier:
     async def connect(self, tenant: str, webhook_url: str) -> None:
         if not webhook_url.startswith("https://"):
             raise TeamsWebhookError("webhook URL must be an https:// URL")
+        if not _is_allowed_teams_host(webhook_url):
+            # SSRF guard: only genuine Microsoft Teams webhook hosts are accepted, so this URL
+            # can't be pointed at internal infrastructure (metadata endpoint, private services).
+            raise TeamsWebhookError("webhook URL must be a Microsoft Teams webhook URL")
         await self.store.set(tenant, webhook_url)
 
     async def disconnect(self, tenant: str) -> None:

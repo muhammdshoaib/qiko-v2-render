@@ -24,6 +24,8 @@ export default function ChatPage() {
     try {
       const reply = await ask(conversationId, q);
       setMessages((m) => [...m, reply]);
+    } catch {
+      setMessages((m) => [...m, { role: "assistant", text: "Sorry, something went wrong. Please try again." }]);
     } finally {
       setBusy(false);
     }
@@ -49,7 +51,7 @@ export default function ChatPage() {
           {busy && <p className="text-sm text-muted-foreground">Thinking…</p>}
         </div>
         <form onSubmit={send} className="flex gap-2 border-t border-border pt-4">
-          <Input placeholder="Message your worker…" value={input} onChange={(e) => setInput(e.target.value)} />
+          <Input placeholder="Message your worker…" value={input} onChange={(e) => setInput(e.target.value)} disabled={busy} aria-label="Message your worker" />
           <Button type="submit" size="icon" disabled={busy}><SendHorizonal className="size-4" /></Button>
         </form>
       </div>

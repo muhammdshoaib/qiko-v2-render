@@ -43,7 +43,7 @@ export default function DashboardPage() {
   const qc = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
-  const [atype, setAtype] = useState<"worker" | "sales_intelligence" | "finance">("worker");
+  const [atype, setAtype] = useState<"worker" | "pre_sales_writer" | "sales_intelligence" | "finance">("worker");
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const workers = agents.data ?? [];
   const readyWorkers = workers.filter((a) => a.status === "ready");
@@ -175,7 +175,8 @@ export default function DashboardPage() {
                       className="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
                     <div className="grid grid-cols-2 gap-2">
                       {([
-                        { key: "worker", label: "General worker", desc: "Chat, knowledge, RFP" },
+                        { key: "worker", label: "General worker", desc: "Grounded chat, research & knowledge" },
+                        { key: "pre_sales_writer", label: "Pre-Sales / RFP", desc: "Tender bids, compliance, win/loss" },
                         { key: "sales_intelligence", label: "Sales Intelligence", desc: "Tender ingestion + Salesforce" },
                         { key: "finance", label: "Financial Analyst", desc: "Excel portfolio analytics" },
                       ] as const).map((t) => (

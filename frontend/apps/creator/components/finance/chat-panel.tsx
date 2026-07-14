@@ -72,9 +72,9 @@ export function FinanceChatPanel({ agentId, workerName }: { agentId: string; wor
       <form onSubmit={(e) => { e.preventDefault(); submit(text); }} className="border-t border-white/[0.06] p-3">
         <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2">
           <input value={text} onChange={(e) => setText(e.target.value)}
-            placeholder="Ask about property performance, vendor costs, profitability…"
+            placeholder="Ask about property performance, vendor costs, profitability…" aria-label="Ask the financial analyst"
             className="flex-1 bg-transparent text-[13px] text-white placeholder:text-white/40 focus:outline-none" />
-          <button type="submit" disabled={send.isPending || !text.trim()}
+          <button type="submit" disabled={send.isPending || !text.trim()} aria-label="Send message"
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500 text-white transition-colors hover:bg-indigo-400 disabled:opacity-40">
             <SendHorizonal className="h-4 w-4" />
           </button>

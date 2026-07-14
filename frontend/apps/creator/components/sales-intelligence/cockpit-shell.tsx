@@ -108,13 +108,13 @@ function ChatPanel({ agentId, workerName, onClose }: { agentId: string; workerNa
             <MessageSquare className="size-4" />
           </span>
           <div>
-            <p className="text-[13px] font-semibold text-white">Chat with {workerName.replace(/^IDG\s*-?\s*/, "IDG")}</p>
+            <p className="text-[13px] font-semibold text-white">Chat with {workerName}</p>
             <p className="flex items-center gap-1 text-[11px] text-slate-500">
               <span className="size-1.5 rounded-full bg-emerald-400" /> AI assistant · online
             </p>
           </div>
         </div>
-        <button onClick={onClose} className="text-slate-500 hover:text-white"><X className="size-4" /></button>
+        <button onClick={onClose} aria-label="Close chat" className="text-slate-500 hover:text-white"><X className="size-4" /></button>
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
@@ -141,7 +141,7 @@ function ChatPanel({ agentId, workerName, onClose }: { agentId: string; workerNa
       <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) { send.mutate(text); setText(""); } }}
         className="border-t border-white/[0.06] p-3">
         <div className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2.5">
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask something..."
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask something..." aria-label="Chat message"
             className="w-full bg-transparent text-[13px] text-white placeholder:text-slate-500 focus:outline-none" />
           <p className="mt-2 text-[10px] text-slate-600">Enter to send · Shift+Enter for new line</p>
         </div>

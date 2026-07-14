@@ -20,6 +20,7 @@ import {
   saveSalesforceCredentials, saveVapiCredentials, setPackOutcome, testSalesforceConnection, testTeamsWebhook,
   updateAgentConfig, updateCalendlyEventType, type Agent, type BatchAnswer, type Doc, type RfpPack,
 } from "@/lib/api";
+import { formatShortDate } from "@/lib/stringUtils";
 
 const TABS = [
   { id: "Overview", icon: Sparkles, iconColor: "text-cyan-400" },
@@ -334,7 +335,7 @@ function TendersCard({ agentId, packs, onChange }: { agentId: string; packs?: Rf
           <div key={p.id} className="flex items-center justify-between rounded-lg border border-border/60 p-3 text-sm hover:bg-muted/50">
             <Link href={`/workers/${agentId}/tenders/${p.id}`} className="min-w-0 flex-1">
               <p className="font-medium">{p.title}</p>
-              <p className="text-xs text-muted-foreground">{p.client_name || "No client set"} {p.deadline ? `· Due ${p.deadline}` : ""}</p>
+              <p className="text-xs text-muted-foreground">{p.client_name || "No client set"} {p.deadline ? `· Due ${formatShortDate(p.deadline)}` : ""}</p>
             </Link>
             <div className="flex items-center gap-2 shrink-0">
               {p.outcome ? (

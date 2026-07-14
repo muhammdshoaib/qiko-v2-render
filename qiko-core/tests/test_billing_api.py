@@ -42,6 +42,13 @@ def test_payment_links_admin_only(client):
     assert client.post("/api/v1/billing/payment-links/mark-paid", json={"customer_email": "buyer@x.com"}, cookies=C).json()["marked"] >= 1
 
 
+def test_mark_paid_missing_email_is_422_not_500(client):
+    # Regression: mark-paid took a raw dict and did body["customer_email"], so a missing field
+    # 500'd (unhandled KeyError) instead of returning a clean 422 validation error.
+    r = client.post("/api/v1/billing/payment-links/mark-paid", json={}, cookies=C)
+    assert r.status_code == 422
+
+
 def test_team_plan_and_invoices(client):
     team = client.post("/api/v1/teams", json={"owner_id": "o"}, cookies=C).json()
     assert client.get(f"/api/v1/billing/team/{team['team_id']}/plan", cookies=C).json()["plan"] == "free"

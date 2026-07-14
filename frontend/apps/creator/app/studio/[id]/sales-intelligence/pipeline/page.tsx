@@ -83,6 +83,7 @@ export default function SalesIntelligencePipelinePage() {
         </div>
 
         {oppsQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+        {oppsQ.isError && <p className="text-sm text-red-400">Couldn&apos;t load the pipeline. Try refreshing.</p>}
 
         {view === "pipeline" ? (
           <div className="space-y-6">

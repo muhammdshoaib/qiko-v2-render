@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { ArrowRight, BarChart3, MessageSquare, Plus, Radar } from "lucide-react";
+import { ArrowRight, BarChart3, FileText, MessageSquare, Plus, Radar } from "lucide-react";
 import { Button } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -11,6 +11,7 @@ import {
   type Agent, type FinanceAnalytics, type RfpPack, type SalesOpportunity,
 } from "@/lib/api";
 import { normalizeFinanceSummary } from "@/components/finance/utils";
+import { formatShortDate, toTitleFromSlug } from "@/lib/stringUtils";
 
 function workerCategory(a: Agent): string {
   const expertise = a.config?.expertise as string | undefined;
@@ -50,7 +51,8 @@ export default function StudioPage() {
     queries: deployed.map((a) => ({
       queryKey: ["rfp-packs", a.id],
       queryFn: () => listRfpPacks(a.id),
-      enabled: !isSalesIntelligenceWorker(a) && !isFinanceWorker(a),
+      enabled: a.atype === "pre_sales_writer",
+      retry: false,
     })),
   });
   const opportunitiesQ = useQueries({
@@ -117,6 +119,7 @@ export default function StudioPage() {
                     const idx = deployed.findIndex((d) => d.id === a.id);
                     const salesIntel = isSalesIntelligenceWorker(a);
                     const finance = isFinanceWorker(a);
+                    const preSales = a.atype === "pre_sales_writer";
 
                     let metrics: { label: string; value: string }[];
                     let useCaseCount: number;
@@ -154,7 +157,7 @@ export default function StudioPage() {
                       ];
                       useCaseCount = 5;
                       href = `/studio/${a.id}/sales-intelligence`;
-                    } else {
+                    } else if (preSales) {
                       const packs: RfpPack[] = packsQ[idx]?.data ?? [];
                       const activeBids = packs.length;
                       const inReview = packs.filter((p) => p.stage === "review" || p.stage === "final").length;
@@ -164,9 +167,19 @@ export default function StudioPage() {
                         { label: "Active Bids", value: String(activeBids) },
                         { label: "Avg Readiness", value: activeBids > 0 ? `${avgReadiness}%` : "—" },
                         { label: "Data volume", value: `${dataVolume} chunks` },
-                        { label: "Next Bid", value: nextDeadline ?? "—" },
+                        { label: "Next Bid", value: nextDeadline ? formatShortDate(nextDeadline) : "—" },
                       ];
-                      useCaseCount = 3;
+                      useCaseCount = 6;
+                      href = `/studio/${a.id}/pre-sales`;
+                    } else {
+                      // Generic worker boilerplate: domain-neutral knowledge/grounding metrics.
+                      metrics = [
+                        { label: "Status", value: a.status === "ready" ? "Ready" : "Training" },
+                        { label: "Knowledge", value: `${dataVolume} chunks` },
+                        { label: "Grounding", value: "Critic + gate" },
+                        { label: "Channels", value: "Chat · Voice" },
+                      ];
+                      useCaseCount = 4;
                       href = `/studio/${a.id}`;
                     }
 
@@ -185,6 +198,10 @@ export default function StudioPage() {
                                 <span className="flex size-11 shrink-0 items-center justify-center rounded-xl" style={{ background: "rgba(34,211,238,0.08)", border: "1px solid rgba(34,211,238,0.18)" }}>
                                   <Radar className="size-5 text-cyan-400" />
                                 </span>
+                              ) : preSales ? (
+                                <span className="flex size-11 shrink-0 items-center justify-center rounded-xl" style={{ background: "rgba(168,85,247,0.08)", border: "1px solid rgba(168,85,247,0.18)" }}>
+                                  <FileText className="size-5 text-purple-400" />
+                                </span>
                               ) : (
                                 <span className="flex size-11 shrink-0 items-center justify-center rounded-xl" style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.15)" }}>
                                   <MessageSquare className="size-5 text-indigo-400" />
@@ -192,7 +209,7 @@ export default function StudioPage() {
                               )}
                               <div>
                                 <h3 className="text-[15px] font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>{a.name}</h3>
-                                <p className="mt-0.5 text-[11px] text-slate-500">{a.atype || category.toLowerCase().replace(/\s+/g, "_")}</p>
+                                <p className="mt-0.5 text-[11px] text-slate-500">{toTitleFromSlug(a.atype) || category}</p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2 self-start sm:self-auto">
@@ -213,7 +230,9 @@ export default function StudioPage() {
                         </div>
                         <div className="flex items-center justify-between border-t border-white/[0.05] px-6 py-3 text-[11px] text-slate-500">
                           <span>{useCaseCount} active use cases</span>
-                          <span>Last active 2h ago</span>
+                          <span className="flex items-center gap-1 text-slate-400 transition-colors group-hover:text-indigo-400">
+                            Open <ArrowRight className="size-3" />
+                          </span>
                         </div>
                       </button>
                     );

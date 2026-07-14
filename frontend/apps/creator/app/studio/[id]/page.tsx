@@ -1,21 +1,28 @@
 "use client";
 
+// Common worker boilerplate cockpit (atype="worker"): the domain-neutral capabilities every worker
+// has over agentcore -- grounded Chat, batch Research, Knowledge. Verticals (pre_sales_writer,
+// sales_intelligence, finance) are separate capability packs; this page redirects to them by atype.
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
-  ArrowLeft, Bot, CheckCircle2, ClipboardCheck, Download, FileText, ListChecks,
-  Lock, MessageSquare, Search, SendHorizonal, Shield, TrendingUp, Users,
+  ArrowLeft, Bot, BookOpen, Download, Link2, MessageSquare, Search, SendHorizonal, Sparkles,
 } from "lucide-react";
 import { Badge, Button, Card, CardContent } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import {
-  ask, batchAnswer, batchExportUrl, getPackStats, listAgents, listDocuments, listRfpPacks,
-  type BatchAnswer, type RfpPack,
+  ask, batchAnswer, batchExportUrl, listAgents, listDocuments, type BatchAnswer,
 } from "@/lib/api";
 
-const TABS = ["Overview", "Chat", "Research", "Win/Loss"] as const;
+const VERTICAL_ROUTES: Record<string, string> = {
+  pre_sales_writer: "pre-sales",
+  sales_intelligence: "sales-intelligence",
+  finance: "finance",
+};
+
+const TABS = ["Overview", "Chat", "Research"] as const;
 
 export default function StudioWorkerPage() {
   const { id } = useParams<{ id: string }>();
@@ -24,13 +31,12 @@ export default function StudioWorkerPage() {
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const worker = agents.data?.find((a) => a.id === id);
 
-  // The Sales Intelligence and Finance workers each have their own dedicated dashboards rather than
-  // this generic RFP-pack tab layout -- bounce there if landed on directly.
+  // Verticals have their own cockpits -- bounce there if this worker is one of them.
+  const verticalRoute = worker ? VERTICAL_ROUTES[worker.atype] : undefined;
   useEffect(() => {
-    if (worker?.atype === "sales_intelligence") router.replace(`/studio/${id}/sales-intelligence`);
-    else if (worker?.atype === "finance") router.replace(`/studio/${id}/finance`);
-  }, [worker?.atype, id, router]);
-  if (worker?.atype === "sales_intelligence" || worker?.atype === "finance") return null;
+    if (verticalRoute) router.replace(`/studio/${id}/${verticalRoute}`);
+  }, [verticalRoute, id, router]);
+  if (verticalRoute) return null;
 
   return (
     <AppShell title="Studio">
@@ -45,7 +51,12 @@ export default function StudioWorkerPage() {
           </div>
           <div>
             <h1 className="text-lg font-bold">{worker?.name ?? "Worker"}</h1>
-            <Badge variant="muted">Published</Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant={worker?.status === "ready" ? "success" : "muted"}>
+                {worker?.status === "ready" ? "Ready" : "Training"}
+              </Badge>
+              <span className="text-xs text-muted-foreground">AI Worker</span>
+            </div>
           </div>
         </div>
 
@@ -59,64 +70,46 @@ export default function StudioWorkerPage() {
         </div>
 
         {tab === "Overview" && (
-          <StudioOverview agentId={id} onOpenResearch={() => setTab("Research")}
-            onOpenWinLoss={() => setTab("Win/Loss")} onOpenKnowledge={() => router.push(`/workers/${id}`)}
+          <WorkerOverview agentId={id} ready={worker?.status === "ready"}
+            onOpenChat={() => setTab("Chat")} onOpenResearch={() => setTab("Research")}
+            onOpenKnowledge={() => router.push(`/workers/${id}`)}
             onOpenConnections={() => router.push(`/workers/${id}?tab=Connections`)} />
         )}
         {tab === "Chat" && <StudioChat />}
         {tab === "Research" && <StudioResearch />}
-        {tab === "Win/Loss" && <StudioWinLoss agentId={id} />}
       </div>
     </AppShell>
   );
 }
 
-type UseCase = { title: string; description: string; icon: typeof FileText; status: "active" | "coming_soon"; onClick?: () => void };
+type Capability = { title: string; description: string; icon: typeof MessageSquare; onClick: () => void };
 
-function StudioOverview({ agentId, onOpenResearch, onOpenWinLoss, onOpenKnowledge, onOpenConnections }: {
-  agentId: string; onOpenResearch: () => void; onOpenWinLoss: () => void; onOpenKnowledge: () => void; onOpenConnections: () => void;
+function WorkerOverview({ agentId, ready, onOpenChat, onOpenResearch, onOpenKnowledge, onOpenConnections }: {
+  agentId: string; ready: boolean; onOpenChat: () => void; onOpenResearch: () => void;
+  onOpenKnowledge: () => void; onOpenConnections: () => void;
 }) {
-  const router = useRouter();
-  const packs = useQuery({ queryKey: ["rfp-packs", agentId], queryFn: () => listRfpPacks(agentId) });
   const docs = useQuery({ queryKey: ["documents"], queryFn: listDocuments });
-
-  function openCompliance() {
-    // Compliance Checker lives inside a specific tender's cockpit (it checks THAT tender's
-    // mandatory requirements) -- jump into the most recently created pack, or ask for one first.
-    const target = packs.data?.[0];
-    if (!target) {
-      onOpenResearch();
-      return;
-    }
-    router.push(`/workers/${agentId}/tenders/${target.id}?tab=Compliance`);
-  }
-
-  const activeBids = packs.data?.length ?? 0;
-  const inReview = packs.data?.filter((p: RfpPack) => p.stage === "review" || p.stage === "final").length ?? 0;
-  const avgReadiness = activeBids > 0 ? Math.round((inReview / activeBids) * 100) : 0;
-  const dataVolume = docs.data?.reduce((n, d) => n + d.chunks, 0) ?? 0;
-  const nextDeadline = packs.data?.map((p) => p.deadline).filter(Boolean).sort()[0] ?? null;
+  const sources = docs.data?.length ?? 0;
+  const chunks = docs.data?.reduce((n, d) => n + d.chunks, 0) ?? 0;
 
   const metrics = [
-    { label: "Active Bids", value: String(activeBids) },
-    { label: "Avg Readiness", value: activeBids > 0 ? `${avgReadiness}%` : "\u2014" },
-    { label: "Data volume", value: `${dataVolume} chunks` },
-    { label: "Next Bid", value: nextDeadline ?? "\u2014" },
+    { label: "Status", value: ready ? "Ready" : "Training" },
+    { label: "Knowledge sources", value: String(sources) },
+    { label: "Indexed chunks", value: String(chunks) },
+    { label: "Grounding", value: "Critic + gate" },
   ];
 
-  const useCases: UseCase[] = [
-    { title: "AI Response Generation", description: "Generate section-by-section RFP responses from the knowledge base",
-      icon: FileText, status: "active", onClick: onOpenResearch },
-    { title: "Knowledge Base", description: "Manage and search your response library",
-      icon: ClipboardCheck, status: "active", onClick: onOpenKnowledge },
-    { title: "Section Assignment", description: "Assign and track section ownership across the team",
-      icon: ListChecks, status: "active" },
-    { title: "Compliance Checker", description: "Validate responses against compliance requirements",
-      icon: Shield, status: "active", onClick: openCompliance },
-    { title: "Win/Loss Analysis", description: "Track outcomes and improve future responses",
-      icon: TrendingUp, status: "active", onClick: onOpenWinLoss },
-    { title: "Teams Integration", description: "Notifications and collaboration via Microsoft Teams",
-      icon: Users, status: "active", onClick: onOpenConnections },
+  // Domain-neutral capabilities every worker has over agentcore. A vertical layers extra screens
+  // on top of these; the base worker is immediately usable for any domain from here.
+  const capabilities: Capability[] = [
+    { title: "Chat", description: "Ask the worker anything -- answers grounded in its knowledge, with an anti-hallucination gate",
+      icon: MessageSquare, onClick: onOpenChat },
+    { title: "Research", description: "Batch-answer many questions at once with confidence scores, citations, and xlsx export",
+      icon: Search, onClick: onOpenResearch },
+    { title: "Knowledge", description: "Upload and manage the documents this worker reasons over",
+      icon: BookOpen, onClick: onOpenKnowledge },
+    { title: "Connections", description: "Wire the worker to voice, calendar, email, and messaging channels",
+      icon: Link2, onClick: onOpenConnections },
   ];
 
   return (
@@ -130,30 +123,28 @@ function StudioOverview({ agentId, onOpenResearch, onOpenWinLoss, onOpenKnowledg
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {useCases.map((uc) => {
-          const Icon = uc.icon;
-          const clickable = uc.status === "active" && uc.onClick;
-          return (
-            <Card key={uc.title} className={uc.status === "coming_soon" ? "opacity-60" : clickable ? "cursor-pointer transition-colors hover:border-primary/40" : ""}
-              {...(clickable ? { onClick: uc.onClick } : {})}>
-              <CardContent className="flex items-start gap-3 pt-6">
-                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
-                  {uc.status === "coming_soon" ? <Lock className="size-4" /> : <Icon className="size-4" />}
-                </div>
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <p className="text-sm font-medium">{uc.title}</p>
-                    {uc.status === "coming_soon"
-                      ? <Badge variant="muted">Coming soon</Badge>
-                      : <CheckCircle2 className="size-3.5 text-emerald-500" />}
+      <div>
+        <p className="mb-3 flex items-center gap-2 text-sm font-semibold">
+          <Sparkles className="size-4 text-primary" /> What this worker can do
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {capabilities.map((c) => {
+            const Icon = c.icon;
+            return (
+              <Card key={c.title} className="cursor-pointer transition-colors hover:border-primary/40" onClick={c.onClick}>
+                <CardContent className="flex items-start gap-3 pt-6">
+                  <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                    <Icon className="size-4" />
                   </div>
-                  <p className="text-xs text-muted-foreground">{uc.description}</p>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
+                  <div className="flex-1 space-y-1">
+                    <p className="text-sm font-medium">{c.title}</p>
+                    <p className="text-xs text-muted-foreground">{c.description}</p>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -182,64 +173,12 @@ function StudioChat() {
           {send.isPending && <div className="flex justify-start"><TypingIndicator /></div>}
         </div>
         <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) { send.mutate(text); setText(""); } }} className="flex gap-2">
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask a question..."
+          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask a question..." aria-label="Ask a question"
             className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-          <Button type="submit" size="icon" disabled={send.isPending}><SendHorizonal className="size-4" /></Button>
+          <Button type="submit" size="icon" disabled={send.isPending} aria-label="Send message"><SendHorizonal className="size-4" /></Button>
         </form>
       </CardContent>
     </Card>
-  );
-}
-
-const LOSS_REASON_LABELS: Record<string, string> = {
-  price: "Price", technical: "Technical fit", relationship: "Relationship", timeline: "Timeline",
-  no_bid_decision: "No-bid decision", other: "Other", unspecified: "Unspecified",
-};
-
-function StudioWinLoss({ agentId }: { agentId: string }) {
-  const stats = useQuery({ queryKey: ["pack-stats", agentId], queryFn: () => getPackStats(agentId) });
-  const s = stats.data;
-
-  return (
-    <div className="space-y-4">
-      <p className="text-sm text-muted-foreground">
-        <TrendingUp className="mr-1 inline size-3.5" />
-        Outcomes are recorded from the worker&apos;s Tenders list (mark a tender Won/Lost) -- this rolls them up.
-      </p>
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Card><CardContent className="space-y-1 pt-6">
-          <p className="text-xs text-muted-foreground">Win rate</p>
-          <p className="text-xl font-bold">{s?.win_rate != null ? `${Math.round(s.win_rate * 100)}%` : "\u2014"}</p>
-        </CardContent></Card>
-        <Card><CardContent className="space-y-1 pt-6">
-          <p className="text-xs text-muted-foreground">Won / Lost</p>
-          <p className="text-xl font-bold">{s?.won ?? 0} / {s?.lost ?? 0}</p>
-        </CardContent></Card>
-        <Card><CardContent className="space-y-1 pt-6">
-          <p className="text-xs text-muted-foreground">Pipeline value won</p>
-          <p className="text-xl font-bold">${(s?.won_value ?? 0).toLocaleString()}</p>
-        </CardContent></Card>
-        <Card><CardContent className="space-y-1 pt-6">
-          <p className="text-xs text-muted-foreground">Pending decision</p>
-          <p className="text-xl font-bold">{s?.pending ?? 0}</p>
-        </CardContent></Card>
-      </div>
-
-      <Card><CardContent className="space-y-3 pt-6">
-        <p className="text-sm font-semibold">Why we lose</p>
-        {s && Object.keys(s.loss_reasons).length > 0 ? (
-          Object.entries(s.loss_reasons).sort((a, b) => b[1] - a[1]).map(([reason, count]) => (
-            <div key={reason} className="flex items-center justify-between text-sm">
-              <span>{LOSS_REASON_LABELS[reason] ?? reason}</span>
-              <Badge variant="muted">{count}</Badge>
-            </div>
-          ))
-        ) : (
-          <p className="text-sm text-muted-foreground">No lost tenders recorded yet.</p>
-        )}
-      </CardContent></Card>
-    </div>
   );
 }
 
@@ -270,7 +209,7 @@ function StudioResearch() {
           knowledge, with a confidence score and citations, ready to export.
         </p>
         <textarea value={raw} onChange={(e) => setRaw(e.target.value)}
-          placeholder={"Does the company hold ISO 9001?\nWhat is our coverage in Region X?"}
+          placeholder={"What is our refund policy?\nWhich regions do we operate in?"}
           className="min-h-24 w-full rounded-md border border-input bg-background p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
         <div className="flex justify-end gap-2">
           <Button variant="outline" disabled={!run.data || exporting} onClick={onExport}>

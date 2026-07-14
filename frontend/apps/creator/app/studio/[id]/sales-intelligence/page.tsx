@@ -149,7 +149,8 @@ export default function SalesIntelligenceOverviewPage() {
             </span>
           </div>
           {oppsQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
-          {!oppsQ.isLoading && recent.length === 0 && <p className="text-sm text-slate-500">No opportunities ingested yet.</p>}
+          {!oppsQ.isLoading && oppsQ.isError && <p className="text-sm text-red-400">Couldn&apos;t load opportunities. Try refreshing.</p>}
+          {!oppsQ.isLoading && !oppsQ.isError && recent.length === 0 && <p className="text-sm text-slate-500">No opportunities ingested yet.</p>}
           <div className="divide-y divide-white/[0.05]">
             {recent.map((o) => (
               <button key={o.id} onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline/${o.id}`)}

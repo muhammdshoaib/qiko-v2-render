@@ -5,7 +5,7 @@ from dataclasses import asdict
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 from app.core.deps import (
@@ -134,10 +134,15 @@ def create_payment_link(body: PaymentLinkBody, _tenant: str = Depends(authed_ten
     return {"session_id": log.session_id, "url": log.url, "status": log.status}
 
 
+class MarkPaidBody(BaseModel):
+    customer_email: str = Field(min_length=3)
+
+
 @router.post("/payment-links/mark-paid")
-def mark_paid(body: dict, _tenant: str = Depends(authed_tenant),
+def mark_paid(body: MarkPaidBody, _tenant: str = Depends(authed_tenant),
               _role: dict = Depends(require_role(Role.admin)), links=Depends(get_payment_links)) -> dict:
-    return {"marked": links.mark_as_paid_for_user(body["customer_email"])}
+    # Validated body (was a raw dict -> a missing customer_email 500'd instead of a clean 422).
+    return {"marked": links.mark_as_paid_for_user(body.customer_email)}
 
 
 @router.get("/payment-links")

@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.crypto import encrypt
 from app.core.deps import authed_tenant, get_agents, get_subscriptions, require_role
@@ -33,7 +35,7 @@ def _redact(agent: Agent) -> Agent:
 # Known worker verticals. "worker" is the generic default; the others unlock a bespoke Studio
 # cockpit (e.g. "sales_intelligence" -> tender ingestion + qualification + Salesforce push).
 # Server-validated allowlist -- a client can't invent an arbitrary atype.
-AGENT_TYPES = {"worker", "sales_intelligence", "finance"}
+AGENT_TYPES = {"worker", "pre_sales_writer", "sales_intelligence", "finance"}
 
 
 class CreateAgentBody(BaseModel):
@@ -148,10 +150,26 @@ async def update_calendly_event_type(agent_id: str, body: CalendlyEventTypeBody,
         raise HTTPException(status_code=404, detail="agent not found") from e
 
 
+# A tenant's Salesforce org is always reached on one of these Microsoft/Salesforce-owned host
+# suffixes (My Domain / sandbox / Experience Cloud). Allow-listing them (not just requiring
+# https://) stops the client-credentials token call in SalesforceClient from being pointed at
+# internal infrastructure (SSRF -- OWASP A01 SSRF / API7), since that call ships the tenant's
+# own client secret to whatever instance_url is stored here.
+_SALESFORCE_HOST_SUFFIXES = (".salesforce.com", ".force.com", ".salesforce.mil")
+
+
 class SalesforceCredentialsBody(BaseModel):
     client_id: str = Field(min_length=1)
     client_secret: str = Field(min_length=1)
     instance_url: str = Field(min_length=1, pattern=r"^https://")
+
+    @field_validator("instance_url")
+    @classmethod
+    def _instance_url_is_salesforce(cls, v: str) -> str:
+        host = (urlparse(v).hostname or "").lower()
+        if not any(host == s.lstrip(".") or host.endswith(s) for s in _SALESFORCE_HOST_SUFFIXES):
+            raise ValueError("instance_url must be a Salesforce host (*.salesforce.com / *.force.com)")
+        return v
 
 
 def _salesforce_view(agent: Agent) -> dict:

@@ -107,6 +107,24 @@ def test_salesforce_credentials_rejects_non_https_instance_url(client):
     assert r.status_code == 422
 
 
+def test_salesforce_credentials_rejects_non_salesforce_host_ssrf(client):
+    # SSRF guard (OWASP A01/API7): the stored instance_url receives the tenant's own client
+    # secret on the token call, so an https:// URL alone isn't enough -- it must be a Salesforce
+    # host, not an internal/attacker-controlled one.
+    c = auth_cookies("sfcossrf", "owner")
+    agent = client.post("/api/v1/agents", json={"name": "IDG"}, cookies=c).json()
+    for bad in (
+        "https://169.254.169.254/",
+        "https://localhost/services/oauth2/token",
+        "https://evil.example.com",
+        "https://acme.my.salesforce.com.evil.com",  # suffix-spoofing attempt
+    ):
+        r = client.post(f"/api/v1/agents/{agent['id']}/salesforce-credentials", cookies=c, json={
+            "client_id": "cid", "client_secret": "secret", "instance_url": bad,
+        })
+        assert r.status_code == 422, bad
+
+
 def test_salesforce_disconnect_clears_credentials(client):
     c = auth_cookies("sfco3", "owner")
     agent = client.post("/api/v1/agents", json={"name": "IDG"}, cookies=c).json()

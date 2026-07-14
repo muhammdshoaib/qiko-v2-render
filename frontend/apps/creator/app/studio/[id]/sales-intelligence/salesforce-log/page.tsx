@@ -70,8 +70,9 @@ export default function SalesforcePushLogPage() {
                 className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] disabled:opacity-50">
                 <Unlink className="size-3.5" /> Disconnect
               </button>
-              <button onClick={() => sfQ.refetch()} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06]">
-                <RefreshCw className="size-3.5" /> Refresh
+              <button onClick={() => sfQ.refetch()} disabled={sfQ.isFetching}
+                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] disabled:opacity-50">
+                <RefreshCw className={cn("size-3.5", sfQ.isFetching && "animate-spin")} /> {sfQ.isFetching ? "Refreshing…" : "Refresh"}
               </button>
             </div>
           </div>
