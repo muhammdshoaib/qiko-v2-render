@@ -4,7 +4,7 @@
 // the generic <AppShell> (no global Creator/Studio left rail): this mirrors the original worker
 // product's own top bar + icon nav + chat panel layout pixel-for-pixel (see
 // studio-sales-intel-detail.png / pipeline-view.png / ingestion-filters.png / studio-sf-push-log.png).
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ArrowLeft, LayoutGrid, MessageSquare, Radar, Sparkles, TableProperties, Upload, X } from "lucide-react";
@@ -34,30 +34,39 @@ export function CockpitShell({ agentId, workerName, active, children }: {
   const router = useRouter();
   const [chatOpen, setChatOpen] = useState(true);
 
+  // On mobile/tablet the chat is a full-height overlay drawer, so don't open it over the content
+  // on first load; keep the original open-by-default behaviour on lg+ (inline side column).
+  useEffect(() => {
+    if (typeof window !== "undefined" && !window.matchMedia("(min-width: 1024px)").matches) {
+      setChatOpen(false);
+    }
+  }, []);
+
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#05070d] text-slate-200">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-white/[0.06] px-4">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.push("/studio")} className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-white">
-            <ArrowLeft className="size-4" /> Studio
+      <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-white/[0.06] px-3 sm:px-4">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+          <button onClick={() => router.push("/studio")} className="flex shrink-0 items-center gap-1.5 text-sm text-slate-400 hover:text-white">
+            <ArrowLeft className="size-4" /> <span className="hidden sm:inline">Studio</span>
           </button>
-          <span className="h-4 w-px bg-white/10" />
-          <span className="flex size-6 items-center justify-center rounded-md bg-indigo-500/15 text-indigo-400">
+          <span className="hidden h-4 w-px bg-white/10 sm:block" />
+          <span className="hidden size-6 shrink-0 items-center justify-center rounded-md bg-indigo-500/15 text-indigo-400 sm:flex">
             <MessageSquare className="size-3.5" />
           </span>
-          <h1 className="text-sm font-semibold text-white">{workerName}</h1>
-          <span className="flex items-center gap-1.5 rounded-full bg-emerald-400/[0.1] px-2 py-[3px] text-[10px] font-semibold uppercase tracking-wider text-emerald-400">
+          <h1 className="truncate text-sm font-semibold text-white">{workerName}</h1>
+          <span className="hidden shrink-0 items-center gap-1.5 rounded-full bg-emerald-400/[0.1] px-2 py-[3px] text-[10px] font-semibold uppercase tracking-wider text-emerald-400 sm:flex">
             <span className="size-1.5 rounded-full bg-emerald-400" /> Active
           </span>
         </div>
-        <button onClick={() => setChatOpen((v) => !v)}
-          className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-400">
+        <button onClick={() => setChatOpen((v) => !v)} aria-expanded={chatOpen} aria-label="Toggle chat panel"
+          className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-400">
           <MessageSquare className="size-3.5" /> Chat
         </button>
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <nav className="flex w-[210px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-white/[0.06] px-4 py-5">
+        {/* Desktop side nav (lg+): keeps the original pixel-for-pixel side-by-side layout. */}
+        <nav className="hidden w-[210px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-white/[0.06] px-4 py-5 lg:flex">
           {(["OVERVIEW", "USE CASES"] as const).map((group) => (
             <div key={group}>
               <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{group}</p>
@@ -82,7 +91,27 @@ export function CockpitShell({ agentId, workerName, active, children }: {
           ))}
         </nav>
 
-        <main className="min-w-0 flex-1 overflow-y-auto px-6 py-6">{children}</main>
+        <div className="flex min-w-0 flex-1 flex-col">
+          {/* Mobile/tablet section nav (< lg): horizontal scrolling pills so narrow screens
+              never overflow -- mirrors the finance dashboard's hidden…lg pattern. */}
+          <nav aria-label="Sections" className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-white/[0.06] px-3 py-2 lg:hidden">
+            {NAV_ITEMS.map((item) => {
+              const isActive = item.section === active;
+              const Icon = item.icon;
+              return (
+                <button key={item.section} onClick={() => router.push(sectionHref(agentId, item.section))}
+                  aria-current={isActive ? "page" : undefined}
+                  className={cn("flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors",
+                    isActive ? "border border-indigo-500/30 bg-indigo-500/10 text-white" : "text-slate-400 hover:bg-white/[0.03] hover:text-white")}>
+                  <Icon className={cn("size-3.5 shrink-0", isActive ? "text-indigo-400" : "text-slate-500")} />
+                  <span className="whitespace-nowrap">{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+
+          <main className="min-w-0 flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-6">{children}</main>
+        </div>
 
         {chatOpen && <ChatPanel agentId={agentId} workerName={workerName} onClose={() => setChatOpen(false)} />}
       </div>
@@ -101,7 +130,18 @@ function ChatPanel({ agentId, workerName, onClose }: { agentId: string; workerNa
   });
 
   return (
-    <aside className="flex w-[300px] shrink-0 flex-col border-l border-white/[0.06]">
+    <>
+      {/* Dim backdrop on mobile/tablet where the chat is an overlay drawer, not a fixed column. */}
+      <div onClick={onClose} className="fixed inset-0 top-14 z-30 bg-black/50 lg:hidden" aria-hidden="true" />
+      <aside
+        className={cn(
+          "z-40 flex w-[300px] shrink-0 flex-col border-l border-white/[0.06] bg-[#05070d]",
+          // < lg: overlay drawer anchored under the header on the right.
+          "fixed bottom-0 right-0 top-14 max-w-[86vw]",
+          // lg+: revert to the original inline side column.
+          "lg:static lg:max-w-none",
+        )}
+      >
       <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3.5">
         <div className="flex items-center gap-2.5">
           <span className="flex size-8 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-400">
@@ -146,6 +186,7 @@ function ChatPanel({ agentId, workerName, onClose }: { agentId: string; workerNa
           <p className="mt-2 text-[10px] text-slate-600">Enter to send · Shift+Enter for new line</p>
         </div>
       </form>
-    </aside>
+      </aside>
+    </>
   );
 }

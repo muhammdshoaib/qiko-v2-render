@@ -99,8 +99,6 @@ interface WizardData {
   categories?: string[];
   tone?: string;
   additionalGuidance?: string;
-  keyAchievements?: string;
-  commonMistsakes?: string;
   professionalBackground?: string;
   credentials?: string;
   achievements?: string;
@@ -333,7 +331,7 @@ export default function Onboarding() {
       return;
     }
     if (isLoggedIn) {
-      setLocation("/app/workers");
+      setLocation("/workers");
       return;
     }
     if (typeof window === "undefined") {
@@ -382,9 +380,6 @@ export default function Onboarding() {
     if (step === 3 && hasSubscription) {
       runCreateAvatarAndKnowledge(recommendation.type);
       return;
-    }
-    if (step === 3) {
-      setStep(4)
     }
     setStep((prev) => Math.min(prev + 1, TOTAL_STEPS));
   };
@@ -457,8 +452,8 @@ export default function Onboarding() {
           additionalGuidance: w?.additionalGuidance,
           professionalBackground: w?.professionalBackground,
           credentials: w?.credentials,
-          achievements: w?.keyAchievements,
-          commonMistakes: w?.commonMistsakes,
+          achievements: w?.achievements,
+          commonMistakes: w?.commonMistakes,
           frameworks: w?.frameworks,
           stakeholderBalance: w?.stakeholderBalance,
           boundaries: w?.boundaries,
@@ -497,7 +492,7 @@ export default function Onboarding() {
           } catch {
             /* ignore */
           }
-          setLocation("/app");
+          setLocation("/dashboard");
         } else {
           setLocation("/creating");
         }
@@ -511,7 +506,7 @@ export default function Onboarding() {
       if (!agentId) throw new Error("Avatar created but no agent id returned");
       try {
         await addAvatarKnowledge(buildKnowledgePayload(agentId));
-        toast.success("Worker knowledge added sucessfully.");
+        toast.success("Worker knowledge added successfully.");
       } catch (knowledgeError) {
         const msg = knowledgeError instanceof Error ? knowledgeError.message : "Knowledge save failed";
         toast.warning(msg + " You can add training later.");
@@ -519,12 +514,12 @@ export default function Onboarding() {
 
       if (redirectToDashboardForCheckout) {
         try {
-          // 💳 Remember selected plan so /app can redirect to Stripe checkout
+          // Remember selected plan so the dashboard can redirect to Stripe checkout
           sessionStorage.setItem(PENDING_CHECKOUT_PLAN_KEY, plan);
         } catch {
           /* ignore */
         }
-        setLocation("/app");
+        setLocation("/dashboard");
       } else {
         setLocation("/creating");
       }
@@ -707,10 +702,13 @@ export default function Onboarding() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {INDUSTRY_OPTIONS.map((industry) => (
-                <div
+                <button
+                  type="button"
                   key={industry.value}
-                  className={`relative flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
-                    !industry.active ? "opacity-40 cursor-not-allowed" : "hover:border-[#6366F1]/50"
+                  disabled={!industry.active}
+                  aria-pressed={wizardData.industry === industry.value}
+                  className={`relative flex w-full items-center gap-3 p-3 rounded-xl border text-left transition-all ${
+                    !industry.active ? "opacity-40 cursor-not-allowed" : "cursor-pointer hover:border-[#6366F1]/50"
                   } ${
                     wizardData.industry === industry.value
                       ? "border-[#6366F1] bg-[#6366F1]/10 ring-1 ring-[#6366F1]"
@@ -738,7 +736,7 @@ export default function Onboarding() {
                     <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{industry.description}</p>
                   </div>
                   {wizardData.industry === industry.value && <Check className="w-4 h-4 text-[#6366F1] flex-shrink-0" />}
-                </div>
+                </button>
               ))}
             </div>
             {wizardData.industry && (() => {
@@ -814,8 +812,9 @@ export default function Onboarding() {
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-slate-300 text-xs font-medium">Your workers name *</Label>
+                  <Label htmlFor="worker-name" className="text-slate-300 text-xs font-medium">Your worker&apos;s name *</Label>
                   <Input
+                    id="worker-name"
                     value={wizardData.fullName || ""}
                     onChange={(e) => updateWizard("fullName", e.target.value)}
                     placeholder="e.g., James Wilson"
@@ -824,8 +823,9 @@ export default function Onboarding() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-slate-300 text-xs font-medium">Location *</Label>
+                  <Label htmlFor="worker-location" className="text-slate-300 text-xs font-medium">Location *</Label>
                   <Input
+                    id="worker-location"
                     value={wizardData.location || ""}
                     onChange={(e) => updateWizard("location", e.target.value)}
                     placeholder="e.g., Dubai, UAE"
@@ -835,8 +835,9 @@ export default function Onboarding() {
                 </div>
               </div>
               <div className="space-y-1">
-                <Label className="text-slate-300 text-xs font-medium">Professional title *</Label>
+                <Label htmlFor="worker-title" className="text-slate-300 text-xs font-medium">Professional title *</Label>
                 <Input
+                  id="worker-title"
                   value={wizardData.professionalTitle || ""}
                   onChange={(e) => updateWizard("professionalTitle", e.target.value)}
                   placeholder="e.g., Golf Travel Specialist, Wealth Fund Manager"
@@ -844,8 +845,9 @@ export default function Onboarding() {
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-slate-300 text-xs font-medium">I help clients with... *</Label>
+                <Label htmlFor="worker-headline" className="text-slate-300 text-xs font-medium">I help clients with... *</Label>
                 <Textarea
+                  id="worker-headline"
                   value={wizardData.headline || ""}
                   onChange={(e) => updateWizard("headline", e.target.value)}
                   placeholder="e.g., Planning luxury golf trips to Scotland and Ireland with VIP tee-time access"

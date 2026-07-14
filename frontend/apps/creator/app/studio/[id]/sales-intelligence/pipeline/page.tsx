@@ -14,6 +14,9 @@ import { formatDate, formatMoney, stageBadgeClass, STAGE_LABELS } from "@/compon
 
 const KANBAN_COLUMNS: OpportunityStage[] = ["ingested", "qualifying", "qualified", "validated", "pushed"];
 const TERMINAL_STAGES: OpportunityStage[] = ["rejected", "push_failed"];
+// Stages a card can be moved to via the keyboard-accessible "Move to…" control (mirrors the
+// drag-and-drop board columns so keyboard/screen-reader users have the same reach).
+const MOVE_TARGETS: OpportunityStage[] = [...KANBAN_COLUMNS, ...TERMINAL_STAGES];
 
 export default function SalesIntelligencePipelinePage() {
   const { id: agentId } = useParams<{ id: string }>();
@@ -62,6 +65,11 @@ export default function SalesIntelligencePipelinePage() {
     setDraggingId(null);
   }
 
+  function onMove(id: number, stage: OpportunityStage) {
+    const opp = opps.find((o) => o.id === id);
+    if (opp && opp.stage !== stage) moveStage.mutate({ id, stage });
+  }
+
   return (
     <CockpitShell agentId={agentId} workerName={worker?.name ?? "IDG - Sales Intelligence"} active="pipeline">
       <div className="space-y-6">
@@ -99,7 +107,7 @@ export default function SalesIntelligencePipelinePage() {
                   </div>
                   <div className="flex min-h-[120px] flex-col gap-2 p-2.5">
                     {(byStage.get(stage) ?? []).map((o) => (
-                      <OpportunityCard key={o.id} opp={o} agentId={agentId}
+                      <OpportunityCard key={o.id} opp={o} agentId={agentId} onMove={onMove} moving={moveStage.isPending}
                         onDragStart={() => setDraggingId(o.id)} onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline/${o.id}`)} />
                     ))}
                     {(byStage.get(stage) ?? []).length === 0 && (
@@ -114,7 +122,7 @@ export default function SalesIntelligencePipelinePage() {
               <h3 className="mb-3 text-[13px] font-semibold text-white">Rejected &amp; Push Failed</h3>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {TERMINAL_STAGES.flatMap((stage) => byStage.get(stage) ?? []).map((o) => (
-                  <OpportunityCard key={o.id} opp={o} agentId={agentId}
+                  <OpportunityCard key={o.id} opp={o} agentId={agentId} onMove={onMove} moving={moveStage.isPending}
                     onDragStart={() => setDraggingId(o.id)} onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline/${o.id}`)} />
                 ))}
                 {TERMINAL_STAGES.flatMap((stage) => byStage.get(stage) ?? []).length === 0 && (
@@ -164,23 +172,42 @@ export default function SalesIntelligencePipelinePage() {
   );
 }
 
-function OpportunityCard({ opp, onDragStart, onClick }: { opp: SalesOpportunity; agentId: string; onDragStart: () => void; onClick: () => void }) {
+function OpportunityCard({ opp, onDragStart, onClick, onMove, moving }: {
+  opp: SalesOpportunity; agentId: string; onDragStart: () => void; onClick: () => void;
+  onMove: (id: number, stage: OpportunityStage) => void; moving: boolean;
+}) {
   return (
-    <button draggable onDragStart={onDragStart} onClick={onClick}
-      className="flex flex-col gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 text-left transition-colors hover:border-indigo-500/30 hover:bg-white/[0.04]">
-      <div className="flex items-start gap-2">
-        <GripVertical className="mt-0.5 size-3.5 shrink-0 cursor-grab text-slate-600" />
-        <p className="line-clamp-2 text-[13px] font-medium leading-snug text-white">{opp.title}</p>
+    <div draggable onDragStart={onDragStart}
+      className="flex flex-col gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 transition-colors hover:border-indigo-500/30 hover:bg-white/[0.04]">
+      <button type="button" onClick={onClick} className="flex flex-col gap-2 text-left">
+        <div className="flex items-start gap-2">
+          <GripVertical aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 cursor-grab text-slate-600" />
+          <p className="line-clamp-2 text-[13px] font-medium leading-snug text-white">{opp.title}</p>
+        </div>
+        <div className="flex items-center gap-2 pl-5">
+          <span className="rounded-full border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-300">
+            {(opp.sourceKey || "").toUpperCase()}
+          </span>
+          <span className="truncate text-[11px] text-slate-500">{opp.buyer ?? "\u2014"}</span>
+        </div>
+        {opp.estimatedValue != null && (
+          <p className="pl-5 text-[12px] font-semibold text-emerald-400">{formatMoney(opp.estimatedValue, opp.currency)}</p>
+        )}
+      </button>
+      {/* Keyboard/screen-reader-accessible alternative to drag-and-drop: dispatches the same
+          stage-change mutation the board uses. */}
+      <div className="flex items-center gap-1.5 pl-5">
+        <label htmlFor={`move-opp-${opp.id}`} className="text-[10px] uppercase tracking-wider text-slate-500">Move to</label>
+        <select id={`move-opp-${opp.id}`} value="" disabled={moving}
+          aria-label={`Move ${opp.title} to another stage`}
+          onChange={(e) => { const stage = e.target.value as OpportunityStage; if (stage) onMove(opp.id, stage); }}
+          className="min-w-0 flex-1 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-1 text-[11px] text-slate-300 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 disabled:opacity-50">
+          <option value="" disabled>Select stage…</option>
+          {MOVE_TARGETS.filter((s) => s !== opp.stage).map((s) => (
+            <option key={s} value={s} className="bg-[#0b0e16] text-slate-200">{STAGE_LABELS[s]}</option>
+          ))}
+        </select>
       </div>
-      <div className="flex items-center gap-2 pl-5">
-        <span className="rounded-full border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-300">
-          {(opp.sourceKey || "").toUpperCase()}
-        </span>
-        <span className="truncate text-[11px] text-slate-500">{opp.buyer ?? "\u2014"}</span>
-      </div>
-      {opp.estimatedValue != null && (
-        <p className="pl-5 text-[12px] font-semibold text-emerald-400">{formatMoney(opp.estimatedValue, opp.currency)}</p>
-      )}
-    </button>
+    </div>
   );
 }
