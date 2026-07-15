@@ -241,6 +241,21 @@ async def test_scan_ted_ingests_and_qualifies_opportunities(monkeypatch):
     assert summary["qualified"] == 1
 
 
+async def test_next_scan_at_set_after_scan(monkeypatch):
+    svc = OpportunityService(scan_interval_minutes=5)
+    await svc.update_source_status("acme", "agent-1", "ted", "active")
+
+    def fake_search(filters=None):
+        return {"payload": {}, "total_notice_count": 0, "skipped": 0, "notices": []}
+
+    monkeypatch.setattr(svc.ted, "search", fake_search)
+    source = (await svc.scan_ted("acme", "agent-1", {}))["source"]
+    assert source.last_scan_at is not None
+    # next scan is one interval after the last scan (matches the scheduler's due-ness rule)
+    nxt = source.next_scan_at(scan_interval_minutes=5)
+    assert nxt is not None and nxt == source.last_scan_at + timedelta(minutes=5)
+
+
 async def test_scan_does_not_revive_archived_opportunity(monkeypatch):
     svc = OpportunityService()
     mutation = OpportunityMutationService(opportunities=svc.opportunities, activity_logs=svc.activity_logs)
@@ -356,10 +371,15 @@ def test_sales_intelligence_sources_round_trip_via_api(client):
     sources = resp.json()["sources"]
     assert {s["sourceKey"] for s in sources} == {"ungm", "ted"}
 
+    # a disabled source has no scheduled next scan; enabling one populates it (so the FE stops
+    # showing "Next scan --")
+    assert all(s["nextScanAt"] is None for s in sources)
+
     patch = client.patch("/api/v1/sales-intelligence/agent-si-1/sources/ted", cookies=cookies,
                          json={"status": "active"})
     assert patch.status_code == 200
     assert patch.json()["source"]["status"] == "active"
+    assert patch.json()["source"]["nextScanAt"] is not None
 
 
 def test_sales_intelligence_manual_create_and_review_via_api(client):

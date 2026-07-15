@@ -13,6 +13,8 @@ import {
   type PackSectionNode, type PackQuestion, type PackStage,
 } from "@/lib/api";
 import { AnswerMarkdown } from "@/components/chat-message";
+import { OutcomesStrip } from "@/components/cockpit/outcomes-strip";
+import { Textarea } from "@/components/cockpit/controls";
 import {
   confidenceBadgeClass, confidenceClass, confidencePct, sectionStatusBadgeClass, sectionStatusLabel,
   STAGE_LABELS, STAGE_ORDER, truncate, wordCount,
@@ -86,13 +88,11 @@ export function SectionsTab({ packId }: { packId: string }) {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-4 rounded-2xl border border-white/[0.06] bg-white/[0.015] px-5 py-4">
-        <Stat label="AI-drafted" value={`${drafted.length}/${allQuestions.length}`} />
-        <span className="hidden h-8 w-px bg-white/10 sm:block" />
-        <Stat label="Avg confidence" value={confidencePct(avgConfidence)} valueClass={confidenceClass(avgConfidence)} />
-        <span className="hidden h-8 w-px bg-white/10 sm:block" />
-        <Stat label="Avg grounding" value={confidencePct(avgConfidence)} valueClass={confidenceClass(avgConfidence)} />
-      </div>
+      <OutcomesStrip title="SECTIONS" tiles={[
+        { value: `${drafted.length}/${allQuestions.length}`, label: "AI-drafted", caption: "grounded, cited", trend: "up" },
+        { value: confidencePct(avgConfidence), label: "Avg confidence", caption: "across drafted answers", trend: avgConfidence >= 0.85 ? "up" : avgConfidence >= 0.7 ? "neutral" : "down" },
+        { value: confidencePct(avgConfidence), label: "Avg grounding", caption: "KB coverage", trend: avgConfidence >= 0.85 ? "up" : avgConfidence >= 0.7 ? "neutral" : "down" },
+      ]} />
 
       <StageBar stage={stage} onSet={(s) => setStage.mutate(s)} pending={setStage.isPending} error={setStage.isError} />
 
@@ -129,15 +129,6 @@ export function SectionsTab({ packId }: { packId: string }) {
           </tbody>
         </table>
       </div>
-    </div>
-  );
-}
-
-function Stat({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
-  return (
-    <div>
-      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{label}</p>
-      <p className={cn("text-lg font-bold text-white", valueClass)}>{value}</p>
     </div>
   );
 }
@@ -445,13 +436,13 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
                     {words} word{words === 1 ? "" : "s"}{question.word_limit != null ? ` / ${question.word_limit}` : ""}
                   </span>
                 </div>
-                <textarea
+                <Textarea
                   id={`draft-${question.id}`}
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   disabled={question.locked}
                   placeholder={"Write or paste the final answer here\u2026"}
-                  className="mt-2 min-h-[140px] w-full resize-y rounded-lg border border-white/10 bg-white/[0.02] p-3 text-[13px] leading-relaxed text-white placeholder:text-slate-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 disabled:opacity-60"
+                  className="mt-2 min-h-[140px]"
                 />
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button onClick={() => save.mutate()} disabled={busy || question.locked}

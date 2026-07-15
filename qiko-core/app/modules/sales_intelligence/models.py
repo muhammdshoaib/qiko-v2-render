@@ -72,9 +72,16 @@ class IngestionSource:
         return self.status == "active"
 
     def next_scan_at(self, *, scan_interval_minutes: int, now: datetime | None = None) -> datetime | None:
+        """When this active source is next due to scan. One interval after its last scan (the same
+        due-ness rule the scheduler uses: last_scan_at + interval), or -- if it has never scanned --
+        the next interval boundary from now so a freshly-enabled source still shows a time rather
+        than a blank. Returns None for a disabled source (nothing is scheduled)."""
         if not self.is_enabled():
             return None
         interval = max(1, scan_interval_minutes)
+        if self.last_scan_at is not None:
+            last = self.last_scan_at if self.last_scan_at.tzinfo else self.last_scan_at.replace(tzinfo=timezone.utc)
+            return last + timedelta(minutes=interval)
         cursor = (now or _now()).replace(second=0, microsecond=0)
         remainder = cursor.minute % interval
         if remainder == 0:

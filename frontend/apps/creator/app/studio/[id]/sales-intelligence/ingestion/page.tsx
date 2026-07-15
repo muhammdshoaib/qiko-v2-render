@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
 import { OutcomesStrip } from "@/components/sales-intelligence/outcomes-strip";
+import { Input, Switch } from "@/components/cockpit/controls";
 import { formatDate, humanize } from "@/components/sales-intelligence/utils";
 
 // Tone colour for a source's last-scan status string (>= 4.5:1 on the dark card).
@@ -94,9 +95,8 @@ export default function SalesIntelligenceIngestionPage() {
               description="Keyword for TED notice titles and UNGM descriptions. Toggle off for an open portal search."
               enabled={useQuery_} onToggle={() => setUseQuery((v) => !v)}
               helper={useQuery_ ? "Keyword search" : "Open search (no keyword)"}>
-              <input value={query} onChange={(e) => setQuery(e.target.value)} disabled={!useQuery_}
-                placeholder="security" aria-label="Portal query keyword"
-                className="mt-3 w-full rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[13px] text-white placeholder:text-slate-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50" />
+              <Input value={query} onChange={(e) => setQuery(e.target.value)} disabled={!useQuery_}
+                placeholder="security" aria-label="Portal query keyword" className="mt-3" />
             </FilterCard>
             <FilterCard icon={<Layers className="size-4" />} title="All countries"
               description="Bypass the 14-country IDG target allowlist after the portal returns notices."
@@ -175,10 +175,7 @@ function FilterCard({ icon, title, description, enabled, onToggle, helper, child
             <p className="mt-0.5 text-[12px] leading-relaxed text-slate-500">{description}</p>
           </div>
         </div>
-        <button type="button" onClick={onToggle} role="switch" aria-checked={enabled} aria-label={title}
-          className={cn("relative h-5 w-9 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60", enabled ? "bg-indigo-500" : "bg-white/10")}>
-          <span className={cn("absolute top-0.5 size-4 rounded-full bg-white transition-transform", enabled ? "translate-x-[18px]" : "translate-x-0.5")} />
-        </button>
+        <Switch checked={enabled} onCheckedChange={onToggle} label={title} />
       </div>
       {children}
       <p className="mt-3 text-[11px] text-slate-500">{helper}</p>

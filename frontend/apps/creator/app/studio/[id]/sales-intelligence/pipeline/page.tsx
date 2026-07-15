@@ -10,6 +10,7 @@ import {
 } from "@/lib/api";
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
 import { OutcomesStrip } from "@/components/sales-intelligence/outcomes-strip";
+import { Select } from "@/components/cockpit/controls";
 import {
   deadlineLabel, deadlineUrgencyClass, formatDate, formatMoney, humanize, scoreBadgeClass,
   sourceLabel, stageBadgeClass, STAGE_LABELS,
@@ -228,15 +229,15 @@ function OpportunityCard({ opp, onDragStart, onClick, onMove, moving }: {
           stage-change mutation the board uses. */}
       <div className="flex items-center gap-1.5 pl-5">
         <label htmlFor={`move-opp-${opp.id}`} className="text-[10px] uppercase tracking-wider text-slate-500">Move to</label>
-        <select id={`move-opp-${opp.id}`} value="" disabled={moving}
+        <Select id={`move-opp-${opp.id}`} value="" disabled={moving}
+          wrapperClassName="min-w-0 flex-1"
           aria-label={`Move ${opp.title} to another stage`}
-          onChange={(e) => { const stage = e.target.value as OpportunityStage; if (stage) onMove(opp.id, stage); }}
-          className="min-w-0 flex-1 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-1 text-[11px] text-slate-300 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/40 disabled:opacity-50">
+          onChange={(e) => { const stage = e.target.value as OpportunityStage; if (stage) onMove(opp.id, stage); }}>
           <option value="" disabled>Select stage…</option>
           {MOVE_TARGETS.filter((s) => s !== opp.stage).map((s) => (
-            <option key={s} value={s} className="bg-[#0b0e16] text-slate-200">{STAGE_LABELS[s]}</option>
+            <option key={s} value={s}>{STAGE_LABELS[s]}</option>
           ))}
-        </select>
+        </Select>
       </div>
     </div>
   );

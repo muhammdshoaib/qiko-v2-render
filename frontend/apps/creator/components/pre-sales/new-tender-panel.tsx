@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, FileUp, Loader2, Sparkles, X } from "lucide-react";
 import { createRfpPack, extractPack } from "@/lib/api";
+import { Input } from "@/components/cockpit/controls";
 
 // Create a tender pack and immediately extract its sections/questions from an uploaded RFP. Used
 // both as the empty state (no packs yet) and the "Add tender" flow from the cockpit header.
@@ -60,27 +61,25 @@ export function NewTenderPanel({ agentId, onCreated, onCancel }: {
         >
           <div>
             <label htmlFor="tender-title" className="mb-1 block text-[12px] font-medium text-slate-300">Tender title</label>
-            <input
+            <Input
               id="tender-title" value={title} onChange={(e) => setTitle(e.target.value)}
               placeholder="e.g. UNRWA Physical Security Services"
-              className="w-full rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[13px] text-white placeholder:text-slate-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
             />
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="tender-buyer" className="mb-1 block text-[12px] font-medium text-slate-300">Buyer <span className="text-slate-500">(optional)</span></label>
-              <input
+              <Input
                 id="tender-buyer" value={buyer} onChange={(e) => setBuyer(e.target.value)}
                 placeholder="e.g. United Nations"
-                className="w-full rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[13px] text-white placeholder:text-slate-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
               />
             </div>
             <div>
               <label htmlFor="tender-deadline" className="mb-1 block text-[12px] font-medium text-slate-300">Deadline <span className="text-slate-500">(optional)</span></label>
-              <input
+              <Input
                 id="tender-deadline" type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[13px] text-white [color-scheme:dark] focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
+                className="[color-scheme:dark]"
               />
             </div>
           </div>

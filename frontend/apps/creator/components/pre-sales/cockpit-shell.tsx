@@ -6,13 +6,14 @@
 // rather than route-per-section, because tab + active-tender selection are interdependent state.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation } from "@tanstack/react-query";
 import {
-  ArrowLeft, ChevronDown, FileText, LayoutGrid, ListChecks, MessageSquare, Plus, ShieldCheck,
-  Sparkles, Upload, Download, X,
+  ArrowLeft, FileText, LayoutGrid, ListChecks, MessageSquare, Plus, ShieldCheck,
+  Upload, Download,
 } from "lucide-react";
 import { cn } from "@qiko/ui";
-import { ChatBubble, TypingIndicator } from "@/components/chat-message";
+import { NotificationBell } from "@/components/cockpit/notification-bell";
+import { CockpitChatPanel } from "@/components/cockpit/chat-panel";
+import { Select } from "@/components/cockpit/controls";
 import { askBidContext, type RfpPack } from "@/lib/api";
 import { formatShortDate } from "@/lib/stringUtils";
 
@@ -80,20 +81,19 @@ export function PreSalesCockpitShell({
             </div>
           )}
           {packs.length > 0 && (
-            <div className="relative">
+            <>
               <label htmlFor="tender-switch" className="sr-only">Active tender</label>
-              <select
+              <Select
                 id="tender-switch"
+                wrapperClassName="max-w-[160px]"
                 value={activePackId ?? ""}
                 onChange={(e) => onSelectPack(e.target.value)}
-                className="max-w-[160px] appearance-none rounded-lg border border-white/10 bg-white/[0.03] py-1.5 pl-2.5 pr-7 text-[12px] font-medium text-slate-200 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-500/40"
               >
                 {packs.map((p) => (
-                  <option key={p.id} value={p.id} className="bg-[#0b0e16] text-slate-200">{p.title}</option>
+                  <option key={p.id} value={p.id}>{p.title}</option>
                 ))}
-              </select>
-              <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-2 top-1/2 size-3.5 -translate-y-1/2 text-slate-500" />
-            </div>
+              </Select>
+            </>
           )}
           <button
             onClick={onNewTender}
@@ -102,6 +102,7 @@ export function PreSalesCockpitShell({
           >
             <Plus className="size-4" />
           </button>
+          <NotificationBell category="pre_sales" />
           <button
             onClick={() => setChatOpen((v) => !v)}
             aria-expanded={chatOpen}
@@ -166,100 +167,25 @@ export function PreSalesCockpitShell({
           <main className="min-w-0 flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-6">{children}</main>
         </div>
 
-        {chatOpen && <ChatPanel workerName={workerName} packId={activePackId} onClose={() => setChatOpen(false)} />}
+        {chatOpen && (
+          <CockpitChatPanel
+            workerName={workerName}
+            onClose={() => setChatOpen(false)}
+            ready={!!activePackId}
+            onAsk={(q) => {
+              if (!activePackId) return Promise.reject(new Error("no tender selected"));
+              return askBidContext(activePackId, q).then((r) => r.answer);
+            }}
+            emptyPrompt="Scope, submission format, deadlines and qualification rules for this tender -- answered only from the tender document."
+            notReadyTitle="No tender selected"
+            notReadyPrompt="Pick or upload a tender to ask grounded questions about its scope, rules and deadlines."
+            placeholder={"Ask about this tender\u2026"}
+            notReadyPlaceholder={"Select a tender first\u2026"}
+            inputHint="Enter to send &middot; answers cite the tender document"
+            errorText={"Sorry \u2014 I couldn't answer that. Make sure a tender document has been uploaded, then try again."}
+          />
+        )}
       </div>
     </div>
-  );
-}
-
-function ChatPanel({ workerName, packId, onClose }: { workerName: string; packId: string | null; onClose: () => void }) {
-  const [messages, setMessages] = useState<{ role: string; text: string }[]>([]);
-  const [text, setText] = useState("");
-  const send = useMutation({
-    mutationFn: (question: string) => {
-      if (!packId) return Promise.reject(new Error("no tender selected"));
-      return askBidContext(packId, question);
-    },
-    onMutate: (question) => setMessages((m) => [...m, { role: "user", text: question }]),
-    onSuccess: (reply) => setMessages((m) => [...m, { role: "assistant", text: reply.answer }]),
-    onError: () => setMessages((m) => [...m, { role: "assistant", text: "Sorry -- I couldn't answer that. Make sure a tender document has been uploaded, then try again." }]),
-  });
-
-  return (
-    <>
-      <div onClick={onClose} className="fixed inset-0 top-14 z-30 bg-black/50 lg:hidden" aria-hidden="true" />
-      <aside
-        className={cn(
-          "z-40 flex w-[300px] shrink-0 flex-col border-l border-white/[0.06] bg-[#05070d]",
-          "fixed bottom-0 right-0 top-14 max-w-[86vw]",
-          "lg:static lg:max-w-none",
-        )}
-      >
-        <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3.5">
-          <div className="flex items-center gap-2.5">
-            <span className="flex size-8 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-400">
-              <MessageSquare className="size-4" />
-            </span>
-            <div>
-              <p className="text-[13px] font-semibold text-white">Ask {workerName}</p>
-              <p className="flex items-center gap-1 text-[11px] text-slate-500">
-                <span className="size-1.5 rounded-full bg-emerald-400" /> Grounded in this tender
-              </p>
-            </div>
-          </div>
-          <button onClick={onClose} aria-label="Close chat" className="rounded-md text-slate-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
-            <X className="size-4" />
-          </button>
-        </div>
-
-        <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-          {!packId ? (
-            <div className="flex h-full flex-col items-center justify-center text-center">
-              <span className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-400">
-                <Sparkles className="size-6" />
-              </span>
-              <p className="text-sm font-semibold text-white">No tender selected</p>
-              <p className="mt-1.5 max-w-[220px] text-[12px] leading-relaxed text-slate-500">
-                Pick or upload a tender to ask grounded questions about its scope, rules and deadlines.
-              </p>
-            </div>
-          ) : messages.length === 0 ? (
-            <div className="flex h-full flex-col items-center justify-center text-center">
-              <span className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-400">
-                <Sparkles className="size-6" />
-              </span>
-              <p className="text-sm font-semibold text-white">Ask about this tender</p>
-              <p className="mt-1.5 max-w-[220px] text-[12px] leading-relaxed text-slate-500">
-                Scope, submission format, deadlines, qualification rules -- answered only from the tender document.
-              </p>
-            </div>
-          ) : (
-            messages.map((m, i) => (
-              <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
-                <ChatBubble role={m.role} text={m.text} />
-              </div>
-            ))
-          )}
-          {send.isPending && <div className="flex justify-start"><TypingIndicator /></div>}
-        </div>
-
-        <form
-          onSubmit={(e) => { e.preventDefault(); const q = text.trim(); if (q && packId && !send.isPending) { send.mutate(q); setText(""); } }}
-          className="border-t border-white/[0.06] p-3"
-        >
-          <div className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2.5 focus-within:border-indigo-500/50">
-            <input
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder={packId ? "Ask about this tender\u2026" : "Select a tender first\u2026"}
-              aria-label="Chat message"
-              disabled={!packId || send.isPending}
-              className="w-full bg-transparent text-[13px] text-white placeholder:text-slate-500 focus:outline-none disabled:opacity-50"
-            />
-            <p className="mt-2 text-[10px] text-slate-600">Enter to send &middot; answers cite the tender document</p>
-          </div>
-        </form>
-      </aside>
-    </>
   );
 }

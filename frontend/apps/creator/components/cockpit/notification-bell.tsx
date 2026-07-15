@@ -1,9 +1,9 @@
 "use client";
 
-// In-app notification bell + dropdown panel -- ported from qiko-frontend origin/idg-sales
-// notifications/{NotificationBell,NotificationPanel,NotificationItem}.tsx, adapted to the V2
-// cockpit style. Polls the generic tenant-scoped inbox (/notifications) and lets the user mark
-// items read / read-all. In-product only (no email/FCM push).
+// Shared cockpit notification bell + dropdown -- used by every IDG worker cockpit (Sales
+// Intelligence, Pre-Sales, ...) so the in-app inbox looks and behaves identically across verticals.
+// Polls the generic tenant-scoped inbox (/notifications) and lets the user mark items read /
+// read-all. In-product only (no email/FCM push).
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, CheckCheck } from "lucide-react";
@@ -11,7 +11,7 @@ import { cn } from "@qiko/ui";
 import {
   listNotifications, markAllNotificationsRead, markNotificationRead, type Notification,
 } from "@/lib/api";
-import { formatDate } from "@/components/sales-intelligence/utils";
+import { formatDateTime } from "@/lib/stringUtils";
 
 const NOTIFICATIONS_QUERY_KEY = ["notifications"] as const;
 
@@ -31,7 +31,7 @@ function NotificationItem({ n, onRead }: { n: Notification; onRead: (id: string)
       <div className="min-w-0 flex-1">
         <p className={cn("truncate text-[13px]", n.read ? "text-slate-400" : "font-semibold text-white")}>{n.title}</p>
         {n.body && <p className="mt-0.5 line-clamp-2 text-[12px] text-slate-500">{n.body}</p>}
-        <p className="mt-1 text-[10px] uppercase tracking-wider text-slate-600">{formatDate(n.createdAt, true)}</p>
+        <p className="mt-1 text-[10px] uppercase tracking-wider text-slate-600">{formatDateTime(n.createdAt)}</p>
       </div>
     </button>
   );

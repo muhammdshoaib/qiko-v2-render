@@ -48,11 +48,13 @@ def _actor_user_id(claims: dict) -> str | None:
     return claims.get("sub") or claims.get("user_id")
 
 
-def _source_out(s) -> dict:
+def _source_out(s, *, scan_interval_minutes: int = 1) -> dict:
     return {
         "id": s.id, "agentId": s.agent_id, "sourceKey": s.source_key, "name": s.name, "type": s.type,
         "status": s.status, "authStatus": s.auth_status, "scanCadence": s.scan_cadence,
-        "lastScanStatus": s.last_scan_status, "lastScanAt": s.last_scan_at, "opportunitiesFound": s.opportunities_found,
+        "lastScanStatus": s.last_scan_status, "lastScanAt": s.last_scan_at,
+        "nextScanAt": s.next_scan_at(scan_interval_minutes=scan_interval_minutes),
+        "opportunitiesFound": s.opportunities_found,
         "lastError": s.last_error, "config": s.config, "createdAt": s.created_at, "updatedAt": s.updated_at,
     }
 
@@ -125,7 +127,7 @@ def _salesforce_out(c, auth) -> dict:
 async def sources(agent_id: str, tenant: str = Depends(authed_tenant), svc=Depends(get_sales_intel)) -> dict:
     await svc.ensure_sources(tenant, agent_id)
     items = await svc.sources.list_for_agent(tenant, agent_id)
-    return {"sources": [_source_out(s) for s in items]}
+    return {"sources": [_source_out(s, scan_interval_minutes=svc.scan_interval_minutes) for s in items]}
 
 
 class UpdateSourceBody(BaseModel):
@@ -139,7 +141,7 @@ async def update_source(agent_id: str, source_key: str, body: UpdateSourceBody,
     if source_key not in SOURCE_KEYS or body.status not in SOURCE_STATUSES:
         raise HTTPException(status_code=422, detail="invalid source_key or status")
     source = await svc.update_source_status(tenant, agent_id, source_key, body.status, _actor_user_id(claims))
-    return {"source": _source_out(source)}
+    return {"source": _source_out(source, scan_interval_minutes=svc.scan_interval_minutes)}
 
 
 class ScanBody(BaseModel):
@@ -163,7 +165,7 @@ async def scan_ungm(agent_id: str, body: ScanBody, tenant: str = Depends(authed_
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     return {
-        "source": _source_out(result["source"]),
+        "source": _source_out(result["source"], scan_interval_minutes=svc.scan_interval_minutes),
         "opportunities": [_opportunity_out(o) for o in result["opportunities"]],
         "summary": {"created": result["created"], "updated": result["updated"],
                     "totalReturned": len(result["opportunities"])},
@@ -180,7 +182,7 @@ async def scan_ted(agent_id: str, body: ScanBody, tenant: str = Depends(authed_t
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     return {
-        "source": _source_out(result["source"]),
+        "source": _source_out(result["source"], scan_interval_minutes=svc.scan_interval_minutes),
         "opportunities": [_opportunity_out(o) for o in result["opportunities"]],
         "summary": {"created": result["created"], "updated": result["updated"],
                     "totalReturned": len(result["opportunities"])},

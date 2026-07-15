@@ -14,6 +14,7 @@ import {
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
 import { AssignReviewerControl } from "@/components/sales-intelligence/assign-reviewer-control";
 import { DecisionHistoryView } from "@/components/sales-intelligence/decision-history-view";
+import { Textarea } from "@/components/cockpit/controls";
 import {
   formatDate, formatMoney, humanize, recommendationBadgeClass, scoreColor, sourceLabel,
   stageBadgeClass, STAGE_LABELS,
@@ -369,9 +370,9 @@ function NotesTab({ agentId, oppId, detail, onSaved }: { agentId: string; oppId:
   return (
     <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
       <label htmlFor="human-review-notes" className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Human Review Notes</label>
-      <textarea id="human-review-notes" value={notes} onChange={(e) => setNotes(e.target.value)}
+      <Textarea id="human-review-notes" value={notes} onChange={(e) => setNotes(e.target.value)}
         placeholder="Add context for reviewers -- e.g. why this was approved, rejected, or needs follow-up."
-        className="mt-3 min-h-32 w-full rounded-lg border border-white/10 bg-white/[0.02] p-3 text-[13px] text-white placeholder:text-slate-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+        className="mt-3 min-h-32" />
       <div className="mt-3 flex items-center justify-end gap-3">
         {save.isSuccess && !dirty && <span className="text-[12px] text-emerald-400">Saved</span>}
         <button onClick={() => save.mutate()} disabled={save.isPending || !dirty}

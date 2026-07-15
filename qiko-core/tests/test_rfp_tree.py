@@ -3,6 +3,7 @@ import io
 import pytest
 
 from app.modules.agentcore.models import AgentResult, Critique, Decision
+from app.modules.rfp.service import PackRequirement
 from app.modules.rfp.tree import PackQuestionNotFound, PackSectionNotFound, PackTreeService
 
 from tests.helpers import auth_cookies
@@ -85,6 +86,51 @@ async def test_extraction_wiring_groups_by_top_level_code():
     assert codes["B1"].name == "Org"  # parent heading before the em-dash
     # a section whose items are all MANUAL/COMPLIANCE is flagged manual
     assert codes["C1"].manual is True and codes["A1"].manual is False
+
+
+def _reqs(pack_id, *specs):
+    """Flat PackRequirement rows as an old (pre-tree-feature) pack would already have stored."""
+    return [PackRequirement(id=f"row{i}", tenant="t", pack_id=pack_id, req_id=rid, title=title,
+                            classification=cls, requirement=req)
+            for i, (rid, title, cls, req) in enumerate(specs)]
+
+
+async def test_backfill_from_requirements_builds_tree_when_empty():
+    svc = PackTreeService()
+    reqs = _reqs("p1",
+                 ("A1", "Intro", "KB", "Describe intro."),
+                 ("B1.1", "Org \u2014 Organogram", "MANUAL", "Org chart."),
+                 ("B1.2", "Org \u2014 Structure", "MANUAL", "Structure."))
+    sections = await svc.populate_from_requirements("t", "p1", reqs)
+    codes = {s.code: s for s in sections}
+    # same grouping as populate_from_extraction: B1.1/B1.2 collapse into one B1 section
+    assert set(codes) == {"A1", "B1"}
+    b1_qs = await svc.questions.list_for_section("t", codes["B1"].id)
+    assert {q.req_id for q in b1_qs} == {"B1.1", "B1.2"}
+    assert codes["B1"].name == "Org"  # parent heading before the em-dash
+    assert codes["B1"].manual is True and codes["A1"].manual is False
+
+
+async def test_backfill_from_requirements_is_idempotent():
+    svc = PackTreeService()
+    reqs = _reqs("p1", ("A1", "Intro", "KB", "Describe intro."))
+    first = await svc.populate_from_requirements("t", "p1", reqs)
+    assert len(first) == 1
+    # a second call must not rebuild or duplicate an already-populated tree
+    assert await svc.populate_from_requirements("t", "p1", reqs) == []
+    assert len(await svc.sections.list("t", "p1")) == 1
+    assert len(await svc.questions.list("t", "p1")) == 1
+
+
+async def test_backfill_from_requirements_is_tenant_scoped():
+    svc = PackTreeService()
+    reqs = _reqs("p1", ("A1", "Intro", "KB", "Describe intro."))
+    await svc.populate_from_requirements("t", "p1", reqs)
+    # another tenant sharing the pack id has its own (initially empty) tree and builds independently
+    assert await svc.sections.list("other", "p1") == []
+    await svc.populate_from_requirements("other", "p1", reqs)
+    assert len(await svc.sections.list("other", "p1")) == 1
+    assert len(await svc.sections.list("t", "p1")) == 1  # unaffected
 
 
 async def test_overview_metrics():
@@ -252,6 +298,43 @@ def test_extract_populates_tree_and_lock_all(client, monkeypatch):
     assert set(codes) == {"A1", "A2"}
     assert codes["A2"]["manual"] is True
     assert len(codes["A1"]["questions"]) == 1
+
+
+def test_sections_backfill_lazily_for_old_pack(client, monkeypatch):
+    """A pack that pre-dates the tree feature has flat requirements but an empty tree; GET /sections
+    backfills it lazily from those requirements (no LLM), and repeat views stay idempotent."""
+    import json as _json
+    payload = _json.dumps([
+        {"id": "A1", "title": "ISO", "classification": "KB", "requirement": "Describe ISO."},
+        {"id": "B1.1", "title": "Org \u2014 Organogram", "classification": "MANUAL", "requirement": "Chart."},
+        {"id": "B1.2", "title": "Org \u2014 Structure", "classification": "MANUAL", "requirement": "Structure."},
+    ])
+
+    def fake_get_provider(**_kw):
+        class P:
+            def generate(self, prompt, *, system=None, temperature=0.2):
+                from app.modules.ai.gateway import LLMResponse
+                return LLMResponse(text=payload)
+        return P()
+
+    monkeypatch.setattr("app.modules.rfp.router.get_provider", fake_get_provider)
+    c, pid = _pack(client, "backfillco1")
+    client.post(f"/api/v1/rfp/packs/{pid}/extract", cookies=c,
+                files={"file": ("t.txt", io.BytesIO(b"tender"), "text/plain")})
+
+    # simulate an old pack: keep the extracted requirements but wipe the tree the new /extract built
+    for s in client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json():
+        client.delete(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}", cookies=c)
+
+    # first view backfills the tree from the stored requirements
+    tree = client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()
+    codes = {s["code"]: s for s in tree}
+    assert set(codes) == {"A1", "B1"}
+    assert len(codes["B1"]["questions"]) == 2 and codes["B1"]["manual"] is True
+
+    # idempotent: a second view neither rebuilds nor duplicates
+    again = client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()
+    assert {s["id"] for s in again} == {s["id"] for s in tree}
 
 
 def test_export_overlay_locked_user_draft_overrides_ai(client, monkeypatch):

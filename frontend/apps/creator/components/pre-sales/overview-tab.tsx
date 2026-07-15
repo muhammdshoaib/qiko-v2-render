@@ -2,12 +2,11 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowRight, Bot, Building2, CalendarClock, CheckCircle2, FileText,
-  Layers, Library, ListChecks, Sparkles,
+  AlertTriangle, ArrowRight, Building2, CalendarClock, CheckCircle2, FileText, Sparkles,
 } from "lucide-react";
-import { cn } from "@qiko/ui";
 import { getPackOverview, getRfpPack } from "@/lib/api";
 import { formatShortDate } from "@/lib/stringUtils";
+import { OutcomesStrip, type OutcomeTile } from "@/components/cockpit/outcomes-strip";
 import { truncate } from "@/components/pre-sales/utils";
 
 export function OverviewTab({ packId, onOpenSections, onOpenBrief }: {
@@ -19,34 +18,16 @@ export function OverviewTab({ packId, onOpenSections, onOpenBrief }: {
   const o = overviewQ.data;
   const pack = packQ.data;
 
-  const metrics = [
-    { label: "Sections", value: o ? String(o.sections) : "\u2014", caption: `${o?.sections_locked ?? 0} locked`, icon: Layers, tint: "text-indigo-400 bg-indigo-500/10" },
-    { label: "AI-drafted", value: o ? `${o.ai_drafted}/${o.ai_drafted_total}` : "\u2014", caption: "grounded in KB, cited", icon: Bot, tint: "text-violet-300 bg-violet-500/10" },
-    { label: "For human review", value: o ? String(o.for_human_review) : "\u2014", caption: "before use", icon: ListChecks, tint: "text-amber-400 bg-amber-500/10" },
-    { label: "KB sources", value: o ? String(o.kb_sources) : "\u2014", caption: "real IDG documents", icon: Library, tint: "text-emerald-400 bg-emerald-500/10" },
+  const tiles: OutcomeTile[] = [
+    { value: o ? String(o.sections) : "\u2014", label: "Sections", caption: `${o?.sections_locked ?? 0} locked` },
+    { value: o ? `${o.ai_drafted}/${o.ai_drafted_total}` : "\u2014", label: "AI-drafted", caption: "grounded in KB, cited", trend: "up" },
+    { value: o ? String(o.for_human_review) : "\u2014", label: "For human review", caption: "before use", trend: o && o.for_human_review > 0 ? "down" : "neutral" },
+    { value: o ? String(o.kb_sources) : "\u2014", label: "KB sources", caption: "real IDG documents", trend: "up" },
   ];
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {metrics.map((m) => {
-          const Icon = m.icon;
-          return (
-            <div key={m.label} className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{m.label}</span>
-                <span className={cn("flex size-7 items-center justify-center rounded-lg", m.tint)}>
-                  <Icon className="size-3.5" />
-                </span>
-              </div>
-              <p className="mt-2 text-2xl font-bold text-white">
-                {overviewQ.isLoading ? <span className="inline-block h-7 w-12 animate-pulse rounded bg-white/10 align-middle" /> : m.value}
-              </p>
-              <p className="mt-0.5 text-[11px] text-slate-500">{m.caption}</p>
-            </div>
-          );
-        })}
-      </div>
+      <OutcomesStrip title="OVERVIEW" tiles={tiles} />
 
       {overviewQ.isError && (
         <p className="flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/[0.06] px-4 py-3 text-sm text-red-300">

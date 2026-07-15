@@ -592,10 +592,21 @@ class DraftBody(BaseModel):
 
 @router.get("/{pack_id}/sections")
 async def list_sections(pack_id: str, tenant: str = Depends(authed_tenant),
-                        packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)) -> list[dict]:
-    """The full section->question tree for a pack (each section with its nested questions)."""
+                        packs=Depends(get_rfp_packs), reqs=Depends(get_requirements),
+                        tree=Depends(get_pack_tree)) -> list[dict]:
+    """The full section->question tree for a pack (each section with its nested questions).
+
+    Packs extracted before the tree feature (migration 0018) have flat requirements but an empty
+    tree; backfill it lazily from those stored requirements on first view so old packs "just work"
+    -- idempotent (never rebuilds an existing tree), tenant-scoped, and no LLM re-run."""
     await _require_pack(pack_id, tenant, packs)
-    return await tree.list_tree(tenant, pack_id)
+    rows = await tree.list_tree(tenant, pack_id)
+    if not rows:
+        requirements = await reqs.list(tenant, pack_id)
+        if requirements:
+            await tree.populate_from_requirements(tenant, pack_id, requirements)
+            rows = await tree.list_tree(tenant, pack_id)
+    return rows
 
 
 @router.post("/{pack_id}/sections")

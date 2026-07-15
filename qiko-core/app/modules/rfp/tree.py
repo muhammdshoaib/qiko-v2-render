@@ -324,6 +324,22 @@ class PackTreeService:
         whose items are all MANUAL/COMPLIANCE is flagged manual (team-completed, not AI-drafted)."""
         await self.sections.delete_for_pack(tenant, pack_id)
         await self.questions.delete_for_pack(tenant, pack_id)
+        return await self._build_tree(tenant, pack_id, extracted)
+
+    async def populate_from_requirements(self, tenant: str, pack_id: str, requirements: list) -> list[PackSection]:
+        """Backfill the section->question tree for a pack extracted BEFORE this feature existed:
+        packs that pre-date populate_from_extraction have flat PackRequirement rows but no tree, so
+        the validated Sections view shows nothing. Reuse those already-stored requirements (NO LLM
+        re-run) and apply the SAME grouping as populate_from_extraction. Idempotent and tenant-
+        scoped: if a tree already exists for this pack it is left untouched (never duplicated)."""
+        if await self.sections.list(tenant, pack_id):
+            return []  # a tree already exists -- don't rebuild or duplicate it
+        extracted = [{"id": r.req_id, "title": r.title, "classification": r.classification,
+                      "requirement": r.requirement} for r in requirements]
+        return await self._build_tree(tenant, pack_id, extracted)
+
+    async def _build_tree(self, tenant: str, pack_id: str, extracted: list[dict]) -> list[PackSection]:
+        """Shared grouping used by both populate_from_extraction and populate_from_requirements."""
         groups: dict[str, list[dict]] = {}
         for item in extracted:
             groups.setdefault(_top_level_code(item["id"]), []).append(item)

@@ -7,6 +7,15 @@ export function formatShortDate(value?: string | null): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
+// Locale-safe date + time (e.g. "14 Mar 2025, 4:30 pm"). Same em-dash fallback as formatShortDate.
+export function formatDateTime(value?: string | null): string {
+  if (!value) return "\u2014";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "\u2014";
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) +
+    `, ${d.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit" })}`;
+}
+
 export function toTitleFromSlug(value?: string | null): string {
   if (!value) return "";
   const cleaned = value.replace(/_/g, " ").trim();

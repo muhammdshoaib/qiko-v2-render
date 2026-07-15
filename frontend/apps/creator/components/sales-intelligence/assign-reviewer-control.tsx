@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader2, UserCheck, X } from "lucide-react";
 import { assignSalesReviewer, type SalesOpportunity } from "@/lib/api";
+import { Input } from "@/components/cockpit/controls";
 import { formatDate } from "@/components/sales-intelligence/utils";
 
 export function AssignReviewerControl({ agentId, opp, onSaved }: {
@@ -58,15 +59,13 @@ export function AssignReviewerControl({ agentId, opp, onSaved }: {
       <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div>
           <label htmlFor={`reviewer-name-${opp.id}`} className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">Reviewer name</label>
-          <input id={`reviewer-name-${opp.id}`} value={name} onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Alice Ahmed"
-            className="mt-1.5 w-full rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[13px] text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+          <Input id={`reviewer-name-${opp.id}`} value={name} onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Alice Ahmed" className="mt-1.5" />
         </div>
         <div>
           <label htmlFor={`reviewer-uid-${opp.id}`} className="block text-[11px] font-semibold uppercase tracking-wider text-slate-500">User ID (optional)</label>
-          <input id={`reviewer-uid-${opp.id}`} value={userId} onChange={(e) => setUserId(e.target.value)}
-            placeholder="team member user id"
-            className="mt-1.5 w-full rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[13px] text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+          <Input id={`reviewer-uid-${opp.id}`} value={userId} onChange={(e) => setUserId(e.target.value)}
+            placeholder="team member user id" className="mt-1.5" />
         </div>
       </div>
 

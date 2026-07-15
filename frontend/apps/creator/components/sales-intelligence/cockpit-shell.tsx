@@ -6,11 +6,10 @@
 // studio-sales-intel-detail.png / pipeline-view.png / ingestion-filters.png / studio-sf-push-log.png).
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Bell, LayoutGrid, MessageSquare, Radar, Sparkles, TableProperties, Upload, X } from "lucide-react";
+import { ArrowLeft, Bell, LayoutGrid, MessageSquare, Radar, TableProperties, Upload } from "lucide-react";
 import { cn } from "@qiko/ui";
-import { ChatBubble, TypingIndicator } from "@/components/chat-message";
-import { NotificationBell } from "@/components/sales-intelligence/notification-bell";
+import { NotificationBell } from "@/components/cockpit/notification-bell";
+import { CockpitChatPanel } from "@/components/cockpit/chat-panel";
 import { ask } from "@/lib/api";
 
 export type CockpitSection = "overview" | "pipeline" | "ingestion" | "log" | "notifications";
@@ -35,6 +34,8 @@ export function CockpitShell({ agentId, workerName, active, children }: {
 }) {
   const router = useRouter();
   const [chatOpen, setChatOpen] = useState(true);
+  // One conversation id per cockpit mount, kept stable across re-renders.
+  const [cid] = useState(() => `sales-intel-${agentId}-${Math.random().toString(36).slice(2)}`);
 
   // On mobile/tablet the chat is a full-height overlay drawer, so don't open it over the content
   // on first load; keep the original open-by-default behaviour on lg+ (inline side column).
@@ -58,7 +59,7 @@ export function CockpitShell({ agentId, workerName, active, children }: {
           <div className="flex min-w-0 flex-col">
             <h1 className="truncate text-sm font-semibold leading-tight text-white">{workerName}</h1>
             <p className="flex items-center gap-1 text-[10px] leading-tight text-slate-500">
-              <span className="size-1.5 rounded-full bg-emerald-400" /> IDG Security &middot; Active
+              <span className="size-1.5 rounded-full bg-emerald-400" /> IDG Security &middot; Ready
             </p>
           </div>
         </div>
@@ -73,7 +74,7 @@ export function CockpitShell({ agentId, workerName, active, children }: {
 
       <div className="flex min-h-0 flex-1">
         {/* Desktop side nav (lg+): keeps the original pixel-for-pixel side-by-side layout. */}
-        <nav className="hidden w-[210px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-white/[0.06] px-4 py-5 lg:flex">
+        <nav aria-label="Cockpit sections" className="hidden w-[210px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-white/[0.06] px-4 py-5 lg:flex">
           {(["OVERVIEW", "USE CASES"] as const).map((group) => (
             <div key={group}>
               <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{group}</p>
@@ -121,82 +122,18 @@ export function CockpitShell({ agentId, workerName, active, children }: {
           <main className="min-w-0 flex-1 overflow-y-auto px-4 py-4 lg:px-6 lg:py-6">{children}</main>
         </div>
 
-        {chatOpen && <ChatPanel agentId={agentId} workerName={workerName} onClose={() => setChatOpen(false)} />}
+        {chatOpen && (
+          <CockpitChatPanel
+            workerName={workerName}
+            onClose={() => setChatOpen(false)}
+            onAsk={(q) => ask(cid, q, agentId).then((r) => r.text)}
+            emptyPrompt="Ask about RFPs, document uploads, or anything in your workflow."
+            placeholder="Ask something..."
+            inputHint="Enter to send &middot; ask about opportunities, sources or Salesforce pushes"
+            errorText={"Sorry \u2014 I couldn't answer that just now. Please try again in a moment."}
+          />
+        )}
       </div>
     </div>
-  );
-}
-
-function ChatPanel({ agentId, workerName, onClose }: { agentId: string; workerName: string; onClose: () => void }) {
-  const [cid] = useState(() => `sales-intel-${agentId}-${Math.random().toString(36).slice(2)}`);
-  const [messages, setMessages] = useState<{ role: string; text: string }[]>([]);
-  const [text, setText] = useState("");
-  const send = useMutation({
-    mutationFn: (question: string) => ask(cid, question, agentId),
-    onMutate: (question) => setMessages((m) => [...m, { role: "user", text: question }]),
-    onSuccess: (reply) => setMessages((m) => [...m, { role: "assistant", text: reply.text }]),
-    onError: () => setMessages((m) => [...m, { role: "assistant", text: "Sorry \u2014 I couldn't answer that just now. Please try again in a moment." }]),
-  });
-
-  return (
-    <>
-      {/* Dim backdrop on mobile/tablet where the chat is an overlay drawer, not a fixed column. */}
-      <div onClick={onClose} className="fixed inset-0 top-14 z-30 bg-black/50 lg:hidden" aria-hidden="true" />
-      <aside
-        className={cn(
-          "z-40 flex w-[300px] shrink-0 flex-col border-l border-white/[0.06] bg-[#05070d]",
-          // < lg: overlay drawer anchored under the header on the right.
-          "fixed bottom-0 right-0 top-14 max-w-[86vw]",
-          // lg+: revert to the original inline side column.
-          "lg:static lg:max-w-none",
-        )}
-      >
-      <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3.5">
-        <div className="flex items-center gap-2.5">
-          <span className="flex size-8 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-400">
-            <MessageSquare className="size-4" />
-          </span>
-          <div>
-            <p className="text-[13px] font-semibold text-white">Chat with {workerName}</p>
-            <p className="flex items-center gap-1 text-[11px] text-slate-500">
-              <span className="size-1.5 rounded-full bg-emerald-400" /> AI assistant · online
-            </p>
-          </div>
-        </div>
-        <button onClick={onClose} aria-label="Close chat" className="rounded-md text-slate-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"><X className="size-4" /></button>
-      </div>
-
-      <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-        {messages.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center text-center">
-            <span className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-400">
-              <Sparkles className="size-6" />
-            </span>
-            <p className="text-sm font-semibold text-white">Start a conversation</p>
-            <p className="mt-1.5 max-w-[220px] text-[12px] leading-relaxed text-slate-500">
-              Ask about RFPs, document uploads, section progress, or anything in your workflow.
-            </p>
-          </div>
-        ) : (
-          messages.map((m, i) => (
-            <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
-              <ChatBubble role={m.role} text={m.text} />
-            </div>
-          ))
-        )}
-        {send.isPending && <div className="flex justify-start"><TypingIndicator /></div>}
-      </div>
-
-      <form onSubmit={(e) => { e.preventDefault(); const q = text.trim(); if (q && !send.isPending) { send.mutate(q); setText(""); } }}
-        className="border-t border-white/[0.06] p-3">
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2.5 focus-within:border-indigo-500/50">
-          <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask something..." aria-label="Chat message"
-            disabled={send.isPending}
-            className="w-full bg-transparent text-[13px] text-white placeholder:text-slate-500 focus:outline-none disabled:opacity-50" />
-          <p className="mt-2 text-[10px] text-slate-600">Enter to send &middot; ask about opportunities, sources or Salesforce pushes</p>
-        </div>
-      </form>
-      </aside>
-    </>
   );
 }
