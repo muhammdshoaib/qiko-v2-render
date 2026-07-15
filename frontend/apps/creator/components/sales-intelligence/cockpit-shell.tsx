@@ -48,23 +48,25 @@ export function CockpitShell({ agentId, workerName, active, children }: {
     <div className="flex h-screen flex-col overflow-hidden bg-[#05070d] text-slate-200">
       <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-white/[0.06] px-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <button onClick={() => router.push("/studio")} className="flex shrink-0 items-center gap-1.5 text-sm text-slate-400 hover:text-white">
+          <button onClick={() => router.push("/studio")} className="flex shrink-0 items-center gap-1.5 rounded-md px-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
             <ArrowLeft className="size-4" /> <span className="hidden sm:inline">Studio</span>
           </button>
           <span className="hidden h-4 w-px bg-white/10 sm:block" />
           <span className="hidden size-6 shrink-0 items-center justify-center rounded-md bg-indigo-500/15 text-indigo-400 sm:flex">
             <MessageSquare className="size-3.5" />
           </span>
-          <h1 className="truncate text-sm font-semibold text-white">{workerName}</h1>
-          <span className="hidden shrink-0 items-center gap-1.5 rounded-full bg-emerald-400/[0.1] px-2 py-[3px] text-[10px] font-semibold uppercase tracking-wider text-emerald-400 sm:flex">
-            <span className="size-1.5 rounded-full bg-emerald-400" /> Active
-          </span>
+          <div className="flex min-w-0 flex-col">
+            <h1 className="truncate text-sm font-semibold leading-tight text-white">{workerName}</h1>
+            <p className="flex items-center gap-1 text-[10px] leading-tight text-slate-500">
+              <span className="size-1.5 rounded-full bg-emerald-400" /> IDG Security &middot; Active
+            </p>
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <NotificationBell category="sales_intelligence" />
           <button onClick={() => setChatOpen((v) => !v)} aria-expanded={chatOpen} aria-label="Toggle chat panel"
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-400">
-            <MessageSquare className="size-3.5" /> Chat
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
+            <MessageSquare className="size-3.5" /> <span className="hidden sm:inline">Chat</span>
           </button>
         </div>
       </header>
@@ -81,7 +83,8 @@ export function CockpitShell({ agentId, workerName, active, children }: {
                   const Icon = item.icon;
                   return (
                     <button key={item.section} onClick={() => router.push(sectionHref(agentId, item.section))}
-                      className={cn("flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors",
+                      aria-current={isActive ? "page" : undefined}
+                      className={cn("flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
                         isActive ? "border border-indigo-500/30 bg-indigo-500/10 text-white" : "text-slate-400 hover:bg-white/[0.03] hover:text-white")}>
                       <Icon className={cn("size-4 shrink-0", isActive ? "text-indigo-400" : "text-slate-500")} />
                       <span className="flex-1 min-w-0">
@@ -106,7 +109,7 @@ export function CockpitShell({ agentId, workerName, active, children }: {
               return (
                 <button key={item.section} onClick={() => router.push(sectionHref(agentId, item.section))}
                   aria-current={isActive ? "page" : undefined}
-                  className={cn("flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors",
+                  className={cn("flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
                     isActive ? "border border-indigo-500/30 bg-indigo-500/10 text-white" : "text-slate-400 hover:bg-white/[0.03] hover:text-white")}>
                   <Icon className={cn("size-3.5 shrink-0", isActive ? "text-indigo-400" : "text-slate-500")} />
                   <span className="whitespace-nowrap">{item.label}</span>
@@ -132,6 +135,7 @@ function ChatPanel({ agentId, workerName, onClose }: { agentId: string; workerNa
     mutationFn: (question: string) => ask(cid, question, agentId),
     onMutate: (question) => setMessages((m) => [...m, { role: "user", text: question }]),
     onSuccess: (reply) => setMessages((m) => [...m, { role: "assistant", text: reply.text }]),
+    onError: () => setMessages((m) => [...m, { role: "assistant", text: "Sorry \u2014 I couldn't answer that just now. Please try again in a moment." }]),
   });
 
   return (
@@ -159,7 +163,7 @@ function ChatPanel({ agentId, workerName, onClose }: { agentId: string; workerNa
             </p>
           </div>
         </div>
-        <button onClick={onClose} aria-label="Close chat" className="text-slate-500 hover:text-white"><X className="size-4" /></button>
+        <button onClick={onClose} aria-label="Close chat" className="rounded-md text-slate-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"><X className="size-4" /></button>
       </div>
 
       <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
@@ -183,12 +187,13 @@ function ChatPanel({ agentId, workerName, onClose }: { agentId: string; workerNa
         {send.isPending && <div className="flex justify-start"><TypingIndicator /></div>}
       </div>
 
-      <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) { send.mutate(text); setText(""); } }}
+      <form onSubmit={(e) => { e.preventDefault(); const q = text.trim(); if (q && !send.isPending) { send.mutate(q); setText(""); } }}
         className="border-t border-white/[0.06] p-3">
-        <div className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2.5">
+        <div className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2.5 focus-within:border-indigo-500/50">
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask something..." aria-label="Chat message"
-            className="w-full bg-transparent text-[13px] text-white placeholder:text-slate-500 focus:outline-none" />
-          <p className="mt-2 text-[10px] text-slate-600">Enter to send · Shift+Enter for new line</p>
+            disabled={send.isPending}
+            className="w-full bg-transparent text-[13px] text-white placeholder:text-slate-500 focus:outline-none disabled:opacity-50" />
+          <p className="mt-2 text-[10px] text-slate-600">Enter to send &middot; ask about opportunities, sources or Salesforce pushes</p>
         </div>
       </form>
       </aside>

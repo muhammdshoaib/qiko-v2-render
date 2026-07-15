@@ -10,7 +10,16 @@ import {
 } from "@/lib/api";
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
 import { OutcomesStrip } from "@/components/sales-intelligence/outcomes-strip";
-import { formatDate } from "@/components/sales-intelligence/utils";
+import { formatDate, humanize } from "@/components/sales-intelligence/utils";
+
+// Tone colour for a source's last-scan status string (>= 4.5:1 on the dark card).
+function scanStatusClass(status: string | null | undefined): string {
+  const s = (status || "").toLowerCase();
+  if (s.includes("fail") || s.includes("error")) return "text-red-400";
+  if (s.includes("success") || s.includes("complete") || s.includes("ok")) return "text-emerald-400";
+  if (!s) return "text-slate-500";
+  return "text-slate-300";
+}
 
 export default function SalesIntelligenceIngestionPage() {
   const { id: agentId } = useParams<{ id: string }>();
@@ -87,7 +96,7 @@ export default function SalesIntelligenceIngestionPage() {
               helper={useQuery_ ? "Keyword search" : "Open search (no keyword)"}>
               <input value={query} onChange={(e) => setQuery(e.target.value)} disabled={!useQuery_}
                 placeholder="security" aria-label="Portal query keyword"
-                className="mt-3 w-full rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[13px] text-white placeholder:text-slate-500 disabled:opacity-50" />
+                className="mt-3 w-full rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2 text-[13px] text-white placeholder:text-slate-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-400 disabled:opacity-50" />
             </FilterCard>
             <FilterCard icon={<Layers className="size-4" />} title="All countries"
               description="Bypass the 14-country IDG target allowlist after the portal returns notices."
@@ -124,16 +133,20 @@ function SourceCard({ icon, name, sourceKey, fullName, source, onScan, scanning 
           <RadioTower className="size-3" /> {active ? "ACTIVE" : "INACTIVE"}
         </span>
       </div>
-      <p className="mt-2 text-[12px] text-slate-500">{fullName}</p>
+      <p className="mt-2 text-[12px] text-slate-400">{fullName}</p>
 
-      <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+      <div className="mt-4 grid grid-cols-2 gap-2 text-center">
         <div className="rounded-lg bg-white/[0.02] py-2">
           <p className="text-[9px] uppercase tracking-wide text-slate-500">Last Scan</p>
           <p className="mt-1 text-[11px] text-slate-300">{formatDate(source?.lastScanAt, true)}</p>
         </div>
         <div className="rounded-lg bg-white/[0.02] py-2">
+          <p className="text-[9px] uppercase tracking-wide text-slate-500">Next Scan</p>
+          <p className="mt-1 text-[11px] text-slate-300">{formatDate(source?.nextScanAt, true)}</p>
+        </div>
+        <div className="rounded-lg bg-white/[0.02] py-2">
           <p className="text-[9px] uppercase tracking-wide text-slate-500">Status</p>
-          <p className="mt-1 text-[11px] text-emerald-400">{source?.lastScanStatus ?? "\u2014"}</p>
+          <p className={cn("mt-1 text-[11px]", scanStatusClass(source?.lastScanStatus))}>{humanize(source?.lastScanStatus)}</p>
         </div>
         <div className="rounded-lg bg-white/[0.02] py-2">
           <p className="text-[9px] uppercase tracking-wide text-slate-500">Found</p>
@@ -142,7 +155,7 @@ function SourceCard({ icon, name, sourceKey, fullName, source, onScan, scanning 
       </div>
 
       <button onClick={onScan} disabled={scanning}
-        className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-500 py-2.5 text-[13px] font-semibold text-white hover:bg-indigo-400 disabled:opacity-50">
+        className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-500 py-2.5 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
         <RefreshCw className={cn("size-4", scanning && "animate-spin")} /> {scanning ? "Scanning\u2026" : "Run Scan"}
       </button>
     </div>

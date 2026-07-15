@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, Check, ExternalLink, HelpCircle, Rocket, Sparkles, X,
+  AlertTriangle, ArrowLeft, Check, ExternalLink, HelpCircle, Loader2, Rocket, Sparkles, X,
 } from "lucide-react";
 import { cn } from "@qiko/ui";
 import {
@@ -15,7 +15,8 @@ import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
 import { AssignReviewerControl } from "@/components/sales-intelligence/assign-reviewer-control";
 import { DecisionHistoryView } from "@/components/sales-intelligence/decision-history-view";
 import {
-  formatDate, formatMoney, recommendationBadgeClass, scoreColor, stageBadgeClass, STAGE_LABELS,
+  formatDate, formatMoney, humanize, recommendationBadgeClass, scoreColor, sourceLabel,
+  stageBadgeClass, STAGE_LABELS,
 } from "@/components/sales-intelligence/utils";
 
 const TABS = ["Overview", "Summary", "Qualification", "Reviewer", "Notes", "Status"] as const;
@@ -53,7 +54,19 @@ export default function OpportunityDetailPage() {
   if (oppQ.isLoading || !opp) {
     return (
       <CockpitShell agentId={agentId} workerName={worker?.name ?? "IDG - Sales Intelligence"} active="pipeline">
-        <p className="text-sm text-slate-500">{oppQ.isLoading ? "Loading…" : "Opportunity not found."}</p>
+        {oppQ.isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-slate-400">
+            <Loader2 className="size-4 animate-spin" /> Loading opportunity{"\u2026"}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <p className="text-sm text-slate-400">This opportunity couldn&apos;t be found. It may have been archived or removed.</p>
+            <button onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline`)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-semibold text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
+              <ArrowLeft className="size-3.5" /> Back to pipeline
+            </button>
+          </div>
+        )}
       </CockpitShell>
     );
   }
@@ -62,7 +75,7 @@ export default function OpportunityDetailPage() {
     <CockpitShell agentId={agentId} workerName={worker?.name ?? "IDG - Sales Intelligence"} active="pipeline">
       <div className="space-y-5">
         <button onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline`)}
-          className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-white">
+          className="flex items-center gap-1.5 rounded-md px-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
           <ArrowLeft className="size-4" /> Back to pipeline
         </button>
 
@@ -70,55 +83,55 @@ export default function OpportunityDetailPage() {
           <div className="min-w-0 flex-1">
             <div className="mb-2 flex items-center gap-2">
               <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
-                {(opp.sourceKey || "").toUpperCase()}
+                {sourceLabel(opp.sourceKey)}
               </span>
               <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${stageBadgeClass(opp.stage)}`}>
-                {STAGE_LABELS[opp.stage] ?? opp.stage}
+                {STAGE_LABELS[opp.stage] ?? humanize(opp.stage)}
               </span>
             </div>
             <h1 className="text-xl font-semibold leading-snug text-white">{opp.title}</h1>
-            <p className="mt-1 text-[13px] text-slate-500">{[opp.buyer, opp.externalId].filter(Boolean).join(" \u00b7 ")}</p>
+            <p className="mt-1 text-[13px] text-slate-400">{[opp.buyer, opp.externalId].filter(Boolean).join(" \u00b7 ") || "\u2014"}</p>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
             {opp.sourceUrl && (
               <a href={opp.sourceUrl} target="_blank" rel="noreferrer"
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06]">
+                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
                 <ExternalLink className="size-3.5" /> Source
               </a>
             )}
             {(opp.stage === "ingested" || opp.stage === "qualifying") && (
               <button onClick={() => runQualification.mutate()} disabled={runQualification.isPending}
-                className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 disabled:opacity-50">
-                <Sparkles className="size-3.5" /> {runQualification.isPending ? "Running…" : "Run Qualification"}
+                className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
+                <Sparkles className={cn("size-3.5", runQualification.isPending && "animate-spin")} /> {runQualification.isPending ? "Running…" : "Run Qualification"}
               </button>
             )}
             {opp.stage === "awaiting_review" && (
               <>
                 <button onClick={() => review.mutate("approve")} disabled={review.isPending}
-                  className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-2 text-[13px] font-semibold text-white hover:bg-emerald-400 disabled:opacity-50">
-                  <Check className="size-3.5" /> Approve
+                  className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-2 text-[13px] font-semibold text-white hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:opacity-50">
+                  <Check className="size-3.5" /> {review.isPending && review.variables === "approve" ? "Approving…" : "Approve"}
                 </button>
                 <button onClick={() => review.mutate("reject")} disabled={review.isPending}
-                  className="flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[13px] font-semibold text-red-400 hover:bg-red-500/20 disabled:opacity-50">
-                  <X className="size-3.5" /> Reject
+                  className="flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[13px] font-semibold text-red-400 hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 disabled:opacity-50">
+                  <X className="size-3.5" /> {review.isPending && review.variables === "reject" ? "Rejecting…" : "Reject"}
                 </button>
               </>
             )}
             {(opp.stage === "validated" || opp.stage === "push_failed") && (
               <button onClick={() => push.mutate()} disabled={push.isPending}
-                className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 disabled:opacity-50">
+                className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
                 <Rocket className="size-3.5" /> {push.isPending ? "Pushing…" : "Push to Salesforce"}
               </button>
             )}
           </div>
         </div>
 
-        <div className="flex gap-1 border-b border-white/[0.06]">
+        <div role="tablist" aria-label="Opportunity detail sections" className="flex gap-1 overflow-x-auto border-b border-white/[0.06]">
           {TABS.map((t) => (
-            <button key={t} onClick={() => setTab(t)}
-              className={cn("px-3 py-2.5 text-[13px] font-medium transition-colors",
-                tab === t ? "border-b-2 border-indigo-400 text-white" : "text-slate-500 hover:text-slate-300")}>
+            <button key={t} onClick={() => setTab(t)} role="tab" aria-selected={tab === t}
+              className={cn("shrink-0 rounded-t-md px-3 py-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
+                tab === t ? "border-b-2 border-indigo-400 text-white" : "text-slate-400 hover:text-white")}>
               {t}
             </button>
           ))}
@@ -126,7 +139,7 @@ export default function OpportunityDetailPage() {
 
         {tab === "Overview" && <OverviewTab opp={opp} detail={detail} />}
         {tab === "Summary" && <SummaryTab detail={detail} />}
-        {tab === "Qualification" && <QualificationTab detail={detail} />}
+        {tab === "Qualification" && <QualificationTab opp={opp} detail={detail} />}
         {tab === "Reviewer" && (
           <div className="space-y-4">
             <AssignReviewerControl agentId={agentId} opp={opp} onSaved={invalidate} />
@@ -235,8 +248,11 @@ function ScoreGauge({ score }: { score: number | null | undefined }) {
   );
 }
 
-function QualificationTab({ detail }: { detail?: OpportunityDetail }) {
+function QualificationTab({ opp, detail }: { opp: import("@/lib/api").SalesOpportunity; detail?: OpportunityDetail }) {
   const q = detail?.qualification;
+  const risks = q?.risks?.length ? q.risks : opp.risks ?? [];
+  const missing = opp.missingFields ?? [];
+  const blockers = q?.rejectionReasons ?? [];
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <div className="space-y-4">
@@ -258,6 +274,41 @@ function QualificationTab({ detail }: { detail?: OpportunityDetail }) {
               {q.recommendations.map((r, i) => <li key={i}>{r}</li>)}
             </ul>
           ) : <p className="mt-2 text-[13px] text-slate-500">No recommendations yet.</p>}
+        </div>
+        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-400">
+            <AlertTriangle className="size-3.5" /> Risks &amp; missing info
+          </p>
+          {risks.length === 0 && missing.length === 0 && blockers.length === 0 ? (
+            <p className="mt-2 text-[13px] text-slate-500">No risks or gaps flagged.</p>
+          ) : (
+            <div className="mt-3 space-y-3 text-[13px] text-slate-300">
+              {risks.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Risks</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-4">{risks.map((r, i) => <li key={i}>{r}</li>)}</ul>
+                </div>
+              )}
+              {blockers.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">No-bid reasons</p>
+                  <ul className="mt-1 list-disc space-y-1 pl-4 text-red-300">{blockers.map((r, i) => <li key={i}>{r}</li>)}</ul>
+                </div>
+              )}
+              {missing.length > 0 && (
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Missing information</p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {missing.map((m, i) => (
+                      <span key={i} className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400">
+                        {humanize(m)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -287,18 +338,23 @@ function QualificationTab({ detail }: { detail?: OpportunityDetail }) {
         </div>
         <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
           <p className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-            Dimension Scores <HelpCircle className="size-3" />
+            Qualification by criteria <HelpCircle className="size-3" aria-label="Service fit, geography, value and clearance dimensions scored by the AI" />
           </p>
           {q?.dimensions && Object.keys(q.dimensions).length > 0 ? (
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-3">
               {Object.entries(q.dimensions).map(([dim, val]) => (
-                <div key={dim} className="flex items-center justify-between text-[13px]">
-                  <span className="capitalize text-slate-400">{dim.replace(/_/g, " ")}</span>
-                  <span className="font-semibold text-white">{val}</span>
+                <div key={dim}>
+                  <div className="flex items-center justify-between text-[13px]">
+                    <span className="text-slate-400">{humanize(dim)}</span>
+                    <span className="font-semibold text-white">{val}</span>
+                  </div>
+                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                    <div className="h-full rounded-full bg-indigo-400" style={{ width: `${Math.max(0, Math.min(100, Number(val) || 0))}%` }} />
+                  </div>
                 </div>
               ))}
             </div>
-          ) : <p className="mt-2 text-[13px] text-slate-500">No dimension scores available yet.</p>}
+          ) : <p className="mt-2 text-[13px] text-slate-500">No criteria scores available yet.</p>}
         </div>
       </div>
     </div>
@@ -309,15 +365,17 @@ function NotesTab({ agentId, oppId, detail, onSaved }: { agentId: string; oppId:
   const [notes, setNotes] = useState(detail?.notes.humanReviewNotes ?? "");
   const save = useMutation({ mutationFn: () => saveSalesOpportunityNotes(agentId, oppId, notes), onSuccess: onSaved });
 
+  const dirty = notes !== (detail?.notes.humanReviewNotes ?? "");
   return (
     <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
-      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Human Review Notes</p>
-      <textarea value={notes} onChange={(e) => setNotes(e.target.value)}
+      <label htmlFor="human-review-notes" className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Human Review Notes</label>
+      <textarea id="human-review-notes" value={notes} onChange={(e) => setNotes(e.target.value)}
         placeholder="Add context for reviewers -- e.g. why this was approved, rejected, or needs follow-up."
-        className="mt-3 min-h-32 w-full rounded-lg border border-white/10 bg-white/[0.02] p-3 text-[13px] text-white placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-400" />
-      <div className="mt-3 flex justify-end">
-        <button onClick={() => save.mutate()} disabled={save.isPending}
-          className="rounded-lg bg-indigo-500 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 disabled:opacity-50">
+        className="mt-3 min-h-32 w-full rounded-lg border border-white/10 bg-white/[0.02] p-3 text-[13px] text-white placeholder:text-slate-500 focus:border-indigo-500/50 focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+      <div className="mt-3 flex items-center justify-end gap-3">
+        {save.isSuccess && !dirty && <span className="text-[12px] text-emerald-400">Saved</span>}
+        <button onClick={() => save.mutate()} disabled={save.isPending || !dirty}
+          className="rounded-lg bg-indigo-500 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
           {save.isPending ? "Saving…" : "Save Notes"}
         </button>
       </div>
@@ -348,14 +406,14 @@ function StatusTab({ opp, detail }: { opp: import("@/lib/api").SalesOpportunity;
       </div>
       <div>
         <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Review Status</p>
-        <div className="mt-1.5"><Pill value={c?.humanReviewStatus ?? opp.humanReviewStatus ?? "Needs Review"} /></div>
+        <div className="mt-1.5"><Pill value={humanize(c?.humanReviewStatus ?? opp.humanReviewStatus ?? "Needs Review")} /></div>
       </div>
       <Field label="Reviewed By" value={c?.reviewedBy?.userName ?? opp.reviewedBy?.userName} />
       <Field label="Reviewed At" value={formatDate(c?.reviewedAt ?? opp.reviewedAt)} />
       <Field label="Completed At" value={formatDate(c?.completedAt)} />
       <div>
         <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Salesforce Push Status</p>
-        <div className="mt-1.5"><Pill value={c?.salesforcePushStatus ?? opp.salesforcePushStatus ?? "Not Started"} /></div>
+        <div className="mt-1.5"><Pill value={humanize(c?.salesforcePushStatus ?? opp.salesforcePushStatus ?? "Not Started")} /></div>
       </div>
       <Field label="Salesforce Opportunity ID" value={c?.salesforceOpportunityId ?? opp.salesforceOpportunityId} />
       <Field label="Salesforce Pushed At" value={formatDate(c?.salesforcePushedAt ?? opp.salesforcePushedAt)} />

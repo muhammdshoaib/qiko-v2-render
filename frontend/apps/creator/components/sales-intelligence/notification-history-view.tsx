@@ -48,17 +48,17 @@ export function NotificationHistoryView({ category }: { category?: string }) {
         </div>
         {unread > 0 && (
           <button onClick={() => readAll.mutate()} disabled={readAll.isPending}
-            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] disabled:opacity-50">
-            <CheckCheck className="size-3.5" /> Mark all read
+            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+            <CheckCheck className="size-3.5" /> {readAll.isPending ? "Marking…" : "Mark all read"}
           </button>
         )}
       </div>
 
-      <div className="flex gap-1 border-b border-white/[0.06]">
+      <div role="tablist" aria-label="Notification filter" className="flex gap-1 border-b border-white/[0.06]">
         {FILTERS.map((f) => (
-          <button key={f} onClick={() => setFilter(f)}
-            className={cn("px-3 py-2.5 text-[13px] font-medium capitalize transition-colors",
-              filter === f ? "border-b-2 border-indigo-400 text-white" : "text-slate-500 hover:text-slate-300")}>
+          <button key={f} onClick={() => setFilter(f)} role="tab" aria-selected={filter === f}
+            className={cn("rounded-t-md px-3 py-2.5 text-[13px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
+              filter === f ? "border-b-2 border-indigo-400 text-white" : "text-slate-400 hover:text-white")}>
             {f}
           </button>
         ))}
@@ -73,7 +73,7 @@ export function NotificationHistoryView({ category }: { category?: string }) {
           {notifications.map((n) => (
             <li key={n.id}>
               <button onClick={() => !n.read && readOne.mutate(n.id)}
-                className={cn("flex w-full items-start gap-3 rounded-2xl border border-white/[0.06] p-4 text-left transition-colors hover:bg-white/[0.03]",
+                className={cn("flex w-full items-start gap-3 rounded-2xl border border-white/[0.06] p-4 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
                   n.read ? "bg-transparent" : "bg-white/[0.02]")}>
                 <span className={`inline-flex shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${toneClass(n.type)}`}>
                   {n.type.replace(/_/g, " ")}

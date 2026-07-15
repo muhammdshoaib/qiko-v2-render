@@ -3,14 +3,17 @@
 import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { GripVertical } from "lucide-react";
+import { CalendarClock, GripVertical } from "lucide-react";
 import { cn } from "@qiko/ui";
 import {
   listAgents, listSalesOpportunities, updateSalesOpportunity, type OpportunityStage, type SalesOpportunity,
 } from "@/lib/api";
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
 import { OutcomesStrip } from "@/components/sales-intelligence/outcomes-strip";
-import { formatDate, formatMoney, stageBadgeClass, STAGE_LABELS } from "@/components/sales-intelligence/utils";
+import {
+  deadlineLabel, deadlineUrgencyClass, formatDate, formatMoney, humanize, scoreBadgeClass,
+  sourceLabel, stageBadgeClass, STAGE_LABELS,
+} from "@/components/sales-intelligence/utils";
 
 const KANBAN_COLUMNS: OpportunityStage[] = ["ingested", "qualifying", "qualified", "validated", "pushed"];
 const TERMINAL_STAGES: OpportunityStage[] = ["rejected", "push_failed"];
@@ -83,7 +86,8 @@ export default function SalesIntelligencePipelinePage() {
         <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.02] p-0.5">
           {(["pipeline", "list"] as const).map((v) => (
             <button key={v} onClick={() => setView(v)}
-              className={cn("rounded-md px-3.5 py-1.5 text-[13px] font-medium capitalize transition-colors",
+              aria-pressed={view === v}
+              className={cn("rounded-md px-3.5 py-1.5 text-[13px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
                 view === v ? "bg-indigo-500/20 text-white" : "text-slate-400 hover:text-white")}>
               {v}
             </button>
@@ -140,28 +144,38 @@ export default function SalesIntelligencePipelinePage() {
                   <th className="px-4 py-3">Source</th>
                   <th className="px-4 py-3">Buyer</th>
                   <th className="px-4 py-3">Value</th>
+                  <th className="px-4 py-3">Score</th>
                   <th className="px-4 py-3">Stage</th>
                   <th className="px-4 py-3">Deadline</th>
                 </tr>
               </thead>
               <tbody>
                 {opps.map((o) => (
-                  <tr key={o.id} onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline/${o.id}`)}
-                    className="cursor-pointer border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02]">
+                  <tr key={o.id} tabIndex={0} role="button"
+                    onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline/${o.id}`)}
+                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/studio/${agentId}/sales-intelligence/pipeline/${o.id}`); } }}
+                    className="cursor-pointer border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400/60">
                     <td className="max-w-[320px] truncate px-4 py-3 text-white">{o.title}</td>
-                    <td className="px-4 py-3 text-slate-400">{(o.sourceKey || "").toUpperCase()}</td>
+                    <td className="px-4 py-3 text-slate-400">{sourceLabel(o.sourceKey)}</td>
                     <td className="px-4 py-3 text-slate-400">{o.buyer ?? "\u2014"}</td>
                     <td className="px-4 py-3 font-medium text-emerald-400">{formatMoney(o.estimatedValue, o.currency)}</td>
                     <td className="px-4 py-3">
+                      {o.qualificationScore != null ? (
+                        <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${scoreBadgeClass(o.qualificationScore)}`}>
+                          {o.qualificationScore}/100
+                        </span>
+                      ) : <span className="text-slate-600">{"\u2014"}</span>}
+                    </td>
+                    <td className="px-4 py-3">
                       <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase ${stageBadgeClass(o.stage)}`}>
-                        {STAGE_LABELS[o.stage] ?? o.stage}
+                        {STAGE_LABELS[o.stage] ?? humanize(o.stage)}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-slate-400">{formatDate(o.deadlineAt)}</td>
+                    <td className={cn("px-4 py-3", deadlineUrgencyClass(o.deadlineAt))}>{formatDate(o.deadlineAt)}</td>
                   </tr>
                 ))}
                 {opps.length === 0 && (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">No opportunities yet.</td></tr>
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-slate-500">No opportunities yet.</td></tr>
                 )}
               </tbody>
             </table>
@@ -179,20 +193,36 @@ function OpportunityCard({ opp, onDragStart, onClick, onMove, moving }: {
   return (
     <div draggable onDragStart={onDragStart}
       className="flex flex-col gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 transition-colors hover:border-indigo-500/30 hover:bg-white/[0.04]">
-      <button type="button" onClick={onClick} className="flex flex-col gap-2 text-left">
+      <button type="button" onClick={onClick}
+        className="flex flex-col gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
         <div className="flex items-start gap-2">
           <GripVertical aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 cursor-grab text-slate-600" />
           <p className="line-clamp-2 text-[13px] font-medium leading-snug text-white">{opp.title}</p>
         </div>
-        <div className="flex items-center gap-2 pl-5">
+        <div className="flex flex-wrap items-center gap-1.5 pl-5">
           <span className="rounded-full border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-300">
-            {(opp.sourceKey || "").toUpperCase()}
+            {sourceLabel(opp.sourceKey)}
           </span>
-          <span className="truncate text-[11px] text-slate-500">{opp.buyer ?? "\u2014"}</span>
+          <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${stageBadgeClass(opp.stage)}`}>
+            {STAGE_LABELS[opp.stage] ?? humanize(opp.stage)}
+          </span>
+          {opp.qualificationScore != null && (
+            <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-semibold ${scoreBadgeClass(opp.qualificationScore)}`}>
+              {opp.qualificationScore}/100
+            </span>
+          )}
         </div>
-        {opp.estimatedValue != null && (
-          <p className="pl-5 text-[12px] font-semibold text-emerald-400">{formatMoney(opp.estimatedValue, opp.currency)}</p>
-        )}
+        <p className="truncate pl-5 text-[11px] text-slate-400">{opp.buyer ?? "\u2014"}</p>
+        <div className="flex items-center justify-between gap-2 pl-5">
+          {opp.estimatedValue != null
+            ? <span className="text-[12px] font-semibold text-emerald-400">{formatMoney(opp.estimatedValue, opp.currency)}</span>
+            : <span className="text-[12px] text-slate-600">{"\u2014"}</span>}
+          {opp.deadlineAt && (
+            <span className={cn("flex items-center gap-1 text-[11px] font-medium", deadlineUrgencyClass(opp.deadlineAt))}>
+              <CalendarClock className="size-3" /> {deadlineLabel(opp.deadlineAt)}
+            </span>
+          )}
+        </div>
       </button>
       {/* Keyboard/screen-reader-accessible alternative to drag-and-drop: dispatches the same
           stage-change mutation the board uses. */}

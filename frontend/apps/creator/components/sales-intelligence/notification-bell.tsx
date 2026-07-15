@@ -25,7 +25,7 @@ function toneClass(type: string): string {
 function NotificationItem({ n, onRead }: { n: Notification; onRead: (id: string) => void }) {
   return (
     <button onClick={() => !n.read && onRead(n.id)}
-      className={cn("flex w-full items-start gap-2.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-white/[0.04]",
+      className={cn("flex w-full items-start gap-2.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
         !n.read && "bg-white/[0.02]")}>
       <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", n.read ? "bg-transparent" : toneClass(n.type))} />
       <div className="min-w-0 flex-1">
@@ -65,8 +65,8 @@ export function NotificationBell({ category }: { category?: string }) {
 
   return (
     <div ref={ref} className="relative">
-      <button onClick={() => setOpen((v) => !v)} aria-label="Notifications" aria-expanded={open}
-        className="relative flex size-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white/[0.06] hover:text-white">
+      <button onClick={() => setOpen((v) => !v)} aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"} aria-expanded={open}
+        className="relative flex size-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
         <Bell className="size-4" />
         {unread > 0 && (
           <span className="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-indigo-500 px-1 text-[9px] font-bold text-white">
@@ -81,7 +81,7 @@ export function NotificationBell({ category }: { category?: string }) {
             <p className="text-[13px] font-semibold text-white">Notifications</p>
             {unread > 0 && (
               <button onClick={() => readAll.mutate()} disabled={readAll.isPending}
-                className="flex items-center gap-1 text-[11px] font-medium text-indigo-400 hover:text-indigo-300 disabled:opacity-50">
+                className="flex items-center gap-1 rounded text-[11px] font-medium text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
                 <CheckCheck className="size-3.5" /> Mark all read
               </button>
             )}

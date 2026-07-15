@@ -60,19 +60,19 @@ export default function SalesforcePushLogPage() {
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">SALESFORCE CONNECTION</p>
               <p className="mt-1 text-[15px] font-semibold text-white">{connected ? "Connected" : "Not Connected"}</p>
               {sfQ.data?.salesforce?.instanceUrl && (
-                <a href={sfQ.data.salesforce.instanceUrl} target="_blank" rel="noreferrer" className="mt-1 block text-[13px] text-indigo-400 hover:underline">
+                <a href={sfQ.data.salesforce.instanceUrl} target="_blank" rel="noreferrer" className="mt-1 block rounded text-[13px] text-indigo-400 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
                   {sfQ.data.salesforce.instanceUrl}
                 </a>
               )}
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => disconnect.mutate()} disabled={!connected || disconnect.isPending}
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] disabled:opacity-50">
-                <Unlink className="size-3.5" /> Disconnect
+                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+                <Unlink className="size-3.5" /> {disconnect.isPending ? "Disconnecting…" : "Disconnect"}
               </button>
-              <button onClick={() => sfQ.refetch()} disabled={sfQ.isFetching}
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] disabled:opacity-50">
-                <RefreshCw className={cn("size-3.5", sfQ.isFetching && "animate-spin")} /> {sfQ.isFetching ? "Refreshing…" : "Refresh"}
+              <button onClick={() => { sfQ.refetch(); logsQ.refetch(); }} disabled={sfQ.isFetching || logsQ.isFetching}
+                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+                <RefreshCw className={cn("size-3.5", (sfQ.isFetching || logsQ.isFetching) && "animate-spin")} /> {sfQ.isFetching || logsQ.isFetching ? "Refreshing…" : "Refresh"}
               </button>
             </div>
           </div>
@@ -105,7 +105,13 @@ export default function SalesforcePushLogPage() {
                   <td className="max-w-[320px] truncate px-4 py-3 text-slate-500">{log.detail ?? log.action}</td>
                 </tr>
               ))}
-              {logs.length === 0 && (
+              {logsQ.isLoading && (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-400">Loading push activity{"\u2026"}</td></tr>
+              )}
+              {!logsQ.isLoading && logsQ.isError && (
+                <tr><td colSpan={6} className="px-4 py-8 text-center text-red-300">Couldn&apos;t load the push log. Try refreshing.</td></tr>
+              )}
+              {!logsQ.isLoading && !logsQ.isError && logs.length === 0 && (
                 <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">No activity recorded yet.</td></tr>
               )}
             </tbody>
