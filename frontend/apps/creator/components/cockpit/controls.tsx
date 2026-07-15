@@ -70,13 +70,21 @@ export function Switch({
       disabled={disabled}
       onClick={onCheckedChange}
       className={cn(
-        "relative h-5 w-9 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-50",
-        checked ? "bg-indigo-500" : "bg-white/10",
+        // inline-flex + items-center centres the thumb without absolute/top hacks; p-0 + a
+        // transparent border neutralise the browser's default <button> chrome so it always
+        // reads as a switch. The off-state track stays visible on the dark cockpit surface.
+        "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border p-0 transition-colors " +
+        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#05070d] " +
+        "disabled:cursor-not-allowed disabled:opacity-50",
+        checked ? "border-indigo-500 bg-indigo-500" : "border-white/15 bg-white/20",
         className,
       )}
       {...props}
     >
-      <span className={cn("absolute top-0.5 size-4 rounded-full bg-white transition-transform", checked ? "translate-x-[18px]" : "translate-x-0.5")} />
+      <span className={cn(
+        "pointer-events-none inline-block size-4 transform rounded-full bg-white shadow-sm ring-1 ring-black/10 transition-transform duration-200",
+        checked ? "translate-x-[18px]" : "translate-x-0.5",
+      )} />
     </button>
   );
 }
