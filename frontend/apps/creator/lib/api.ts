@@ -196,6 +196,105 @@ export const submitFeedback = (packId: string, req_id: string, decision: "Approv
     method: "POST", body: JSON.stringify({ req_id, decision, comment }),
   });
 
+// ── Pre-Sales / RFP tender cockpit (pre_sales_writer) ────────────────────────
+// The section->question tree model backing the tender cockpit (app.modules.rfp.tree). A pack owns
+// sections; each section owns questions, each carrying a grounded AI draft + an editable/lockable
+// human draft. Reads are open to any authenticated viewer; mutations need Editor+. Base path is
+// /rfp/packs/{id} (the same prefix as the pack CRUD/answers/export fns above).
+
+/** Drafting pipeline stage (distinct from Win/Loss `outcome`). Mirrors rfp.service.STAGES. */
+export const PACK_STAGES = ["parsed", "assigned", "drafting", "review", "final"] as const;
+export type PackStage = (typeof PACK_STAGES)[number];
+
+/** Section status vocabulary, mirroring rfp.tree.SECTION_STATUSES. */
+export type PackSectionStatus =
+  | "not_generated" | "generating" | "draft_ready" | "reviewing" | "locked" | "manual" | "overdue";
+
+export type PackQuestion = {
+  id: string; tenant: string; pack_id: string; section_id: string; text: string; req_id: string;
+  word_limit: number | null; ai_answer: string; ai_sources: string[]; confidence: number;
+  decision: string; kb_gap: boolean; locked: boolean; user_draft: string; order_index: number;
+};
+
+export type PackSection = {
+  id: string; tenant: string; pack_id: string; code: string; name: string; page: number | null;
+  weighting: string; status: PackSectionStatus; parent_id: string | null;
+  assigned_reviewer_user_id: string | null; assigned_reviewer_name: string; due_date: string | null;
+  manual: boolean; kb_gap: boolean; order_index: number;
+};
+
+/** One node of GET /sections: a section plus its nested questions and their averaged confidence. */
+export type PackSectionNode = PackSection & { questions: PackQuestion[]; avg_confidence: number };
+
+export type PackOverview = {
+  sections: number; sections_locked: number; questions: number;
+  ai_drafted: number; ai_drafted_total: number; for_human_review: number;
+  kb_sources: number; kb_gaps: number; can_finalize: boolean;
+};
+
+export const getPackOverview = (packId: string) =>
+  request<PackOverview>(`/rfp/packs/${packId}/overview`);
+
+export const setPackStage = (packId: string, stage: PackStage) =>
+  request<RfpPack>(`/rfp/packs/${packId}/stage`, { method: "PUT", body: JSON.stringify({ stage }) });
+
+export const listPackSections = (packId: string) =>
+  request<PackSectionNode[]>(`/rfp/packs/${packId}/sections`);
+
+export type AddSectionBody = {
+  code?: string; name: string; page?: number | null; weighting?: string; parent_id?: string | null;
+  assigned_reviewer_name?: string; due_date?: string | null; manual?: boolean;
+};
+export const addPackSection = (packId: string, body: AddSectionBody) =>
+  request<PackSection>(`/rfp/packs/${packId}/sections`, { method: "POST", body: JSON.stringify(body) });
+export const updatePackSection = (packId: string, sectionId: string, patch: Partial<AddSectionBody & { status: PackSectionStatus }>) =>
+  request<PackSection>(`/rfp/packs/${packId}/sections/${sectionId}`, { method: "PATCH", body: JSON.stringify(patch) });
+export const deletePackSection = (packId: string, sectionId: string) =>
+  request<{ deleted: string }>(`/rfp/packs/${packId}/sections/${sectionId}`, { method: "DELETE" });
+
+export const addPackQuestion = (packId: string, sectionId: string, body: { text: string; word_limit?: number | null }) =>
+  request<PackQuestion>(`/rfp/packs/${packId}/sections/${sectionId}/questions`, { method: "POST", body: JSON.stringify(body) });
+export const updatePackQuestion = (packId: string, questionId: string, patch: { text?: string; word_limit?: number | null }) =>
+  request<PackQuestion>(`/rfp/packs/${packId}/questions/${questionId}`, { method: "PATCH", body: JSON.stringify(patch) });
+export const deletePackQuestion = (packId: string, questionId: string) =>
+  request<{ deleted: string }>(`/rfp/packs/${packId}/questions/${questionId}`, { method: "DELETE" });
+
+export const savePackQuestionDraft = (packId: string, questionId: string, user_draft: string) =>
+  request<PackQuestion>(`/rfp/packs/${packId}/questions/${questionId}/draft`, { method: "PUT", body: JSON.stringify({ user_draft }) });
+export const lockPackQuestion = (packId: string, questionId: string) =>
+  request<PackQuestion>(`/rfp/packs/${packId}/questions/${questionId}/lock`, { method: "POST" });
+export const unlockPackQuestion = (packId: string, questionId: string) =>
+  request<PackQuestion>(`/rfp/packs/${packId}/questions/${questionId}/unlock`, { method: "POST" });
+export const lockAllInPackSection = (packId: string, sectionId: string) =>
+  request<PackSection>(`/rfp/packs/${packId}/sections/${sectionId}/lock-all`, { method: "POST" });
+
+export const generatePackQuestion = (packId: string, questionId: string) =>
+  request<PackQuestion>(`/rfp/packs/${packId}/questions/${questionId}/generate`, { method: "POST" });
+export const generatePackSection = (packId: string, sectionId: string) =>
+  request<PackQuestion[]>(`/rfp/packs/${packId}/sections/${sectionId}/generate`, { method: "POST" });
+export const generatePack = (packId: string) =>
+  request<PackQuestion[]>(`/rfp/packs/${packId}/generate`, { method: "POST" });
+
+/** Upload an RFP/tender document to a pack: extracts requirements and (re)builds the section tree. */
+export async function extractPack(packId: string, file: File): Promise<PackRequirement[]> {
+  const csrf = csrfToken();
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(`${BASE}/rfp/packs/${packId}/extract`, {
+    method: "POST", credentials: "include", body: form,
+    headers: csrf ? { "x-csrf-token": csrf } : undefined,
+  });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.json();
+}
+
+/** Fetch an export (xlsx / clean docx / annotated review docx) as a Blob for client-side download. */
+export async function exportPackBlob(packId: string, kind: "xlsx" | "docx-clean" | "docx-review"): Promise<Blob> {
+  const res = await fetch(exportUrl(packId, kind), { credentials: "include" });
+  if (!res.ok) throw new ApiError(res.status, await res.text());
+  return res.blob();
+}
+
 export async function ingestFile(docId: string, file: File): Promise<{ chunks: number }> {
   const csrf = document.cookie.match(/(?:^|; )qiko_csrf=([^;]+)/)?.[1];
   const form = new FormData();
