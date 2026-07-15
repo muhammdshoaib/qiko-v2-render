@@ -10,34 +10,37 @@
   --brand-secondary: #22d3ee;
   --brand-background: #0d1b2a;
 
-  /* Qiko dark theme (default) */
-  --background: oklch(0.18 0.04 250);
+  /* Qiko dark theme (default). Surfaces are a near-black, very-low-chroma cool dark to match the
+     live reference (idg-sales.qiko.ai / the cockpits' #05070d) -- the old 0.18/0.22 navy made
+     every @qiko/ui <Card> (chat, tabs, etc.) read as a mid navy-blue that clashed with the design.
+     Accent tokens (primary=violet, secondary/accent=cyan) are unchanged. */
+  --background: oklch(0.10 0.014 260);
   --foreground: oklch(0.98 0 0);
-  --card: oklch(0.22 0.04 250);
+  --card: oklch(0.14 0.015 260);
   --card-foreground: oklch(0.98 0 0);
-  --popover: oklch(0.22 0.04 250);
+  --popover: oklch(0.15 0.015 260);
   --popover-foreground: oklch(0.98 0 0);
   --primary: oklch(0.65 0.24 275);
   --primary-foreground: oklch(0.98 0 0);
   --secondary: oklch(0.75 0.15 195);
   --secondary-foreground: oklch(0.15 0.04 250);
-  --muted: oklch(0.25 0.04 250);
+  --muted: oklch(0.19 0.015 260);
   --muted-foreground: oklch(0.65 0.02 250);
   --accent: oklch(0.75 0.15 195);
   --accent-foreground: oklch(0.15 0.04 250);
   --destructive: oklch(0.55 0.22 25);
   --destructive-foreground: oklch(0.98 0 0);
   --success: oklch(0.80 0.14 155);
-  --border: oklch(0.30 0.04 250);
-  --input: oklch(0.22 0.04 250);
+  --border: oklch(0.27 0.012 260);
+  --input: oklch(0.16 0.015 260);
   --ring: oklch(0.65 0.24 275);
-  --sidebar: oklch(0.12 0.03 250);
+  --sidebar: oklch(0.09 0.014 260);
   --sidebar-foreground: oklch(0.98 0 0);
   --sidebar-primary: oklch(0.65 0.24 275);
   --sidebar-primary-foreground: oklch(0.98 0 0);
-  --sidebar-accent: oklch(0.22 0.04 250);
+  --sidebar-accent: oklch(0.16 0.015 260);
   --sidebar-accent-foreground: oklch(0.98 0 0);
-  --sidebar-border: oklch(0.28 0.04 250);
+  --sidebar-border: oklch(0.25 0.012 260);
   --sidebar-ring: oklch(0.65 0.24 275);
 
   /* Status pill tokens (worker ready/training/error badges) -- matched from the live site's
