@@ -158,6 +158,7 @@ function StudioChat() {
     mutationFn: (question: string) => ask(cid, question),
     onMutate: (question) => setMessages((m) => [...m, { role: "user", text: question }]),
     onSuccess: (reply) => setMessages((m) => [...m, { role: "assistant", text: reply.text }]),
+    onError: () => setMessages((m) => [...m, { role: "assistant", text: "Sorry — I couldn't answer that just now. Please try again in a moment." }]),
   });
 
   return (
@@ -219,6 +220,8 @@ function StudioResearch() {
             {run.isPending ? "Researching..." : `Research ${questions.length || ""} topic(s)`}
           </Button>
         </div>
+        {run.isError && <p className="text-xs text-red-500">Couldn&apos;t research those topics — please try again.</p>}
+        {run.isSuccess && run.data.length === 0 && <p className="text-xs text-muted-foreground">No answers were returned.</p>}
       </CardContent></Card>
 
       {run.data?.map((a: BatchAnswer) => (

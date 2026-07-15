@@ -128,6 +128,15 @@ export default function OpportunityDetailPage() {
           </div>
         </div>
 
+        {(review.isError || push.isError || runQualification.isError) && (
+          <p className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-[12px] text-red-300">
+            <AlertTriangle className="size-3.5 shrink-0" />
+            {push.isError ? "Couldn't push to Salesforce — try again in a moment."
+              : review.isError ? "Couldn't save that review decision — try again."
+              : "Couldn't run qualification — try again."}
+          </p>
+        )}
+
         <div role="tablist" aria-label="Opportunity detail sections" className="flex gap-1 overflow-x-auto border-b border-white/[0.06]">
           {TABS.map((t) => (
             <button key={t} onClick={() => setTab(t)} role="tab" aria-selected={tab === t}

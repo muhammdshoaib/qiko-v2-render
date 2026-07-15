@@ -164,7 +164,8 @@ async def lifespan(app: FastAPI):
         app.state.salesforce_auth = SalesforceAuthService(
             connections=si_connections, activity_logs=si_activity_logs)
         app.state.salesforce_push = SalesforcePushService(
-            auth=app.state.salesforce_auth, activity_logs=si_activity_logs, notifier=sales_notifier)
+            auth=app.state.salesforce_auth, activity_logs=si_activity_logs, notifier=sales_notifier,
+            opportunities=si_opportunities)
         # Finance vertical: uploaded workbooks (parsed rows) + analyst chat history survive a
         # redeploy. The LLM provider is the same configured gateway used elsewhere.
         app.state.finance = FinanceService(files=SqlFinanceFileStore(sm), chats=SqlFinanceChatStore(sm))
@@ -242,7 +243,8 @@ def create_app() -> FastAPI:
                                                                  notifier=app.state.sales_notifier)
     app.state.salesforce_auth = SalesforceAuthService()
     app.state.salesforce_push = SalesforcePushService(auth=app.state.salesforce_auth,
-                                                      notifier=app.state.sales_notifier)
+                                                      notifier=app.state.sales_notifier,
+                                                      opportunities=app.state.sales_intel.opportunities)
     app.state.finance = FinanceService()
     app.state.teams = TeamService()
     app.state.leads = LeadService(get_email_sender())

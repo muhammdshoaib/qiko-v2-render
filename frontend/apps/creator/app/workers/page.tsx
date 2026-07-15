@@ -66,8 +66,11 @@ export default function WorkersPage() {
       <div className="p-4 sm:p-6 lg:p-8">
         {create.isError && <p className="mb-4 text-sm text-destructive">Plan limit reached or not permitted.</p>}
         {agents.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
+        {agents.isError && (
+          <p className="mb-4 text-sm text-destructive">Couldn&apos;t load your workers. <button className="underline" onClick={() => agents.refetch()}>Retry</button></p>
+        )}
 
-        {!agents.isLoading && workers.length === 0 && (
+        {!agents.isLoading && !agents.isError && workers.length === 0 && (
           <div className="py-16 text-center">
             <p className="text-sm text-muted-foreground mb-3">No workers yet — build your first AI expert.</p>
           </div>

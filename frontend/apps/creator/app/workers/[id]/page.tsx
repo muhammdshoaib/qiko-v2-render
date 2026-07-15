@@ -333,9 +333,9 @@ function TendersCard({ agentId, packs, onChange }: { agentId: string; packs?: Rf
                 <span className={cn("text-xs font-medium capitalize", OUTCOME_STYLE[p.outcome])}>{p.outcome}</span>
               ) : (
                 <>
-                  <button className="text-xs text-emerald-500 hover:underline"
+                  <button className="text-xs text-emerald-500 hover:underline disabled:opacity-50" disabled={setOutcome.isPending}
                     onClick={() => setOutcome.mutate({ packId: p.id, outcome: "won" })}>Won</button>
-                  <button className="text-xs text-red-500 hover:underline"
+                  <button className="text-xs text-red-500 hover:underline disabled:opacity-50" disabled={setOutcome.isPending}
                     onClick={() => setOutcome.mutate({ packId: p.id, outcome: "lost" })}>Lost</button>
                 </>
               )}
@@ -431,16 +431,16 @@ function SalesforceSubTab({ id }: { id: string }) {
         ) : (
           <>
             <div className="space-y-1.5">
-              <Label>Instance URL</Label>
-              <Input placeholder="https://yourorg.my.salesforce.com" value={instanceUrl} onChange={(e) => setInstanceUrl(e.target.value)} />
+              <Label htmlFor="sf-instance-url">Instance URL</Label>
+              <Input id="sf-instance-url" placeholder="https://yourorg.my.salesforce.com" value={instanceUrl} onChange={(e) => setInstanceUrl(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Client ID (Consumer Key)</Label>
-              <Input value={clientId} onChange={(e) => setClientId(e.target.value)} />
+              <Label htmlFor="sf-client-id">Client ID (Consumer Key)</Label>
+              <Input id="sf-client-id" value={clientId} onChange={(e) => setClientId(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Client Secret (Consumer Secret)</Label>
-              <Input type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} />
+              <Label htmlFor="sf-client-secret">Client Secret (Consumer Secret)</Label>
+              <Input id="sf-client-secret" type="password" value={clientSecret} onChange={(e) => setClientSecret(e.target.value)} />
             </div>
             <div className="flex justify-end">
               <Button disabled={!clientId || !clientSecret || !instanceUrl || save.isPending} onClick={() => save.mutate()}>
@@ -506,8 +506,8 @@ function TeamsSubTab() {
           </div>
         ) : (
           <div className="space-y-1.5">
-            <Label>Webhook URL</Label>
-            <Input placeholder="https://outlook.office.com/webhook/..." value={url} onChange={(e) => setUrl(e.target.value)} />
+            <Label htmlFor="teams-webhook-url">Webhook URL</Label>
+            <Input id="teams-webhook-url" placeholder="https://outlook.office.com/webhook/..." value={url} onChange={(e) => setUrl(e.target.value)} />
             <div className="flex justify-end pt-2">
               <Button disabled={!url || connect.isPending} onClick={() => connect.mutate()}>
                 {connect.isPending ? "Connecting..." : "Connect"}
@@ -558,20 +558,22 @@ function VoiceSubTab({ id }: { id: string }) {
       <Card><CardContent className="space-y-4 pt-6">
         <p className="text-sm">Voice Status: <span className="font-medium">{creds.data?.vapi_credentials_added ? "Voice is enabled for this worker" : "Voice is not enabled"}</span></p>
         <div className="space-y-1.5">
-          <Label>Assistant ID</Label>
-          <Input placeholder="e.g. your-vapi-assistant-id" value={assistantId || creds.data?.vapi_assistant_id || ""}
+          <Label htmlFor="vapi-assistant-id">Assistant ID</Label>
+          <Input id="vapi-assistant-id" placeholder="e.g. your-vapi-assistant-id" value={assistantId || creds.data?.vapi_assistant_id || ""}
             onChange={(e) => setAssistantId(e.target.value)} />
         </div>
         <div className="space-y-1.5">
-          <Label>Public Key</Label>
-          <Input placeholder="pk-..." value={publicKey || creds.data?.vapi_public_key || ""}
+          <Label htmlFor="vapi-public-key">Public Key</Label>
+          <Input id="vapi-public-key" placeholder="pk-..." value={publicKey || creds.data?.vapi_public_key || ""}
             onChange={(e) => setPublicKey(e.target.value)} />
         </div>
         <div className="space-y-1.5">
-          <Label>Secret Key</Label>
-          <Input type="password" placeholder={creds.data?.vapi_api_key_masked || "sk-..."} value={secretKey}
+          <Label htmlFor="vapi-secret-key">Secret Key</Label>
+          <Input id="vapi-secret-key" type="password" placeholder={creds.data?.vapi_api_key_masked || "sk-..."} value={secretKey}
             onChange={(e) => setSecretKey(e.target.value)} />
         </div>
+        {save.isSuccess && <p className="text-xs text-emerald-600">Voice credentials saved.</p>}
+        {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save voice credentials — check the values and try again.</p>}
         <div className="flex justify-end">
           <Button disabled={!assistantId || !publicKey || !secretKey || save.isPending} onClick={() => save.mutate()}>
             {save.isPending ? "Saving..." : "Save"}
@@ -583,9 +585,13 @@ function VoiceSubTab({ id }: { id: string }) {
 }
 
 function CalendlySubTab({ id, worker }: { id: string; worker?: Agent }) {
+  const qc = useQueryClient();
   const savedEventType = worker?.config?.calendly_event_type as string | undefined;
   const [url, setUrl] = useState("");
-  const save = useMutation({ mutationFn: () => updateCalendlyEventType(id, url) });
+  const save = useMutation({
+    mutationFn: () => updateCalendlyEventType(id, url),
+    onSuccess: () => { setUrl(""); qc.invalidateQueries({ queryKey: ["agents"] }); },
+  });
 
   return (
     <div className="space-y-4">
@@ -603,12 +609,14 @@ function CalendlySubTab({ id, worker }: { id: string; worker?: Agent }) {
           <p className="text-sm text-muted-foreground">No Calendly event type connected yet.</p>
         )}
         <div className="space-y-1.5">
-          <Label>Calendly event type URL</Label>
-          <Input placeholder="https://calendly.com/you/30min" value={url} onChange={(e) => setUrl(e.target.value)} />
+          <Label htmlFor="calendly-url">Calendly event type URL</Label>
+          <Input id="calendly-url" placeholder="https://calendly.com/you/30min" value={url} onChange={(e) => setUrl(e.target.value)} />
         </div>
+        {save.isSuccess && <p className="text-xs text-emerald-600">Calendly event saved.</p>}
+        {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save that Calendly event — please try again.</p>}
         <div className="flex justify-end">
           <Button disabled={!url || save.isPending} onClick={() => save.mutate()}>
-            {savedEventType ? "Change Calendly event" : "Connect Calendly"}
+            {save.isPending ? "Saving..." : savedEventType ? "Change Calendly event" : "Connect Calendly"}
           </Button>
         </div>
       </CardContent></Card>
@@ -666,26 +674,28 @@ function BackgroundStep({ id, worker, onSaved }: { id: string; worker?: Agent; o
     <Card><CardContent className="space-y-4 pt-6">
       <div><p className="font-medium">Who is your AI?</p></div>
       <div className="space-y-1.5">
-        <Label>Your Expertise</Label>
-        <Input placeholder="e.g., RFP and Proposal Response Specialist for security services"
+        <Label htmlFor="bg-expertise">Your Expertise</Label>
+        <Input id="bg-expertise" placeholder="e.g., RFP and Proposal Response Specialist for security services"
           value={expertise} onChange={(e) => setExpertise(e.target.value)} />
       </div>
       <div className="space-y-1.5">
-        <Label>Target Audience</Label>
-        <Input placeholder="e.g., IDG bid, pre-sales, proposal, operations, and management team"
+        <Label htmlFor="bg-audience">Target Audience</Label>
+        <Input id="bg-audience" placeholder="e.g., IDG bid, pre-sales, proposal, operations, and management team"
           value={audience} onChange={(e) => setAudience(e.target.value)} />
       </div>
       <div className="space-y-1.5">
-        <Label>Main Goal</Label>
-        <Input placeholder="e.g., Help IDG review RFP documents, extract required sections and answer them"
+        <Label htmlFor="bg-goal">Main Goal</Label>
+        <Input id="bg-goal" placeholder="e.g., Help IDG review RFP documents, extract required sections and answer them"
           value={goal} onChange={(e) => setGoal(e.target.value)} />
       </div>
       <div className="space-y-1.5">
-        <Label>What makes you unique?</Label>
-        <Textarea placeholder="e.g., Specialised in complex security tenders, compliance requirements..."
+        <Label htmlFor="bg-unique">What makes you unique?</Label>
+        <Textarea id="bg-unique" placeholder="e.g., Specialised in complex security tenders, compliance requirements..."
           value={unique} onChange={(e) => setUnique(e.target.value)} />
       </div>
-      <div className="flex justify-end"><Button disabled={save.isPending} onClick={() => save.mutate()}>Save Background</Button></div>
+      {save.isSuccess && <p className="text-xs text-emerald-600">Background saved.</p>}
+      {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save — please try again.</p>}
+      <div className="flex justify-end"><Button disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? "Saving..." : "Save Background"}</Button></div>
     </CardContent></Card>
   );
 }
@@ -799,6 +809,8 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
     try {
       const reply = await ask(conversationId, q, id);
       setMessages((m) => [...m, reply]);
+    } catch {
+      setMessages((m) => [...m, { role: "assistant", text: "Sorry — I couldn't answer that just now. Please try again in a moment." }]);
     } finally {
       setBusy(false);
     }
@@ -828,8 +840,8 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
           {busy && <div className="flex justify-start"><TypingIndicator /></div>}
         </div>
         <form onSubmit={(e) => { e.preventDefault(); sendText(input); }} className="flex gap-2">
-          <Input placeholder="Ask your worker something…" value={input} onChange={(e) => setInput(e.target.value)} disabled={busy} />
-          <Button type="submit" disabled={busy || !input}><SendHorizonal className="size-4" /></Button>
+          <Input placeholder="Ask your worker something…" value={input} onChange={(e) => setInput(e.target.value)} disabled={busy} aria-label="Ask your worker something" />
+          <Button type="submit" aria-label="Send message" disabled={busy || !input}><SendHorizonal className="size-4" /></Button>
         </form>
       </CardContent>
     </Card>
@@ -869,6 +881,8 @@ function BatchTab({ id }: { id: string }) {
             {run.isPending ? "Answering…" : `Run ${questions.length || ""} question(s)`}
           </Button>
         </div>
+        {run.isError && <p className="text-xs text-red-500">Couldn&apos;t answer those questions — please try again.</p>}
+        {run.isSuccess && run.data.length === 0 && <p className="text-xs text-muted-foreground">No answers were returned.</p>}
       </CardContent></Card>
 
       {run.data?.map((a: BatchAnswer) => (
@@ -907,7 +921,7 @@ function KnowledgeTab({ id, docs, loading, onChange }: { id: string; docs?: Doc[
           <Card key={d.doc_id}><CardContent className="flex items-center justify-between py-3">
             <div className="flex items-center gap-3"><FileText className="size-4 text-muted-foreground" />
               <span className="text-sm font-medium">{d.doc_id}</span><Badge variant="muted">{d.chunks}</Badge></div>
-            <Button variant="ghost" size="icon" onClick={() => remove.mutate(d.doc_id)}><Trash2 className="size-4 text-muted-foreground" /></Button>
+            <Button variant="ghost" size="icon" aria-label={`Delete ${d.doc_id}`} disabled={remove.isPending} onClick={() => remove.mutate(d.doc_id)}><Trash2 className="size-4 text-muted-foreground" /></Button>
           </CardContent></Card>
         ))}
         {docs?.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">No documents yet.</p>}

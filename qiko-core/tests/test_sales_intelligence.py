@@ -363,6 +363,64 @@ async def test_salesforce_push_creates_opportunity_via_authorization_code_token(
     assert pushed.stage == "pushed"
 
 
+class _CopyingOpportunityStore:
+    """Mimics the Postgres store's round-trip semantics: get() returns a *fresh* object each call
+    (not the shared reference the in-memory store hands back), so it catches a push service that
+    mutates the opportunity but never persists it."""
+
+    def __init__(self) -> None:
+        self._by_id: dict = {}
+
+    async def add(self, opp):
+        import dataclasses
+
+        self._by_id[opp.id] = dataclasses.replace(opp)
+        return opp
+
+    async def update(self, opp):
+        import dataclasses
+
+        self._by_id[opp.id] = dataclasses.replace(opp)
+        return opp
+
+    async def get(self, tenant, agent_id, opp_id):
+        import dataclasses
+
+        row = self._by_id.get(opp_id)
+        return dataclasses.replace(row) if row else None
+
+
+async def test_salesforce_push_persists_stage_to_the_store():
+    """Regression: push must persist the mutated stage/salesforce_* columns, not just return the
+    in-memory object -- otherwise the result is silently lost under the Postgres store."""
+    from app.core.crypto import encrypt
+    from app.modules.sales_intelligence.models import Opportunity, SalesforceConnection
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(201, json={"id": "006xx0000099"})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    auth = SalesforceAuthService()
+    conn = SalesforceConnection(tenant="acme", agent_id="agent-1", status="connected",
+                                instance_url="https://acme.my.salesforce.com", access_token="unused")
+    conn.access_token = encrypt("at-1")
+    conn.token_expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+    await auth.connections.update(conn)
+
+    store = _CopyingOpportunityStore()
+    opp = Opportunity(id="o1", tenant="acme", agent_id="agent-1", external_id="e1", source_key="ted",
+                      source_name="TED", title="Tender", stage="validated")
+    await store.add(opp)
+
+    push = SalesforcePushService(auth=auth, client=client, opportunities=store)
+    await push.push(opp)
+
+    reloaded = await store.get("acme", "agent-1", "o1")
+    assert reloaded.stage == "pushed"
+    assert reloaded.salesforce_opportunity_id == "006xx0000099"
+    assert reloaded.salesforce_push_status == "success"
+
+
 # --- router (API-level) ---
 def test_sales_intelligence_sources_round_trip_via_api(client):
     cookies = auth_cookies(tenant="acme")
@@ -404,6 +462,19 @@ def test_sales_intelligence_manual_create_and_review_via_api(client):
     history = client.get(f"/api/v1/sales-intelligence/agent-si-2/opportunities/{opp_id}/history", cookies=cookies)
     assert history.status_code == 200
     assert len(history.json()["history"]) >= 1
+
+
+def test_sales_intelligence_activity_logs_response_shape(client):
+    """The FE (creator/lib/api.ts getSalesActivityLogs) reads `.logs`/`.total`; the endpoint must
+    return that shape (regression for the old `activityLogs` key that left the log table empty)."""
+    cookies = auth_cookies(tenant="acme")
+    client.post("/api/v1/sales-intelligence/agent-si-logs/opportunities", cookies=cookies,
+                json={"title": "Logged opportunity"})
+    resp = client.get("/api/v1/sales-intelligence/agent-si-logs/activity-logs", cookies=cookies)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert isinstance(body["logs"], list) and len(body["logs"]) >= 1
+    assert body["total"] == len(body["logs"])
 
 
 def test_sales_intelligence_requires_editor_role_for_mutations(client):

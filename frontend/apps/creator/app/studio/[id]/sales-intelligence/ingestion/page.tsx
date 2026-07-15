@@ -39,12 +39,20 @@ export default function SalesIntelligenceIngestionPage() {
   const oppsQ = useQuery({ queryKey: ["sales-opportunities", agentId], queryFn: () => listSalesOpportunities(agentId), retry: false });
   const opps = oppsQ.data?.opportunities ?? [];
 
+  // Scan payload: the keyword (when enabled) plus the two allowlist-bypass toggles, so the
+  // "All countries" / "All categories" switches actually reach the portal scan instead of being
+  // inert local state.
+  const scanBody = () => ({
+    query: useQuery_ ? query : undefined,
+    all_countries: allCountries,
+    all_categories: allCategories,
+  });
   const scanTed = useMutation({
-    mutationFn: () => scanTedSource(agentId, { query: useQuery_ ? query : undefined }),
+    mutationFn: () => scanTedSource(agentId, scanBody()),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-sources", agentId] }); qc.invalidateQueries({ queryKey: ["sales-opportunities", agentId] }); },
   });
   const scanUngm = useMutation({
-    mutationFn: () => scanUngmSource(agentId, { query: useQuery_ ? query : undefined }),
+    mutationFn: () => scanUngmSource(agentId, scanBody()),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-sources", agentId] }); qc.invalidateQueries({ queryKey: ["sales-opportunities", agentId] }); },
   });
 
@@ -80,9 +88,9 @@ export default function SalesIntelligenceIngestionPage() {
 
           <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <SourceCard icon={<Layers className="size-5" />} name="TED - EU Tenders" sourceKey="TED" fullName="EU Tenders Electronic Daily"
-              source={ted} onScan={() => scanTed.mutate()} scanning={scanTed.isPending} />
+              source={ted} onScan={() => scanTed.mutate()} scanning={scanTed.isPending} error={scanTed.isError} />
             <SourceCard icon={<RadioTower className="size-5" />} name="UNGM Public Notices" sourceKey="UNGM" fullName="UN Global Marketplace"
-              source={ungm} onScan={() => scanUngm.mutate()} scanning={scanUngm.isPending} />
+              source={ungm} onScan={() => scanUngm.mutate()} scanning={scanUngm.isPending} error={scanUngm.isError} />
           </div>
         </div>
 
@@ -113,9 +121,9 @@ export default function SalesIntelligenceIngestionPage() {
   );
 }
 
-function SourceCard({ icon, name, sourceKey, fullName, source, onScan, scanning }: {
+function SourceCard({ icon, name, sourceKey, fullName, source, onScan, scanning, error }: {
   icon: React.ReactNode; name: string; sourceKey: string; fullName: string;
-  source?: SalesIntelSource; onScan: () => void; scanning: boolean;
+  source?: SalesIntelSource; onScan: () => void; scanning: boolean; error?: boolean;
 }) {
   const active = (source?.status ?? "active") === "active";
   return (
@@ -158,6 +166,7 @@ function SourceCard({ icon, name, sourceKey, fullName, source, onScan, scanning 
         className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-500 py-2.5 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
         <RefreshCw className={cn("size-4", scanning && "animate-spin")} /> {scanning ? "Scanning\u2026" : "Run Scan"}
       </button>
+      {error && <p className="mt-2 text-[11px] text-red-400">Couldn&apos;t run the scan. Please try again.</p>}
     </div>
   );
 }

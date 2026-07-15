@@ -335,7 +335,10 @@ async def activity_logs(agent_id: str, activity_type: str | None = None, action:
         raise HTTPException(status_code=422, detail="invalid activity_type")
     logs = await svc.activity_logs.list_for_agent(tenant, agent_id, activity_type=activity_type, action=action,
                                                   opportunity_id=opportunity_id, limit=max(1, min(100, limit)))
-    return {"activityLogs": [_log_out(log) for log in logs]}
+    out = [_log_out(log) for log in logs]
+    # FE (creator/lib/api.ts getSalesActivityLogs) reads `.logs`/`.total`; keep this response shape
+    # aligned with that contract -- the salesforce-log page renders an empty table otherwise.
+    return {"logs": out, "total": len(out)}
 
 
 @router.get("/{agent_id}/scan-history")
@@ -349,7 +352,8 @@ async def scan_history(agent_id: str, source_key: str | None = None, status: str
     if status:
         suffix = "_scan_completed" if status == "success" else "_scan_failed"
         logs = [log for log in logs if log.action.endswith(suffix)]
-    return {"scanHistory": [_log_out(log) for log in logs]}
+    # FE (creator/lib/api.ts getSalesScanHistory) reads `.history`; keep the key aligned.
+    return {"history": [_log_out(log) for log in logs]}
 
 
 class ReviewBody(BaseModel):

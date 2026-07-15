@@ -311,7 +311,7 @@ export function CrmPipeline({ agentId }: { agentId: string }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [stageFilter, setStageFilter] = useState<string | null>(null);
 
-  const { data, isLoading } = useQuery({ queryKey: ["crm-pipeline", agentId], queryFn: () => getCrmPipeline(agentId) });
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ["crm-pipeline", agentId], queryFn: () => getCrmPipeline(agentId) });
 
   if (selectedContactId) {
     return <ContactDetail contactId={selectedContactId} onBack={() => setSelectedContactId(null)} />;
@@ -351,6 +351,13 @@ export function CrmPipeline({ agentId }: { agentId: string }) {
                 <div className="flex-1"><div className="h-3.5 bg-white/5 rounded w-28 mb-1.5" /><div className="h-3 bg-white/[0.03] rounded w-48" /></div>
               </div>
             ))}
+          </div>
+        ) : isError ? (
+          <div className="flex flex-col items-center justify-center h-full text-center px-6 py-12">
+            <XCircle className="w-10 h-10 text-red-400/70 mb-2" />
+            <h3 className="text-sm font-medium text-slate-400 mb-1">Couldn&apos;t load the pipeline</h3>
+            <p className="text-[11px] text-slate-600 max-w-xs mb-3">Something went wrong fetching this worker&apos;s contacts.</p>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>Try again</Button>
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-6 py-12">

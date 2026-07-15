@@ -33,6 +33,7 @@ from app.modules.sales_intelligence.models import (
     ActivityLogStore,
     InMemoryActivityLogStore,
     InMemorySalesforceConnectionStore,
+    OpportunityStore,
     SalesforceConnection,
     SalesforceConnectionStore,
 )
@@ -239,9 +240,18 @@ class SalesforcePushService:
     activity_logs: ActivityLogStore = field(default_factory=InMemoryActivityLogStore)
     client: httpx.Client | None = None
     notifier: SalesNotificationService | None = None
+    # Persist the opportunity's stage / salesforce_* columns after a push. Without this the mutated
+    # object is only saved by luck under the in-memory store (get() returns the same reference); the
+    # Postgres store returns a fresh object each get(), so push results would be silently lost.
+    opportunities: OpportunityStore | None = None
 
     def _http(self) -> httpx.Client:
         return self.client or httpx.Client(timeout=45.0)
+
+    async def _persist(self, opportunity, connection: SalesforceConnection) -> None:
+        if self.opportunities is not None:
+            await self.opportunities.update(opportunity)
+        await self.auth.connections.update(connection)
 
     async def push(self, opportunity, actor_user_id: str | None = None):
         import secrets as _secrets
@@ -287,6 +297,7 @@ class SalesforcePushService:
                 detail=f"Pushed to Salesforce Opportunity {sf_id}", tone="success",
                 metadata={"salesforceOpportunityId": sf_id, "salesforce_id": sf_id, "instance_url": connection.instance_url},
             ))
+            await self._persist(opportunity, connection)
             # Notification trigger: Salesforce sync successful.
             if self.notifier is not None:
                 await self.notifier.notify_salesforce_sync_success(opportunity, sf_id)
@@ -303,6 +314,7 @@ class SalesforcePushService:
                 opportunity_id=opportunity.id, actor_user_id=actor_user_id, action="salesforce_push_failed",
                 detail=message, tone="danger", metadata={"opportunity_id": opportunity.id},
             ))
+            await self._persist(opportunity, connection)
             # Notification trigger: Salesforce sync failed.
             if self.notifier is not None:
                 await self.notifier.notify_salesforce_sync_failed(opportunity, message)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -11,9 +11,10 @@ import { Badge, Button, Card, CardContent, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import { AnswerMarkdown, ChatBubble, TypingIndicator } from "@/components/chat-message";
 import {
-  askBidContext, type Answer, complianceCheck, type ComplianceItem, exportUrl, extractFromUrl, getAnswers, getRfpPack,
+  askBidContext, type Answer, complianceCheck, type ComplianceItem, deleteDocument, exportUrl, extractFromUrl, getAnswers, getRfpPack,
   ingestFile, listDocuments, listRequirements, scoreOpportunity, submitFeedback, tenderBrief, type TenderBrief,
 } from "@/lib/api";
+import { formatShortDate } from "@/lib/stringUtils";
 
 const TABS = ["Overview", "Sources", "Tender Brief", "Sections", "Compliance", "Chat", "Export"] as const;
 type Tab = (typeof TABS)[number];
@@ -79,7 +80,7 @@ export default function TenderCockpitPage() {
               {pack.data?.client_name} <span className="size-1.5 rounded-full bg-emerald-500 inline-block" /> {pack.data?.stage}
             </p>
           </div>
-          <p className="text-xs text-muted-foreground shrink-0">Due {pack.data?.deadline ?? "—"}</p>
+          <p className="text-xs text-muted-foreground shrink-0">Due {formatShortDate(pack.data?.deadline)}</p>
         </div>
 
         <div className="flex gap-1 border-b border-border overflow-x-auto">
@@ -107,7 +108,7 @@ export default function TenderCockpitPage() {
             draft={drafts[section] ?? ""} onDraftChange={(v) => setDrafts((d) => ({ ...d, [section]: v }))}
             onBack={() => setView("list")} />
         )}
-        {tab === "Compliance" && <ComplianceTab packId={packId} documentText={pack.data?.document_text ?? ""} deadline={pack.data?.deadline ?? "—"} />}
+        {tab === "Compliance" && <ComplianceTab packId={packId} documentText={pack.data?.document_text ?? ""} deadline={formatShortDate(pack.data?.deadline)} />}
         {tab === "Chat" && <ChatTab packId={packId} rfpTitle={pack.data?.title ?? "this tender"} />}
         {tab === "Export" && <ExportTab packId={packId} />}
       </div>
@@ -158,7 +159,7 @@ function OverviewTab({ packId, answers, pack, onOpenTab }: {
           <CardContent className="pt-6 space-y-3">
             <p className="font-bold" style={{ fontFamily: "var(--font-display)" }}>{pack?.title ?? "Tender"}</p>
             <p className="text-sm text-muted-foreground">
-              {pack?.client_name} {pack?.deadline ? `· Submission due ${pack.deadline}` : ""}
+              {pack?.client_name} {pack?.deadline ? `· Submission due ${formatShortDate(pack.deadline)}` : ""}
             </p>
             <p className="text-sm text-slate-300 leading-relaxed">
               {pack?.document_text ? pack.document_text.slice(0, 280) + "…" : "No tender document uploaded yet."}
@@ -227,6 +228,11 @@ function SourcesTab({ docs, loading, onIngested }: {
     onSuccess: (res) => { setStatus({ kind: "ok", text: `Ingested ${file!.name} · ${res.chunks} passage(s)` }); setFile(null); onIngested(); },
     onError: () => setStatus({ kind: "err", text: "Ingest failed." }),
   });
+  const removeMut = useMutation({
+    mutationFn: (docId: string) => deleteDocument(docId),
+    onSuccess: () => { setStatus(null); onIngested(); },
+    onError: () => setStatus({ kind: "err", text: "Couldn't remove that document." }),
+  });
   const totalChunks = docs?.reduce((n, d) => n + d.chunks, 0) ?? 0;
 
   return (
@@ -271,7 +277,11 @@ function SourcesTab({ docs, loading, onIngested }: {
                 <p className="text-sm font-medium truncate">{d.doc_id}</p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">{d.chunks} passages</p>
               </div>
-              <span className="text-pink-300/60"><Trash2 className="size-4" /></span>
+              <button type="button" aria-label={`Remove ${d.doc_id}`} disabled={removeMut.isPending}
+                onClick={() => removeMut.mutate(d.doc_id)}
+                className="shrink-0 rounded-md p-1 text-pink-300/60 transition-colors hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-50">
+                <Trash2 className="size-4" />
+              </button>
             </CardContent>
           </Card>
         ))}
@@ -446,8 +456,8 @@ function SectionsTab({ answers, loading, onOpenSection, onRegenerateAll }: {
               const anyGap = g.items.some((x) => !!x.note);
               const anyEscalated = g.items.some((x) => statusOf(x) === "escalate_human");
               return (
-                <>
-                  <tr key={g.parentId} className={cn("border-t border-border transition-colors",
+                <Fragment key={g.parentId}>
+                  <tr className={cn("border-t border-border transition-colors",
                     !hasSubSections && "hover:bg-white/[0.02] cursor-pointer")}
                     onClick={hasSubSections ? undefined : () => onOpenSection(g.items[0].req_id)}>
                     <td className="p-3 text-muted-foreground align-top">{g.parentId}</td>
@@ -519,7 +529,7 @@ function SectionsTab({ answers, loading, onOpenSection, onRegenerateAll }: {
                       </td>
                     </tr>
                   ))}
-                </>
+                </Fragment>
               );
             })}
           </tbody>
@@ -638,10 +648,11 @@ function SectionEditor({ packId, answer, draft, onDraftChange, onBack }: {
                 placeholder="Copy the AI suggestion or write your response…"
                 className="flex-1 min-h-[44vh] rounded-lg border border-input bg-background p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
               <div className="mt-3 flex gap-2 flex-wrap items-center">
-                <Button size="sm" onClick={() => fb.mutate({ decision: "Edit" })}><Check className="size-3.5" /> Save draft</Button>
-                <Button size="sm" variant="ghost" className="text-emerald-400" onClick={() => fb.mutate({ decision: "Approve" })}><ThumbsUp className="size-3.5" /> Approve</Button>
-                <Button size="sm" variant="ghost" className="text-red-400" onClick={() => fb.mutate({ decision: "Reject" })}><ThumbsDown className="size-3.5" /> Reject</Button>
+                <Button size="sm" disabled={fb.isPending} onClick={() => fb.mutate({ decision: "Edit" })}><Check className="size-3.5" /> {fb.isPending ? "Saving…" : "Save draft"}</Button>
+                <Button size="sm" variant="ghost" className="text-emerald-400" disabled={fb.isPending} onClick={() => fb.mutate({ decision: "Approve" })}><ThumbsUp className="size-3.5" /> Approve</Button>
+                <Button size="sm" variant="ghost" className="text-red-400" disabled={fb.isPending} onClick={() => fb.mutate({ decision: "Reject" })}><ThumbsDown className="size-3.5" /> Reject</Button>
                 {savedMsg && <span className="text-xs text-emerald-400 inline-flex items-center gap-1"><Check className="size-3.5" /> {savedMsg}</span>}
+                {fb.isError && <span className="text-xs text-red-400">Couldn&apos;t save — try again.</span>}
               </div>
             </CardContent>
           </Card>
@@ -716,6 +727,7 @@ function ChatTab({ packId, rfpTitle }: { packId: string; rfpTitle: string }) {
   const ask = useMutation({
     mutationFn: () => askBidContext(packId, question),
     onSuccess: (res) => setThread((t) => [...t, { role: "bot", text: res.answer }]),
+    onError: () => setThread((t) => [...t, { role: "bot", text: "Sorry — I couldn't answer that just now. Please try again in a moment." }]),
   });
 
   const send = (e: React.FormEvent) => {

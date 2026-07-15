@@ -129,6 +129,9 @@ export default function DashboardPage() {
 
               <div className="space-y-3">
                 {agents.isLoading && <p className="text-xs text-slate-400">Loading…</p>}
+                {agents.isError && (
+                  <p className="text-xs text-red-400">Couldn&apos;t load your workers. <button className="underline" onClick={() => agents.refetch()}>Retry</button></p>
+                )}
                 {workers.slice(0, 4).map((a) => (
                   <Link key={a.id} href={`/workers/${a.id}`} className="group relative block focus-visible:outline-none">
                     <div className={cn("relative overflow-hidden p-4 transition-colors duration-300 group-hover:bg-white/[0.03] group-focus-visible:ring-2 group-focus-visible:ring-indigo-500", CARD)}>

@@ -11,6 +11,7 @@ Every store call is tenant + agent scoped (BOLA-safe).
 """
 from __future__ import annotations
 
+import asyncio
 import re
 import uuid
 from dataclasses import dataclass
@@ -147,7 +148,9 @@ class FinanceService:
         analytics = await self.analytics(tenant, agent_id)
         await self.chats.add(FinanceChatMessage(id=_new_id(), tenant=tenant, agent_id=agent_id,
                                                 role="user", content=message))
-        result = FinancialAnalystChat(self.provider).answer(message, analytics)
+        # Offload the (synchronous, network-bound) LLM call to a thread so it doesn't block the
+        # event loop -- same pattern the rfp router uses for its provider calls.
+        result = await asyncio.to_thread(FinancialAnalystChat(self.provider).answer, message, analytics)
         await self.chats.add(FinanceChatMessage(id=_new_id(), tenant=tenant, agent_id=agent_id,
                                                 role="assistant", content=result["reply"]))
         return result

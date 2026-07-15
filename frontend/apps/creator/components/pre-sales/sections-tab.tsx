@@ -464,6 +464,11 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
                 {!draft.trim() && !question.locked && (
                   <p className="mt-2 text-[11px] text-slate-500">Add an answer before locking.</p>
                 )}
+                {(save.isError || lock.isError || regenerate.isError) && (
+                  <p className="mt-2 flex items-center gap-1.5 text-[11px] text-red-400">
+                    <AlertTriangle className="size-3" /> Something went wrong — please try again.
+                  </p>
+                )}
               </div>
             </div>
           )}
