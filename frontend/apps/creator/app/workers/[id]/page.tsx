@@ -71,7 +71,7 @@ export default function WorkerDetailPage() {
             )}
           </div>
           <div className="grid grid-cols-1 gap-3 px-4 py-3 sm:grid-cols-2 sm:px-6">
-            <div className="relative rounded-xl p-3 sm:p-4 bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border-2 border-emerald-500/50 shadow-lg shadow-emerald-500/10">
+            <div className="relative rounded-xl border border-emerald-500/25 bg-emerald-500/[0.06] p-3 sm:p-4">
               <div className="flex items-center gap-2.5 sm:gap-3">
                 <span className="grid size-9 sm:size-10 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500">
                   <Zap className="size-4 sm:size-5 text-white" />
@@ -79,14 +79,14 @@ export default function WorkerDetailPage() {
                 <div className="text-left min-w-0">
                   <div className="flex items-center gap-1.5 sm:gap-2">
                     <span className="font-semibold text-sm sm:text-base text-white">Qiko-Sonic</span>
-                    <span className="px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-medium bg-emerald-500/30 text-emerald-300 shrink-0">ACTIVE</span>
+                    <span className="shrink-0 whitespace-nowrap rounded border border-emerald-500/25 bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-medium text-emerald-400">ACTIVE</span>
                   </div>
                   <p className="text-[11px] sm:text-xs text-slate-400">Instant · No setup</p>
                 </div>
               </div>
-              <div className="absolute top-2 right-2 size-2 rounded-full bg-emerald-400 animate-pulse" />
+              <div className="absolute top-2 right-2 size-2 rounded-full bg-emerald-400" />
             </div>
-            <div className="relative rounded-xl p-3 sm:p-4 bg-white/[0.01] opacity-70">
+            <div className="relative rounded-xl bg-white/[0.01] p-3 opacity-70 sm:p-4">
               <div className="flex items-center gap-2.5 sm:gap-3">
                 <span className="grid size-9 sm:size-10 shrink-0 place-items-center rounded-lg bg-slate-700">
                   <BrainCircuit className="size-4 sm:size-5 text-white" />
@@ -94,7 +94,7 @@ export default function WorkerDetailPage() {
                 <div className="text-left min-w-0">
                   <div className="flex items-center gap-1.5 sm:gap-2">
                     <span className="font-semibold text-sm sm:text-base text-slate-300">Custom</span>
-                    <span className="text-[9px] sm:text-[10px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-400 whitespace-nowrap">COMING SOON</span>
+                    <span className="shrink-0 whitespace-nowrap rounded border border-amber-500/25 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-medium text-amber-400">COMING SOON</span>
                   </div>
                   <p className="text-[11px] sm:text-xs text-slate-400">Fine-tuned · Your data</p>
                 </div>
@@ -291,7 +291,7 @@ function TendersCard({ agentId, packs, onChange }: { agentId: string; packs?: Rf
   });
 
   return (
-    <Card>
+    <Card className="rounded-2xl">
       <CardContent className="pt-6 space-y-3">
         <div className="flex items-center justify-between">
           <p className="text-sm font-semibold">Tenders</p>
@@ -319,11 +319,15 @@ function TendersCard({ agentId, packs, onChange }: { agentId: string; packs?: Rf
         )}
 
         {(packs?.length ?? 0) === 0 && !creating && (
-          <p className="text-sm text-muted-foreground">No tenders yet -- create one to start drafting responses grounded in this worker&apos;s knowledge base.</p>
+          <div className="flex flex-col items-center justify-center py-8 text-center">
+            <FileText className="mb-2 size-8 text-slate-600" />
+            <p className="text-sm font-medium text-slate-300">No tenders yet</p>
+            <p className="mt-0.5 max-w-xs text-xs text-slate-500">Create one to start drafting responses grounded in this worker&apos;s knowledge base.</p>
+          </div>
         )}
 
         {packs?.map((p) => (
-          <div key={p.id} className="flex items-center justify-between rounded-lg border border-border/60 p-3 text-sm hover:bg-muted/50">
+          <div key={p.id} className="flex items-center justify-between rounded-lg border border-border/60 p-3 text-sm transition-colors hover:bg-muted/50">
             <Link href={`/workers/${agentId}/tenders/${p.id}`} className="min-w-0 flex-1">
               <p className="font-medium">{p.title}</p>
               <p className="text-xs text-muted-foreground">{p.client_name || "No client set"} {p.deadline ? `· Due ${formatShortDate(p.deadline)}` : ""}</p>
@@ -365,7 +369,7 @@ function ConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
       <div className="flex gap-1 rounded-lg bg-muted p-1">
         {CONNECTIONS_SUBTABS.map((s) => (
           <button key={s} onClick={() => setSub(s)}
-            className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+            className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
               sub === s ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>
             {s === "Voice" ? <Phone className="size-3.5" /> : s === "Calendly" ? <Calendar className="size-3.5" /> : s === "Teams" ? <Users className="size-3.5" /> : <Share2 className="size-3.5" />} {s}
           </button>
@@ -640,7 +644,7 @@ function TrainTab({ id, worker, docs, loading, onKnowledgeChange, onWorkerChange
       <div className="flex gap-1 rounded-lg bg-muted p-1">
         {TRAIN_STEPS.map((s) => (
           <button key={s} onClick={() => setStep(s)}
-            className={cn("flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+            className={cn("flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
               step === s ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>
             {s}
           </button>
@@ -717,7 +721,7 @@ function ToneStep({ id, worker, onSaved }: { id: string; worker?: Agent; onSaved
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {TONE_OPTIONS.map((t) => (
           <button key={t.value} onClick={() => { setTone(t.value); save.mutate(t.value); }}
-            className={cn("flex items-center gap-3 rounded-lg border p-3 text-left transition-colors",
+            className={cn("flex items-center gap-3 rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
               tone === t.value ? "border-primary bg-primary/5" : "border-border hover:border-primary/40")}>
             <span className="text-xl">{t.emoji}</span>
             <span>
@@ -762,7 +766,7 @@ function KnowledgeStep({ id, docs, loading, onChange }: { id: string; docs?: Doc
       {KNOWLEDGE_CARDS.map((c) => (
         <Card key={c.key}>
           <CardContent className="flex items-center justify-between py-4">
-            <button className="flex-1 text-left" onClick={() => setOpen(open === c.key ? null : c.key)}>
+            <button className="flex-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60" onClick={() => setOpen(open === c.key ? null : c.key)}>
               <p className="text-sm font-medium">{c.title}</p>
               <p className="text-xs text-muted-foreground">{c.description}</p>
             </button>
@@ -824,14 +828,20 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
           <div className="flex flex-wrap gap-2">
             {quickPrompts.map((p) => (
               <button key={p} type="button" onClick={() => sendText(p)}
-                className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground">
+                className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60">
                 {p}
               </button>
             ))}
           </div>
         )}
-        <div className="min-h-40 space-y-2 rounded-md border border-border p-3">
-          {messages.length === 0 && <p className="text-sm text-muted-foreground">Ask a question to see a grounded reply…</p>}
+        <div className="min-h-40 space-y-2 rounded-lg border border-border p-3">
+          {messages.length === 0 && (
+            <div className="flex min-h-40 flex-col items-center justify-center py-8 text-center">
+              <MessageSquare className="mb-2 size-8 text-slate-600" />
+              <p className="text-sm font-medium text-slate-300">Test your worker</p>
+              <p className="mt-0.5 max-w-xs text-xs text-slate-500">Ask a question to see a grounded reply from its knowledge base.</p>
+            </div>
+          )}
           {messages.map((m, i) => (
             <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
               <ChatBubble role={m.role} text={m.text} />

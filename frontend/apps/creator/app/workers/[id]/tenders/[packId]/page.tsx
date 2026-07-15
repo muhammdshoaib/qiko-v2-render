@@ -64,7 +64,7 @@ export default function TenderCockpitPage() {
     <AppShell title="Tender">
       <div className="space-y-4">
         <button onClick={() => router.push(`/workers/${id}`)}
-          className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+          className="inline-flex items-center gap-1 rounded text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60">
           <ArrowLeft className="size-4" /> Back to worker
         </button>
 
@@ -86,7 +86,7 @@ export default function TenderCockpitPage() {
         <div className="flex gap-1 border-b border-border overflow-x-auto">
           {TABS.map((t) => (
             <button key={t} onClick={() => openTab(t)}
-              className={cn("shrink-0 flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium transition-colors",
+              className={cn("shrink-0 flex items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
                 tab === t ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}>
               {t}
             </button>
@@ -561,7 +561,7 @@ function SectionEditor({ packId, answer, draft, onDraftChange, onBack }: {
 
   return (
     <div className="space-y-4">
-      <button onClick={onBack} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+      <button onClick={onBack} className="flex items-center gap-1 rounded text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60">
         <ArrowLeft className="size-4" /> Back to sections
       </button>
       <div className="flex items-center justify-between">
