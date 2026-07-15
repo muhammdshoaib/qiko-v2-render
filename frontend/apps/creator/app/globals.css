@@ -62,3 +62,20 @@
 .qiko-landing-1to1 h3 {
   font-family: var(--font-qiko), ui-sans-serif, system-ui, sans-serif !important;
 }
+
+/* Chrome/WebKit paints autofilled inputs with an opaque near-white background regardless of the
+   element's CSS background, which makes saved-credential fields (e.g. the Vapi Public/Secret keys,
+   login) render as bright white boxes on the dark theme. Force autofilled inputs to keep the dark
+   surface + light text by masking the UA style with a large inset box-shadow. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active,
+textarea:-webkit-autofill,
+select:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px #111522 inset !important;
+  box-shadow: 0 0 0 1000px #111522 inset !important;
+  -webkit-text-fill-color: #e2e8f0 !important;
+  caret-color: #e2e8f0;
+  transition: background-color 9999s ease-in-out 0s;
+}
