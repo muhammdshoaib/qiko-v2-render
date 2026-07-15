@@ -60,6 +60,7 @@ from app.modules.assignments.router import router as assignments_router
 from app.modules.assignments.service import AssignmentService
 from app.modules.rfp.router import router as rfp_router
 from app.modules.rfp.service import PackAnswerService, RequirementService, RfpPackService
+from app.modules.rfp.tree import PackTreeService
 from app.modules.billing.router import router as billing_router
 from app.modules.billing.subscriptions import SubscriptionService
 from app.modules.billing.webhook import StripeWebhookHandler
@@ -123,6 +124,8 @@ async def lifespan(app: FastAPI):
             SqlNotificationStore,
             SqlOpportunityStore,
             SqlPackAnswerStore,
+            SqlPackQuestionStore,
+            SqlPackSectionStore,
             SqlRequirementStore,
             SqlRfpPackStore,
             SqlSalesforceConnectionStore,
@@ -169,6 +172,7 @@ async def lifespan(app: FastAPI):
         app.state.rfp_packs = RfpPackService(store=SqlRfpPackStore(sm))
         app.state.requirements = RequirementService(store=SqlRequirementStore(sm))
         app.state.pack_answers = PackAnswerService(store=SqlPackAnswerStore(sm))
+        app.state.pack_tree = PackTreeService(sections=SqlPackSectionStore(sm), questions=SqlPackQuestionStore(sm))
         app.state.assignments = AssignmentService(store=SqlAssignmentStore(sm))
         app.state.admin_org = AdminOrg(store=SqlAdminOrgStore(sm))  # platform admins survive a redeploy
         app.state.teams = TeamService(store=SqlTeamStore(sm))  # teams/membership survive a redeploy
@@ -224,6 +228,7 @@ def create_app() -> FastAPI:
     app.state.rfp_packs = RfpPackService()
     app.state.requirements = RequirementService()
     app.state.pack_answers = PackAnswerService()
+    app.state.pack_tree = PackTreeService()
     app.state.assignments = AssignmentService()
     app.state.chat = ChatService()
     app.state.crm = CrmService(app.state.chat)

@@ -109,6 +109,49 @@ class PackRequirement(Base):
     requirement: Mapped[str] = mapped_column(String)
 
 
+class PackSection(Base):
+    """One section of an RFP pack's reviewer-facing tree (app.modules.rfp.tree). Sub-sections
+    carry a parent_id; a section owns 1..n PackQuestions."""
+    __tablename__ = "rfp_pack_sections"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    pack_id: Mapped[str] = mapped_column(String(64), index=True)
+    code: Mapped[str] = mapped_column(String(64), default="")
+    name: Mapped[str] = mapped_column(String(512), default="")
+    page: Mapped[int | None] = mapped_column(nullable=True)
+    weighting: Mapped[str] = mapped_column(String(64), default="")
+    status: Mapped[str] = mapped_column(String(32), default="not_generated")
+    parent_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    assigned_reviewer_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    assigned_reviewer_name: Mapped[str] = mapped_column(String(255), default="")
+    due_date: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    manual: Mapped[bool] = mapped_column(default=False)
+    kb_gap: Mapped[bool] = mapped_column(default=False)
+    order_index: Mapped[int] = mapped_column(default=0)
+
+
+class PackQuestion(Base):
+    """One question under a PackSection (app.modules.rfp.tree). Carries the grounded AI draft plus
+    the reviewer's editable/lockable user_draft; req_id links back to the flat PackRequirement so a
+    locked user_draft can override the AI answer in exports."""
+    __tablename__ = "rfp_pack_questions"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    pack_id: Mapped[str] = mapped_column(String(64), index=True)
+    section_id: Mapped[str] = mapped_column(String(64), index=True)
+    text: Mapped[str] = mapped_column(String, default="")
+    req_id: Mapped[str] = mapped_column(String(64), default="")
+    word_limit: Mapped[int | None] = mapped_column(nullable=True)
+    ai_answer: Mapped[str] = mapped_column(String, default="")
+    ai_sources: Mapped[list] = mapped_column(JSON, default=list)
+    confidence: Mapped[float] = mapped_column(default=0.0)
+    decision: Mapped[str] = mapped_column(String(32), default="")
+    kb_gap: Mapped[bool] = mapped_column(default=False)
+    locked: Mapped[bool] = mapped_column(default=False)
+    user_draft: Mapped[str] = mapped_column(String, default="")
+    order_index: Mapped[int] = mapped_column(default=0)
+
+
 class Assignment(Base):
     __tablename__ = "assignments"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

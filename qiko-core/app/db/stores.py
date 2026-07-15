@@ -24,7 +24,9 @@ from app.db.models import Lead as LeadRow
 from app.db.models import Message as MessageRow
 from app.db.models import Notification as NotificationRow
 from app.db.models import PackAnswer as PackAnswerRow
+from app.db.models import PackQuestion as PackQuestionRow
 from app.db.models import PackRequirement as PackRequirementRow
+from app.db.models import PackSection as PackSectionRow
 from app.db.models import Passage as PassageRow
 from app.db.models import PlatformAdmin as PlatformAdminRow
 from app.db.models import RfpPack as RfpPackRow
@@ -51,6 +53,12 @@ from app.modules.knowledge.models import Passage
 from app.modules.leads.service import Lead
 from app.modules.notifications.models import Notification
 from app.modules.rfp.service import CachedAnswer, PackRequirement, RfpPack, RfpPackNotFound
+from app.modules.rfp.tree import (
+    PackQuestion,
+    PackQuestionNotFound,
+    PackSection,
+    PackSectionNotFound,
+)
 from app.modules.sales_intelligence.models import (
     ActivityLog,
     IngestionSource,
@@ -300,6 +308,130 @@ class SqlRequirementStore:
         async with self.sessionmaker() as s, s.begin():
             await s.execute(delete(PackRequirementRow).where(
                 PackRequirementRow.tenant_id == tenant, PackRequirementRow.pack_id == pack_id))
+
+
+@dataclass
+class SqlPackSectionStore:
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    def _to_domain(self, r: PackSectionRow) -> PackSection:
+        return PackSection(id=r.id, tenant=r.tenant_id, pack_id=r.pack_id, code=r.code, name=r.name,
+                           page=r.page, weighting=r.weighting, status=r.status, parent_id=r.parent_id,
+                           assigned_reviewer_user_id=r.assigned_reviewer_user_id,
+                           assigned_reviewer_name=r.assigned_reviewer_name or "", due_date=r.due_date,
+                           manual=r.manual, kb_gap=r.kb_gap, order_index=r.order_index)
+
+    async def add(self, section: PackSection) -> PackSection:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(PackSectionRow(id=section.id, tenant_id=section.tenant, pack_id=section.pack_id,
+                                 code=section.code, name=section.name, page=section.page,
+                                 weighting=section.weighting, status=section.status, parent_id=section.parent_id,
+                                 assigned_reviewer_user_id=section.assigned_reviewer_user_id,
+                                 assigned_reviewer_name=section.assigned_reviewer_name, due_date=section.due_date,
+                                 manual=section.manual, kb_gap=section.kb_gap, order_index=section.order_index))
+        return section
+
+    async def list(self, tenant: str, pack_id: str) -> list[PackSection]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(select(PackSectionRow).where(
+                PackSectionRow.tenant_id == tenant, PackSectionRow.pack_id == pack_id)
+                .order_by(PackSectionRow.order_index))).scalars().all()
+            return [self._to_domain(r) for r in rows]
+
+    async def get(self, tenant: str, section_id: str) -> PackSection | None:
+        async with self.sessionmaker() as s:
+            row = await s.get(PackSectionRow, section_id)
+            if row is None or row.tenant_id != tenant:
+                return None
+            return self._to_domain(row)
+
+    async def update(self, tenant: str, section_id: str, **fields) -> PackSection:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(PackSectionRow, section_id)
+            if row is None or row.tenant_id != tenant:
+                raise PackSectionNotFound(section_id)
+            for k, v in fields.items():
+                setattr(row, k, v)
+            return self._to_domain(row)
+
+    async def delete(self, tenant: str, section_id: str) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(PackSectionRow, section_id)
+            if row is not None and row.tenant_id == tenant:
+                await s.delete(row)
+
+    async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            await s.execute(delete(PackSectionRow).where(
+                PackSectionRow.tenant_id == tenant, PackSectionRow.pack_id == pack_id))
+
+
+@dataclass
+class SqlPackQuestionStore:
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    def _to_domain(self, r: PackQuestionRow) -> PackQuestion:
+        return PackQuestion(id=r.id, tenant=r.tenant_id, pack_id=r.pack_id, section_id=r.section_id,
+                            text=r.text, req_id=r.req_id or "", word_limit=r.word_limit,
+                            ai_answer=r.ai_answer or "", ai_sources=list(r.ai_sources or []),
+                            confidence=r.confidence, decision=r.decision or "", kb_gap=r.kb_gap,
+                            locked=r.locked, user_draft=r.user_draft or "", order_index=r.order_index)
+
+    async def add(self, question: PackQuestion) -> PackQuestion:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(PackQuestionRow(id=question.id, tenant_id=question.tenant, pack_id=question.pack_id,
+                                  section_id=question.section_id, text=question.text, req_id=question.req_id,
+                                  word_limit=question.word_limit, ai_answer=question.ai_answer,
+                                  ai_sources=question.ai_sources, confidence=question.confidence,
+                                  decision=question.decision, kb_gap=question.kb_gap, locked=question.locked,
+                                  user_draft=question.user_draft, order_index=question.order_index))
+        return question
+
+    async def list(self, tenant: str, pack_id: str) -> list[PackQuestion]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(select(PackQuestionRow).where(
+                PackQuestionRow.tenant_id == tenant, PackQuestionRow.pack_id == pack_id)
+                .order_by(PackQuestionRow.order_index))).scalars().all()
+            return [self._to_domain(r) for r in rows]
+
+    async def list_for_section(self, tenant: str, section_id: str) -> list[PackQuestion]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(select(PackQuestionRow).where(
+                PackQuestionRow.tenant_id == tenant, PackQuestionRow.section_id == section_id)
+                .order_by(PackQuestionRow.order_index))).scalars().all()
+            return [self._to_domain(r) for r in rows]
+
+    async def get(self, tenant: str, question_id: str) -> PackQuestion | None:
+        async with self.sessionmaker() as s:
+            row = await s.get(PackQuestionRow, question_id)
+            if row is None or row.tenant_id != tenant:
+                return None
+            return self._to_domain(row)
+
+    async def update(self, tenant: str, question_id: str, **fields) -> PackQuestion:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(PackQuestionRow, question_id)
+            if row is None or row.tenant_id != tenant:
+                raise PackQuestionNotFound(question_id)
+            for k, v in fields.items():
+                setattr(row, k, v)
+            return self._to_domain(row)
+
+    async def delete(self, tenant: str, question_id: str) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(PackQuestionRow, question_id)
+            if row is not None and row.tenant_id == tenant:
+                await s.delete(row)
+
+    async def delete_for_section(self, tenant: str, section_id: str) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            await s.execute(delete(PackQuestionRow).where(
+                PackQuestionRow.tenant_id == tenant, PackQuestionRow.section_id == section_id))
+
+    async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            await s.execute(delete(PackQuestionRow).where(
+                PackQuestionRow.tenant_id == tenant, PackQuestionRow.pack_id == pack_id))
 
 
 @dataclass

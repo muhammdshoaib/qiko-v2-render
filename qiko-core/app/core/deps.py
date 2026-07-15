@@ -97,6 +97,10 @@ def get_pack_answers(request: Request):
     return request.app.state.pack_answers
 
 
+def get_pack_tree(request: Request):
+    return request.app.state.pack_tree
+
+
 def get_assignments(request: Request):
     return request.app.state.assignments
 
