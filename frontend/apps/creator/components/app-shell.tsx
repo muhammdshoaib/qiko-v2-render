@@ -46,7 +46,7 @@ export function AppShell({ title, children }: { title: string; children: React.R
           <button
             onClick={() => setCollapsed((c) => !c)}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className="absolute -right-3 top-1/2 mr-5 hidden size-7 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-[#111827] text-slate-300 shadow-md transition-all hover:bg-[#1f2937] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 md:flex"
+            className="absolute -right-3 top-1/2 mr-5 hidden size-7 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-[#111827] text-slate-300 shadow-md transition-all hover:bg-[#1f2937] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 md:flex"
           >
             <ChevronLeft className={cn("size-4 transition-transform", collapsed && "rotate-180")} />
           </button>
@@ -54,9 +54,9 @@ export function AppShell({ title, children }: { title: string; children: React.R
         <div className="border-b border-white/[0.06] px-3 py-3">
           <button
             onClick={() => router.push(inStudio ? "/dashboard" : "/studio")}
-            className="flex w-full items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.015] px-3 py-2.5 text-xs font-medium transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            className="flex w-full items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.015] px-3 py-2.5 text-xs font-medium transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
           >
-            {inStudio ? <Sparkles className="size-4 shrink-0 text-violet-400" /> : <Wrench className="size-4 shrink-0 text-indigo-400" />}
+            {inStudio ? <Sparkles className="size-4 shrink-0 text-violet-400" /> : <Wrench className="size-4 shrink-0 text-cyan-400" />}
             {!collapsed && (
               <span className="text-slate-300">
                 {inStudio ? "Studio" : "Creator"} <span className="text-slate-500">- {inStudio ? "Creator" : "Studio"}</span>
@@ -74,16 +74,16 @@ export function AppShell({ title, children }: { title: string; children: React.R
                     href={href}
                     aria-current={active ? "page" : undefined}
                     className={cn(
-                      "group relative flex w-full items-center gap-3 rounded-xl px-3 py-3 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+                      "group relative flex w-full items-center gap-3 rounded-xl px-3 py-3 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500",
                       active
-                        ? "border border-indigo-500/30 bg-indigo-500/10 text-white"
+                        ? "border border-cyan-500/30 bg-cyan-500/10 text-white"
                         : "border border-transparent text-slate-400 hover:bg-white/[0.04] hover:text-white",
                     )}
                   >
                     {active && (
-                      <span className="absolute left-0 top-1/2 h-8 w-1 -translate-y-1/2 rounded-r-full bg-gradient-to-b from-indigo-500 to-violet-500" />
+                      <span className="absolute left-0 top-1/2 h-8 w-1 -translate-y-1/2 rounded-r-full bg-gradient-to-b from-cyan-400 to-violet-500" />
                     )}
-                    <Icon className={cn("size-5 shrink-0", active ? "text-indigo-400" : "text-slate-500")} />
+                    <Icon className={cn("size-5 shrink-0", active ? "text-cyan-400" : "text-slate-500")} />
                     {!collapsed && <span className="text-sm font-medium whitespace-nowrap">{label}</span>}
                   </Link>
                 </li>
@@ -94,13 +94,13 @@ export function AppShell({ title, children }: { title: string; children: React.R
         <div className="sticky bottom-0 border-t border-white/[0.06] bg-[#070a12] p-3">
           <button
             onClick={onLogout}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-slate-400 transition-colors hover:bg-white/[0.04] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-slate-400 transition-colors hover:bg-white/[0.04] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
           >
             <LogOut className="size-5 shrink-0" />
             {!collapsed && <span className="text-sm font-medium">Logout</span>}
           </button>
         </div>
-        <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="absolute top-4 right-4 text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 md:hidden">
+        <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="absolute top-4 right-4 text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 md:hidden">
           <X className="size-5" />
         </button>
       </aside>
@@ -108,7 +108,7 @@ export function AppShell({ title, children }: { title: string; children: React.R
       <div className="flex flex-1 flex-col transition-[margin-left] duration-300 ease-in-out" style={{ marginLeft: 0 }}>
         <div className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#05070d]/95 backdrop-blur md:hidden">
           <div className="flex items-center justify-between p-4">
-            <button onClick={() => setMobileOpen(true)} aria-label="Open menu" className="-ml-2 p-2 text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
+            <button onClick={() => setMobileOpen(true)} aria-label="Open menu" className="-ml-2 p-2 text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">
               <Menu className="size-5" />
             </button>
             <span className="text-lg font-bold text-white" style={{ fontFamily: "var(--font-display)" }}>{title}</span>

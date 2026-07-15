@@ -12,6 +12,21 @@ import { workerTypeLabel } from "@/lib/stringUtils";
 
 const WORKER_LIMIT = 3;
 
+// Per-type tint for the workers-list GROUP header icon (matches idg-sales.qiko.ai: a small coloured
+// per-vertical icon next to the humanised label). The per-worker avatar stays a cyan->blue letter.
+function groupIconTint(atype: string): string {
+  switch (atype.trim()) {
+    case "sales_intelligence":
+      return "border-teal-500/30 bg-teal-500/10 text-teal-400";
+    case "pre_sales_writer":
+      return "border-cyan-500/30 bg-cyan-500/10 text-cyan-400";
+    case "finance":
+      return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+    default:
+      return "border-violet-500/30 bg-violet-500/10 text-violet-400";
+  }
+}
+
 function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleString("en-US", { month: "long", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -55,9 +70,9 @@ export default function WorkersPage() {
         <div className="flex w-full items-center justify-start gap-3 sm:w-auto sm:justify-end">
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New worker name..."
             aria-label="New worker name"
-            className="w-56 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 transition-colors focus-visible:border-indigo-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500" />
+            className="w-56 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 transition-colors focus-visible:border-cyan-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500" />
           <Button disabled={atLimit || !name || create.isPending} onClick={() => create.mutate()}
-            className="rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 font-medium text-white shadow-lg shadow-indigo-500/20 hover:opacity-90">
+            className="rounded-xl bg-gradient-to-r from-violet-500 to-cyan-400 font-medium text-white shadow-lg shadow-cyan-500/20 hover:opacity-90">
             <Plus className="size-4" /> Create Worker
           </Button>
         </div>
@@ -82,8 +97,8 @@ export default function WorkersPage() {
             return (
               <div key={atype}>
                 <div className="mb-4 flex items-center gap-3">
-                  <span className="flex size-10 items-center justify-center rounded-xl border border-indigo-500/30 bg-indigo-500/10">
-                    <GroupIcon className="size-5 text-indigo-400" aria-hidden="true" />
+                  <span className={`flex size-10 items-center justify-center rounded-xl border ${groupIconTint(atype)}`}>
+                    <GroupIcon className="size-5" aria-hidden="true" />
                   </span>
                   <div>
                     <h2 className="text-lg font-semibold text-white">{workerTypeLabel(atype)}</h2>
@@ -106,13 +121,13 @@ export default function WorkersPage() {
 
 function WorkerCard({ agent }: { agent: Agent }) {
   return (
-    <Link href={`/workers/${agent.id}`} className="group block cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
+    <Link href={`/workers/${agent.id}`} className="group block cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">
       <div className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.015] py-2 backdrop-blur-xl transition-colors group-hover:bg-white/[0.03]">
-        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-500 to-violet-500" />
+        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-400 to-violet-500" />
         <div className="flex items-start gap-4 p-5">
-          <WorkerAvatar atype={agent.atype} size="lg" ready={agent.status === "ready"} />
+          <WorkerAvatar name={agent.name} size="lg" ready={agent.status === "ready"} />
           <div className="min-w-0 flex-1">
-            <h3 className="truncate font-semibold capitalize text-white transition-colors group-hover:text-indigo-300">{agent.name}</h3>
+            <h3 className="truncate font-semibold capitalize text-white transition-colors group-hover:text-cyan-300">{agent.name}</h3>
             <div className="mt-1 flex flex-wrap items-center gap-1">
               <Badge variant={agent.status === "ready" ? "success" : "muted"} dot={agent.status === "ready"} className="text-xs capitalize">
                 {agent.status}

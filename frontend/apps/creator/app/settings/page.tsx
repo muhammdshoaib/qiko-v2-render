@@ -36,7 +36,11 @@ export default function SettingsPage() {
       <div className="p-6 lg:p-8">
         <div className="mx-auto max-w-3xl">
           <div className="mb-8">
-            <h1 className="mb-2 text-2xl font-bold text-white lg:text-3xl" style={{ fontFamily: "var(--font-display)" }}>
+            <h1 className="mb-2 text-2xl font-bold lg:text-3xl" style={{
+              fontFamily: "var(--font-display)",
+              background: "linear-gradient(135deg, #fff 0%, #6366F1 50%, #22D3EE 100%)",
+              WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent",
+            }}>
               Settings
             </h1>
             <p className="text-slate-400">Manage your account and preferences</p>
@@ -45,9 +49,9 @@ export default function SettingsPage() {
           <div className="mb-6 inline-flex h-12 w-fit items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.015] p-1.5">
             {SETTINGS_TABS.map(({ id, label, icon: Icon }) => (
               <button key={id} onClick={() => setTab(id)} aria-current={tab === id ? "page" : undefined}
-                className={cn("inline-flex h-full items-center justify-center gap-1.5 rounded-xl border px-6 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                  tab === id ? "border-indigo-500/30 bg-indigo-500/10 text-white" : "border-transparent text-slate-300 hover:text-white")}>
-                <Icon className={cn("size-4", tab === id ? "text-indigo-400" : "text-slate-500")} /> {label}
+                className={cn("inline-flex h-full items-center justify-center gap-1.5 rounded-xl border px-6 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
+                  tab === id ? "border-cyan-500/30 bg-cyan-500/10 text-white" : "border-transparent text-slate-300 hover:text-white")}>
+                <Icon className={cn("size-4", tab === id ? "text-cyan-400" : "text-slate-500")} /> {label}
               </button>
             ))}
           </div>
@@ -56,7 +60,7 @@ export default function SettingsPage() {
             <div className="space-y-6">
               <div>
                 <h2 className="flex items-center gap-2 text-2xl font-semibold text-white">
-                  <User className="size-6 text-indigo-400" /> General Settings
+                  <User className="size-6 text-cyan-400" /> General Settings
                 </h2>
                 <p className="mt-1 text-slate-400">Manage your account and preferences.</p>
               </div>
@@ -77,7 +81,7 @@ export default function SettingsPage() {
               <SettingsCard icon={CreditCard} iconColor="text-emerald-400" title="Billing">
                 <p className="mb-4 text-sm text-slate-400">Manage your subscription and payment methods</p>
                 <Button onClick={() => (window.location.href = "/billing")}
-                  className="w-full border-0 bg-gradient-to-r from-indigo-500 to-violet-500 text-white shadow-lg shadow-indigo-900/30 hover:opacity-90">
+                  className="w-full border-0 bg-gradient-to-r from-emerald-600 to-cyan-600 text-white shadow-lg shadow-emerald-900/30 hover:shadow-emerald-800/50">
                   <CreditCard className="size-4" /> View Plans <ArrowRight className="size-4" />
                 </Button>
               </SettingsCard>
@@ -122,7 +126,7 @@ function TeamPanel() {
     <div className="space-y-6">
       <div>
         <h2 className="flex items-center gap-2 text-2xl font-semibold text-white">
-          <Users className="size-6 text-indigo-400" /> Team
+          <Users className="size-6 text-cyan-400" /> Team
         </h2>
         <p className="mt-1 text-slate-400">Invite teammates and manage roles.</p>
       </div>
@@ -152,7 +156,7 @@ function TeamPanel() {
               <div className="space-y-1.5"><Label>User id / email</Label>
                 <Input placeholder="teammate@company.com" value={memberId} onChange={(e) => setMemberId(e.target.value)} /></div>
               <div className="space-y-1.5"><Label>Role</Label>
-                <select className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-slate-200 transition-colors focus-visible:border-indigo-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 [&>option]:bg-[#0b0e16] [&>option]:text-slate-200"
+                <select className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-slate-200 transition-colors focus-visible:border-cyan-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 [&>option]:bg-[#0b0e16] [&>option]:text-slate-200"
                   value={role} onChange={(e) => setRole(e.target.value)}>
                   {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
                 </select></div>

@@ -25,7 +25,7 @@ const STAGES = ["Parsed", "Assigned", "Drafting", "Review", "Final"] as const;
 const STATUS_STYLE: Record<string, [string, string]> = {
   answered: ["#34d399", "AI-drafted"],
   escalate_human: ["#fbbf24", "For human review"],
-  idg_data: ["#818cf8", "IDG data / table"],
+  idg_data: ["#22d3ee", "IDG data / table"],
   idg_manual: ["#94a3b8", "IDG commercial"],
   idg_confirmation: ["#94a3b8", "IDG confirmation"],
 };
@@ -238,7 +238,7 @@ function SourcesTab({ docs, loading, onIngested }: {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {outcomeCard("Documents ingested", String(docs?.length ?? 0), "past bids + company docs", "#818cf8")}
+        {outcomeCard("Documents ingested", String(docs?.length ?? 0), "past bids + company docs", "#22d3ee")}
         {outcomeCard("Passages indexed", String(totalChunks), "searchable")}
         {outcomeCard("Source families", String(docs?.length ?? 0), "in the knowledge base")}
         {outcomeCard("Embeddings", "local", "private")}
@@ -327,7 +327,7 @@ function BriefTab({ packId, documentText }: { packId: string; documentText: stri
             </CardContent>
           </Card>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <BulletCard title="Key dates" items={brief.key_dates} color="#818cf8" />
+            <BulletCard title="Key dates" items={brief.key_dates} color="#22d3ee" />
             <BulletCard title="Success criteria" items={brief.success_criteria} color="#6366F1" />
           </div>
           <BulletCard title="Gaps &amp; risks" items={brief.gaps_and_risks} color="#fbbf24" />
@@ -423,7 +423,7 @@ function SectionsTab({ answers, loading, onOpenSection, onRegenerateAll }: {
               <span>AI-drafted (for your review)</span><span>{drafted} / {a.length}</span>
             </div>
             <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
-              <div className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" style={{ width: `${Math.round((drafted / tot) * 100)}%` }} />
+              <div className="h-full rounded-full bg-gradient-to-r from-primary to-cyan-400" style={{ width: `${Math.round((drafted / tot) * 100)}%` }} />
             </div>
           </div>
           <div className="flex-1"><p className="text-[11px] text-muted-foreground">Avg confidence</p><p className="text-xl font-bold" style={{ fontFamily: "var(--font-display)" }}>{avgConf}%</p></div>
@@ -514,7 +514,7 @@ function SectionsTab({ answers, loading, onOpenSection, onRegenerateAll }: {
                               </span>
                               <span className="inline-flex items-center gap-1">grounding
                                 <span className="h-1 w-10 rounded-full bg-white/10 overflow-hidden inline-block">
-                                  <span className="h-full block bg-indigo-400" style={{ width: `${Math.round(x.grounding * 100)}%` }} />
+                                  <span className="h-full block bg-cyan-400" style={{ width: `${Math.round(x.grounding * 100)}%` }} />
                                 </span> {Math.round(x.grounding * 100)}%
                               </span>
                             </>
@@ -576,7 +576,7 @@ function SectionEditor({ packId, answer, draft, onDraftChange, onBack }: {
           {hasAI && (
             <>
               <span className="rounded-full px-2 py-0.5 text-xs bg-emerald-500/10 text-emerald-400">conf {Math.round(answer.confidence * 100)}%</span>
-              <span className="rounded-full px-2 py-0.5 text-xs bg-indigo-500/10 text-indigo-400">grounding {Math.round(answer.grounding * 100)}%</span>
+              <span className="rounded-full px-2 py-0.5 text-xs bg-cyan-500/10 text-cyan-400">grounding {Math.round(answer.grounding * 100)}%</span>
             </>
           )}
           <span className="px-2 py-0.5 rounded-full text-xs bg-white/[0.06]" style={{ color: statusColor }}>{statusLabel}</span>
@@ -663,7 +663,7 @@ function SectionEditor({ packId, answer, draft, onDraftChange, onBack }: {
 }
 
 const COMPLIANCE_COLORS: Record<string, string> = {
-  Legal: "#f87171", Commercial: "#fbbf24", HSSE: "#34d399", Format: "#818cf8", Experience: "#a5b4fc", Eligibility: "#f472b6",
+  Legal: "#f87171", Commercial: "#fbbf24", HSSE: "#34d399", Format: "#22d3ee", Experience: "#a5b4fc", Eligibility: "#f472b6",
 };
 
 function ComplianceTab({ packId, documentText, deadline }: { packId: string; documentText: string; deadline: string }) {
@@ -676,7 +676,7 @@ function ComplianceTab({ packId, documentText, deadline }: { packId: string; doc
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {outcomeCard("Mandatory items", String(items?.length ?? 0), "pass/fail", "#fbbf24")}
         {outcomeCard("AI can address", String(ai), "from KB", "#34d399")}
-        {outcomeCard("Needs input", String((items?.length ?? 0) - ai), "forms/signatures/pricing", "#818cf8")}
+        {outcomeCard("Needs input", String((items?.length ?? 0) - ai), "forms/signatures/pricing", "#22d3ee")}
         {outcomeCard("Deadline", deadline, "")}
       </div>
       <div>
@@ -707,7 +707,7 @@ function ComplianceTab({ packId, documentText, deadline }: { packId: string; doc
                     <span className="px-2 py-0.5 rounded-full bg-white/[0.06]" style={{ color: COMPLIANCE_COLORS[it.category] ?? "#94a3b8" }}>{it.category}</span>
                   </td>
                   <td className="p-3 text-xs">
-                    {it.owner === "AI" ? <span className="text-emerald-400">AI draft</span> : <span className="text-indigo-400">Human input</span>}
+                    {it.owner === "AI" ? <span className="text-emerald-400">AI draft</span> : <span className="text-cyan-400">Human input</span>}
                   </td>
                 </tr>
               ))}
@@ -763,10 +763,10 @@ function ChatTab({ packId, rfpTitle }: { packId: string; rfpTitle: string }) {
 
 function ExportTab({ packId }: { packId: string }) {
   const options = [
-    { kind: "docx-clean" as const, icon: FileCheck2, iconBg: "linear-gradient(135deg,#059669,#818cf8)", kindLabel: "For the client",
+    { kind: "docx-clean" as const, icon: FileCheck2, iconBg: "linear-gradient(135deg,#059669,#22d3ee)", kindLabel: "For the client",
       title: "Submission document", fmt: ".docx", tag: "Recommended", primary: true,
       desc: "Clean and client-ready, organised by section. No annotations, requirement echoes, sources or gap notes." },
-    { kind: "docx-review" as const, icon: FileText, iconBg: "linear-gradient(90deg,#6366F1,#818cf8)", kindLabel: "Internal review",
+    { kind: "docx-review" as const, icon: FileText, iconBg: "linear-gradient(90deg,#6366F1,#22D3EE)", kindLabel: "Internal review",
       title: "Review draft", fmt: ".docx", tag: null, primary: false,
       desc: "Annotated for review: the requirement, confidence and grounding, KB sources and gaps, shown per section." },
     { kind: "xlsx" as const, icon: Layers, iconBg: "rgba(255,255,255,.08)", kindLabel: "Internal review",

@@ -29,7 +29,11 @@ export default function BillingPage() {
         <div className="mx-auto max-w-4xl">
           <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="mb-2 text-center text-2xl font-bold text-white lg:text-left lg:text-3xl" style={{ fontFamily: "var(--font-display)" }}>
+              <h1 className="mb-2 text-center text-2xl font-bold lg:text-left lg:text-3xl" style={{
+                fontFamily: "var(--font-display)",
+                background: "linear-gradient(135deg, #fff 0%, #6366F1 50%, #22D3EE 100%)",
+                WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent",
+              }}>
                 Plans &amp; Pricing
               </h1>
               <p className="text-slate-400">Choose the right plan for your needs</p>
@@ -86,7 +90,7 @@ export default function BillingPage() {
                     )}
                     <CardContent className="flex h-full flex-col p-0">
                       <div className="mb-4 flex items-center gap-3">
-                        <span className={cn("grid size-10 shrink-0 place-items-center rounded-lg", isEnterprise ? "bg-violet-500/20 text-violet-400" : "bg-indigo-500/20 text-indigo-400")}>
+                        <span className={cn("grid size-10 shrink-0 place-items-center rounded-lg", isEnterprise ? "bg-violet-500/20 text-violet-400" : "bg-blue-500/20 text-blue-400")}>
                           {isEnterprise ? <Crown className="size-6" /> : <Zap className="size-6" />}
                         </span>
                         <div>
