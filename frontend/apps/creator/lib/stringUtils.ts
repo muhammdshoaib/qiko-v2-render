@@ -27,3 +27,22 @@ export function toTitleFromSlug(value?: string | null): string {
     .join(" ");
 }
 
+// Human-readable label for a worker's vertical / type (`Agent.atype`). Centralised here so the
+// dashboard, workers list and worker detail all display the SAME humanised vertical instead of
+// generic "General" / "Worker" / "General purpose" copy. Unknown/legacy values fall back to a
+// title-cased slug, and a blank value reads as a plain "AI Worker".
+export function workerTypeLabel(atype?: string | null): string {
+  switch ((atype ?? "").trim()) {
+    case "worker":
+      return "AI Worker";
+    case "pre_sales_writer":
+      return "Pre-Sales Writer";
+    case "sales_intelligence":
+      return "Sales Intelligence";
+    case "finance":
+      return "Financial Analyst";
+    default:
+      return atype ? toTitleFromSlug(atype) : "AI Worker";
+  }
+}
+

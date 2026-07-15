@@ -14,7 +14,7 @@ export function ChatBubble({ role, text, variant = "default" }: {
   return (
     <div className={cn("max-w-[85%] rounded-2xl px-3.5 py-2 text-sm", isUser ? "rounded-br-sm" : "rounded-bl-sm",
       isUser
-        ? variant === "gradient" ? "bg-gradient-to-r from-primary to-cyan-400 text-white" : "bg-primary text-primary-foreground"
+        ? variant === "gradient" ? "bg-gradient-to-r from-indigo-500 to-violet-500 text-white" : "bg-primary text-primary-foreground"
         : "bg-muted text-foreground")}>
       {isUser ? (
         <span className="whitespace-pre-wrap">{text}</span>

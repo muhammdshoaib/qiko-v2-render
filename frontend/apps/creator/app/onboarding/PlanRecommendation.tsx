@@ -18,7 +18,7 @@ function GradientHeading({ children }: { children: React.ReactNode }) {
       className="text-3xl lg:text-4xl font-bold"
       style={{
         fontFamily: "Satoshi, sans-serif",
-        background: "linear-gradient(135deg, #ffffff 0%, #6366F1 50%, #22D3EE 100%)",
+        background: "linear-gradient(135deg, #ffffff 0%, #6366F1 50%, #8B5CF6 100%)",
         WebkitBackgroundClip: "text",
         WebkitTextFillColor: "transparent",
       }}
@@ -31,8 +31,8 @@ function GradientHeading({ children }: { children: React.ReactNode }) {
 function StepBadge({ current, total }: { current: number; total: number }) {
   return (
     <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#6366F1]/10 border border-[#6366F1]/30 mb-4 backdrop-blur-sm">
-      <span className="w-2 h-2 rounded-full bg-[#22D3EE] animate-pulse shadow-lg shadow-[#22D3EE]/50" />
-      <span className="text-sm text-[#22D3EE] font-medium">Step {current} of {total}</span>
+      <span className="w-2 h-2 rounded-full bg-[#8B5CF6] animate-pulse shadow-lg shadow-[#8B5CF6]/50" />
+      <span className="text-sm text-[#8B5CF6] font-medium">Step {current} of {total}</span>
     </div>
   );
 }
@@ -120,20 +120,20 @@ export default function PlanRecommendation({
         <div
           className="absolute -inset-[2px] rounded-2xl opacity-75"
           style={{
-            background: "linear-gradient(135deg, #22D3EE, #6366F1, #A855F7, #22D3EE)",
+            background: "linear-gradient(135deg, #8B5CF6, #6366F1, #A855F7, #8B5CF6)",
             backgroundSize: "300% 300%",
             animation: "gradient-shift 4s ease infinite",
           }}
         />
         {hasPrimaryPlanDetails ? (
           <Card className="relative bg-[#0a0f1a] border-0 overflow-hidden">
-            <div className="absolute top-0 right-0 px-4 py-2 text-xs font-semibold rounded-bl-xl" style={{ background: "linear-gradient(135deg, #6366F1, #22D3EE)" }}>
+            <div className="absolute top-0 right-0 px-4 py-2 text-xs font-semibold rounded-bl-xl" style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>
               Recommended for you
             </div>
             <CardHeader className="pt-10">
               <div className="flex items-center gap-4">
                 <div className="w-14 h-14 rounded-xl flex items-center justify-center" style={{ background: "rgba(34,211,238,0.2)", boxShadow: "0 0 30px rgba(34,211,238,0.4)" }}>
-                  <Brain className="h-7 w-7 text-[#22D3EE]" />
+                  <Brain className="h-7 w-7 text-[#8B5CF6]" />
                 </div>
                 <div>
                   <CardTitle className="text-white text-2xl font-bold">{namePrimary}</CardTitle>
@@ -142,7 +142,7 @@ export default function PlanRecommendation({
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="text-4xl font-bold" style={{ background: "linear-gradient(135deg, #ffffff, #22D3EE)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+              <div className="text-4xl font-bold" style={{ background: "linear-gradient(135deg, #ffffff, #8B5CF6)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
                 {`$ ${pricePrimary}`}
                 <span className="text-lg font-normal text-slate-500">/month</span>
               </div>
@@ -152,14 +152,14 @@ export default function PlanRecommendation({
                   {recommendedFeatureReasons.map((reason, i) => (
                     <li key={i} className="flex items-start gap-3 text-sm text-slate-300">
                       <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: "rgba(34,211,238,0.2)", boxShadow: "0 0 10px rgba(34,211,238,0.3)" }}>
-                        <Check className="h-3 w-3 text-[#22D3EE]" />
+                        <Check className="h-3 w-3 text-[#8B5CF6]" />
                       </div>
                       {reason}
                     </li>
                   ))}
                 </ul>
               </div>
-              <Button onClick={() => handleSelectPlan(recommendation.type)} disabled={checkoutLoading !== null || isSubmitting} className="w-full h-14 bg-gradient-to-r from-[#6366F1] via-[#A855F7] to-[#22D3EE] text-white font-semibold text-lg rounded-xl shadow-lg shadow-[#6366F1]/30" style={{ backgroundSize: "200% 200%", animation: "gradient-shift 3s ease infinite" }}>
+              <Button onClick={() => handleSelectPlan(recommendation.type)} disabled={checkoutLoading !== null || isSubmitting} className="w-full h-14 bg-gradient-to-r from-[#6366F1] via-[#A855F7] to-[#8B5CF6] text-white font-semibold text-lg rounded-xl shadow-lg shadow-[#6366F1]/30" style={{ backgroundSize: "200% 200%", animation: "gradient-shift 3s ease infinite" }}>
                 {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <CreditCard className="mr-2 h-5 w-5" />}
                 {isSubmitting ? "Creating..." : "Subscribe Now"}
               </Button>
@@ -171,7 +171,7 @@ export default function PlanRecommendation({
           </Card>
         ) : (
           <Card className="relative bg-[#0a0f1a] border-0 overflow-hidden">
-            <div className="absolute top-0 right-0 px-4 py-2 text-xs font-semibold rounded-bl-xl" style={{ background: "linear-gradient(135deg, #6366F1, #22D3EE)" }}>
+            <div className="absolute top-0 right-0 px-4 py-2 text-xs font-semibold rounded-bl-xl" style={{ background: "linear-gradient(135deg, #6366F1, #8B5CF6)" }}>
               Recommended for you
             </div>
             <CardHeader className="pt-10">

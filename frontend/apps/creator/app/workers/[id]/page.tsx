@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Badge, Button, Card, CardContent, Input, Label, Skeleton, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
+import { WorkerAvatar } from "@/components/worker-avatar";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import { CrmPipeline } from "@/components/crm-pipeline";
 import {
@@ -20,30 +21,20 @@ import {
   saveSalesforceCredentials, saveVapiCredentials, setPackOutcome, testSalesforceConnection, testTeamsWebhook,
   updateAgentConfig, updateCalendlyEventType, type Agent, type BatchAnswer, type Doc, type RfpPack,
 } from "@/lib/api";
-import { formatShortDate } from "@/lib/stringUtils";
+import { formatShortDate, workerTypeLabel } from "@/lib/stringUtils";
 
 const TABS = [
-  { id: "Overview", icon: Sparkles, iconColor: "text-cyan-400" },
-  { id: "Chat", icon: MessageSquare, iconColor: "text-slate-400" },
-  { id: "Train", icon: GraduationCap, iconColor: "text-slate-400" },
-  { id: "CRM", icon: Users, iconColor: "text-slate-400" },
-  { id: "Connections", icon: Link2, iconColor: "text-slate-400" },
-  { id: "Batch", icon: ListChecks, iconColor: "text-slate-400" },
+  { id: "Overview", icon: Sparkles },
+  { id: "Chat", icon: MessageSquare },
+  { id: "Train", icon: GraduationCap },
+  { id: "CRM", icon: Users },
+  { id: "Connections", icon: Link2 },
+  { id: "Batch", icon: ListChecks },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
 
-const AVATAR_GRADIENTS = [
-  "from-cyan-500 to-blue-500", "from-violet-500 to-purple-600", "from-emerald-500 to-teal-500",
-  "from-amber-500 to-orange-600", "from-pink-500 to-rose-500", "from-indigo-500 to-blue-600",
-];
-function avatarGradient(id: string): string {
-  let hash = 0;
-  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
-  return AVATAR_GRADIENTS[hash % AVATAR_GRADIENTS.length];
-}
-
 function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className="min-h-24 w-full rounded-md border border-input bg-background p-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />;
+  return <textarea {...props} className="min-h-24 w-full rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-200 placeholder:text-slate-500 transition-colors focus-visible:border-indigo-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500" />;
 }
 
 export default function WorkerDetailPage() {
@@ -61,19 +52,17 @@ export default function WorkerDetailPage() {
   return (
     <AppShell title="Worker">
       <div className="flex h-full flex-col">
-        <div className="relative border-b border-white/5 bg-[#0a0f1a]/80 backdrop-blur-xl">
+        <div className="relative border-b border-white/[0.06] bg-[#070a12]/80 backdrop-blur-xl">
           <div className="flex items-center gap-4 px-6 py-4">
-            <Link href="/workers" className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground">
+            <Link href="/workers" className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm text-slate-400 transition-colors hover:bg-white/[0.04] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
               <ArrowLeft className="size-4" /> All Workers
             </Link>
           </div>
-          <div className="flex items-center gap-4 bg-gradient-to-r from-slate-800/30 to-slate-700/20 px-6 py-4">
-            <div className={cn("flex size-14 shrink-0 items-center justify-center rounded-xl text-xl font-bold text-white shadow-lg bg-gradient-to-br", worker ? avatarGradient(worker.id) : "from-primary to-secondary")}>
-              {worker?.name.charAt(0).toUpperCase() ?? "?"}
-            </div>
+          <div className="flex items-center gap-4 bg-gradient-to-r from-indigo-500/10 to-violet-500/[0.06] px-6 py-4">
+            <WorkerAvatar atype={worker?.atype} size="lg" ready={worker?.status === "ready"} />
             <div className="flex-1">
               <h1 className="text-xl font-bold text-white">{worker?.name ?? "Worker"}</h1>
-              <p className="text-sm text-slate-400">{(worker?.config?.expertise as string) || "Worker"}</p>
+              <p className="text-sm text-slate-400">{workerTypeLabel(worker?.atype)}</p>
             </div>
             {worker && (
               <Badge variant={worker.status === "ready" ? "success" : "muted"} dot={worker.status === "ready"} className="capitalize">
@@ -82,9 +71,9 @@ export default function WorkerDetailPage() {
             )}
           </div>
           <div className="grid grid-cols-1 gap-3 px-4 py-3 sm:grid-cols-2 sm:px-6">
-            <div className="relative rounded-xl p-3 sm:p-4 bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border-2 border-emerald-500/50 shadow-lg shadow-emerald-500/10">
+            <div className="relative rounded-xl p-3 sm:p-4 bg-gradient-to-br from-emerald-500/20 to-indigo-500/20 border-2 border-emerald-500/50 shadow-lg shadow-emerald-500/10">
               <div className="flex items-center gap-2.5 sm:gap-3">
-                <span className="grid size-9 sm:size-10 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500">
+                <span className="grid size-9 sm:size-10 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-emerald-500 to-indigo-500">
                   <Zap className="size-4 sm:size-5 text-white" />
                 </span>
                 <div className="text-left min-w-0">
@@ -112,18 +101,21 @@ export default function WorkerDetailPage() {
               </div>
             </div>
           </div>
-          <div className="overflow-x-auto px-4 py-2 sm:px-6">
+          <nav aria-label="Worker sections" className="overflow-x-auto px-4 py-2 sm:px-6">
             <div className="flex w-max items-center gap-2">
-              {TABS.map(({ id: t, icon: Icon, iconColor }) => (
-                <button key={t} onClick={() => setTab(t)}
-                  className={cn("inline-flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl px-3 text-sm font-medium transition-all duration-200 sm:px-4",
-                    tab === t ? "bg-slate-800/80 text-white shadow-sm" : "text-slate-300 hover:bg-white/5 hover:text-white")}>
-                  <Icon className={cn("size-4 shrink-0", tab === t ? iconColor : "text-slate-400")} />
-                  <span className="leading-none">{t}</span>
-                </button>
-              ))}
+              {TABS.map(({ id: t, icon: Icon }) => {
+                const isActive = tab === t;
+                return (
+                  <button key={t} onClick={() => setTab(t)} aria-current={isActive ? "page" : undefined}
+                    className={cn("inline-flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-xl border px-3 text-sm font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 sm:px-4",
+                      isActive ? "border-indigo-500/30 bg-indigo-500/10 text-white" : "border-transparent text-slate-300 hover:bg-white/[0.04] hover:text-white")}>
+                    <Icon className={cn("size-4 shrink-0", isActive ? "text-indigo-400" : "text-slate-500")} />
+                    <span className="leading-none">{t}</span>
+                  </button>
+                );
+              })}
             </div>
-          </div>
+          </nav>
         </div>
 
         <div className="flex-1 overflow-auto p-6">
@@ -146,8 +138,7 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
   const packs = useQuery({ queryKey: ["rfp-packs", id], queryFn: () => listRfpPacks(id) });
   const [overviewOpen, setOverviewOpen] = useState(true);
   const [shareOpen, setShareOpen] = useState(true);
-  const cfg = worker?.config ?? {};
-  const expertise = (cfg.expertise as string) || "General purpose";
+  const typeLabel = workerTypeLabel(worker?.atype);
   const capabilities = [
     "Answers questions using your trained knowledge base",
     "Personality friendly tone and communication style",
@@ -171,11 +162,11 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
         <p className="text-muted-foreground">Overview of your digital worker&apos;s capabilities and performance</p>
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-700/50 bg-gradient-to-br from-[#6366F1]/10 via-slate-800/30 to-[#22D3EE]/10">
+      <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-gradient-to-br from-indigo-500/10 via-white/[0.015] to-violet-500/10">
         <button onClick={() => setOverviewOpen((o) => !o)}
-          className="flex w-full items-center justify-between px-4 py-4 text-left transition-colors hover:bg-slate-700/20">
+          className="flex w-full items-center justify-between px-4 py-4 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
           <div className="flex items-center gap-2 text-base font-semibold">
-            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-[#6366F1] to-[#22D3EE]">
+            <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-500">
               <Bot className="size-4 text-white" />
             </span>
             AI Model Overview
@@ -186,21 +177,21 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
         {overviewOpen && (
           <div className="space-y-6 px-4 pb-4">
             <div className="flex items-start gap-4">
-              <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-[#6366F1] to-[#22D3EE] shadow-lg shadow-[#6366F1]/20">
+              <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 shadow-lg shadow-indigo-500/20">
                 <BrainCircuit className="size-8 text-white" />
               </span>
               <div>
                 <h3 className="text-lg font-bold text-white">{worker?.name ?? "Worker"}</h3>
-                <p className="text-sm font-medium text-cyan-400">{expertise}</p>
+                <p className="text-sm font-medium text-indigo-400">{typeLabel}</p>
                 <p className="mt-2 text-sm leading-relaxed text-slate-400">
-                  This AI model has been trained to serve as {expertise.toLowerCase().startsWith("a") || expertise.toLowerCase().startsWith("e") ? "an" : "a"} {expertise}.
-                  It delivers consistent, knowledgeable responses 24/7.
+                  This {typeLabel} delivers consistent, knowledgeable responses 24/7, grounded in the
+                  knowledge you&apos;ve trained it on.
                 </p>
               </div>
             </div>
-            <div className="rounded-xl bg-slate-800/50 p-4">
+            <div className="rounded-xl bg-white/[0.03] p-4">
               <h4 className="mb-3 flex items-center gap-2 text-sm font-semibold text-white">
-                <MessageCircle className="size-4 text-cyan-400" /> Language Response Capabilities
+                <MessageCircle className="size-4 text-indigo-400" /> Language Response Capabilities
               </h4>
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {capabilities.map((c) => (
@@ -215,17 +206,17 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
         )}
       </div>
 
-      <div className="overflow-hidden rounded-xl border border-slate-700/50 bg-slate-800/30">
+      <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.015]">
         <button onClick={() => setShareOpen((o) => !o)}
-          className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-slate-700/20">
+          className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
           <div className="flex items-center gap-2 text-base font-semibold">
-            <Share2 className="size-4 text-cyan-400" /> Share &amp; Embed
+            <Share2 className="size-4 text-indigo-400" /> Share &amp; Embed
           </div>
           <ChevronUp className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !shareOpen && "rotate-180")} />
         </button>
         {shareOpen && (
           <div className="grid grid-cols-1 gap-4 px-4 pb-4 lg:grid-cols-2">
-            <div className="min-w-0 overflow-hidden rounded-xl bg-slate-700/30 p-4">
+            <div className="min-w-0 overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
               <div className="mb-3 flex items-center gap-2">
                 <span className="shrink-0 rounded-lg bg-emerald-500/20 p-1.5">
                   <Globe className="size-4 text-emerald-400" />
@@ -236,23 +227,23 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-slate-600/50 bg-slate-800/80 px-3 py-2">
-                  <p className="truncate font-mono text-sm text-cyan-400">{chatLink}</p>
+                <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-white/10 bg-black/30 px-3 py-2">
+                  <p className="truncate font-mono text-sm text-indigo-300">{chatLink}</p>
                 </div>
-                <Button variant="outline" size="sm" className="h-8 shrink-0 border-slate-600 hover:bg-slate-700" onClick={() => navigator.clipboard.writeText(chatLink)}>
+                <Button variant="outline" size="sm" aria-label="Copy chat link" className="h-8 shrink-0" onClick={() => navigator.clipboard.writeText(chatLink)}>
                   <Copy className="size-4" />
                 </Button>
                 <a href={chatLink} target="_blank" rel="noreferrer">
-                  <Button variant="outline" size="sm" className="h-8 shrink-0 border-slate-600 hover:bg-slate-700">
+                  <Button variant="outline" size="sm" aria-label="Open chat link" className="h-8 shrink-0">
                     <ExternalLink className="size-4" />
                   </Button>
                 </a>
               </div>
             </div>
-            <div className="min-w-0 overflow-hidden rounded-xl bg-slate-700/30 p-4">
+            <div className="min-w-0 overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
               <div className="mb-3 flex items-center gap-2">
-                <span className="shrink-0 rounded-lg bg-purple-500/20 p-1.5">
-                  <Code className="size-4 text-purple-400" />
+                <span className="shrink-0 rounded-lg bg-violet-500/20 p-1.5">
+                  <Code className="size-4 text-violet-400" />
                 </span>
                 <div className="min-w-0">
                   <h4 className="text-sm font-semibold text-white">Website Widget</h4>
@@ -260,10 +251,10 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-slate-600/50 bg-slate-800/80 px-3 py-2">
-                  <p className="truncate font-mono text-xs text-purple-400">{widgetSnippet}</p>
+                <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-white/10 bg-black/30 px-3 py-2">
+                  <p className="truncate font-mono text-xs text-violet-300">{widgetSnippet}</p>
                 </div>
-                <Button variant="outline" size="sm" className="h-8 shrink-0 border-slate-600 hover:bg-slate-700" onClick={() => navigator.clipboard.writeText(widgetSnippet)}>
+                <Button variant="outline" size="sm" aria-label="Copy widget snippet" className="h-8 shrink-0" onClick={() => navigator.clipboard.writeText(widgetSnippet)}>
                   <Copy className="size-4" />
                 </Button>
               </div>

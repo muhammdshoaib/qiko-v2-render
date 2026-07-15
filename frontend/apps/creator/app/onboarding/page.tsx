@@ -199,7 +199,7 @@ function GradientHeading({ children }: { children: React.ReactNode }) {
       className="text-3xl lg:text-4xl font-bold"
       style={{
         fontFamily: "Satoshi, sans-serif",
-        background: "linear-gradient(135deg, #ffffff 0%, #6366F1 50%, #22D3EE 100%)",
+        background: "linear-gradient(135deg, #ffffff 0%, #6366F1 50%, #8B5CF6 100%)",
         WebkitBackgroundClip: "text",
         WebkitTextFillColor: "transparent",
       }}
@@ -212,8 +212,8 @@ function GradientHeading({ children }: { children: React.ReactNode }) {
 function StepBadge({ current, total }: { current: number; total: number }) {
   return (
     <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#6366F1]/10 border border-[#6366F1]/30 mb-4 backdrop-blur-sm">
-      <span className="w-2 h-2 rounded-full bg-[#22D3EE] animate-pulse shadow-lg shadow-[#22D3EE]/50" />
-      <span className="text-sm text-[#22D3EE] font-medium">Step {current} of {total}</span>
+      <span className="w-2 h-2 rounded-full bg-[#8B5CF6] animate-pulse shadow-lg shadow-[#8B5CF6]/50" />
+      <span className="text-sm text-[#8B5CF6] font-medium">Step {current} of {total}</span>
     </div>
   );
 }
@@ -234,8 +234,8 @@ function TrainingSection({
   filled?: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-white/5 bg-[#0a0f1a]/60 overflow-hidden">
-      <button type="button" onClick={onToggle} className="w-full flex items-center justify-between p-5 text-left hover:bg-white/[0.02] transition-colors">
+    <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] overflow-hidden">
+      <button type="button" onClick={onToggle} className="w-full flex items-center justify-between p-5 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500">
         <div className="flex items-center gap-3">
           {filled && (
             <div className="w-5 h-5 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
@@ -619,7 +619,7 @@ export default function Onboarding() {
         <div 
           className="absolute w-[500px] h-[500px] rounded-full opacity-25"
           style={{
-            background: 'radial-gradient(circle, #22D3EE 0%, transparent 70%)',
+            background: 'radial-gradient(circle, #8B5CF6 0%, transparent 70%)',
             top: '40%',
             right: '5%',
             filter: 'blur(80px)',
@@ -670,7 +670,7 @@ export default function Onboarding() {
                 key={s}
                 className={`h-2 rounded-full transition-all duration-300 ${
                   s === displayStep
-                    ? "w-8 bg-gradient-to-r from-[#6366F1] to-[#22D3EE] shadow-lg shadow-[#6366F1]/50"
+                    ? "w-8 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] shadow-lg shadow-[#6366F1]/50"
                     : s < displayStep
                       ? "w-2 bg-[#6366F1]/50"
                       : "w-2 bg-white/20"
@@ -730,7 +730,7 @@ export default function Onboarding() {
                         <Badge className="bg-white/5 text-slate-500 border-white/10 text-[10px] px-1.5 py-0">Soon</Badge>
                       )}
                       {/* {industry.value === "travel_leisure" && (
-                        <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/30 text-[10px] px-1.5 py-0">Featured</Badge>
+                        <Badge className="bg-indigo-500/10 text-indigo-400 border-indigo-500/30 text-[10px] px-1.5 py-0">Featured</Badge>
                       )} */}
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">{industry.description}</p>
@@ -752,8 +752,8 @@ export default function Onboarding() {
               ) : null;
             })()}
             {wizardData.industry === "ai_visibility" && (
-              <div className="space-y-3 rounded-xl border border-[#22D3EE]/30 bg-[#22D3EE]/5 p-4 text-left">
-                <div className="flex items-center gap-2 text-[#22D3EE]">
+              <div className="space-y-3 rounded-xl border border-[#8B5CF6]/30 bg-[#8B5CF6]/5 p-4 text-left">
+                <div className="flex items-center gap-2 text-[#8B5CF6]">
                   <Activity className="w-4 h-4" />
                   <span className="font-semibold text-sm">Qiko Signal setup</span>
                 </div>
@@ -783,7 +783,7 @@ export default function Onboarding() {
             <Button
               onClick={handleNext}
               disabled={!wizardData.industry || isSubmitting}
-              className="w-full h-12 bg-gradient-to-r from-[#6366F1] to-[#22D3EE] text-white font-semibold rounded-xl shadow-lg shadow-[#6366F1]/30 hover:shadow-[#6366F1]/50 disabled:opacity-40 disabled:hover:scale-100"
+              className="w-full h-12 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl shadow-lg shadow-[#6366F1]/30 hover:shadow-[#6366F1]/50 disabled:opacity-40 disabled:hover:scale-100"
             >
               {isSubmitting ? (
                 <>
@@ -894,7 +894,7 @@ export default function Onboarding() {
                   !wizardData.professionalTitle?.trim() ||
                   !wizardData.headline?.trim()
                 }
-                className="flex-1 h-11 bg-gradient-to-r from-[#6366F1] to-[#22D3EE] text-white font-semibold rounded-xl shadow-lg shadow-[#6366F1]/30 hover:shadow-[#6366F1]/50 disabled:opacity-40"
+                className="flex-1 h-11 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl shadow-lg shadow-[#6366F1]/30 hover:shadow-[#6366F1]/50 disabled:opacity-40"
               >
                 {isSubmitting ? (
                   <>
@@ -989,7 +989,7 @@ export default function Onboarding() {
               <Button
                 onClick={handleNext}
                 disabled={isSubmitting}
-                className="flex-1 h-14 bg-gradient-to-r from-[#6366F1] to-[#22D3EE] text-white font-semibold rounded-xl shadow-lg shadow-[#6366F1]/30 hover:shadow-[#6366F1]/50"
+                className="flex-1 h-14 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl shadow-lg shadow-[#6366F1]/30 hover:shadow-[#6366F1]/50"
               >
                 {isSubmitting ? (
                   <>
@@ -1020,43 +1020,43 @@ export default function Onboarding() {
               <div className="space-y-4 p-5 rounded-2xl bg-[#0a0f1a]/60 border border-white/5">
                 <div className="flex justify-between items-center">
                   <Label className="text-white font-medium">How specialized is your expertise?</Label>
-                  <Badge className={assessment.nicheLevel > 66 ? "bg-[#22D3EE]/20 text-[#22D3EE] border-[#22D3EE]/30" : assessment.nicheLevel > 33 ? "bg-[#6366F1]/20 text-[#818CF8] border-[#6366F1]/30" : "bg-slate-500/20 text-slate-400 border-slate-500/30"}>
+                  <Badge className={assessment.nicheLevel > 66 ? "bg-[#8B5CF6]/20 text-[#8B5CF6] border-[#8B5CF6]/30" : assessment.nicheLevel > 33 ? "bg-[#6366F1]/20 text-[#818CF8] border-[#6366F1]/30" : "bg-slate-500/20 text-slate-400 border-slate-500/30"}>
                     {assessment.nicheLevel > 66 ? "Specialized" : assessment.nicheLevel > 33 ? "Moderate" : "General"}
                   </Badge>
                 </div>
-                <Slider value={[assessment.nicheLevel]} onValueChange={([v]) => setAssessment((prev) => ({ ...prev, nicheLevel: v }))} max={100} step={1} className="[&_[role=slider]]:bg-gradient-to-r [&_[role=slider]]:from-[#6366F1] [&_[role=slider]]:to-[#22D3EE] [&_[role=slider]]:border-0 [&_[role=slider]]:shadow-lg [&_[role=slider]]:shadow-[#6366F1]/50" />
+                <Slider value={[assessment.nicheLevel]} onValueChange={([v]) => setAssessment((prev) => ({ ...prev, nicheLevel: v }))} max={100} step={1} className="[&_[role=slider]]:bg-gradient-to-r [&_[role=slider]]:from-[#6366F1] [&_[role=slider]]:to-[#8B5CF6] [&_[role=slider]]:border-0 [&_[role=slider]]:shadow-lg [&_[role=slider]]:shadow-[#6366F1]/50" />
                 <div className="flex justify-between text-xs text-slate-500"><span>General knowledge</span><span>Highly specialized</span></div>
               </div>
               <div className="space-y-4 p-5 rounded-2xl bg-[#0a0f1a]/60 border border-white/5">
                 <div className="flex justify-between items-center">
                   <Label className="text-white font-medium">How important is data privacy?</Label>
-                  <Badge className={assessment.privacyImportance > 66 ? "bg-[#22D3EE]/20 text-[#22D3EE] border-[#22D3EE]/30" : assessment.privacyImportance > 33 ? "bg-[#6366F1]/20 text-[#818CF8] border-[#6366F1]/30" : "bg-slate-500/20 text-slate-400 border-slate-500/30"}>
+                  <Badge className={assessment.privacyImportance > 66 ? "bg-[#8B5CF6]/20 text-[#8B5CF6] border-[#8B5CF6]/30" : assessment.privacyImportance > 33 ? "bg-[#6366F1]/20 text-[#818CF8] border-[#6366F1]/30" : "bg-slate-500/20 text-slate-400 border-slate-500/30"}>
                     {assessment.privacyImportance > 66 ? "Critical" : assessment.privacyImportance > 33 ? "Important" : "Flexible"}
                   </Badge>
                 </div>
-                <Slider value={[assessment.privacyImportance]} onValueChange={([v]) => setAssessment((prev) => ({ ...prev, privacyImportance: v }))} max={100} step={1} className="[&_[role=slider]]:bg-gradient-to-r [&_[role=slider]]:from-[#6366F1] [&_[role=slider]]:to-[#22D3EE] [&_[role=slider]]:border-0 [&_[role=slider]]:shadow-lg [&_[role=slider]]:shadow-[#6366F1]/50" />
+                <Slider value={[assessment.privacyImportance]} onValueChange={([v]) => setAssessment((prev) => ({ ...prev, privacyImportance: v }))} max={100} step={1} className="[&_[role=slider]]:bg-gradient-to-r [&_[role=slider]]:from-[#6366F1] [&_[role=slider]]:to-[#8B5CF6] [&_[role=slider]]:border-0 [&_[role=slider]]:shadow-lg [&_[role=slider]]:shadow-[#6366F1]/50" />
                 <div className="flex justify-between text-xs text-slate-500"><span>Not a concern</span><span>Absolutely critical</span></div>
               </div>
               <div className="flex items-center justify-between p-5 rounded-2xl bg-[#0a0f1a]/60 border border-white/5">
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: assessment.needsOffline ? "rgba(34,211,238,0.2)" : "rgba(99,102,241,0.1)", boxShadow: assessment.needsOffline ? "0 0 20px rgba(34,211,238,0.3)" : "none" }}>
-                    {assessment.needsOffline ? <WifiOff className="h-6 w-6 text-[#22D3EE]" /> : <Wifi className="h-6 w-6 text-slate-400" />}
+                    {assessment.needsOffline ? <WifiOff className="h-6 w-6 text-[#8B5CF6]" /> : <Wifi className="h-6 w-6 text-slate-400" />}
                   </div>
                   <div>
                     <Label className="text-white font-medium">Need offline access?</Label>
                     <p className="text-sm text-slate-500">Run AI without internet connection</p>
                   </div>
                 </div>
-                <Switch checked={assessment.needsOffline} onCheckedChange={(v) => setAssessment((prev) => ({ ...prev, needsOffline: v }))} className="data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-[#6366F1] data-[state=checked]:to-[#22D3EE]" />
+                <Switch checked={assessment.needsOffline} onCheckedChange={(v) => setAssessment((prev) => ({ ...prev, needsOffline: v }))} className="data-[state=checked]:bg-gradient-to-r data-[state=checked]:from-[#6366F1] data-[state=checked]:to-[#8B5CF6]" />
               </div>
               <div className="space-y-4 p-5 rounded-2xl bg-[#0a0f1a]/60 border border-white/5">
                 <div className="flex justify-between items-center">
                   <Label className="text-white font-medium">Expected conversation volume?</Label>
-                  <Badge className={assessment.conversationVolume > 66 ? "bg-[#22D3EE]/20 text-[#22D3EE] border-[#22D3EE]/30" : assessment.conversationVolume > 33 ? "bg-[#6366F1]/20 text-[#818CF8] border-[#6366F1]/30" : "bg-slate-500/20 text-slate-400 border-slate-500/30"}>
+                  <Badge className={assessment.conversationVolume > 66 ? "bg-[#8B5CF6]/20 text-[#8B5CF6] border-[#8B5CF6]/30" : assessment.conversationVolume > 33 ? "bg-[#6366F1]/20 text-[#818CF8] border-[#6366F1]/30" : "bg-slate-500/20 text-slate-400 border-slate-500/30"}>
                     {assessment.conversationVolume > 66 ? "High" : assessment.conversationVolume > 33 ? "Moderate" : "Low"}
                   </Badge>
                 </div>
-                <Slider value={[assessment.conversationVolume]} onValueChange={([v]) => setAssessment((prev) => ({ ...prev, conversationVolume: v }))} max={100} step={1} className="[&_[role=slider]]:bg-gradient-to-r [&_[role=slider]]:from-[#6366F1] [&_[role=slider]]:to-[#22D3EE] [&_[role=slider]]:border-0 [&_[role=slider]]:shadow-lg [&_[role=slider]]:shadow-[#6366F1]/50" />
+                <Slider value={[assessment.conversationVolume]} onValueChange={([v]) => setAssessment((prev) => ({ ...prev, conversationVolume: v }))} max={100} step={1} className="[&_[role=slider]]:bg-gradient-to-r [&_[role=slider]]:from-[#6366F1] [&_[role=slider]]:to-[#8B5CF6] [&_[role=slider]]:border-0 [&_[role=slider]]:shadow-lg [&_[role=slider]]:shadow-[#6366F1]/50" />
                 <div className="flex justify-between text-xs text-slate-500"><span>Just a few</span><span>Hundreds per month</span></div>
               </div>
             </div>
@@ -1067,7 +1067,7 @@ export default function Onboarding() {
                 <ArrowLeft className="mr-2 h-5 w-5" />
                 Back
               </Button>
-              <Button onClick={handleNext} disabled={isSubmitting} className="flex-1 h-14 bg-gradient-to-r from-[#6366F1] to-[#22D3EE] hover:from-[#818CF8] hover:to-[#22D3EE] text-white font-semibold rounded-xl shadow-lg shadow-[#6366F1]/30 hover:shadow-[#6366F1]/50 transition-all hover:scale-[1.02]">
+              <Button onClick={handleNext} disabled={isSubmitting} className="flex-1 h-14 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] hover:from-[#818CF8] hover:to-[#8B5CF6] text-white font-semibold rounded-xl shadow-lg shadow-[#6366F1]/30 hover:shadow-[#6366F1]/50 transition-all hover:scale-[1.02]">
                 {hasSubscription ? "Continue" : "Purchase Plan"}
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
@@ -1091,10 +1091,10 @@ export default function Onboarding() {
                 transition={{ duration: 0.4 }}
               >
                 <div className="relative rounded-2xl border border-white/10 bg-gradient-to-b from-[#0f172a]/95 to-[#0f172a]/80 p-8 lg:p-10 text-center shadow-xl shadow-[#6366F1]/5">
-                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-[#6366F1]/10 via-transparent to-[#22D3EE]/10 pointer-events-none" />
+                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-[#6366F1]/10 via-transparent to-[#8B5CF6]/10 pointer-events-none" />
                   <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-24 h-24 rounded-full bg-[#6366F1]/20 blur-2xl" />
                   <motion.div
-                    className="relative mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-[#6366F1] to-[#22D3EE] shadow-lg shadow-[#6366F1]/30"
+                    className="relative mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-[#6366F1] to-[#8B5CF6] shadow-lg shadow-[#6366F1]/30"
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ type: "spring", stiffness: 200, damping: 15, delay: 0.1 }}
@@ -1225,14 +1225,14 @@ function Step6AccountCreation({
         <div className="p-4 rounded-xl bg-[#6366F1]/10 border border-[#6366F1]/30 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: selectedPlan === "custom_model" ? "rgba(34,211,238,0.2)" : selectedPlan === "premium" ? "rgba(245,158,11,0.2)" : "rgba(99,102,241,0.2)" }}>
-              {selectedPlan === "custom_model" ? <Brain className="h-5 w-5 text-[#22D3EE]" /> : selectedPlan === "premium" ? <Crown className="h-5 w-5 text-amber-400" /> : <Zap className="h-5 w-5 text-[#6366F1]" />}
+              {selectedPlan === "custom_model" ? <Brain className="h-5 w-5 text-[#8B5CF6]" /> : selectedPlan === "premium" ? <Crown className="h-5 w-5 text-amber-400" /> : <Zap className="h-5 w-5 text-[#6366F1]" />}
             </div>
             <div>
               <p className="text-white font-medium">{selectedPlan === "custom_model" ? "Premium" : selectedPlan === "premium" ? "Premium" : "Basic AI Model"}</p>
               <p className="text-sm text-slate-400">{selectedPlan === "custom_model" ? "$ 49/month" : selectedPlan === "premium" ? "$ 79/month" : "$ 20/month"}</p>
             </div>
           </div>
-          {/* <Button variant="ghost" size="sm" onClick={() => setStep(5)} className="text-[#22D3EE] hover:text-[#22D3EE]/80">Change</Button> */}
+          {/* <Button variant="ghost" size="sm" onClick={() => setStep(5)} className="text-[#8B5CF6] hover:text-[#8B5CF6]/80">Change</Button> */}
         </div>
       )}
       <div className="space-y-5">
@@ -1291,7 +1291,7 @@ function Step6AccountCreation({
         </div>
       </div>
       <div className="space-y-4">
-        <Button onClick={handleCreateAccount} disabled={isSubmitting} className="w-full h-14 bg-gradient-to-r from-[#6366F1] to-[#22D3EE] text-white font-semibold rounded-xl shadow-lg shadow-[#6366F1]/30 hover:shadow-[#6366F1]/50">
+        <Button onClick={handleCreateAccount} disabled={isSubmitting} className="w-full h-14 bg-gradient-to-r from-[#6366F1] to-[#8B5CF6] text-white font-semibold rounded-xl shadow-lg shadow-[#6366F1]/30 hover:shadow-[#6366F1]/50">
           {isSubmitting ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" />Creating your account...</> : <>Create Account & Continue<ArrowRight className="ml-2 h-5 w-5" /></>}
         </Button>
         <Button variant="ghost" onClick={handleBack} disabled={isSubmitting} className="w-full text-slate-500 hover:text-slate-300">
@@ -1301,7 +1301,7 @@ function Step6AccountCreation({
       </div>
       <p className="text-center text-sm text-slate-500">
         Already have an account?{" "}
-        <button onClick={() => setLocation("/login")} className="text-[#22D3EE] hover:underline">Sign in</button>
+        <button onClick={() => setLocation("/login")} className="text-[#8B5CF6] hover:underline">Sign in</button>
       </p>
     </div>
   );

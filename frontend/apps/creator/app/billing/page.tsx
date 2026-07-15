@@ -15,11 +15,7 @@ export default function BillingPage() {
         <div className="mx-auto max-w-4xl">
           <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="mb-2 text-center text-2xl font-bold lg:text-left lg:text-3xl" style={{
-                fontFamily: "var(--font-display)",
-                background: "linear-gradient(135deg, #fff 0%, #6366F1 50%, #22D3EE 100%)",
-                WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent",
-              }}>
+              <h1 className="mb-2 text-center text-2xl font-bold text-white lg:text-left lg:text-3xl" style={{ fontFamily: "var(--font-display)" }}>
                 Plans &amp; Pricing
               </h1>
               <p className="text-slate-400">Choose the right plan for your needs</p>
@@ -38,7 +34,7 @@ export default function BillingPage() {
             {plans.data?.map((p) => {
               const isEnterprise = p.name === "Enterprise";
               return (
-                <Card key={p.id} className="relative flex h-full w-full max-w-sm flex-col border-[#6366F1]/20 p-6">
+                <Card key={p.id} className="relative flex h-full w-full max-w-sm flex-col border-white/[0.06] bg-white/[0.015] p-6">
                   {isEnterprise && (
                     <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground">
                       Most Popular
@@ -46,7 +42,7 @@ export default function BillingPage() {
                   )}
                   <CardContent className="flex h-full flex-col p-0">
                     <div className="mb-4 flex items-center gap-3">
-                      <span className={cn("grid size-10 shrink-0 place-items-center rounded-lg", isEnterprise ? "bg-violet-500/20 text-violet-400" : "bg-blue-500/20 text-blue-400")}>
+                      <span className={cn("grid size-10 shrink-0 place-items-center rounded-lg", isEnterprise ? "bg-violet-500/20 text-violet-400" : "bg-indigo-500/20 text-indigo-400")}>
                         {isEnterprise ? <Crown className="size-6" /> : <Zap className="size-6" />}
                       </span>
                       <div>
@@ -124,7 +120,7 @@ function FeatureComparison() {
           </thead>
           <tbody>
             {FEATURE_ROWS.map((row, i) => (
-              <tr key={row.label} className={i % 2 === 0 ? "bg-secondary/30" : ""}>
+              <tr key={row.label} className={i % 2 === 0 ? "bg-white/[0.02]" : ""}>
                 <td className="py-3 px-4"><span className="text-sm text-foreground">{row.label}</span></td>
                 <td className="py-3 px-4 text-center"><FeatureCell value={row.premium} /></td>
                 <td className="py-3 px-4 text-center"><FeatureCell value={row.enterprise} /></td>
