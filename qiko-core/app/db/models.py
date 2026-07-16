@@ -96,6 +96,11 @@ class RfpPack(Base):
     outcome_reason: Mapped[str] = mapped_column(String(32), default="")
     outcome_value: Mapped[float | None] = mapped_column(nullable=True)
     outcome_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Background tender-generation artifacts (persisted by the generate_tender_artifacts job) and
+    # its pollable per-artifact progress (see app.modules.rfp.generation gen_status contract).
+    brief: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    compliance: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    gen_status: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class PackRequirement(Base):

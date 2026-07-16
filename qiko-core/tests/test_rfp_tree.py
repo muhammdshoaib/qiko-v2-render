@@ -308,7 +308,8 @@ def test_extract_populates_tree_and_lock_all(client, monkeypatch):
                 return LLMResponse(text=payload)
         return P()
 
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", fake_get_provider)
+    monkeypatch.setattr("app.modules.rfp.generation.get_provider", fake_get_provider)
+    monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _fake_worker_factory(stub=True))
     c, pid = _pack(client, "extrco1")
     client.post(f"/api/v1/rfp/packs/{pid}/extract", cookies=c,
                 files={"file": ("t.txt", io.BytesIO(b"tender"), "text/plain")})
@@ -337,7 +338,8 @@ def test_sections_backfill_lazily_for_old_pack(client, monkeypatch):
                 return LLMResponse(text=payload)
         return P()
 
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", fake_get_provider)
+    monkeypatch.setattr("app.modules.rfp.generation.get_provider", fake_get_provider)
+    monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _fake_worker_factory(stub=True))
     c, pid = _pack(client, "backfillco1")
     client.post(f"/api/v1/rfp/packs/{pid}/extract", cookies=c,
                 files={"file": ("t.txt", io.BytesIO(b"tender"), "text/plain")})
@@ -370,7 +372,8 @@ def test_export_overlay_locked_user_draft_overrides_ai(client, monkeypatch):
                 return LLMResponse(text=payload)
         return P()
 
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", fake_get_provider)
+    monkeypatch.setattr("app.modules.rfp.generation.get_provider", fake_get_provider)
+    monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _fake_worker_factory(stub=True))
     monkeypatch.setattr("app.modules.rfp.router.build_tenant_worker",
                         _fake_worker_factory(answer="AI generated answer"))
     c, pid = _pack(client, "ovlyco1")

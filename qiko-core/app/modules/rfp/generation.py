@@ -1,0 +1,198 @@
+"""Request-free RFP tender-artifact generation, shared by the HTTP routes and the background job.
+
+Uploading a tender kicks off a BACKGROUND job (app.tasks.jobs.generate_tender_artifacts) that
+produces and persists ALL artifacts -- Requirements, Sections, the Tender Brief, the Compliance
+checklist and per-section grounded draft answers -- so the upload endpoint returns immediately and
+the frontend polls a per-artifact status. This module holds the pieces that must run identically
+whether invoked inline from a route or off the request path on a worker, so there is no request
+object and no FastAPI HTTPException in here (routes translate the domain errors below).
+
+gen_status contract (persisted on RfpPack.gen_status, polled via GET /rfp/packs/{id}/status):
+
+    {
+      "requirements": "pending" | "running" | "ready" | "error",
+      "sections":     "pending" | "running" | "ready" | "error",
+      "brief":        "pending" | "running" | "ready" | "error",
+      "compliance":   "pending" | "running" | "ready" | "error",
+      "drafts": {"state": "pending|running|ready|error", "done": int, "total": int},
+      "updated_at": ISO-8601 string,
+      "error": null | string,
+    }
+"""
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime, timezone
+
+from app.core.deps import assemble_worker
+from app.modules.ai.gateway import get_provider
+from app.modules.rfp.brief import extract_brief
+from app.modules.rfp.compliance import extract_compliance
+from app.modules.rfp.extraction import ExtractionError, chunk_document, extract_requirements
+
+# extract/brief/compliance are one-shot calls over a whole tender document (tens of thousands of
+# chars in, a full structured response out) -- the gateway's default read_timeout (20s) is tuned
+# for the fast per-requirement answering hot path and is routinely too tight for these.
+_DOCUMENT_READ_TIMEOUT = 90
+_EXTRACT_CONCURRENCY = 4  # bounded so a huge tender doesn't fire a dozen simultaneous LLM calls
+
+
+class StubProviderUnavailable(Exception):
+    """The LLM provider fell back to a StubProvider (e.g. a Bedrock outage) so a real grounded
+    draft could not be produced. Callers MUST fail closed -- never persist the stub echo as if it
+    were a ready draft, or a reviewer could lock and submit a fabricated-looking answer."""
+
+
+async def extract_requirements_chunked(text: str) -> list[dict]:
+    """Split a large tender document into independent chunks and extract each in parallel, instead
+    of one call over the whole document -- see extraction.chunk_document for why. Chunk results are
+    merged and deduped by id (the overlap means a section straddling a boundary can appear twice;
+    the first occurrence wins)."""
+    chunks = chunk_document(text)
+    if len(chunks) == 1:
+        return await asyncio.to_thread(extract_requirements, chunks[0],
+                                       get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+
+    semaphore = asyncio.Semaphore(_EXTRACT_CONCURRENCY)
+
+    async def extract_chunk(i: int, chunk: str) -> list[dict]:
+        async with semaphore:
+            try:
+                return await asyncio.to_thread(extract_requirements, chunk,
+                                               get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT),
+                                               id_prefix=f"c{i}-")
+            except ExtractionError:
+                return []  # one bad/timed-out chunk shouldn't sink requirements found in the rest
+
+    results = await asyncio.gather(*(extract_chunk(i, c) for i, c in enumerate(chunks)))
+    merged: list[dict] = []
+    seen_ids: set[str] = set()
+    for chunk_items in results:
+        for item in chunk_items:
+            if item["id"] in seen_ids:
+                continue
+            seen_ids.add(item["id"])
+            merged.append(item)
+    if not merged:
+        raise ExtractionError("no requirements could be extracted from this document")
+    return merged
+
+
+async def generate_question(tenant: str, question, worker, tree):
+    """Draft one question with agentcore -- the SAME LLM path as /answers: worker.answer() ->
+    grounded generator + independent grounding critic + gate decision. kb_gap flips when nothing
+    could be cited / grounding is zero. Locked questions are left untouched. Raises
+    StubProviderUnavailable (never persists) if the answer came from the StubProvider fallback."""
+    if question.locked:
+        return question
+    result = await worker.answer(question.req_id or question.id, question.text)
+    if result.stub:
+        raise StubProviderUnavailable()
+    grounding = round(result.critique.grounding, 2)
+    return await tree.apply_generation(
+        tenant, question.id, ai_answer=result.answer, ai_sources=result.citations,
+        confidence=grounding, decision=result.decision.value,
+        kb_gap=not result.citations or result.critique.grounding == 0)
+
+
+def initial_gen_status() -> dict:
+    """All-pending status, written by the upload endpoint before the background job starts so the
+    frontend can begin polling immediately."""
+    return {
+        "requirements": "pending",
+        "sections": "pending",
+        "brief": "pending",
+        "compliance": "pending",
+        "drafts": {"state": "pending", "done": 0, "total": 0},
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "error": None,
+    }
+
+
+def _touch(status: dict) -> dict:
+    status["updated_at"] = datetime.now(timezone.utc).isoformat()
+    return status
+
+
+async def run_generation(*, tenant: str, pack_id: str, agent_id: str | None,
+                         packs, reqs, answers, tree, knowledge, agents, sessionmaker=None) -> dict:
+    """Produce and persist every tender artifact, updating gen_status after each stage so a poller
+    sees progress. Each stage is independent: a failure marks that stage "error" and the pipeline
+    continues (except the drafts stub-guard, which stops without persisting)."""
+    status = initial_gen_status()
+
+    async def save() -> None:
+        await packs.set_gen_status(tenant, pack_id, _touch(status))
+
+    pack = await packs.get(tenant, pack_id)
+    if pack is None:
+        return status
+    document_text = pack.document_text or ""
+
+    # --- Stage 1: requirements + sections (one extraction feeds both) -----------------------
+    status["requirements"] = status["sections"] = "running"
+    await save()
+    try:
+        extracted = await extract_requirements_chunked(document_text)
+        # A fresh extraction can rewrite req_ids/content entirely -- drop any cached answers so the
+        # cockpit doesn't show drafts for stale requirements, then rebuild the section tree.
+        await answers.delete_for_pack(tenant, pack_id)
+        await tree.populate_from_extraction(tenant, pack_id, extracted)
+        await reqs.save_extracted(tenant, pack_id, extracted)
+        status["requirements"] = status["sections"] = "ready"
+    except Exception as e:  # noqa: BLE001 - one stage failing must not sink the others
+        status["requirements"] = status["sections"] = "error"
+        status["error"] = str(e)
+    await save()
+
+    # --- Stage 2: tender brief ---------------------------------------------------------------
+    status["brief"] = "running"
+    await save()
+    try:
+        brief = await asyncio.to_thread(extract_brief, document_text,
+                                        get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+        await packs.set_brief(tenant, pack_id, brief)
+        status["brief"] = "ready"
+    except Exception as e:  # noqa: BLE001
+        status["brief"] = "error"
+        status["error"] = str(e)
+    await save()
+
+    # --- Stage 3: compliance checklist -------------------------------------------------------
+    status["compliance"] = "running"
+    await save()
+    try:
+        items = await asyncio.to_thread(extract_compliance, document_text,
+                                        get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+        await packs.set_compliance(tenant, pack_id, items)
+        status["compliance"] = "ready"
+    except Exception as e:  # noqa: BLE001
+        status["compliance"] = "error"
+        status["error"] = str(e)
+    await save()
+
+    # --- Stage 4: per-section grounded draft answers -----------------------------------------
+    status["drafts"] = {"state": "running", "done": 0, "total": 0}
+    await save()
+    try:
+        worker = await assemble_worker(sessionmaker=sessionmaker, agents=agents,
+                                       knowledge=knowledge, tenant=tenant, agent_id=agent_id)
+        manual_sections = {s.id for s in await tree.sections.list(tenant, pack_id) if s.manual}
+        questions = [q for q in await tree.questions.list(tenant, pack_id)
+                     if q.section_id not in manual_sections and not q.locked]
+        status["drafts"]["total"] = len(questions)
+        await save()
+        for done, q in enumerate(questions, start=1):
+            await generate_question(tenant, q, worker, tree)
+            status["drafts"]["done"] = done
+            await save()
+        status["drafts"]["state"] = "ready"
+    except StubProviderUnavailable:
+        # Fail closed: surface the outage, persist nothing further, and stop drafting.
+        status["drafts"]["state"] = "error"
+        status["error"] = "answer generation is temporarily unavailable"
+    except Exception as e:  # noqa: BLE001
+        status["drafts"]["state"] = "error"
+        status["error"] = str(e)
+    await save()
+    return status

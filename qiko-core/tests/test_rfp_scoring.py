@@ -71,7 +71,19 @@ def test_score_endpoint_uses_the_pack_worker_configured_criteria(client, monkeyp
                 return LLMResponse(text=GOOD_JSON)
             return LLMResponse(text=extract_json)
 
+    async def _stub_worker(**_kw):
+        from app.modules.agentcore.models import AgentResult, Critique, Decision
+
+        class _W:
+            async def answer(self, rid, text, **__):
+                return AgentResult(requirement_id=rid, answer="", critique=Critique(grounding=0.0),
+                                   decision=Decision.human_review, citations=[], stub=True)
+        return _W()
+
+    # /score reads router.get_provider; the background /extract job reads generation.get_provider.
     monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _RespondingByPrompt())
+    monkeypatch.setattr("app.modules.rfp.generation.get_provider", lambda **_kw: _RespondingByPrompt())
+    monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _stub_worker)
     c = auth_cookies("scoreco", "owner")
     agent = client.post("/api/v1/agents", json={"name": "IDG Sales"}, cookies=c).json()
     client.put(f"/api/v1/agents/{agent['id']}/config", cookies=c,
@@ -79,7 +91,7 @@ def test_score_endpoint_uses_the_pack_worker_configured_criteria(client, monkeyp
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": agent["id"], "title": "T"}, cookies=c).json()
     extract_resp = client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
                                files={"file": ("t.txt", io.BytesIO(b"Static security services tender, due in 6 weeks."), "text/plain")})
-    assert extract_resp.status_code == 200
+    assert extract_resp.status_code == 202
 
     r = client.post(f"/api/v1/rfp/packs/{pack['id']}/score", cookies=c)
     assert r.status_code == 200

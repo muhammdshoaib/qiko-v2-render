@@ -197,8 +197,13 @@ def get_clickup(request: Request):
     return request.app.state.clickup
 
 
-async def build_tenant_worker(request: Request, tenant: str, agent_id: str | None = None):
+async def assemble_worker(*, sessionmaker, agents, knowledge, tenant: str, agent_id: str | None = None):
     """Assemble a Worker over the shared knowledge service + agentcore (agentic-first).
+
+    Request-free core of build_tenant_worker: takes the raw collaborators (a DB sessionmaker for
+    the feedback flywheel's verified store, the agents store for per-agent config, and the shared
+    knowledge service) instead of a FastAPI Request, so the SAME Worker can be built off the
+    request path -- e.g. by the background tender-generation job, which has no Request.
 
     Without `agent_id` this builds the generic tenant-wide config (unchanged default behaviour).
     With it, the specific Agent's own config (system_prompt / gate_threshold / retrieval_k, set
@@ -213,14 +218,14 @@ async def build_tenant_worker(request: Request, tenant: str, agent_id: str | Non
     from app.modules.workers.worker import Worker
 
     verified = None
-    if get_settings().use_db_stores:
+    if get_settings().use_db_stores and sessionmaker is not None:
         from app.db.stores import SqlVerifiedStore
 
-        verified = SqlVerifiedStore(request.app.state.sessionmaker)
+        verified = SqlVerifiedStore(sessionmaker)
 
     cfg = {}
     if agent_id:
-        agent = await request.app.state.agents.get(tenant, agent_id)
+        agent = await agents.get(tenant, agent_id)
         if agent is not None:
             cfg = agent.config
     kwargs = {"name": f"w-{tenant}-{agent_id}" if agent_id else f"w-{tenant}", "tenant": tenant}
@@ -231,6 +236,15 @@ async def build_tenant_worker(request: Request, tenant: str, agent_id: str | Non
     if cfg.get("system_prompt"):
         kwargs["system_prompt"] = cfg["system_prompt"]
     worker_config = WorkerConfig(**kwargs)
-    return Worker(config=worker_config, knowledge=request.app.state.knowledge,
+    return Worker(config=worker_config, knowledge=knowledge,
                   agent=AgentCore(generator=Generator(system_prompt=worker_config.system_prompt),
                                   threshold=worker_config.gate_threshold, verified=verified))
+
+
+async def build_tenant_worker(request: Request, tenant: str, agent_id: str | None = None):
+    """Assemble a tenant/agent Worker from app.state (thin Request-bound wrapper over
+    assemble_worker -- see there for the config/flywheel semantics)."""
+    return await assemble_worker(
+        sessionmaker=getattr(request.app.state, "sessionmaker", None),
+        agents=request.app.state.agents, knowledge=request.app.state.knowledge,
+        tenant=tenant, agent_id=agent_id)

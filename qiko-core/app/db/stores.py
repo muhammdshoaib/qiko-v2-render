@@ -222,7 +222,8 @@ class SqlRfpPackStore:
                        client_name=r.client_name, deadline=r.deadline, stage=r.stage,
                        created_at=r.created_at, document_text=r.document_text or "",
                        outcome=r.outcome, outcome_reason=r.outcome_reason or "",
-                       outcome_value=r.outcome_value, outcome_at=r.outcome_at)
+                       outcome_value=r.outcome_value, outcome_at=r.outcome_at,
+                       brief=r.brief, compliance=r.compliance, gen_status=r.gen_status)
 
     async def add(self, pack: RfpPack) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
@@ -271,6 +272,30 @@ class SqlRfpPackStore:
                 raise RfpPackNotFound(pack_id)
             row.outcome, row.outcome_reason, row.outcome_value = outcome, reason, value
             row.outcome_at = datetime.now(timezone.utc) if outcome else None
+            return self._to_domain(row)
+
+    async def set_brief(self, tenant: str, pack_id: str, brief: dict | None) -> RfpPack:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(RfpPackRow, pack_id)
+            if row is None or row.tenant_id != tenant:
+                raise RfpPackNotFound(pack_id)
+            row.brief = brief
+            return self._to_domain(row)
+
+    async def set_compliance(self, tenant: str, pack_id: str, items: list | None) -> RfpPack:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(RfpPackRow, pack_id)
+            if row is None or row.tenant_id != tenant:
+                raise RfpPackNotFound(pack_id)
+            row.compliance = items
+            return self._to_domain(row)
+
+    async def set_gen_status(self, tenant: str, pack_id: str, status: dict | None) -> RfpPack:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(RfpPackRow, pack_id)
+            if row is None or row.tenant_id != tenant:
+                raise RfpPackNotFound(pack_id)
+            row.gen_status = status
             return self._to_domain(row)
 
     async def delete(self, tenant: str, pack_id: str) -> None:

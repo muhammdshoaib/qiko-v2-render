@@ -40,6 +40,11 @@ class RfpPack:
     outcome_reason: str = ""
     outcome_value: float | None = None
     outcome_at: datetime | None = None
+    # Background tender-generation artifacts persisted by the generate_tender_artifacts job, plus
+    # its pollable per-artifact progress (see app.modules.rfp.generation gen_status contract).
+    brief: dict | None = None
+    compliance: list | None = None
+    gen_status: dict | None = None
 
 
 class RfpPackNotFound(Exception):
@@ -54,6 +59,9 @@ class RfpPackStore(Protocol):
     async def set_document_text(self, tenant: str, pack_id: str, text: str) -> RfpPack: ...
     async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,
                           reason: str, value: float | None) -> RfpPack: ...
+    async def set_brief(self, tenant: str, pack_id: str, brief: dict | None) -> RfpPack: ...
+    async def set_compliance(self, tenant: str, pack_id: str, items: list | None) -> RfpPack: ...
+    async def set_gen_status(self, tenant: str, pack_id: str, status: dict | None) -> RfpPack: ...
     async def delete(self, tenant: str, pack_id: str) -> None: ...
 
 
@@ -95,6 +103,27 @@ class InMemoryRfpPackStore:
             raise RfpPackNotFound(pack_id)
         pack.outcome, pack.outcome_reason, pack.outcome_value = outcome, reason, value
         pack.outcome_at = _now() if outcome else None
+        return pack
+
+    async def set_brief(self, tenant: str, pack_id: str, brief: dict | None) -> RfpPack:
+        pack = await self.get(tenant, pack_id)
+        if pack is None:
+            raise RfpPackNotFound(pack_id)
+        pack.brief = brief
+        return pack
+
+    async def set_compliance(self, tenant: str, pack_id: str, items: list | None) -> RfpPack:
+        pack = await self.get(tenant, pack_id)
+        if pack is None:
+            raise RfpPackNotFound(pack_id)
+        pack.compliance = items
+        return pack
+
+    async def set_gen_status(self, tenant: str, pack_id: str, status: dict | None) -> RfpPack:
+        pack = await self.get(tenant, pack_id)
+        if pack is None:
+            raise RfpPackNotFound(pack_id)
+        pack.gen_status = status
         return pack
 
     async def delete(self, tenant: str, pack_id: str) -> None:
@@ -140,6 +169,15 @@ class RfpPackService:
         if outcome == "lost" and reason and reason not in LOSS_REASONS:
             raise ValueError(f"invalid loss reason '{reason}', must be one of {LOSS_REASONS}")
         return await self.store.set_outcome(tenant, pack_id, outcome=outcome, reason=reason, value=value)
+
+    async def set_brief(self, tenant: str, pack_id: str, brief: dict | None) -> RfpPack:
+        return await self.store.set_brief(tenant, pack_id, brief)
+
+    async def set_compliance(self, tenant: str, pack_id: str, items: list | None) -> RfpPack:
+        return await self.store.set_compliance(tenant, pack_id, items)
+
+    async def set_gen_status(self, tenant: str, pack_id: str, status: dict | None) -> RfpPack:
+        return await self.store.set_gen_status(tenant, pack_id, status)
 
     async def stats(self, tenant: str, *, agent_id: str | None = None) -> dict:
         """Win/Loss Analysis rollup: win rate, total pipeline value, and a breakdown of why bids

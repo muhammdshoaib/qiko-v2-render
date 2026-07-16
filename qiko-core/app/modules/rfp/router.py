@@ -25,10 +25,15 @@ from app.modules.identity.rbac import Role, role_allows
 from app.modules.knowledge.parsing import MAX_UPLOAD_BYTES, UnsupportedDocumentError, extract_text
 from app.modules.rfp.brief import BriefError, extract_brief
 from app.modules.rfp.compliance import ComplianceError, extract_compliance
-from app.modules.rfp.extraction import ExtractionError, chunk_document, extract_requirements
+from app.modules.rfp.generation import (
+    StubProviderUnavailable,
+    generate_question as generate_question_core,
+    initial_gen_status,
+)
 from app.modules.rfp.scoring import ScoringError, score_opportunity
 from app.modules.rfp.service import CachedAnswer, PackRequirement, RfpPack, RfpPackNotFound
 from app.modules.rfp.tree import PackQuestionNotFound, PackSection, PackSectionNotFound
+from app.tasks.queue import EagerTaskQueue
 
 router = APIRouter(prefix="/rfp/packs", tags=["rfp"])
 
@@ -132,75 +137,41 @@ async def delete_pack(pack_id: str, tenant: str = Depends(authed_tenant),
     return {"deleted": pack_id}
 
 
-_EXTRACT_CONCURRENCY = 4  # bounded so a huge tender doesn't fire a dozen simultaneous LLM calls
+async def _start_generation(request: Request, tenant: str, pack_id: str, text: str, packs,
+                            reqs, answers, tree, *, agent_id: str | None) -> dict:
+    """Persist the uploaded tender text, mark every artifact pending, and kick off the background
+    job that produces requirements/sections/brief/compliance/drafts -- then return immediately so
+    the upload doesn't block on a full generation pass. The frontend polls GET .../status.
 
-
-async def _extract_requirements_chunked(text: str) -> list[dict]:
-    """Split a large tender document into independent chunks and extract each in parallel,
-    instead of one call over the whole document -- see extraction.chunk_document for why: a
-    single call over tens of thousands of chars (both the prompt and the expected completion,
-    every requirement sub-split where applicable) was routinely hitting Bedrock's read timeout,
-    even a generous one. Smaller, parallel chunks are both faster per call and no longer subject
-    to extract_requirements' fixed max_chars truncation regardless of the document's real length.
-
-    Chunk results are merged and deduped by id -- the overlap between consecutive chunks means a
-    section straddling a boundary can appear in two chunks; the first occurrence wins."""
-    chunks = chunk_document(text)
-    if len(chunks) == 1:
-        return await asyncio.to_thread(extract_requirements, chunks[0], get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
-
-    semaphore = asyncio.Semaphore(_EXTRACT_CONCURRENCY)
-
-    async def extract_chunk(i: int, chunk: str) -> list[dict]:
-        async with semaphore:
-            try:
-                return await asyncio.to_thread(extract_requirements, chunk,
-                                               get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT),
-                                               id_prefix=f"c{i}-")
-            except ExtractionError:
-                return []  # one bad/timed-out chunk shouldn't sink requirements found in the rest
-
-    results = await asyncio.gather(*(extract_chunk(i, c) for i, c in enumerate(chunks)))
-    merged: list[dict] = []
-    seen_ids: set[str] = set()
-    for chunk_items in results:
-        for item in chunk_items:
-            if item["id"] in seen_ids:
-                continue
-            seen_ids.add(item["id"])
-            merged.append(item)
-    if not merged:
-        raise ExtractionError("no requirements could be extracted from this document")
-    return merged
-
-
-async def _extract_and_save(tenant: str, pack_id: str, text: str, packs, reqs, answers,
-                            tree) -> list[PackRequirement]:
-    try:
-        extracted = await _extract_requirements_chunked(text)
-    except ExtractionError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-
-    # Persisted so /ask can ground follow-up questions in the source document later, without
-    # re-uploading it.
+    The Eager queue backend (dev/tests) runs the job inline against these SAME in-memory stores, so
+    everything is populated by the time this returns; the arq backend (prod) enqueues onto Redis
+    for the worker tier, which rebuilds the stores from its own DB sessionmaker -- so only the
+    serializable ids are put on the wire in that case."""
     await packs.set_document_text(tenant, pack_id, text)
-    # A new extraction can rewrite req_ids/content entirely -- drop any cached answers from a
-    # previous extraction so the cockpit doesn't show drafts for stale requirements.
-    await answers.delete_for_pack(tenant, pack_id)
-    # Also (re)build the reviewer-facing section->question tree from the same extraction, grouping
-    # items by top-level code into sections (see PackTreeService.populate_from_extraction).
-    await tree.populate_from_extraction(tenant, pack_id, extracted)
-    return await reqs.save_extracted(tenant, pack_id, extracted)
+    await packs.set_gen_status(tenant, pack_id, initial_gen_status())
+    task_queue = request.app.state.task_queue
+    if isinstance(task_queue, EagerTaskQueue):
+        await task_queue.enqueue("generate_tender_artifacts", tenant=tenant, pack_id=pack_id,
+                                 agent_id=agent_id, packs=packs, reqs=reqs, answers=answers,
+                                 tree=tree, knowledge=request.app.state.knowledge,
+                                 agents=request.app.state.agents)
+    else:  # pragma: no cover - arq prod path (Redis carries only the serializable ids)
+        await task_queue.enqueue("generate_tender_artifacts", tenant=tenant, pack_id=pack_id,
+                                 agent_id=agent_id)
+    return {"status": "processing", "pack_id": pack_id}
 
 
-@router.post("/{pack_id}/extract")
-async def extract(pack_id: str, file: UploadFile = File(...), tenant: str = Depends(authed_tenant),
+@router.post("/{pack_id}/extract", status_code=202)
+async def extract(pack_id: str, request: Request, file: UploadFile = File(...),
+                  tenant: str = Depends(authed_tenant),
                   _role: dict = Depends(require_role(Role.editor)), packs=Depends(get_rfp_packs),
                   reqs=Depends(get_requirements), answers=Depends(get_pack_answers),
-                  tree=Depends(get_pack_tree)) -> list[PackRequirement]:
-    """Upload any RFP/tender document and extract its requirements -- no per-tender code needed."""
+                  tree=Depends(get_pack_tree)) -> dict:
+    """Upload any RFP/tender document and kick off BACKGROUND generation of every artifact
+    (requirements, sections, brief, compliance, per-section drafts). Returns immediately with
+    {"status": "processing"}; poll GET /rfp/packs/{id}/status for per-artifact progress."""
     try:
-        await packs.get(tenant, pack_id)
+        pack = await packs.get(tenant, pack_id)
     except RfpPackNotFound as e:
         raise HTTPException(status_code=404, detail="RFP pack not found") from e
 
@@ -214,7 +185,8 @@ async def extract(pack_id: str, file: UploadFile = File(...), tenant: str = Depe
     except UnsupportedDocumentError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
-    return await _extract_and_save(tenant, pack_id, text, packs, reqs, answers, tree)
+    return await _start_generation(request, tenant, pack_id, text, packs, reqs, answers, tree,
+                                   agent_id=pack.agent_id)
 
 
 class ExtractUrlBody(BaseModel):
@@ -243,17 +215,18 @@ def _assert_public_url(url: str) -> None:
         raise HTTPException(status_code=422, detail="that URL points to a non-public address, which is not allowed")
 
 
-@router.post("/{pack_id}/extract-url")
-async def extract_from_url(pack_id: str, body: ExtractUrlBody, tenant: str = Depends(authed_tenant),
+@router.post("/{pack_id}/extract-url", status_code=202)
+async def extract_from_url(pack_id: str, body: ExtractUrlBody, request: Request,
+                           tenant: str = Depends(authed_tenant),
                            _role: dict = Depends(require_role(Role.editor)), packs=Depends(get_rfp_packs),
                            reqs=Depends(get_requirements), answers=Depends(get_pack_answers),
-                           tree=Depends(get_pack_tree)) -> list[PackRequirement]:
+                           tree=Depends(get_pack_tree)) -> dict:
     """Same as /extract, but sourced from a tender published on a webpage instead of an uploaded
     file -- fetches the URL, extracts its text (HTML or a direct PDF/DOCX link both work, since
-    extract_text dispatches on the response's actual content type), and runs the same chunked
-    extraction pipeline. No separate scraping infrastructure: one tender page is one request."""
+    extract_text dispatches on the response's actual content type), then kicks off the same
+    BACKGROUND generation job. Returns immediately with {"status": "processing"}."""
     try:
-        await packs.get(tenant, pack_id)
+        pack = await packs.get(tenant, pack_id)
     except RfpPackNotFound as e:
         raise HTTPException(status_code=404, detail="RFP pack not found") from e
 
@@ -279,7 +252,8 @@ async def extract_from_url(pack_id: str, body: ExtractUrlBody, tenant: str = Dep
     if not text.strip():
         raise HTTPException(status_code=422, detail="that URL had no extractable text")
 
-    return await _extract_and_save(tenant, pack_id, text, packs, reqs, answers, tree)
+    return await _start_generation(request, tenant, pack_id, text, packs, reqs, answers, tree,
+                                   agent_id=pack.agent_id)
 
 
 class AskBody(BaseModel):
@@ -315,6 +289,40 @@ async def list_requirements(pack_id: str, tenant: str = Depends(authed_tenant),
     return await reqs.list(tenant, pack_id)
 
 
+@router.get("/{pack_id}/status")
+async def generation_status(pack_id: str, tenant: str = Depends(authed_tenant),
+                            packs=Depends(get_rfp_packs)) -> dict:
+    """Per-artifact progress of the background tender-generation job (the frontend polls this).
+    Empty until an upload starts a job. See app.modules.rfp.generation for the gen_status shape."""
+    try:
+        pack = await packs.get(tenant, pack_id)
+    except RfpPackNotFound as e:
+        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    return pack.gen_status or {}
+
+
+@router.get("/{pack_id}/brief")
+async def get_brief(pack_id: str, tenant: str = Depends(authed_tenant),
+                    packs=Depends(get_rfp_packs)) -> dict | None:
+    """The persisted Tender Brief from the background job (null until the brief stage is ready)."""
+    try:
+        pack = await packs.get(tenant, pack_id)
+    except RfpPackNotFound as e:
+        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    return pack.brief
+
+
+@router.get("/{pack_id}/compliance")
+async def get_compliance(pack_id: str, tenant: str = Depends(authed_tenant),
+                         packs=Depends(get_rfp_packs)) -> list[dict]:
+    """The persisted Compliance checklist from the background job (empty until it is ready)."""
+    try:
+        pack = await packs.get(tenant, pack_id)
+    except RfpPackNotFound as e:
+        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    return pack.compliance or []
+
+
 async def _read_tender_text(pack_id: str, tenant: str, file: UploadFile, packs) -> str:
     try:
         await packs.get(tenant, pack_id)
@@ -331,25 +339,31 @@ async def _read_tender_text(pack_id: str, tenant: str, file: UploadFile, packs) 
 async def compliance_check(pack_id: str, file: UploadFile = File(...), tenant: str = Depends(authed_tenant),
                            _role: dict = Depends(require_role(Role.editor)),
                            packs=Depends(get_rfp_packs)) -> list[dict]:
-    """Extract mandatory pass/fail compliance items from an uploaded tender document."""
+    """On-demand regenerate: extract mandatory pass/fail compliance items from an uploaded tender
+    document AND persist them (so the GET .../compliance poll reflects the newest run)."""
     text = await _read_tender_text(pack_id, tenant, file, packs)
     try:
-        return await asyncio.to_thread(extract_compliance, text, get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+        items = await asyncio.to_thread(extract_compliance, text, get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
     except ComplianceError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    await packs.set_compliance(tenant, pack_id, items)
+    return items
 
 
 @router.post("/{pack_id}/brief")
 async def tender_brief(pack_id: str, file: UploadFile = File(...), tenant: str = Depends(authed_tenant),
                        _role: dict = Depends(require_role(Role.editor)),
                        packs=Depends(get_rfp_packs)) -> dict:
-    """Extract the Bid Context brief (summary/scope/format/dates/success-criteria/gaps) from an
-    uploaded tender document."""
+    """On-demand regenerate: extract the Bid Context brief (summary/scope/format/dates/success-
+    criteria/gaps) from an uploaded tender document AND persist it (so the GET .../brief poll
+    reflects the newest run)."""
     text = await _read_tender_text(pack_id, tenant, file, packs)
     try:
-        return await asyncio.to_thread(extract_brief, text, get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+        brief = await asyncio.to_thread(extract_brief, text, get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
     except BriefError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    await packs.set_brief(tenant, pack_id, brief)
+    return brief
 
 
 @router.post("/{pack_id}/score")
@@ -722,22 +736,14 @@ async def lock_all_in_section(pack_id: str, section_id: str, tenant: str = Depen
 
 
 async def _generate_question(request: Request, tenant: str, pack_id: str, question, worker, tree):
-    """Draft one question with agentcore -- the SAME LLM path as /answers: build_tenant_worker()
-    .answer() -> grounded generator + independent grounding critic + gate decision. kb_gap flips
-    when nothing could be cited / grounding is zero. Locked questions are left untouched."""
-    if question.locked:
-        return question
-    result = await worker.answer(question.req_id or question.id, question.text)
-    # A StubProvider fallback (e.g. Bedrock outage) echoes context rather than drafting a real
-    # grounded answer -- never persist that onto the question as if it were ready. Fail closed so
-    # the reviewer sees an outage, not a fabricated-looking draft they might lock and submit.
-    if result.stub:
-        raise HTTPException(status_code=503, detail="answer generation is temporarily unavailable")
-    grounding = round(result.critique.grounding, 2)
-    return await tree.apply_generation(
-        tenant, question.id, ai_answer=result.answer, ai_sources=result.citations,
-        confidence=grounding, decision=result.decision.value,
-        kb_gap=not result.citations or result.critique.grounding == 0)
+    """Draft one question with agentcore (shared with the background job's drafts stage -- see
+    app.modules.rfp.generation.generate_question). A StubProvider fallback (e.g. Bedrock outage)
+    echoes context rather than a real grounded answer, so it is never persisted; fail closed with
+    503 so the reviewer sees an outage, not a fabricated-looking draft they might lock and submit."""
+    try:
+        return await generate_question_core(tenant, question, worker, tree)
+    except StubProviderUnavailable as e:
+        raise HTTPException(status_code=503, detail="answer generation is temporarily unavailable") from e
 
 
 @router.post("/{pack_id}/questions/{question_id}/generate")

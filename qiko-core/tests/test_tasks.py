@@ -9,7 +9,7 @@ ISO = "IDG holds a current ISO 9001 certification valid through 2027."
 
 
 def test_registered_tasks():
-    assert {"ingest_document", "send_email"} <= set(registry.names())
+    assert {"ingest_document", "send_email", "generate_tender_artifacts"} <= set(registry.names())
 
 
 async def test_eager_queue_runs_ingest_and_doc_is_retrievable():

@@ -5,7 +5,7 @@ from app.tasks.worker import WorkerSettings
 
 def test_worker_settings_registers_jobs():
     names = {f.__name__ for f in WorkerSettings.functions}
-    assert {"ingest_document", "send_email"} <= names
+    assert {"ingest_document", "send_email", "generate_tender_artifacts"} <= names
     assert WorkerSettings.redis_settings.host == "redis"  # from redis_url dsn
 
 

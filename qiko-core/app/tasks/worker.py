@@ -24,6 +24,12 @@ async def send_email(ctx, **kwargs):  # pragma: no cover - invoked by the arq ru
     return await jobs.send_email(**kwargs)
 
 
+async def generate_tender_artifacts(ctx, **kwargs):  # pragma: no cover - invoked by the arq runtime
+    # Build the RFP stores from the worker's shared sessionmaker; the enqueue only carries the
+    # serializable ids (tenant/pack_id/agent_id).
+    return await jobs.generate_tender_artifacts(sessionmaker=ctx["sessionmaker"], **kwargs)
+
+
 def _build_sales_service(sessionmaker):
     """Build a Postgres-backed OpportunityService for a worker sweep, mirroring the DB-store wiring
     in app.main's lifespan so scheduled scans read/write the same source of truth as the API."""
@@ -57,7 +63,7 @@ async def send_deadline_reminders(ctx):  # pragma: no cover - invoked by the arq
     return await sales_scheduler.send_deadline_reminders(service)
 
 
-FUNCTIONS = [ingest_document, send_email]
+FUNCTIONS = [ingest_document, send_email, generate_tender_artifacts]
 
 # arq cron is calendar-based (no native "every N minutes" interval). Rather than encode the
 # configured cadence into a minute-set at startup, the scan cron ticks once a minute and the sweep

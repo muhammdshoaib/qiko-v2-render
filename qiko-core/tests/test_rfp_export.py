@@ -5,7 +5,21 @@ from tests.helpers import auth_cookies
 ISO = "IDG holds a current ISO 9001 certification valid through 2027, verified annually."
 
 
-def _setup_pack_with_requirements(client, tenant: str):
+async def _stub_assemble_worker(**_kw):
+    """Fake worker so the background job's drafts stage runs offline (stub -> no persist). These
+    tests exercise the /answers + export paths (which build their own worker), not the job drafts."""
+    from app.modules.agentcore.models import AgentResult, Critique, Decision
+
+    class _W:
+        async def answer(self, rid, text, **__):
+            return AgentResult(requirement_id=rid, answer="", critique=Critique(grounding=0.0),
+                               decision=Decision.human_review, citations=[], stub=True)
+    return _W()
+
+
+def _setup_pack_with_requirements(client, monkeypatch, tenant: str):
+    """Create a pack, ingest KB, and drive the background /extract job (eager) to populate its flat
+    requirements + tree from a canned extraction, offline. Returns (cookies, pack)."""
     c = auth_cookies(tenant, "owner")
     client.post("/api/v1/knowledge/ingest", json={"doc_id": "iso", "text": ISO}, cookies=c)
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender"}, cookies=c).json()
@@ -24,7 +38,11 @@ def _setup_pack_with_requirements(client, tenant: str):
                 return LLMResponse(text=payload)
         return P()
 
-    return c, pack, fake_get_provider
+    monkeypatch.setattr("app.modules.rfp.generation.get_provider", fake_get_provider)
+    monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _stub_assemble_worker)
+    client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
+                files={"file": ("t.txt", io.BytesIO(b"tender text"), "text/plain")})
+    return c, pack
 
 
 def test_extract_enforces_upload_cap(client, monkeypatch):
@@ -45,10 +63,7 @@ def test_export_requires_extracted_requirements_first(client):
 
 
 def test_export_xlsx_has_grounding_column_and_status(client, monkeypatch):
-    c, pack, fake_get_provider = _setup_pack_with_requirements(client, "exportco1")
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", fake_get_provider)
-    client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
-               files={"file": ("t.txt", io.BytesIO(b"tender text"), "text/plain")})
+    c, pack = _setup_pack_with_requirements(client, monkeypatch, "exportco1")
 
     r = client.get(f"/api/v1/rfp/packs/{pack['id']}/export/xlsx", cookies=c)
     assert r.status_code == 200
@@ -68,10 +83,7 @@ def test_export_xlsx_has_grounding_column_and_status(client, monkeypatch):
 
 
 def test_get_answers_json_for_cockpit(client, monkeypatch):
-    c, pack, fake_get_provider = _setup_pack_with_requirements(client, "exportco1b")
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", fake_get_provider)
-    client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
-               files={"file": ("t.txt", io.BytesIO(b"tender text"), "text/plain")})
+    c, pack = _setup_pack_with_requirements(client, monkeypatch, "exportco1b")
 
     r = client.get(f"/api/v1/rfp/packs/{pack['id']}/answers", cookies=c)
     assert r.status_code == 200
@@ -101,7 +113,11 @@ def test_answers_are_cached_and_force_bypasses_cache(client, monkeypatch):
                 return LLMResponse(text="cached answer text")
         return P()
 
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", counting_provider)
+    # Extraction (the background /extract job) reads its provider from the generation module.
+    monkeypatch.setattr("app.modules.rfp.generation.get_provider", counting_provider)
+    # Keep the job's drafts stage offline so it doesn't consume the answer-generation counter --
+    # this test measures the /answers cache, not the job's drafts.
+    monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _stub_assemble_worker)
     # worker.answer() -> AgentCore -> Generator builds its own provider via a separately imported
     # get_provider() reference -- patch that one too so the answer-generation call is also faked.
     monkeypatch.setattr("app.modules.agentcore.generator.get_provider", counting_provider)
@@ -161,10 +177,7 @@ def test_feedback_404s_for_nonexistent_pack(client):
 
 
 def test_force_regenerate_answers_requires_editor_role(client, monkeypatch):
-    c, pack, fake_get_provider = _setup_pack_with_requirements(client, "fbco5")
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", fake_get_provider)
-    client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
-               files={"file": ("t.txt", io.BytesIO(b"tender text"), "text/plain")})
+    c, pack = _setup_pack_with_requirements(client, monkeypatch, "fbco5")
 
     viewer = auth_cookies("fbco5", "viewer")
     r = client.get(f"/api/v1/rfp/packs/{pack['id']}/answers", params={"force": "true"}, cookies=viewer)
@@ -175,10 +188,7 @@ def test_force_regenerate_answers_requires_editor_role(client, monkeypatch):
 
 
 def test_export_docx_clean_and_review(client, monkeypatch):
-    c, pack, fake_get_provider = _setup_pack_with_requirements(client, "exportco2")
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", fake_get_provider)
-    client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
-               files={"file": ("t.txt", io.BytesIO(b"tender text"), "text/plain")})
+    c, pack = _setup_pack_with_requirements(client, monkeypatch, "exportco2")
 
     clean = client.get(f"/api/v1/rfp/packs/{pack['id']}/export/docx-clean", cookies=c)
     assert clean.status_code == 200

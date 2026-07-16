@@ -24,6 +24,26 @@ class _CannedProvider:
         return LLMResponse(text=self.text)
 
 
+async def _stub_assemble_worker(**_kw):
+    """Fake worker for the background job's drafts stage: returns a StubProvider-style result so the
+    drafts stage short-circuits (marked "error", nothing persisted) without a real LLM/network call.
+    Extraction-focused tests only care about requirements/sections, not drafts."""
+    from app.modules.agentcore.models import AgentResult, Critique, Decision
+
+    class _W:
+        async def answer(self, rid, text, **__):
+            return AgentResult(requirement_id=rid, answer="", critique=Critique(grounding=0.0),
+                               decision=Decision.human_review, citations=[], stub=True)
+    return _W()
+
+
+def _patch_generation(monkeypatch, provider):
+    """Point the background job's extraction/brief/compliance at `provider` and its drafts stage at
+    the stub worker, so an eager /extract runs fast and offline."""
+    monkeypatch.setattr("app.modules.rfp.generation.get_provider", lambda **_kw: provider)
+    monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _stub_assemble_worker)
+
+
 def test_extract_requirements_parses_clean_json():
     items = extract_requirements("some tender text", _CannedProvider(SAMPLE_JSON))
     assert len(items) == 2
@@ -97,20 +117,24 @@ def test_chunk_document_covers_the_whole_document():
 
 # --- API-level: full upload -> extract -> list round trip ---
 def test_rfp_extract_endpoint_round_trip(client, monkeypatch):
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _CannedProvider(SAMPLE_JSON))
+    # New async contract: /extract kicks off the background job and returns 202 + processing; the
+    # Eager backend runs the job inline so requirements are populated by the time we poll.
+    _patch_generation(monkeypatch, _CannedProvider(SAMPLE_JSON))
 
     c = auth_cookies("extractco", "owner")
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender X"}, cookies=c).json()
 
     upload = client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
                          files={"file": ("tender.txt", io.BytesIO(b"tender document text"), "text/plain")})
-    assert upload.status_code == 200
-    extracted = upload.json()
-    assert len(extracted) == 2
-    assert extracted[0]["req_id"] == "A1"
+    assert upload.status_code == 202
+    assert upload.json()["status"] == "processing"
 
     listed = client.get(f"/api/v1/rfp/packs/{pack['id']}/requirements", cookies=c).json()
     assert len(listed) == 2
+    assert {r["req_id"] for r in listed} == {"A1", "A2"}
+
+    status = client.get(f"/api/v1/rfp/packs/{pack['id']}/status", cookies=c).json()
+    assert status["requirements"] == "ready" and status["sections"] == "ready"
 
 
 def test_rfp_extract_rejects_unsupported_file_type(client, monkeypatch):
@@ -149,14 +173,14 @@ def test_rfp_extract_chunks_a_large_document_and_merges_results(client, monkeypa
                                                       "classification": "KB", "requirement": "req b"}]))
             return LLMResponse(text="[]")
 
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _RespondingByMarker())
+    _patch_generation(monkeypatch, _RespondingByMarker())
     c = auth_cookies("extractco4", "owner")
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Big Tender"}, cookies=c).json()
 
     upload = client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
                          files={"file": ("big.txt", io.BytesIO(big_doc.encode()), "text/plain")})
-    assert upload.status_code == 200
-    ids = {item["req_id"] for item in upload.json()}
+    assert upload.status_code == 202
+    ids = {item["req_id"] for item in client.get(f"/api/v1/rfp/packs/{pack['id']}/requirements", cookies=c).json()}
     assert {"A1", "B1"}.issubset(ids)  # both chunks' requirements made it into the merged result
 
 
@@ -169,7 +193,7 @@ def _fake_httpx_get(status_code=200, content=b"", headers=None):
 
 
 def test_rfp_extract_url_fetches_and_extracts(client, monkeypatch):
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _CannedProvider(SAMPLE_JSON))
+    _patch_generation(monkeypatch, _CannedProvider(SAMPLE_JSON))
     monkeypatch.setattr("socket.gethostbyname", lambda host: "93.184.216.34")  # a public IP, no real DNS
     html = b"<html><body><h1>Tender</h1><p>Describe your experience.</p></body></html>"
     monkeypatch.setattr("httpx.get", _fake_httpx_get(200, html, {"content-type": "text/html"}))
@@ -177,8 +201,9 @@ def test_rfp_extract_url_fetches_and_extracts(client, monkeypatch):
     c = auth_cookies("urlco", "owner")
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender from URL"}, cookies=c).json()
     r = client.post(f"/api/v1/rfp/packs/{pack['id']}/extract-url", cookies=c, json={"url": "https://tenders.example.com/boc-2171"})
-    assert r.status_code == 200
-    assert len(r.json()) == 2
+    assert r.status_code == 202
+    assert r.json()["status"] == "processing"
+    assert len(client.get(f"/api/v1/rfp/packs/{pack['id']}/requirements", cookies=c).json()) == 2
 
     fetched = client.get(f"/api/v1/rfp/packs/{pack['id']}", cookies=c).json()
     assert "Describe your experience" in fetched["document_text"]
@@ -231,12 +256,12 @@ def test_rfp_extract_one_bad_chunk_does_not_sink_the_others(client, monkeypatch)
                                                       "requirement": "req a"}]))
             return LLMResponse(text="not valid json at all")  # this chunk always fails to parse
 
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _OneChunkFails())
+    _patch_generation(monkeypatch, _OneChunkFails())
     c = auth_cookies("extractco5", "owner")
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Partial Tender"}, cookies=c).json()
 
     upload = client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
                          files={"file": ("big.txt", io.BytesIO(big_doc.encode()), "text/plain")})
-    assert upload.status_code == 200
-    ids = {item["req_id"] for item in upload.json()}
+    assert upload.status_code == 202
+    ids = {item["req_id"] for item in client.get(f"/api/v1/rfp/packs/{pack['id']}/requirements", cookies=c).json()}
     assert "A1" in ids  # the good chunk's requirement survives even though the other chunk failed
