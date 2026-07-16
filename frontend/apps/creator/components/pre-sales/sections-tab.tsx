@@ -1,40 +1,140 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, ChevronDown, ChevronRight, Lock, Unlock, Loader2, RefreshCw, Copy, Save,
-  ArrowLeft, ArrowRight, FileSpreadsheet, ListChecks, CheckCircle2,
+  ArrowLeft, ArrowRight, FileSpreadsheet, ListChecks, CheckCircle2, Upload, Users, X, Check,
 } from "lucide-react";
 import { cn } from "@qiko/ui";
 import {
-  getRfpPack, listPackSections, setPackStage, generatePackQuestion, savePackQuestionDraft,
+  listPackSections, generatePackQuestion, savePackQuestionDraft,
   lockPackQuestion, unlockPackQuestion, lockAllInPackSection,
-  type PackSectionNode, type PackQuestion, type PackStage,
+  getTenderStatus, getAssignees, setSectionReviewer, confirmAssignments,
+  type PackSectionNode, type PackQuestion, type TenderGenStatus, type GenState, type Assignee,
 } from "@/lib/api";
 import { AnswerMarkdown } from "@/components/chat-message";
 import { OutcomesStrip } from "@/components/cockpit/outcomes-strip";
 import { Textarea } from "@/components/cockpit/controls";
 import {
   confidenceBadgeClass, confidenceClass, confidencePct, sectionStatusBadgeClass, sectionStatusLabel,
-  STAGE_LABELS, STAGE_ORDER, truncate, wordCount,
+  truncate, wordCount,
 } from "@/components/pre-sales/utils";
+
+// ── Stepper state derived from gen_status (GET /rfp/packs/{id}/status) ────────
+// Steps: Upload -> Parsed -> Assigned -> Drafting -> Review. Upload is always done on entry
+// (uploading docs is the prerequisite to being here); the rest are computed from the background
+// job's per-artifact progress. See deriveStepper() below.
+const IN_FLIGHT: GenState[] = ["pending", "running"];
+const isInFlight = (s: GenState | undefined) => s != null && IN_FLIGHT.includes(s);
+
+type StepKey = "upload" | "parsed" | "assigned" | "drafting" | "review";
+type StepState = "done" | "active" | "inprogress" | "pending" | "error";
+type Phase = "parsing" | "assigned" | "drafting" | "review";
+type Step = { key: StepKey; label: string; state: StepState };
+
+function deriveStepper(status: TenderGenStatus, hasSections: boolean) {
+  const hasStatus = Object.keys(status).length > 0;
+  // Old packs uploaded before the background job carry no gen_status: if their sections already
+  // exist (lazily backfilled), everything is done, so land straight on Review.
+  const fallback: GenState = hasSections ? "ready" : "pending";
+  const reqState: GenState = status.requirements ?? (hasStatus ? "pending" : fallback);
+  const secState: GenState = status.sections ?? (hasStatus ? "pending" : fallback);
+  const draftsState: GenState = status.drafts?.state ?? (hasStatus ? "pending" : fallback);
+  const draftsDone = status.drafts?.done ?? 0;
+  const draftsTotal = status.drafts?.total ?? 0;
+  const assignmentsConfirmed = status.assignments_confirmed === true;
+
+  const parsedReady = secState === "ready";
+  const parsingInFlight = isInFlight(reqState) || isInFlight(secState);
+  const parseError = !parsedReady && (secState === "error" || reqState === "error");
+  const draftsReady = draftsState === "ready";
+  const draftingInFlight = isInFlight(draftsState);
+
+  // The single "phase" drives the tab body (and the active-step highlight).
+  const phase: Phase = !parsedReady ? "parsing"
+    : !assignmentsConfirmed ? "assigned"
+      : !draftsReady ? "drafting"
+        : "review";
+
+  const steps: Step[] = [
+    { key: "upload", label: "Upload", state: "done" },
+    {
+      key: "parsed", label: "Parsed",
+      state: parsedReady ? "done" : parseError ? "error" : parsingInFlight ? "inprogress" : "pending",
+    },
+    {
+      key: "assigned", label: "Assigned",
+      state: !parsedReady ? "pending" : assignmentsConfirmed ? "done" : "active",
+    },
+    {
+      key: "drafting", label: "Drafting",
+      state: draftsReady ? "done" : draftingInFlight ? "inprogress" : "pending",
+    },
+    { key: "review", label: "Review", state: phase === "review" ? "active" : "pending" },
+  ];
+
+  return {
+    phase, steps, secState, draftsState, draftsReady, parsedReady, draftsDone, draftsTotal,
+    pollActive: parsingInFlight || draftingInFlight,
+  };
+}
 
 export function SectionsTab({ packId }: { packId: string }) {
   const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
 
+  // gen_status is the source of truth for the stepper; poll it while work is in-flight.
+  const statusQ = useQuery({
+    queryKey: ["tender-status", packId],
+    queryFn: () => getTenderStatus(packId),
+    refetchInterval: (q) => {
+      const s = q.state.data;
+      if (!s) return 3000;
+      const parsing = isInFlight(s.requirements) || isInFlight(s.sections);
+      const drafting = isInFlight(s.drafts?.state);
+      return parsing || drafting ? 3000 : false;
+    },
+  });
   const sectionsQ = useQuery({ queryKey: ["pack-sections", packId], queryFn: () => listPackSections(packId) });
-  const packQ = useQuery({ queryKey: ["rfp-pack", packId], queryFn: () => getRfpPack(packId) });
 
   const sections = useMemo(() => sectionsQ.data ?? [], [sectionsQ.data]);
-  const stage = (packQ.data?.stage ?? "parsed") as PackStage;
+  const status = useMemo<TenderGenStatus>(() => statusQ.data ?? {}, [statusQ.data]);
+  const stepper = useMemo(() => deriveStepper(status, sections.length > 0), [status, sections.length]);
+  const { phase, steps, secState, draftsState, draftsDone, draftsTotal } = stepper;
 
-  const setStage = useMutation({
-    mutationFn: (s: PackStage) => setPackStage(packId, s),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["rfp-pack", packId] }),
+  const reviewerEditable = phase === "assigned";
+  const assigneesQ = useQuery({
+    queryKey: ["pack-assignees", packId],
+    queryFn: () => getAssignees(packId),
+    enabled: reviewerEditable,
   });
+  const assignees = useMemo(() => assigneesQ.data ?? [], [assigneesQ.data]);
+
+  const confirm = useMutation({
+    mutationFn: () => confirmAssignments(packId),
+    onSuccess: (s) => {
+      qc.setQueryData(["tender-status", packId], s);
+      qc.invalidateQueries({ queryKey: ["tender-status", packId] });
+    },
+  });
+
+  // Refetch the sections tree on the parse-ready (list appears) and drafts-ready (answers /
+  // confidence / grounding appear) transitions the poller catches.
+  const prevSec = useRef(secState);
+  const prevDrafts = useRef(draftsState);
+  useEffect(() => {
+    if (prevSec.current !== "ready" && secState === "ready") qc.invalidateQueries({ queryKey: ["pack-sections", packId] });
+    prevSec.current = secState;
+  }, [secState, packId, qc]);
+  useEffect(() => {
+    if (prevDrafts.current !== "ready" && draftsState === "ready") {
+      qc.invalidateQueries({ queryKey: ["pack-sections", packId] });
+      qc.invalidateQueries({ queryKey: ["pack-overview", packId] });
+    }
+    prevDrafts.current = draftsState;
+  }, [draftsState, packId, qc]);
 
   const allQuestions = useMemo(() => sections.flatMap((s) => s.questions), [sections]);
   const drafted = allQuestions.filter((q) => q.ai_answer || q.user_draft);
@@ -47,28 +147,12 @@ export function SectionsTab({ packId }: { packId: string }) {
   // Prev/next walk the ordered section list (order_index preserved by the API).
   const selectedIdx = selected ? sections.findIndex((s) => s.id === selected.id) : -1;
 
-  if (sectionsQ.isLoading) {
+  // First load: nothing to derive the stepper from yet.
+  if (statusQ.isLoading && sectionsQ.isLoading) {
     return <div className="space-y-3">{[0, 1, 2, 3].map((i) => <div key={i} className="h-12 animate-pulse rounded-xl bg-white/[0.04]" />)}</div>;
   }
-  if (sectionsQ.isError) {
-    return (
-      <p className="flex items-center gap-2 rounded-xl border border-red-500/20 bg-red-500/[0.06] px-4 py-3 text-sm text-red-300">
-        <AlertTriangle className="size-4 shrink-0" /> Couldn&apos;t load sections. Try refreshing.
-      </p>
-    );
-  }
-  if (sections.length === 0) {
-    return (
-      <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-14 text-center">
-        <span className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-white/[0.04] text-slate-500">
-          <ListChecks className="size-6" />
-        </span>
-        <p className="text-sm font-semibold text-white">No sections yet</p>
-        <p className="mt-1 max-w-sm text-[12px] text-slate-500">Upload the RFP in Sources to parse it into sections and questions.</p>
-      </div>
-    );
-  }
 
+  // Section detail (Open) -- the full review/editor experience, unchanged.
   if (selected) {
     return (
       <SectionEditor
@@ -85,6 +169,13 @@ export function SectionsTab({ packId }: { packId: string }) {
 
   const topLevel = sections.filter((s) => !s.parent_id);
   const childrenOf = (id: string) => sections.filter((s) => s.parent_id === id);
+  const toggleParent = (id: string) => setExpandedParents((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
+  const showTable = phase === "assigned" || phase === "review";
 
   return (
     <div className="space-y-6">
@@ -94,100 +185,170 @@ export function SectionsTab({ packId }: { packId: string }) {
         { value: confidencePct(avgConfidence), label: "Avg grounding", caption: "KB coverage", trend: avgConfidence >= 0.85 ? "up" : avgConfidence >= 0.7 ? "neutral" : "down" },
       ]} />
 
-      <StageBar stage={stage} onSet={(s) => setStage.mutate(s)} pending={setStage.isPending} error={setStage.isError} />
+      <Stepper steps={steps} />
 
-      <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
-        <table className="w-full text-left text-[13px]">
-          <thead>
-            <tr className="border-b border-white/[0.06] text-[11px] uppercase tracking-wider text-slate-500">
-              <th className="w-16 px-4 py-3">#</th>
-              <th className="px-4 py-3">Section</th>
-              <th className="px-4 py-3">Gaps</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="w-24 px-4 py-3 text-right">Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {topLevel.map((s) => {
-              const kids = childrenOf(s.id);
-              const expanded = expandedParents.has(s.id);
-              return (
-                <SectionRows
-                  key={s.id}
-                  section={s}
-                  kids={kids}
-                  expanded={expanded}
-                  onToggle={() => setExpandedParents((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(s.id)) next.delete(s.id); else next.add(s.id);
-                    return next;
-                  })}
-                  onOpen={setSelectedId}
-                />
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
+      {phase === "parsing" ? (
+        <ParsingState error={secState === "error"} />
+      ) : phase === "drafting" ? (
+        <DraftingState done={draftsDone} total={draftsTotal} />
+      ) : showTable && topLevel.length === 0 ? (
+        <NoSections />
+      ) : (
+        <>
+          <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
+            <table className="w-full text-left text-[13px]">
+              <thead>
+                <tr className="border-b border-white/[0.06] text-[11px] uppercase tracking-wider text-slate-500">
+                  <th className="w-16 px-4 py-3">#</th>
+                  <th className="px-4 py-3">Section</th>
+                  <th className="px-4 py-3">Gaps</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3">Reviewer</th>
+                  <th className="w-24 px-4 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {topLevel.map((s) => (
+                  <SectionRows
+                    key={s.id}
+                    packId={packId}
+                    section={s}
+                    kids={childrenOf(s.id)}
+                    expanded={expandedParents.has(s.id)}
+                    onToggle={() => toggleParent(s.id)}
+                    onOpen={setSelectedId}
+                    reviewerEditable={reviewerEditable}
+                    assignees={assignees}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-function StageBar({ stage, onSet, pending, error }: {
-  stage: PackStage; onSet: (s: PackStage) => void; pending: boolean; error: boolean;
-}) {
-  const currentIdx = STAGE_ORDER.indexOf(stage);
-  return (
-    <div>
-      <div className="flex items-center gap-1.5 overflow-x-auto">
-        {STAGE_ORDER.map((s, i) => {
-          const done = i < currentIdx;
-          const current = i === currentIdx;
-          return (
-            <div key={s} className="flex flex-1 items-center gap-1.5">
+          {phase === "assigned" && (
+            <div className="flex flex-col items-end gap-2">
+              <p className="text-[11px] text-slate-500">Assign reviewers to sections, or skip - answers are already drafting in the background.</p>
               <button
-                onClick={() => onSet(s)}
-                disabled={pending || current}
-                aria-current={current ? "step" : undefined}
-                className={cn(
-                  "flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:cursor-default",
-                  done && "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15",
-                  current && "border-indigo-500/40 bg-indigo-500/15 text-white",
-                  !done && !current && "border-white/10 bg-white/[0.02] text-slate-500 hover:text-slate-300",
-                )}
+                onClick={() => confirm.mutate()}
+                disabled={confirm.isPending}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
               >
-                {done && <CheckCircle2 className="size-3.5 shrink-0" />}
-                <span className="truncate">{STAGE_LABELS[s]}</span>
+                {confirm.isPending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Confirm Assignments
               </button>
-              {i < STAGE_ORDER.length - 1 && <span className="hidden h-px w-3 shrink-0 bg-white/10 sm:block" />}
+              {confirm.isError && (
+                <p className="flex items-center gap-1.5 text-[11px] text-red-400">
+                  <AlertTriangle className="size-3" /> Couldn&apos;t confirm assignments - please try again.
+                </p>
+              )}
             </div>
-          );
-        })}
-      </div>
-      {error && (
-        <p className="mt-2 flex items-center gap-1.5 text-[11px] text-amber-400">
-          <AlertTriangle className="size-3.5" /> Couldn&apos;t change stage. A pack can only be finalised once every section is locked.
-        </p>
+          )}
+        </>
       )}
     </div>
   );
 }
 
-function SectionRows({ section, kids, expanded, onToggle, onOpen }: {
-  section: PackSectionNode; kids: PackSectionNode[]; expanded: boolean; onToggle: () => void; onOpen: (id: string) => void;
+// ── Stepper ──────────────────────────────────────────────────────────────────
+const STEP_PILL: Record<StepState, string> = {
+  done: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
+  active: "border-indigo-500/50 bg-indigo-500/15 text-white",
+  inprogress: "border-amber-500/40 bg-amber-500/10 text-amber-400",
+  pending: "border-white/10 bg-white/[0.02] text-slate-500",
+  error: "border-red-500/40 bg-red-500/10 text-red-400",
+};
+
+function StepIcon({ step }: { step: Step }) {
+  if (step.state === "done") return <CheckCircle2 className="size-3.5 shrink-0" />;
+  if (step.state === "inprogress") return <Loader2 className="size-3.5 shrink-0 animate-spin" />;
+  if (step.state === "error") return <AlertTriangle className="size-3.5 shrink-0" />;
+  if (step.key === "upload") return <Upload className="size-3.5 shrink-0" />;
+  return <span aria-hidden className="size-1.5 shrink-0 rounded-full bg-current" />;
+}
+
+function Stepper({ steps }: { steps: Step[] }) {
+  return (
+    <ol aria-label="Tender progress" className="flex items-center gap-1.5 overflow-x-auto">
+      {steps.map((step, i) => (
+        <li key={step.key} className="flex flex-1 items-center gap-1.5">
+          <div
+            aria-current={step.state === "active" ? "step" : undefined}
+            className={cn(
+              "flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-lg border px-2.5 py-2 text-[12px] font-semibold",
+              STEP_PILL[step.state],
+            )}
+          >
+            <StepIcon step={step} />
+            <span className="truncate">{step.label}</span>
+          </div>
+          {i < steps.length - 1 && <span aria-hidden className="hidden h-px w-3 shrink-0 bg-white/10 sm:block" />}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// ── Body states while the background job runs ────────────────────────────────
+function ParsingState({ error }: { error: boolean }) {
+  if (error) {
+    return (
+      <div className="flex flex-col items-center rounded-2xl border border-red-500/20 bg-red-500/[0.06] px-4 py-14 text-center">
+        <AlertTriangle className="mb-3 size-6 text-red-300" />
+        <p className="text-sm font-semibold text-white">Parsing failed</p>
+        <p className="mt-1 max-w-sm text-[12px] text-red-300">We couldn&apos;t parse this tender into sections. Try re-uploading it in Sources.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-14 text-center">
+      <Loader2 className="mb-3 size-6 animate-spin text-amber-400" />
+      <p className="text-sm font-semibold text-white">Parsing the tender into sections{"\u2026"}</p>
+      <p className="mt-1 max-w-sm text-[12px] text-slate-500">This runs in the background - the sections list will appear here as soon as it&apos;s ready.</p>
+    </div>
+  );
+}
+
+function DraftingState({ done, total }: { done: number; total: number }) {
+  return (
+    <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-14 text-center">
+      <Loader2 className="mb-3 size-6 animate-spin text-amber-400" />
+      <p className="text-sm font-semibold text-white">Answers are being generated in the background - you can come back later.</p>
+      {total > 0 && <p className="mt-1 text-[12px] text-slate-500">{done}/{total} answers drafted</p>}
+    </div>
+  );
+}
+
+function NoSections() {
+  return (
+    <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-14 text-center">
+      <span className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-white/[0.04] text-slate-500">
+        <ListChecks className="size-6" />
+      </span>
+      <p className="text-sm font-semibold text-white">No sections yet</p>
+      <p className="mt-1 max-w-sm text-[12px] text-slate-500">Upload the RFP in Sources to parse it into sections and questions.</p>
+    </div>
+  );
+}
+
+// ── Rows ─────────────────────────────────────────────────────────────────────
+function SectionRows({ packId, section, kids, expanded, onToggle, onOpen, reviewerEditable, assignees }: {
+  packId: string; section: PackSectionNode; kids: PackSectionNode[]; expanded: boolean;
+  onToggle: () => void; onOpen: (id: string) => void; reviewerEditable: boolean; assignees: Assignee[];
 }) {
   return (
     <>
-      <SectionRow section={section} depth={0} hasKids={kids.length > 0} expanded={expanded} onToggle={onToggle} onOpen={onOpen} />
+      <SectionRow packId={packId} section={section} depth={0} hasKids={kids.length > 0} expanded={expanded}
+        onToggle={onToggle} onOpen={onOpen} reviewerEditable={reviewerEditable} assignees={assignees} />
       {expanded && kids.map((k) => (
-        <SectionRow key={k.id} section={k} depth={1} hasKids={false} expanded={false} onToggle={() => {}} onOpen={onOpen} />
+        <SectionRow key={k.id} packId={packId} section={k} depth={1} hasKids={false} expanded={false}
+          onToggle={() => {}} onOpen={onOpen} reviewerEditable={false} assignees={assignees} />
       ))}
     </>
   );
 }
 
-function SectionRow({ section, depth, hasKids, expanded, onToggle, onOpen }: {
-  section: PackSectionNode; depth: number; hasKids: boolean; expanded: boolean; onToggle: () => void; onOpen: (id: string) => void;
+function SectionRow({ packId, section, depth, hasKids, expanded, onToggle, onOpen, reviewerEditable, assignees }: {
+  packId: string; section: PackSectionNode; depth: number; hasKids: boolean; expanded: boolean;
+  onToggle: () => void; onOpen: (id: string) => void; reviewerEditable: boolean; assignees: Assignee[];
 }) {
   const locked = section.questions.filter((q) => q.locked).length;
   return (
@@ -219,6 +380,12 @@ function SectionRow({ section, depth, hasKids, expanded, onToggle, onOpen }: {
           {sectionStatusLabel(section.status)}
         </span>
       </td>
+      <td className="px-4 py-3">
+        {/* Reviewer is a top-level-section concept only; sub-sections inherit it. */}
+        {depth === 0
+          ? <ReviewerCell packId={packId} section={section} editable={reviewerEditable} assignees={assignees} />
+          : <span className="text-slate-600">{"\u2014"}</span>}
+      </td>
       <td className="px-4 py-3 text-right">
         <button onClick={() => onOpen(section.id)}
           className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
@@ -226,6 +393,100 @@ function SectionRow({ section, depth, hasKids, expanded, onToggle, onOpen }: {
         </button>
       </td>
     </tr>
+  );
+}
+
+// ── Reviewer column ──────────────────────────────────────────────────────────
+// Assigned step: editable "Assign" pill -> dropdown of tenant users -> filled "Name x" pill.
+// Review step: static read-only pill. Assignment is metadata only (drafts run regardless).
+function ReviewerCell({ packId, section, editable, assignees }: {
+  packId: string; section: PackSectionNode; editable: boolean; assignees: Assignee[];
+}) {
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const set = useMutation({
+    mutationFn: (v: { reviewer: string | null; name: string }) => setSectionReviewer(packId, section.id, v.reviewer, v.name),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["pack-sections", packId] }),
+  });
+
+  const displayName = section.reviewer_name
+    || assignees.find((a) => a.id === section.reviewer)?.name
+    || (section.reviewer ?? "");
+  const hasReviewer = Boolean(section.reviewer || section.reviewer_name);
+
+  // Read-only (Review step).
+  if (!editable) {
+    return hasReviewer
+      ? (
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-[11px] font-medium text-slate-200">
+          <Users className="size-3 text-slate-400" /> {displayName}
+        </span>
+      )
+      : <span className="text-slate-600">{"\u2014"}</span>;
+  }
+
+  // Editable (Assigned step).
+  return (
+    <div className="relative inline-block">
+      {hasReviewer ? (
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/40 bg-indigo-500/15 px-2.5 py-0.5 text-[11px] font-medium text-white">
+          <Users className="size-3 text-indigo-300" /> {displayName}
+          <button
+            type="button"
+            aria-label={`Clear reviewer for ${section.name}`}
+            disabled={set.isPending}
+            onClick={() => set.mutate({ reviewer: null, name: "" })}
+            className="rounded-full text-indigo-200 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50"
+          >
+            {set.isPending ? <Loader2 className="size-3 animate-spin" /> : <X className="size-3" />}
+          </button>
+        </span>
+      ) : (
+        <button
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          aria-label={`Assign reviewer for ${section.name}`}
+          disabled={set.isPending}
+          onClick={() => setOpen((v) => !v)}
+          className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-white/25 bg-transparent px-2.5 py-0.5 text-[11px] font-medium text-slate-400 hover:border-indigo-500/40 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50"
+        >
+          {set.isPending ? <Loader2 className="size-3 animate-spin" /> : <Users className="size-3" />} Assign <ChevronDown className="size-3" />
+        </button>
+      )}
+
+      {open && !hasReviewer && (
+        <>
+          {/* click-away overlay */}
+          <button type="button" tabIndex={-1} aria-hidden className="fixed inset-0 z-10 cursor-default" onClick={() => setOpen(false)} />
+          <ul
+            role="listbox"
+            aria-label={`Reviewers for ${section.name}`}
+            className="absolute left-0 z-20 mt-1 max-h-56 w-52 overflow-y-auto rounded-lg border border-white/10 bg-[#0b0e16] p-1 shadow-xl"
+          >
+            {assignees.length === 0 ? (
+              <li className="px-2.5 py-2 text-[11px] text-slate-500">No teammates to assign.</li>
+            ) : assignees.map((a) => (
+              <li key={a.id}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={false}
+                  onClick={() => { set.mutate({ reviewer: a.id, name: a.name }); setOpen(false); }}
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:bg-white/[0.06]"
+                >
+                  <Users className="size-3.5 shrink-0 text-slate-400" />
+                  <span className="min-w-0 flex-1 truncate">
+                    <span className="block truncate">{a.name}</span>
+                    {a.email && <span className="block truncate text-[10px] text-slate-500">{a.email}</span>}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }
 

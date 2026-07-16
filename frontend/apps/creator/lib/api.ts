@@ -220,6 +220,9 @@ export type PackSection = {
   id: string; tenant: string; pack_id: string; code: string; name: string; page: number | null;
   weighting: string; status: PackSectionStatus; parent_id: string | null;
   assigned_reviewer_user_id: string | null; assigned_reviewer_name: string; due_date: string | null;
+  // Stepper (Upload -> Parsed -> Assigned -> Drafting -> Review) per-section reviewer: a tenant
+  // user id plus a denormalised display name so the Reviewer column renders without a join.
+  reviewer: string | null; reviewer_name: string;
   manual: boolean; kb_gap: boolean; order_index: number;
 };
 
@@ -237,6 +240,38 @@ export const getPackOverview = (packId: string) =>
 
 export const setPackStage = (packId: string, stage: PackStage) =>
   request<RfpPack>(`/rfp/packs/${packId}/stage`, { method: "PUT", body: JSON.stringify({ stage }) });
+
+// ── Stepper (Upload -> Parsed -> Assigned -> Drafting -> Review) ─────────────
+// The tender-generation background job's per-artifact progress. The Sections tab polls
+// GET /status (~3s) while anything is pending/running and derives the stepper state from it.
+export type GenState = "pending" | "running" | "ready" | "error";
+export type TenderGenStatus = {
+  requirements?: GenState;
+  sections?: GenState;
+  brief?: GenState;
+  compliance?: GenState;
+  drafts?: { state: GenState; done: number; total: number };
+  assignments_confirmed?: boolean;
+  updated_at?: string;
+  error?: string | null;
+};
+export const getTenderStatus = (packId: string) =>
+  request<TenderGenStatus>(`/rfp/packs/${packId}/status`);
+
+/** A tenant user, for the per-section Reviewer assign dropdown. */
+export type Assignee = { id: string; name: string; email: string };
+export const getAssignees = (packId: string) =>
+  request<Assignee[]>(`/rfp/packs/${packId}/assignees`);
+
+/** Set (reviewer = user id) or clear (reviewer = null) a section's stepper reviewer. */
+export const setSectionReviewer = (packId: string, sectionId: string, reviewer: string | null, reviewer_name = "") =>
+  request<PackSection>(`/rfp/packs/${packId}/sections/${sectionId}/reviewer`, {
+    method: "PUT", body: JSON.stringify({ reviewer, reviewer_name }),
+  });
+
+/** Stepper's "Confirm Assignments" button (Assigned -> Drafting). Sets assignments_confirmed=true. */
+export const confirmAssignments = (packId: string) =>
+  request<TenderGenStatus>(`/rfp/packs/${packId}/confirm-assignments`, { method: "POST" });
 
 export const listPackSections = (packId: string) =>
   request<PackSectionNode[]>(`/rfp/packs/${packId}/sections`);
