@@ -101,6 +101,11 @@ class SqlUserStore:
         async with self.sessionmaker() as s:
             return await self._to_domain(await s.get(UserRow, user_id))
 
+    async def list_by_tenant(self, tenant: str) -> list[User]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(select(UserRow).where(UserRow.tenant_id == tenant))).scalars().all()
+            return [await self._to_domain(r) for r in rows]
+
     async def set_sid(self, user_id: str, sid: str | None) -> None:
         async with self.sessionmaker() as s, s.begin():
             row = await s.get(UserRow, user_id)
@@ -343,7 +348,8 @@ class SqlPackSectionStore:
         return PackSection(id=r.id, tenant=r.tenant_id, pack_id=r.pack_id, code=r.code, name=r.name,
                            page=r.page, weighting=r.weighting, status=r.status, parent_id=r.parent_id,
                            assigned_reviewer_user_id=r.assigned_reviewer_user_id,
-                           assigned_reviewer_name=r.assigned_reviewer_name or "", due_date=r.due_date,
+                           assigned_reviewer_name=r.assigned_reviewer_name or "",
+                           reviewer=r.reviewer, reviewer_name=r.reviewer_name or "", due_date=r.due_date,
                            manual=r.manual, kb_gap=r.kb_gap, order_index=r.order_index)
 
     async def add(self, section: PackSection) -> PackSection:
@@ -352,7 +358,9 @@ class SqlPackSectionStore:
                                  code=section.code, name=section.name, page=section.page,
                                  weighting=section.weighting, status=section.status, parent_id=section.parent_id,
                                  assigned_reviewer_user_id=section.assigned_reviewer_user_id,
-                                 assigned_reviewer_name=section.assigned_reviewer_name, due_date=section.due_date,
+                                 assigned_reviewer_name=section.assigned_reviewer_name,
+                                 reviewer=section.reviewer, reviewer_name=section.reviewer_name,
+                                 due_date=section.due_date,
                                  manual=section.manual, kb_gap=section.kb_gap, order_index=section.order_index))
         return section
 

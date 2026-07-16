@@ -17,6 +17,7 @@ from app.core.deps import (
     get_requirements,
     get_rfp_packs,
     get_teams_notifier,
+    get_user_store,
     require_role,
 )
 from app.modules.ai.gateway import get_provider
@@ -299,6 +300,36 @@ async def generation_status(pack_id: str, tenant: str = Depends(authed_tenant),
     except RfpPackNotFound as e:
         raise HTTPException(status_code=404, detail="RFP pack not found") from e
     return pack.gen_status or {}
+
+
+@router.get("/{pack_id}/assignees")
+async def list_assignees(pack_id: str, tenant: str = Depends(authed_tenant),
+                         packs=Depends(get_rfp_packs), users=Depends(get_user_store)) -> list[dict]:
+    """The tenant's users, for the stepper's per-section Reviewer assign dropdown. Tenant-scoped:
+    only members of the caller's own tenant are returned. Name falls back to the email local part
+    since users carry no separate display name yet."""
+    await _require_pack(pack_id, tenant, packs)
+    people = await users.list_by_tenant(tenant)
+    return [{"id": u.id, "name": (u.email.split("@")[0] if u.email else u.id), "email": u.email}
+            for u in people]
+
+
+@router.post("/{pack_id}/confirm-assignments")
+async def confirm_assignments(pack_id: str, tenant: str = Depends(authed_tenant),
+                              _role: dict = Depends(require_role(Role.editor)),
+                              packs=Depends(get_rfp_packs)) -> dict:
+    """The stepper's "Confirm Assignments" button (Assigned->Drafting). Sets a top-level
+    assignments_confirmed=true into the pack's gen_status (merged, so per-artifact progress is
+    preserved) -- purely a stepper-progression marker, nothing server-side is gated on it (drafts
+    already run for every section regardless of assignment). GET /status returns gen_status."""
+    try:
+        pack = await packs.get(tenant, pack_id)
+    except RfpPackNotFound as e:
+        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    status = dict(pack.gen_status or {})
+    status["assignments_confirmed"] = True
+    await packs.set_gen_status(tenant, pack_id, status)
+    return status
 
 
 @router.get("/{pack_id}/brief")
@@ -646,6 +677,25 @@ async def edit_section(pack_id: str, section_id: str, body: SectionPatch,
                        tree=Depends(get_pack_tree)) -> PackSection:
     try:
         return await tree.update_section(tenant, section_id, **body.model_dump(exclude_unset=True))
+    except PackSectionNotFound as e:
+        raise HTTPException(status_code=404, detail="section not found") from e
+
+
+class ReviewerBody(BaseModel):
+    reviewer: str | None = None  # a tenant user id; null clears the assignment
+    reviewer_name: str = ""  # denormalised display name so the Reviewer column renders without a join
+
+
+@router.put("/{pack_id}/sections/{section_id}/reviewer")
+async def set_section_reviewer(pack_id: str, section_id: str, body: ReviewerBody,
+                               tenant: str = Depends(authed_tenant),
+                               _role: dict = Depends(require_role(Role.editor)),
+                               tree=Depends(get_pack_tree)) -> PackSection:
+    """Assign (or clear, with reviewer=null) the per-section stepper reviewer. Metadata only --
+    it does NOT change whether/what answers are generated (drafts run for every section)."""
+    try:
+        return await tree.set_reviewer(tenant, section_id, reviewer=body.reviewer,
+                                       reviewer_name=body.reviewer_name)
     except PackSectionNotFound as e:
         raise HTTPException(status_code=404, detail="section not found") from e
 

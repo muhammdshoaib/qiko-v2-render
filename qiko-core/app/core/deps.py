@@ -101,6 +101,14 @@ def get_pack_tree(request: Request):
     return request.app.state.pack_tree
 
 
+def get_user_store():
+    """The identity UserStore (module-global, swapped for SqlUserStore at startup). Imported
+    lazily to avoid a circular import between deps and the identity router."""
+    from app.modules.identity.router import get_store
+
+    return get_store()
+
+
 def get_assignments(request: Request):
     return request.app.state.assignments
 

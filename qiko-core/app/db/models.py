@@ -129,6 +129,9 @@ class PackSection(Base):
     parent_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     assigned_reviewer_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     assigned_reviewer_name: Mapped[str] = mapped_column(String(255), default="")
+    # Stepper per-section reviewer (see app.modules.rfp.tree.PackSection) -- metadata only.
+    reviewer: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reviewer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     due_date: Mapped[str | None] = mapped_column(String(64), nullable=True)
     manual: Mapped[bool] = mapped_column(default=False)
     kb_gap: Mapped[bool] = mapped_column(default=False)

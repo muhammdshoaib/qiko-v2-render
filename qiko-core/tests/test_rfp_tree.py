@@ -390,3 +390,86 @@ def test_export_overlay_locked_user_draft_overrides_ai(client, monkeypatch):
     a1 = next(a for a in answers if a["req_id"] == "A1")
     assert a1["answer"] == "HUMAN APPROVED TEXT"  # locked draft overrides the AI answer
     assert "human-approved" in a1["note"].lower()
+
+
+# --- stepper: per-section reviewer assignment, assignees list, confirm-assignments flag ---
+def test_set_and_clear_section_reviewer_persists(client):
+    c, pid = _pack(client, "revco1")
+    s = client.post(f"/api/v1/rfp/packs/{pid}/sections", json={"name": "Intro"}, cookies=c).json()
+    assert s["reviewer"] is None and s["reviewer_name"] == ""
+
+    # assign a reviewer (id + denormalised display name)
+    assigned = client.put(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/reviewer",
+                          json={"reviewer": "u-alice", "reviewer_name": "Alice"}, cookies=c).json()
+    assert assigned["reviewer"] == "u-alice" and assigned["reviewer_name"] == "Alice"
+
+    # it persists onto the section and shows in the sections GET (Reviewer column source)
+    tree = client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()
+    assert tree[0]["reviewer"] == "u-alice" and tree[0]["reviewer_name"] == "Alice"
+
+    # null clears it
+    cleared = client.put(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/reviewer",
+                        json={"reviewer": None}, cookies=c).json()
+    assert cleared["reviewer"] is None and cleared["reviewer_name"] == ""
+    tree = client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()
+    assert tree[0]["reviewer"] is None
+
+
+def test_set_reviewer_requires_editor_and_is_tenant_scoped(client):
+    c, pid = _pack(client, "revco2")
+    s = client.post(f"/api/v1/rfp/packs/{pid}/sections", json={"name": "Intro"}, cookies=c).json()
+    viewer = auth_cookies("revco2", "viewer")
+    assert client.put(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/reviewer",
+                      json={"reviewer": "u-alice"}, cookies=viewer).status_code == 403
+    # another tenant cannot assign a reviewer on this pack's section
+    other = auth_cookies("revco2-other", "owner")
+    assert client.put(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/reviewer",
+                      json={"reviewer": "u-mallory"}, cookies=other).status_code == 404
+
+
+def test_assignees_lists_tenant_users(client):
+    from app.modules.identity.router import get_store
+    from app.modules.identity.rbac import Role
+    from app.modules.identity.store import User
+
+    store = get_store()
+    store.seed(User(id="u-a", email="alice@assignco.com", password_hash="x",
+                    tenant="assignco", role=Role.editor))
+    store.seed(User(id="u-b", email="bob@assignco.com", password_hash="x",
+                    tenant="assignco", role=Role.viewer))
+    # a different tenant's user must not leak into assignco's dropdown
+    store.seed(User(id="u-x", email="x@other.com", password_hash="x", tenant="otherco", role=Role.owner))
+
+    c = auth_cookies("assignco", "owner")
+    pid = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "T"}, cookies=c).json()["id"]
+    people = client.get(f"/api/v1/rfp/packs/{pid}/assignees", cookies=c).json()
+    ids = {p["id"] for p in people}
+    assert ids == {"u-a", "u-b"}
+    alice = next(p for p in people if p["id"] == "u-a")
+    assert alice["email"] == "alice@assignco.com" and alice["name"] == "alice"
+
+
+def test_confirm_assignments_sets_flag_in_gen_status(client):
+    c, pid = _pack(client, "confirmco1")
+    # before confirming, the flag is absent from gen_status
+    assert "assignments_confirmed" not in client.get(f"/api/v1/rfp/packs/{pid}/status", cookies=c).json()
+
+    out = client.post(f"/api/v1/rfp/packs/{pid}/confirm-assignments", cookies=c).json()
+    assert out["assignments_confirmed"] is True
+
+    # GET /status now reflects the stepper-progression marker for the FE
+    status = client.get(f"/api/v1/rfp/packs/{pid}/status", cookies=c).json()
+    assert status["assignments_confirmed"] is True
+
+    # editor-gated
+    viewer = auth_cookies("confirmco1", "viewer")
+    assert client.post(f"/api/v1/rfp/packs/{pid}/confirm-assignments", cookies=viewer).status_code == 403
+
+
+async def test_set_reviewer_service_clears_with_none():
+    svc = PackTreeService()
+    s = await svc.add_section("t", "p1", code="A1", name="Intro")
+    assigned = await svc.set_reviewer("t", s.id, reviewer="u-alice", reviewer_name="Alice")
+    assert assigned.reviewer == "u-alice" and assigned.reviewer_name == "Alice"
+    cleared = await svc.set_reviewer("t", s.id, reviewer=None)
+    assert cleared.reviewer is None and cleared.reviewer_name == ""

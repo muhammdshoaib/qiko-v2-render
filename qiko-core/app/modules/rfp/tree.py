@@ -33,6 +33,11 @@ class PackSection:
     parent_id: str | None = None
     assigned_reviewer_user_id: str | None = None
     assigned_reviewer_name: str = ""
+    # Stepper (Upload->Parsed->Assigned->Drafting->Review) per-section reviewer: a tenant user id
+    # plus a denormalised display name for easy render. Metadata only -- it does NOT gate whether
+    # or what answers are generated (drafts run for every section regardless of assignment).
+    reviewer: str | None = None
+    reviewer_name: str = ""
     due_date: str | None = None
     manual: bool = False
     kb_gap: bool = False
@@ -195,6 +200,15 @@ class PackTreeService:
         section = await self.sections.update(tenant, section_id, **clean) if clean \
             else await self.get_section(tenant, section_id)
         return await self._recompute_section(tenant, section_id) if "manual" in clean else section
+
+    async def set_reviewer(self, tenant: str, section_id: str, *, reviewer: str | None,
+                           reviewer_name: str = "") -> PackSection:
+        """Set (or clear, when reviewer is None) the per-section stepper reviewer. Goes straight to
+        the store rather than update_section so an explicit None actually clears it (update_section
+        drops None fields as "unchanged")."""
+        await self.get_section(tenant, section_id)  # 404s (incl. cross-tenant) before mutating
+        return await self.sections.update(tenant, section_id, reviewer=reviewer,
+                                          reviewer_name=reviewer_name or "")
 
     async def delete_section(self, tenant: str, section_id: str) -> None:
         await self.get_section(tenant, section_id)
