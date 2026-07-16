@@ -33,7 +33,10 @@ def _content_words(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 3}
 
 
-def extract_compliance(tender_text: str, provider: LLMProvider, *, max_chars: int = 60_000) -> list[dict]:
+# 160k (vs the old 60k): mandatory compliance items (and the compliance matrix itself) are often
+# in later annexes/tables, so a 60k window under-reported them for large tenders. The completion is
+# a short pass/fail list, so the bigger input stays within context / read-timeout budget.
+def extract_compliance(tender_text: str, provider: LLMProvider, *, max_chars: int = 160_000) -> list[dict]:
     """Extract compliance items, gated by a citation-existence check: an item is dropped if its
     requirement text shares no meaningful vocabulary with the source tender (i.e. looks invented)."""
     truncated = tender_text[:max_chars]

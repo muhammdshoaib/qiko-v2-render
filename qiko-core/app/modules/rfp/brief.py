@@ -25,7 +25,11 @@ class BriefError(Exception):
     pass
 
 
-def extract_brief(tender_text: str, provider: LLMProvider, *, max_chars: int = 60_000) -> dict:
+# 160k (vs the old 60k): the brief's key dates + success criteria + gaps frequently live deep in
+# the pack (annex templates, later schedules, tables now that docx tables are extracted), so a
+# 60k window silently dropped them for large tenders. Output stays a small JSON object, so the
+# larger input is well within the model's context / read timeout.
+def extract_brief(tender_text: str, provider: LLMProvider, *, max_chars: int = 160_000) -> dict:
     truncated = tender_text[:max_chars]
     response = provider.generate(f"TENDER DOCUMENT:\n{truncated}", system=SYSTEM, temperature=0.0)
     match = _JSON_OBJECT.search(response.text)
