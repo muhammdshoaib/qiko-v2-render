@@ -17,6 +17,11 @@ class Environment(str, Enum):
     live = "live"
 
 
+# The forgeable local default for `session_secret`. A non-dev deploy must never run on it (any
+# holder of this value could mint valid session tokens) -- enforced by Settings.assert_secrets_set.
+DEFAULT_SESSION_SECRET = "change-me-locally"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
@@ -104,7 +109,7 @@ class Settings(BaseSettings):
     max_request_bytes: int = 10 * 1024 * 1024  # 10 MB
 
     # Auth
-    session_secret: str = "change-me-locally"
+    session_secret: str = DEFAULT_SESSION_SECRET
     access_token_ttl_seconds: int = 900
     refresh_token_ttl_seconds: int = 1209600
 
@@ -116,6 +121,14 @@ class Settings(BaseSettings):
     def debug(self) -> bool:
         """Only dev exposes debug affordances (docs, verbose errors)."""
         return self.environment is Environment.dev
+
+    def assert_secrets_set(self) -> None:
+        """Fail closed: a non-dev deploy must refuse to start on the forgeable default
+        session_secret, so production can never silently sign/verify tokens with a known key."""
+        if self.environment is not Environment.dev and self.session_secret == DEFAULT_SESSION_SECRET:
+            raise RuntimeError(
+                "session_secret is still the insecure default; set SESSION_SECRET before starting "
+                f"in a non-dev environment (environment={self.environment.value})")
 
 
 @lru_cache

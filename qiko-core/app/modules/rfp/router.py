@@ -22,7 +22,7 @@ from app.core.deps import (
 from app.modules.ai.gateway import get_provider
 from app.modules.chat.files import build_docx, build_xlsx
 from app.modules.identity.rbac import Role, role_allows
-from app.modules.knowledge.parsing import UnsupportedDocumentError, extract_text
+from app.modules.knowledge.parsing import MAX_UPLOAD_BYTES, UnsupportedDocumentError, extract_text
 from app.modules.rfp.brief import BriefError, extract_brief
 from app.modules.rfp.compliance import ComplianceError, extract_compliance
 from app.modules.rfp.extraction import ExtractionError, chunk_document, extract_requirements
@@ -204,7 +204,11 @@ async def extract(pack_id: str, file: UploadFile = File(...), tenant: str = Depe
     except RfpPackNotFound as e:
         raise HTTPException(status_code=404, detail="RFP pack not found") from e
 
-    data = await file.read()
+    # Read with a hard cap so a huge upload can't exhaust memory (defence beyond the global
+    # request-size middleware), mirroring finance.router.upload.
+    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="file exceeds the 10MB limit")
     try:
         text = extract_text(file.filename or "document.txt", data)
     except UnsupportedDocumentError as e:
@@ -724,6 +728,11 @@ async def _generate_question(request: Request, tenant: str, pack_id: str, questi
     if question.locked:
         return question
     result = await worker.answer(question.req_id or question.id, question.text)
+    # A StubProvider fallback (e.g. Bedrock outage) echoes context rather than drafting a real
+    # grounded answer -- never persist that onto the question as if it were ready. Fail closed so
+    # the reviewer sees an outage, not a fabricated-looking draft they might lock and submit.
+    if result.stub:
+        raise HTTPException(status_code=503, detail="answer generation is temporarily unavailable")
     grounding = round(result.critique.grounding, 2)
     return await tree.apply_generation(
         tenant, question.id, ai_answer=result.answer, ai_sources=result.citations,

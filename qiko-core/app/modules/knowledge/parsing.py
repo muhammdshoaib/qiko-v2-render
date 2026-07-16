@@ -13,6 +13,11 @@ import re
 
 SUPPORTED = {"txt", "md", "csv", "json", "jsonl", "pdf", "docx", "xlsx", "xls", "html", "htm"}
 
+# Hard per-upload cap for document endpoints that parse an uploaded file (rfp /extract, knowledge
+# /ingest-file). Mirrors finance.service.MAX_UPLOAD_BYTES and the global request-size middleware --
+# defence in depth so a huge upload can't exhaust memory before parsing.
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB
+
 
 class UnsupportedDocumentError(Exception):
     pass

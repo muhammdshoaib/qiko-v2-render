@@ -28,6 +28,39 @@ def test_knowledge_ingest_list_delete(client):
     assert client.delete("/api/v1/knowledge/documents/iso", cookies=C).json()["removed"] >= 1
 
 
+def test_knowledge_mutations_require_editor_role(client):
+    # A viewer must not be able to inject or delete knowledge-base content (RAG data poisoning /
+    # destruction) -- writes need Editor-or-above, mirroring rfp. Reads stay open to a viewer.
+    viewer = auth_cookies("kbrbac", "viewer")
+    editor = auth_cookies("kbrbac", "editor")
+    assert client.post("/api/v1/knowledge/ingest", json={"doc_id": "iso", "text": ISO},
+                       cookies=viewer).status_code == 403
+    assert client.post("/api/v1/knowledge/ingest-file", data={"doc_id": "iso"},
+                       files={"file": ("iso.txt", ISO, "text/plain")}, cookies=viewer).status_code == 403
+    assert client.delete("/api/v1/knowledge/documents/iso", cookies=viewer).status_code == 403
+    # an editor can ingest, read, and delete
+    assert client.post("/api/v1/knowledge/ingest", json={"doc_id": "iso", "text": ISO},
+                       cookies=editor).status_code == 200
+    assert client.post("/api/v1/knowledge/search", json={"query": "ISO 9001"}, cookies=viewer).status_code == 200
+    assert client.delete("/api/v1/knowledge/documents/iso", cookies=editor).status_code == 200
+
+
+def test_knowledge_ingest_text_has_max_length(client):
+    # An oversized free-text ingest is rejected by validation before it hits chunk -> embed.
+    too_big = "x" * (2 * 1024 * 1024 + 1)
+    r = client.post("/api/v1/knowledge/ingest", json={"doc_id": "big", "text": too_big}, cookies=C)
+    assert r.status_code == 422
+
+
+def test_knowledge_ingest_file_enforces_upload_cap(client, monkeypatch):
+    # A file larger than the per-endpoint cap is refused with 413 (shrink the cap so the test
+    # payload stays small and never trips the global request-size middleware first).
+    monkeypatch.setattr("app.modules.knowledge.router.MAX_UPLOAD_BYTES", 16)
+    r = client.post("/api/v1/knowledge/ingest-file", data={"doc_id": "big"},
+                    files={"file": ("big.txt", b"x" * 64, "text/plain")}, cookies=C)
+    assert r.status_code == 413
+
+
 def test_agents_lifecycle_and_plan_gate(client):
     c = auth_cookies("agteam", "owner")
     created = client.post("/api/v1/agents", json={"name": "IDG", "plan": "free"}, cookies=c).json()

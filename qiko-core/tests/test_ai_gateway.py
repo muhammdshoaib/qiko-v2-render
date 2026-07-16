@@ -49,6 +49,21 @@ def test_fallback_uses_primary_when_ok():
     assert fb.generate("x").text == "primary"
 
 
+def test_stub_provider_marks_output_as_stub():
+    # Both the echo and canned paths are stub-sourced -- flagged so persistence paths can refuse
+    # to store the output as a real grounded draft.
+    assert StubProvider().generate("CONTEXT:\nx\n\nREQUIREMENT:\ny").stub is True
+    assert StubProvider(canned="hi").generate("x").stub is True
+
+
+def test_fallback_propagates_stub_flag_when_falling_back():
+    # A Bedrock outage forces the stub fallback; the flag must survive so callers know the text
+    # is not a real grounded answer.
+    fb = FallbackProvider(_Boom(), StubProvider(canned="fallback answer"))
+    r = fb.generate("x")
+    assert r.text == "fallback answer" and r.stub is True
+
+
 # --- provider selection from config ---
 def test_build_one():
     assert isinstance(_build_one("stub"), StubProvider)

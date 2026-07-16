@@ -68,6 +68,28 @@ async def test_ingest_returns_chunk_count():
     assert await svc.ingest("acme", "iso", ISO) == 1
 
 
+async def test_embed_and_scoring_run_off_the_event_loop():
+    """ingest (embed) and retrieve (embed + cosine/bm25 scoring) must run in a worker thread, not
+    on the async event loop -- a blocking Titan boto3 embed would otherwise freeze the whole loop.
+    A worker thread has no running event loop, so asyncio.get_running_loop() raising there proves
+    the work was offloaded."""
+    import asyncio
+
+    class _LoopProbeEmbeddings:
+        dim = 8
+
+        def embed(self, text: str) -> list[float]:
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                return [1.0] + [0.0] * 7  # off the loop (in a thread) -- as required
+            raise AssertionError("embed ran on the event loop thread")
+
+    svc = KnowledgeService(embeddings=_LoopProbeEmbeddings())
+    assert await svc.ingest("acme", "d", "some text to embed") == 1
+    assert len(await svc.retrieve("acme", "query")) == 1
+
+
 async def test_retrieve_is_relevant_and_tenant_scoped():
     svc = await _service()
     top = await svc.retrieve("acme", "ISO 9001 certification", k=1)

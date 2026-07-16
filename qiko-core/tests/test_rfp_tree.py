@@ -198,12 +198,12 @@ def test_tree_is_tenant_scoped(client):
 
 
 def _fake_worker_factory(answer="AI draft", grounding=0.9, citations=("doc:iso",),
-                         decision=Decision.auto_accept):
+                         decision=Decision.auto_accept, stub=False):
     class _FakeWorker:
         async def answer(self, rid, text, **_kw):
             return AgentResult(requirement_id=rid, answer=answer,
                                critique=Critique(grounding=grounding), decision=decision,
-                               citations=list(citations))
+                               citations=list(citations), stub=stub)
 
     async def _build(*_a, **_kw):
         return _FakeWorker()
@@ -221,6 +221,26 @@ def test_generate_question_reuses_agentcore(client, monkeypatch):
     assert gen["ai_answer"] == "AI draft"
     assert gen["confidence"] == 0.9 and gen["decision"] == "auto_accept"
     assert gen["ai_sources"] == ["doc:iso"] and gen["kb_gap"] is False
+
+
+def test_generate_question_rejects_stub_fallback_and_does_not_persist(client, monkeypatch):
+    """When the answer came from the StubProvider fallback (e.g. Bedrock outage), it echoes
+    context rather than drafting a real grounded answer. /generate must surface a 503 and must NOT
+    persist it onto the question -- otherwise a reviewer could lock and submit a fabricated-looking
+    draft. The "real provider persists normally" case is test_generate_question_reuses_agentcore."""
+    monkeypatch.setattr("app.modules.rfp.router.build_tenant_worker",
+                        _fake_worker_factory(answer="echoed context", stub=True))
+    c, pid = _pack(client, "stubgen1")
+    s = client.post(f"/api/v1/rfp/packs/{pid}/sections", json={"name": "Intro"}, cookies=c).json()
+    q = client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
+                    json={"text": "Describe ISO"}, cookies=c).json()
+
+    r = client.post(f"/api/v1/rfp/packs/{pid}/questions/{q['id']}/generate", cookies=c)
+    assert r.status_code == 503
+    # nothing was written onto the question tree
+    tree = client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()
+    qrow = tree[0]["questions"][0]
+    assert qrow["ai_answer"] == "" and qrow["decision"] == ""
 
 
 def test_generate_flags_kb_gap_when_ungrounded(client, monkeypatch):

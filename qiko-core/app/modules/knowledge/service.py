@@ -1,6 +1,7 @@
 """Knowledge service: ingest (chunk -> embed -> store) and retrieve (hybrid, tenant-scoped)."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from dataclasses import dataclass
 
@@ -25,10 +26,13 @@ class KnowledgeService:
 
     async def ingest(self, tenant: str, doc_id: str, text: str) -> int:
         chunks = chunk_text(text)
-        for i, chunk in enumerate(chunks):
+        # Embedding can be a blocking network call (e.g. Titan via boto3) or CPU-bound; run it off
+        # the event loop so one ingest can't freeze every other request this process is handling.
+        embeddings = await asyncio.to_thread(lambda: [self.embeddings.embed(c) for c in chunks])
+        for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
             pid = hashlib.sha1(f"{tenant}:{doc_id}:{i}".encode()).hexdigest()[:16]
             await self.store.add(Passage(id=pid, tenant=tenant, doc_id=doc_id, text=chunk,
-                                         embedding=self.embeddings.embed(chunk)))
+                                         embedding=embedding))
         return len(chunks)
 
     async def ingest_file(self, tenant: str, doc_id: str, filename: str, data: bytes) -> int:
@@ -50,8 +54,13 @@ class KnowledgeService:
         passages = await self.store.get(tenant)  # tenant-scoped by construction
         if not passages:
             return []
+        # Query embedding + cosine/bm25 scoring are network-/CPU-bound pure Python; run them off
+        # the event loop so a large tenant corpus can't freeze the loop for the whole scoring pass.
+        order = await asyncio.to_thread(self._rank, query, passages)
+        return [passages[i] for i in order[:k]]
+
+    def _rank(self, query: str, passages: list[Passage]) -> list[int]:
         qvec = self.embeddings.embed(query)
         dense = [retrieval.cosine(qvec, p.embedding) for p in passages]
         sparse = retrieval.bm25_scores(query, [p.text for p in passages])
-        order = retrieval.hybrid_order(dense, sparse)
-        return [passages[i] for i in order[:k]]
+        return retrieval.hybrid_order(dense, sparse)

@@ -27,6 +27,17 @@ def _setup_pack_with_requirements(client, tenant: str):
     return c, pack, fake_get_provider
 
 
+def test_extract_enforces_upload_cap(client, monkeypatch):
+    # A tender upload larger than the per-endpoint cap is refused with 413 (shrink the cap so the
+    # test payload stays small and never trips the global request-size middleware first).
+    monkeypatch.setattr("app.modules.rfp.router.MAX_UPLOAD_BYTES", 16)
+    c = auth_cookies("extrcap1", "owner")
+    pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "T"}, cookies=c).json()
+    r = client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
+                    files={"file": ("t.txt", io.BytesIO(b"x" * 64), "text/plain")})
+    assert r.status_code == 413
+
+
 def test_export_requires_extracted_requirements_first(client):
     c = auth_cookies("exportco0", "owner")
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender"}, cookies=c).json()

@@ -34,12 +34,13 @@ class AgentCore:
         # generator.generate() makes a blocking network call to the LLM provider. Run it off the
         # event loop thread -- otherwise one slow call freezes every other request this process is
         # handling (health checks included) for its entire duration, not just this one.
-        answer = await asyncio.to_thread(self.generator.generate, req, verified)
+        response = await asyncio.to_thread(self.generator.generate_response, req, verified)
+        answer = response.text.strip()
         # The critic scores against the retrieved evidence plus any verified prior answers.
         critique = critic_mod.grounding_score(answer, list(req.context) + verified)
         decision = gate_mod.decide(critique, threshold=self.threshold)
         return AgentResult(requirement_id=req.id, answer=answer, critique=critique,
-                           decision=decision, citations=list(req.context))
+                           decision=decision, citations=list(req.context), stub=response.stub)
 
     async def record_feedback(self, req: Requirement, *, tenant: str, approved_text: str) -> None:
         """Human approval/edit becomes trusted ground truth for this tenant + topic."""

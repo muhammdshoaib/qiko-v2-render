@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.modules.ai.gateway import LLMProvider, get_provider
+from app.modules.ai.gateway import LLMProvider, LLMResponse, get_provider
 from app.modules.agentcore.models import Requirement
 
 SYSTEM = (
@@ -39,6 +39,11 @@ class Generator:
         context_block = "\n".join(f"- {e}" for e in capped) if capped else "(none)"
         return f"CONTEXT:\n{context_block}\n\nREQUIREMENT:\n{req.text}\n"
 
-    def generate(self, req: Requirement, verified: list[str] | None = None) -> str:
+    def generate_response(self, req: Requirement, verified: list[str] | None = None) -> LLMResponse:
+        """Full provider response (carries the `stub` flag) for callers that must know whether the
+        text is a real grounded draft or a StubProvider fallback -- see AgentCore.run."""
         prompt = self.build_prompt(req, verified)
-        return self.provider.generate(prompt, system=self.system_prompt or SYSTEM).text.strip()
+        return self.provider.generate(prompt, system=self.system_prompt or SYSTEM)
+
+    def generate(self, req: Requirement, verified: list[str] | None = None) -> str:
+        return self.generate_response(req, verified).text.strip()

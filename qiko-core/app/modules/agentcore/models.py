@@ -32,3 +32,6 @@ class AgentResult:
     critique: Critique
     decision: Decision
     citations: list[str] = field(default_factory=list)
+    # True when the answer came from the StubProvider fallback (not a real grounded draft) -- lets
+    # persistence paths refuse to store it as a ready answer. See rfp.router._generate_question.
+    stub: bool = False

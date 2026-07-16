@@ -17,6 +17,9 @@ from app.core.config import get_settings
 class LLMResponse:
     text: str
     model: str = "stub"
+    # True when the text came from the deterministic StubProvider (e.g. a Bedrock outage forced
+    # the fallback). Such output is NOT a real grounded draft, so persistence paths can refuse it.
+    stub: bool = False
 
 
 class LLMProvider(Protocol):
@@ -32,12 +35,12 @@ class StubProvider:
 
     def generate(self, prompt: str, *, system: str | None = None, temperature: float = 0.2) -> LLMResponse:
         if self.canned is not None:
-            return LLMResponse(text=self.canned)
+            return LLMResponse(text=self.canned, stub=True)
         # Extract the CONTEXT block and reflect it back as the "answer" (fully grounded by design).
         context = ""
         if "CONTEXT:" in prompt:
             context = prompt.split("CONTEXT:", 1)[1].split("REQUIREMENT:", 1)[0].strip()
-        return LLMResponse(text=context or "No supporting evidence was provided.")
+        return LLMResponse(text=context or "No supporting evidence was provided.", stub=True)
 
 
 @dataclass
