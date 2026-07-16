@@ -12,6 +12,7 @@ truth in exports (idg-worker's human-answer overlay governance).
 """
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Protocol
@@ -158,9 +159,45 @@ class InMemoryQuestionStore:
         self._rows = [q for q in self._rows if not (q.pack_id == pack_id and q.tenant == tenant)]
 
 
+# A "section token": a leading letter-run + number ("B1"), a bare letter-run ("A"), or a bare
+# number ("2"). Everything after it (a dotted sub-part ".1", or a legacy "_unpriced" suffix from an
+# old flat backfill) is stripped so finer ids coalesce under the top-level section they belong to.
+_SECTION_TOKEN = re.compile(r"^([A-Za-z]+\d+|[A-Za-z]+|\d+)")
+
+
 def _top_level_code(code: str) -> str:
-    """The section a dotted extraction id belongs to: "B1.1"/"B1.2" -> "B1", "A1" -> "A1"."""
-    return (code or "").split(".")[0] or code
+    """The top-level section a (possibly dotted or legacy-flat) extraction id belongs to.
+
+    "B1.1"/"B1.2" -> "B1"; "A1" -> "A1"; "A1_unpriced"/"A1_priced" -> "A1"; "2" -> "2". Coalescing
+    finer/legacy ids under their leading section token keeps an old flat backfill (dozens of ids
+    like "A1_unpriced") from exploding into dozens of top-level sections."""
+    head = (code or "").split(".")[0]
+    match = _SECTION_TOKEN.match(head)
+    return match.group(1) if match else (head or code)
+
+
+def _is_subpart(code: str) -> bool:
+    """A dotted extraction id ("B1.1") denotes a distinct, independently gradeable sub-section; a
+    plain id ("B1", "A1", "A1_unpriced") is answered directly on its top-level section."""
+    return "." in (code or "")
+
+
+def _section_heading(items: list[dict]) -> str:
+    """The top-level section's display name: a plain item's own title if one exists, otherwise the
+    parent heading carried on a sub-part's title (the text before the em-dash separator the
+    extractor emits, e.g. "Organisational Structure ... - Contractor's Organogram")."""
+    for item in items:
+        if not _is_subpart(item["id"]):
+            return item["title"].strip() or item["title"]
+    first = items[0]["title"]
+    return first.split(" \u2014 ")[0].strip() or first
+
+
+def _subsection_name(item: dict) -> str:
+    """A sub-section's own name: the sub-part title after the parent-heading prefix, e.g.
+    "Contractor's Organogram" from "Organisational Structure ... - Contractor's Organogram"."""
+    parts = item["title"].split(" \u2014 ", 1)
+    return (parts[1].strip() if len(parts) == 2 else item["title"].strip()) or item["title"]
 
 
 @dataclass
@@ -278,22 +315,34 @@ class PackTreeService:
         return await self._recompute_section(tenant, section_id)
 
     async def _recompute_section(self, tenant: str, section_id: str) -> PackSection:
-        """Roll question state up to the section: a section is locked once all its questions are
-        locked; kb_gap surfaces if any question found no KB content."""
+        """Roll state up to the section AND, for a sub-sectioned section, up from its child
+        sub-sections (mirroring idg: a top-level section with sub-sections is only "locked" once
+        every sub-section is locked, and surfaces a KB gap if ANY sub-section has one). A leaf
+        section rolls up from its own questions; a parent from its children. Changing a child
+        cascades to its parent."""
         section = await self.sections.get(tenant, section_id)
         if section is None:
             raise PackSectionNotFound(section_id)
+        all_sections = await self.sections.list(tenant, section.pack_id)
+        children = [s for s in all_sections if s.parent_id == section_id]
         qs = await self.questions.list_for_section(tenant, section_id)
-        kb_gap = any(q.kb_gap for q in qs)
-        if qs and all(q.locked for q in qs):
+        kb_gap = any(q.kb_gap for q in qs) or any(c.kb_gap for c in children)
+        has_units = bool(qs or children)
+        all_locked = ((all(q.locked for q in qs) if qs else True)
+                      and (all(c.status == "locked" for c in children) if children else True))
+        drafty = {"draft_ready", "reviewing", "locked"}
+        if has_units and all_locked:
             status = "locked"
         elif section.manual:
             status = "manual"
-        elif any(q.ai_answer or q.user_draft for q in qs):
+        elif any(q.ai_answer or q.user_draft for q in qs) or any(c.status in drafty for c in children):
             status = "draft_ready"
         else:
             status = "not_generated"
-        return await self.sections.update(tenant, section_id, status=status, kb_gap=kb_gap)
+        updated = await self.sections.update(tenant, section_id, status=status, kb_gap=kb_gap)
+        if section.parent_id:
+            await self._recompute_section(tenant, section.parent_id)
+        return updated
 
     async def all_sections_locked(self, tenant: str, pack_id: str) -> bool:
         sections = await self.sections.list(tenant, pack_id)
@@ -301,41 +350,82 @@ class PackTreeService:
 
     # --- reads ---
     async def list_tree(self, tenant: str, pack_id: str) -> list[dict]:
+        """The flat list of sections (top-level AND their child sub-sections, linked by parent_id --
+        the FE nests them via `childrenOf`), each with its own questions plus rolled-up grounding
+        metrics so the cockpit can show idg-identical grounding/confidence/gaps per section.
+
+        Rollup (additive fields): `kb_gap` (any descendant leaf is a KB gap), `confidence`/
+        `grounding` (avg across drafted descendant leaves, null if none drafted), and
+        `subsection_count` (number of direct child sub-sections)."""
         sections = await self.sections.list(tenant, pack_id)
         questions = await self.questions.list(tenant, pack_id)
         by_section: dict[str, list[PackQuestion]] = {}
         for q in questions:
             by_section.setdefault(q.section_id, []).append(q)
+        children_of: dict[str, list[PackSection]] = {}
+        for s in sections:
+            if s.parent_id:
+                children_of.setdefault(s.parent_id, []).append(s)
+
+        def leaf_questions(section_id: str) -> list[PackQuestion]:
+            """This section's own questions plus every descendant sub-section's -- the leaves the
+            metrics roll up from."""
+            acc = list(by_section.get(section_id, []))
+            for child in children_of.get(section_id, []):
+                acc.extend(leaf_questions(child.id))
+            return acc
+
         out: list[dict] = []
         for s in sections:
-            sq = by_section.get(s.id, [])
-            out.append({**s.__dict__, "questions": [q.__dict__ for q in sq],
-                        "avg_confidence": round(sum(q.confidence for q in sq) / len(sq), 2) if sq else 0.0})
+            own = by_section.get(s.id, [])
+            rolled = leaf_questions(s.id)
+            drafted = [q for q in rolled if q.ai_answer or q.user_draft]
+            confidence = round(sum(q.confidence for q in drafted) / len(drafted), 2) if drafted else None
+            out.append({
+                **s.__dict__,
+                "questions": [q.__dict__ for q in own],
+                "avg_confidence": round(sum(q.confidence for q in own) / len(own), 2) if own else 0.0,
+                # additive rollup for the FE's grounding/confidence/gaps columns
+                "kb_gap": any(q.kb_gap for q in rolled),
+                "confidence": confidence,
+                "grounding": confidence,
+                "subsection_count": len(children_of.get(s.id, [])),
+            })
         return out
 
     async def overview(self, tenant: str, pack_id: str) -> dict:
         sections = await self.sections.list(tenant, pack_id)
         questions = await self.questions.list(tenant, pack_id)
+        parent_ids = {s.parent_id for s in sections if s.parent_id}
+        top_level = [s for s in sections if not s.parent_id]
+        # leaves = sub-sections + childless top-level sections (a KB gap is flagged per leaf)
+        leaves = [s for s in sections if s.id not in parent_ids]
         drafted = [q for q in questions if q.ai_answer or q.user_draft]
         for_human_review = [q for q in questions if q.decision == "human_review" and not q.locked]
         kb_sources = {c for q in questions for c in q.ai_sources}
+        avg = round(sum(q.confidence for q in drafted) / len(drafted), 2) if drafted else 0.0
         return {
-            "sections": len(sections),
-            "sections_locked": sum(1 for s in sections if s.status == "locked"),
+            "sections": len(top_level),
+            "subsections": len(sections) - len(top_level),
+            "sections_locked": sum(1 for s in top_level if s.status == "locked"),
             "questions": len(questions),
             "ai_drafted": len(drafted),
             "ai_drafted_total": len(questions),
             "for_human_review": len(for_human_review),
             "kb_sources": len(kb_sources),
-            "kb_gaps": sum(1 for q in questions if q.kb_gap),
+            "kb_gaps": sum(1 for s in leaves if s.kb_gap),
+            "avg_confidence": avg,
+            "avg_grounding": avg,
             "can_finalize": await self.all_sections_locked(tenant, pack_id),
         }
 
     # --- extraction wiring ---
     async def populate_from_extraction(self, tenant: str, pack_id: str, extracted: list[dict]) -> list[PackSection]:
-        """Group extracted requirement items into the section->question tree: items sharing a
-        top-level code ("B1.1"/"B1.2" -> "B1") become one section, each item a question. A section
-        whose items are all MANUAL/COMPLIANCE is flagged manual (team-completed, not AI-drafted)."""
+        """Build the two-level section tree from extracted items: items sharing a top-level code
+        ("B1.1"/"B1.2" -> "B1") become one top-level section, with each dotted item a child
+        sub-section (its own gradeable answer) and each plain item a question answered directly on
+        the section. A section (or sub-section) whose items are all MANUAL/COMPLIANCE is flagged
+        manual (team-completed, not AI-drafted)."""
         await self.sections.delete_for_pack(tenant, pack_id)
         await self.questions.delete_for_pack(tenant, pack_id)
         return await self._build_tree(tenant, pack_id, extracted)
@@ -353,23 +443,44 @@ class PackTreeService:
         return await self._build_tree(tenant, pack_id, extracted)
 
     async def _build_tree(self, tenant: str, pack_id: str, extracted: list[dict]) -> list[PackSection]:
-        """Shared grouping used by both populate_from_extraction and populate_from_requirements."""
+        """Shared two-level grouping used by both populate_from_extraction and
+        populate_from_requirements. Items are grouped by top-level section token; dotted items in a
+        group become child sub-sections (each a PackSection with parent_id set + one question),
+        plain items become questions directly on the top-level section. Returns every created
+        section (top-level and sub-section)."""
         groups: dict[str, list[dict]] = {}
         for item in extracted:
             groups.setdefault(_top_level_code(item["id"]), []).append(item)
         created: list[PackSection] = []
         for order, (code, items) in enumerate(groups.items()):
-            heading = items[0]["title"].split(" \u2014 ")[0].strip() or items[0]["title"]
+            subs = [i for i in items if _is_subpart(i["id"])]
+            plain = [i for i in items if not _is_subpart(i["id"])]
             manual = all(i["classification"] in {"MANUAL", "COMPLIANCE"} for i in items)
-            section = PackSection(id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, code=code,
-                                  name=heading, status="manual" if manual else "not_generated",
-                                  manual=manual, order_index=order)
-            await self.sections.add(section)
-            for qi, item in enumerate(items):
+            parent = PackSection(id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, code=code,
+                                 name=_section_heading(items),
+                                 status="manual" if manual else "not_generated",
+                                 manual=manual, order_index=order)
+            await self.sections.add(parent)
+            created.append(parent)
+            # plain items answer directly on the top-level section (idg: a section with no distinct
+            # numbered sub-parts is a single answer)
+            for qi, item in enumerate(plain):
                 await self.questions.add(PackQuestion(
-                    id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, section_id=section.id,
+                    id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, section_id=parent.id,
                     text=item["requirement"], req_id=item["id"], order_index=qi))
-            created.append(section)
+            # each dotted item is a child sub-section with its own single question (idg:
+            # "B1.1 Organogram", "B1.2 Organisation" -> two independently gradeable answers)
+            for sub_order, item in enumerate(subs):
+                sub_manual = item["classification"] in {"MANUAL", "COMPLIANCE"}
+                child = PackSection(id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id,
+                                    code=item["id"], name=_subsection_name(item), parent_id=parent.id,
+                                    status="manual" if sub_manual else "not_generated",
+                                    manual=sub_manual, order_index=sub_order)
+                await self.sections.add(child)
+                await self.questions.add(PackQuestion(
+                    id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, section_id=child.id,
+                    text=item["requirement"], req_id=item["id"], order_index=0))
+                created.append(child)
         return created
 
     async def delete_for_pack(self, tenant: str, pack_id: str) -> None:

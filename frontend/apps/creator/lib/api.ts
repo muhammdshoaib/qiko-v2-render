@@ -226,13 +226,20 @@ export type PackSection = {
   manual: boolean; kb_gap: boolean; order_index: number;
 };
 
-/** One node of GET /sections: a section plus its nested questions and their averaged confidence. */
-export type PackSectionNode = PackSection & { questions: PackQuestion[]; avg_confidence: number };
+/** One node of GET /sections: a section plus its nested questions and their averaged confidence.
+ * A top-level section also carries rolled-up grounding metrics from its sub-sections: `kb_gap`
+ * (any descendant is a KB gap), `confidence`/`grounding` (avg across drafted descendants, null if
+ * none drafted), and `subsection_count` (number of child sub-sections). */
+export type PackSectionNode = PackSection & {
+  questions: PackQuestion[]; avg_confidence: number;
+  confidence: number | null; grounding: number | null; subsection_count: number;
+};
 
 export type PackOverview = {
-  sections: number; sections_locked: number; questions: number;
+  sections: number; subsections: number; sections_locked: number; questions: number;
   ai_drafted: number; ai_drafted_total: number; for_human_review: number;
-  kb_sources: number; kb_gaps: number; can_finalize: boolean;
+  kb_sources: number; kb_gaps: number; avg_confidence: number; avg_grounding: number;
+  can_finalize: boolean;
 };
 
 export const getPackOverview = (packId: string) =>

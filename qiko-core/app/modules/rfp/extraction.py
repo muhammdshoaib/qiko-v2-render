@@ -37,7 +37,14 @@ SYSTEM = (
     "answer can be grounded in a knowledge base; DATA = requires the bidder's own factual data "
     "(CVs, pricing, equipment lists); MANUAL = a prescribed form/template completed outside the "
     'AI; COMPLIANCE = a pass/fail confirmation or signature), and "requirement" (the verbatim or '
-    "closely-paraphrased requirement text for that item)."
+    "closely-paraphrased requirement text for that item). "
+    "STRUCTURE: aim for a SMALL set of coarse top-level sections (roughly 10-25 for a whole "
+    "tender, following the document's own top-level lettered/numbered headings, e.g. commercial "
+    'A1..A4 and technical B1..Bn) -- do NOT emit dozens of separate top-level ids. Push finer '
+    "detail DOWN into dotted sub-parts of the section it belongs to (a sub-requirement of "
+    'section "B1" is "B1.1", "B1.2", ... NOT its own top-level "B7"), so a reviewer sees a '
+    "handful of top-level sections each expanding into its sub-sections rather than a long flat "
+    "list. Use the SAME top-level id for every sub-part of the same section."
 )
 
 _JSON_ARRAY = re.compile(r"\[.*\]", re.DOTALL)

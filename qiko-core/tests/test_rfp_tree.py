@@ -69,7 +69,7 @@ async def test_lock_all_in_section():
     assert all(q.locked for q in await svc.questions.list_for_section("t", s.id))
 
 
-async def test_extraction_wiring_groups_by_top_level_code():
+async def test_extraction_wiring_builds_two_level_tree():
     svc = PackTreeService()
     extracted = [
         {"id": "A1", "title": "Intro", "classification": "KB", "requirement": "Describe intro."},
@@ -77,15 +77,96 @@ async def test_extraction_wiring_groups_by_top_level_code():
         {"id": "B1.2", "title": "Org \u2014 Structure", "classification": "KB", "requirement": "Structure."},
         {"id": "C1", "title": "Pricing", "classification": "MANUAL", "requirement": "Complete pricing."},
     ]
-    sections = await svc.populate_from_extraction("t", "p1", extracted)
+    await svc.populate_from_extraction("t", "p1", extracted)
+    sections = await svc.sections.list("t", "p1")
     codes = {s.code: s for s in sections}
-    assert set(codes) == {"A1", "B1", "C1"}
-    # B1.1 + B1.2 collapse into one B1 section with two questions
-    b1_qs = await svc.questions.list_for_section("t", codes["B1"].id)
-    assert len(b1_qs) == 2 and {q.req_id for q in b1_qs} == {"B1.1", "B1.2"}
+    # top-level sections A1/B1/C1 plus B1's two child sub-sections
+    top = {s.code for s in sections if s.parent_id is None}
+    assert top == {"A1", "B1", "C1"}
+    b1 = codes["B1"]
+    # B1 is a PARENT: no direct questions, two child sub-sections (B1.1, B1.2), each one question
+    assert await svc.questions.list_for_section("t", b1.id) == []
+    kids = [s for s in sections if s.parent_id == b1.id]
+    assert {k.code for k in kids} == {"B1.1", "B1.2"}
     assert codes["B1"].name == "Org"  # parent heading before the em-dash
+    assert codes["B1.1"].name == "Organogram" and codes["B1.2"].name == "Structure"
+    for k in kids:
+        kq = await svc.questions.list_for_section("t", k.id)
+        assert len(kq) == 1 and kq[0].req_id == k.code
+    # A1 (no dotted children) keeps a single question directly on the section
+    a1_qs = await svc.questions.list_for_section("t", codes["A1"].id)
+    assert len(a1_qs) == 1 and a1_qs[0].req_id == "A1"
     # a section whose items are all MANUAL/COMPLIANCE is flagged manual
     assert codes["C1"].manual is True and codes["A1"].manual is False
+
+
+async def test_build_tree_yields_few_top_level_sections_from_many_items():
+    """BOC-style input: many fine-grained sub-parts collapse under a handful of top-level
+    sections (~idg's ~15), not one top-level section per item."""
+    svc = PackTreeService()
+    extracted = [{"id": "A1", "title": "Commercial", "classification": "MANUAL", "requirement": "Forms."}]
+    for sec in range(1, 6):  # B1..B5, each with 6 dotted sub-parts -> 30 sub-parts
+        for sub in range(1, 7):
+            extracted.append({"id": f"B{sec}.{sub}", "title": f"Section {sec} \u2014 Part {sub}",
+                              "classification": "KB", "requirement": f"Describe B{sec}.{sub}."})
+    await svc.populate_from_extraction("t", "pboc", extracted)
+    sections = await svc.sections.list("t", "pboc")
+    top = [s for s in sections if s.parent_id is None]
+    assert len(top) == 6  # A1 + B1..B5, far fewer than the 31 extracted items
+    assert len(top) < len(extracted)
+    # every top-level B section carries 6 sub-sections; the sub-sections hold the questions
+    assert all(len([s for s in sections if s.parent_id == p.id]) == 6
+               for p in top if p.code.startswith("B"))
+    assert len(await svc.questions.list("t", "pboc")) == 31  # one leaf question per item
+
+
+async def test_build_tree_coalesces_flat_legacy_ids():
+    """An old flat backfill emits non-dotted ids like 'A1_unpriced'/'A1_priced'; they must group
+    by leading section token, not each become a top-level section."""
+    svc = PackTreeService()
+    extracted = [
+        {"id": "A1_unpriced", "title": "Pricing", "classification": "MANUAL", "requirement": "Unpriced BOQ."},
+        {"id": "A1_priced", "title": "Pricing", "classification": "MANUAL", "requirement": "Priced BOQ."},
+        {"id": "2", "title": "Declaration", "classification": "COMPLIANCE", "requirement": "Sign."},
+    ]
+    await svc.populate_from_extraction("t", "pflat", extracted)
+    sections = await svc.sections.list("t", "pflat")
+    top = {s.code for s in sections if s.parent_id is None}
+    assert top == {"A1", "2"}  # the two A1_* ids coalesce under one top-level "A1"
+    a1 = next(s for s in sections if s.code == "A1")
+    a1_qs = await svc.questions.list_for_section("t", a1.id)
+    assert {q.req_id for q in a1_qs} == {"A1_unpriced", "A1_priced"}
+
+
+async def test_parent_section_rolls_up_kb_gap_confidence_grounding_from_children():
+    svc = PackTreeService()
+    extracted = [
+        {"id": "B1.1", "title": "Org \u2014 Organogram", "classification": "KB", "requirement": "Chart."},
+        {"id": "B1.2", "title": "Org \u2014 Structure", "classification": "KB", "requirement": "Structure."},
+    ]
+    await svc.populate_from_extraction("t", "proll", extracted)
+    sections = {s.code: s for s in await svc.sections.list("t", "proll")}
+    b1_1_q = (await svc.questions.list_for_section("t", sections["B1.1"].id))[0]
+    b1_2_q = (await svc.questions.list_for_section("t", sections["B1.2"].id))[0]
+    # one child grounded, the other a KB gap
+    await svc.apply_generation("t", b1_1_q.id, ai_answer="draft", ai_sources=["doc:iso"],
+                               confidence=0.8, decision="auto_accept", kb_gap=False)
+    await svc.apply_generation("t", b1_2_q.id, ai_answer="draft", ai_sources=[],
+                               confidence=0.4, decision="human_review", kb_gap=True)
+    # the stored parent section now reflects the child KB gap (drives the FE Gaps column)
+    assert (await svc.get_section("t", sections["B1"].id)).kb_gap is True
+
+    tree = await svc.list_tree("t", "proll")
+    node = {n["code"]: n for n in tree}
+    b1 = node["B1"]
+    assert b1["kb_gap"] is True                    # any child is a KB gap
+    assert b1["confidence"] == 0.6                 # avg of drafted children (0.8, 0.4)
+    assert b1["grounding"] == 0.6
+    assert b1["subsection_count"] == 2
+    assert b1["questions"] == []                   # parent has no direct questions
+    # per-sub-section rollup stays scoped to that sub-section
+    assert node["B1.1"]["confidence"] == 0.8 and node["B1.1"]["kb_gap"] is False
+    assert node["B1.2"]["confidence"] == 0.4 and node["B1.2"]["kb_gap"] is True
 
 
 def _reqs(pack_id, *specs):
@@ -101,12 +182,15 @@ async def test_backfill_from_requirements_builds_tree_when_empty():
                  ("A1", "Intro", "KB", "Describe intro."),
                  ("B1.1", "Org \u2014 Organogram", "MANUAL", "Org chart."),
                  ("B1.2", "Org \u2014 Structure", "MANUAL", "Structure."))
-    sections = await svc.populate_from_requirements("t", "p1", reqs)
+    await svc.populate_from_requirements("t", "p1", reqs)
+    sections = await svc.sections.list("t", "p1")
     codes = {s.code: s for s in sections}
-    # same grouping as populate_from_extraction: B1.1/B1.2 collapse into one B1 section
-    assert set(codes) == {"A1", "B1"}
-    b1_qs = await svc.questions.list_for_section("t", codes["B1"].id)
-    assert {q.req_id for q in b1_qs} == {"B1.1", "B1.2"}
+    # same two-level grouping as populate_from_extraction: B1.1/B1.2 become sub-sections under B1
+    top = {s.code for s in sections if s.parent_id is None}
+    assert top == {"A1", "B1"}
+    assert await svc.questions.list_for_section("t", codes["B1"].id) == []
+    kids = {s.code for s in sections if s.parent_id == codes["B1"].id}
+    assert kids == {"B1.1", "B1.2"}
     assert codes["B1"].name == "Org"  # parent heading before the em-dash
     assert codes["B1"].manual is True and codes["A1"].manual is False
 
@@ -351,8 +435,11 @@ def test_sections_backfill_lazily_for_old_pack(client, monkeypatch):
     # first view backfills the tree from the stored requirements
     tree = client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()
     codes = {s["code"]: s for s in tree}
-    assert set(codes) == {"A1", "B1"}
-    assert len(codes["B1"]["questions"]) == 2 and codes["B1"]["manual"] is True
+    # A1 (plain) is a top-level section; B1 is a parent with two child sub-sections (B1.1, B1.2)
+    assert {s["code"] for s in tree if s["parent_id"] is None} == {"A1", "B1"}
+    assert codes["B1"]["questions"] == [] and codes["B1"]["manual"] is True
+    assert codes["B1"]["subsection_count"] == 2
+    assert {s["code"] for s in tree if s["parent_id"] == codes["B1"]["id"]} == {"B1.1", "B1.2"}
 
     # idempotent: a second view neither rebuilds nor duplicates
     again = client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()
