@@ -4,7 +4,7 @@
 // cockpit -- mirrors the Sales Intelligence cockpit for cross-vertical consistency -- backed by the
 // /rfp/packs/{id} section->question tree API. One route (this page) owns tab + active-tender state;
 // section detail is a view within the Sections tab, not a separate route.
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, FileText, Loader2 } from "lucide-react";
@@ -41,10 +41,20 @@ export default function PreSalesCockpitPage() {
   }, [worker, agentId, router]);
 
   // Default the active tender to the first pack once they load; keep the current one if still present.
+  // A ?pack= deep-link (from the Worker Overview "Tenders" list) is honoured once when it resolves
+  // -- useSearchParams() can be null on the first render, so seeding it only in useState would race
+  // with this effect and fall back to packs[0]. After that first honour the user can switch freely.
+  const deepLinkHonoured = useRef(false);
   useEffect(() => {
-    if (packs.length === 0) { setActivePackId(null); return; }
-    setActivePackId((cur) => (cur && packs.some((p) => p.id === cur) ? cur : packs[0].id));
-  }, [packs]);
+    if (packs.length === 0) { setActivePackId(null); deepLinkHonoured.current = false; return; }
+    setActivePackId((cur) => {
+      if (!deepLinkHonoured.current && requestedPackId && packs.some((p) => p.id === requestedPackId)) {
+        deepLinkHonoured.current = true;
+        return requestedPackId;
+      }
+      return cur && packs.some((p) => p.id === cur) ? cur : packs[0].id;
+    });
+  }, [packs, requestedPackId]);
 
   const workerName = worker?.name ?? "Pre-Sales / RFP Writer";
   const activePack = packs.find((p) => p.id === activePackId) ?? null;

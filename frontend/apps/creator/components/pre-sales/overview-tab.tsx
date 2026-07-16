@@ -104,9 +104,15 @@ export function OverviewTab({ packId, onOpenSections, onOpenBrief }: {
             <p className="mt-4 flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-2.5 py-2 text-[11px] text-amber-300">
               <AlertTriangle className="size-3.5 shrink-0" /> {o.kb_gaps} question(s) flagged as KB gaps -- add sources to improve grounding.
             </p>
-          ) : o ? (
+          ) : o && o.ai_drafted > 0 ? (
             <p className="mt-4 flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.06] px-2.5 py-2 text-[11px] text-emerald-300">
               <CheckCircle2 className="size-3.5 shrink-0" /> No knowledge-base gaps detected.
+            </p>
+          ) : o ? (
+            // Gaps are only known once answers have been drafted (a gap = a question that couldn't be
+            // grounded in the KB). Before any draft exists, claiming "no gaps" is misleading.
+            <p className="mt-4 flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-[11px] text-slate-400">
+              <AlertTriangle className="size-3.5 shrink-0" /> Knowledge-base gaps are flagged once answers are generated.
             </p>
           ) : null}
         </div>
