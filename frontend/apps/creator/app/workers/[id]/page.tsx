@@ -5,9 +5,10 @@ import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeft, Bot, BrainCircuit, Calendar, Check, ChevronUp, CircleCheck, Code, Copy, ExternalLink, FileText,
-  GraduationCap, Globe, Link2, Lock, MessageCircle, MessageSquare, Phone, SendHorizonal, Settings, Share2, Sparkles,
-  Trash2, Users, Zap, type LucideIcon,
+  AlertTriangle, ArrowLeft, Bot, BrainCircuit, Calendar, Check, ChevronDown, ChevronUp, CircleCheck, Code, Copy,
+  Database, ExternalLink, FileText, GraduationCap, Globe, HelpCircle, Library, Link2, Loader2, Lock, MessageCircle,
+  MessageSquare, Phone, Plus, Search, SendHorizonal, Settings, Share2, Sparkles, Trash2, Upload, Users, Zap,
+  type LucideIcon,
 } from "lucide-react";
 import { Badge, Button, Card, CardContent, Input, Label, Skeleton, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
@@ -15,9 +16,9 @@ import { WorkerAvatar } from "@/components/worker-avatar";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import { CrmPipeline } from "@/components/crm-pipeline";
 import {
-  addBehavior, addFaq, addPolicy, addWebsite, ask, connectTeamsWebhook,
+  addFaq, addPolicy, addWebsite, ask, connectTeamsWebhook,
   deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, getSalesforceCredentials,
-  getTeamsWebhookStatus, getVapiCredentials, ingest, listAgents, listDocuments, listRfpPacks, markReady,
+  getTeamsWebhookStatus, getVapiCredentials, ingest, ingestFile, listAgents, listDocuments, listRfpPacks, markReady,
   saveSalesforceCredentials, saveVapiCredentials, setPackOutcome, testSalesforceConnection, testTeamsWebhook,
   updateAgentConfig, updateCalendlyEventType, type Agent, type Doc, type RfpPack,
 } from "@/lib/api";
@@ -33,8 +34,8 @@ const TABS: { id: Tab; icon: LucideIcon; locked?: boolean }[] = [
   { id: "Settings", icon: Settings },
 ];
 
-function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className="min-h-24 w-full rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-200 placeholder:text-slate-500 transition-colors focus-visible:border-cyan-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500" />;
+function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea {...props} className={cn("min-h-24 w-full rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-200 placeholder:text-slate-500 transition-colors focus-visible:border-cyan-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500", className)} />;
 }
 
 export default function WorkerDetailPage() {
@@ -561,7 +562,7 @@ function VoiceSubTab({ id }: { id: string }) {
             onChange={(e) => setSecretKey(e.target.value)} />
         </div>
         {save.isSuccess && <p className="text-xs text-emerald-600">Voice credentials saved.</p>}
-        {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save voice credentials — check the values and try again.</p>}
+        {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save voice credentials. Check the values and try again.</p>}
         <div className="flex justify-end">
           <Button disabled={!assistantId || !publicKey || !secretKey || save.isPending} onClick={() => save.mutate()}>
             {save.isPending ? "Saving..." : "Save"}
@@ -601,7 +602,7 @@ function CalendlySubTab({ id, worker }: { id: string; worker?: Agent }) {
           <Input id="calendly-url" placeholder="https://calendly.com/you/30min" value={url} onChange={(e) => setUrl(e.target.value)} />
         </div>
         {save.isSuccess && <p className="text-xs text-emerald-600">Calendly event saved.</p>}
-        {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save that Calendly event — please try again.</p>}
+        {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save that Calendly event. Please try again.</p>}
         <div className="flex justify-end">
           <Button disabled={!url || save.isPending} onClick={() => save.mutate()}>
             {save.isPending ? "Saving..." : savedEventType ? "Change Calendly event" : "Connect Calendly"}
@@ -640,7 +641,9 @@ function TrainTab({ id, worker, docs, loading, onKnowledgeChange, onWorkerChange
       {step === "Tone" && (
         <ToneStep key={worker ? "loaded" : "loading"} id={id} worker={worker} onSaved={onWorkerChange} />
       )}
-      {step === "Behavior" && <BehaviorStep id={id} />}
+      {step === "Behavior" && (
+        <BehaviorStep key={worker ? "loaded" : "loading"} id={id} worker={worker} onSaved={onWorkerChange} />
+      )}
       {step === "Knowledge" && <KnowledgeStep id={id} docs={docs} loading={loading} onChange={onKnowledgeChange} />}
     </div>
   );
@@ -682,7 +685,7 @@ function BackgroundStep({ id, worker, onSaved }: { id: string; worker?: Agent; o
           value={unique} onChange={(e) => setUnique(e.target.value)} />
       </div>
       {save.isSuccess && <p className="text-xs text-emerald-600">Background saved.</p>}
-      {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save — please try again.</p>}
+      {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save. Please try again.</p>}
       <div className="flex justify-end"><Button disabled={save.isPending} onClick={() => save.mutate()}>{save.isPending ? "Saving..." : "Save Background"}</Button></div>
     </CardContent></Card>
   );
@@ -719,15 +722,120 @@ function ToneStep({ id, worker, onSaved }: { id: string; worker?: Agent; onSaved
   );
 }
 
-function BehaviorStep({ id }: { id: string }) {
-  return (
-    <SourceForm title="Prompts & rules" onSubmit={(sid) => addBehavior(id, sid, val("behavior"))}
-      fields={[["behavior", "Define a prompt, guardrail, or rule for this worker", true]]} onDone={() => {}} />
-  );
+// Behavior sub-tab: Prompts / Guardrails / Rules. Each category is a string[] on the agent config,
+// merge-patched via updateAgentConfig (config.prompts / config.guardrails / config.rules). This is
+// persistence + UI only: it does not change how the backend generates answers.
+const BEHAVIOR_CATEGORIES = [
+  {
+    key: "prompts", label: "Prompts", empty: "No prompts yet",
+    help: "System prompts that shape how this worker introduces itself and responds.",
+    placeholder: "e.g., Always greet the customer by name and confirm what they need before answering.",
+  },
+  {
+    key: "guardrails", label: "Guardrails", empty: "No guardrails yet",
+    help: "Limits on what this worker must never do or say.",
+    placeholder: "e.g., Never share pricing before qualifying the lead.",
+  },
+  {
+    key: "rules", label: "Rules", empty: "No rules yet",
+    help: "Specific rules this worker should always follow.",
+    placeholder: "e.g., Escalate to a human whenever a refund is requested.",
+  },
+] as const;
+type BehaviorKey = (typeof BEHAVIOR_CATEGORIES)[number]["key"];
 
-  function val(name: string): string {
-    return (document.getElementById(`f-${name}`) as HTMLTextAreaElement | null)?.value ?? "";
-  }
+function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onSaved: () => void }) {
+  const cfg = worker?.config ?? {};
+  const seed = (k: BehaviorKey): string[] => {
+    const v = cfg[k];
+    return Array.isArray(v) ? (v as unknown[]).map((x) => String(x)) : [];
+  };
+  const [items, setItems] = useState<Record<BehaviorKey, string[]>>({
+    prompts: seed("prompts"), guardrails: seed("guardrails"), rules: seed("rules"),
+  });
+  const [search, setSearch] = useState("");
+  const [open, setOpen] = useState<BehaviorKey | null>("prompts");
+  const save = useMutation({
+    mutationFn: (patch: Record<string, unknown>) => updateAgentConfig(id, patch),
+    onSuccess: onSaved,
+  });
+
+  // Persist a category: store its cleaned (trimmed, non-empty) array under its config key.
+  const persist = (key: BehaviorKey, next: string[]) => save.mutate({ [key]: next.map((s) => s.trim()).filter(Boolean) });
+  const setCat = (key: BehaviorKey, next: string[]) => setItems((prev) => ({ ...prev, [key]: next }));
+  const addItem = (key: BehaviorKey) => { setCat(key, [...items[key], ""]); setOpen(key); };
+  const editItem = (key: BehaviorKey, i: number, value: string) => setCat(key, items[key].map((v, j) => (j === i ? value : v)));
+  const removeItem = (key: BehaviorKey, i: number) => {
+    const next = items[key].filter((_, j) => j !== i);
+    setCat(key, next); persist(key, next);
+  };
+
+  const q = search.trim().toLowerCase();
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-white">Behavior</h2>
+        <p className="text-sm text-muted-foreground">Prompts &amp; rules</p>
+      </div>
+
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+        <Input placeholder="Search prompts, guardrails, and rules" value={search}
+          onChange={(e) => setSearch(e.target.value)} aria-label="Search behavior" className="pl-9" />
+      </div>
+
+      {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save that change. Please try again.</p>}
+
+      <div className="space-y-3">
+        {BEHAVIOR_CATEGORIES.map((c) => {
+          const all = items[c.key];
+          const visible = q ? all.map((v, i) => [v, i] as const).filter(([v]) => v.toLowerCase().includes(q)) : all.map((v, i) => [v, i] as const);
+          const isOpen = open === c.key;
+          return (
+            <Card key={c.key} className="overflow-hidden">
+              <div className="flex items-center justify-between gap-2 px-4 py-3">
+                <button type="button" onClick={() => setOpen(isOpen ? null : c.key)}
+                  className="flex flex-1 items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60">
+                  <ChevronDown className={cn("size-4 shrink-0 text-slate-500 transition-transform", !isOpen && "-rotate-90")} />
+                  <span className="text-sm font-semibold text-white">{c.label}</span>
+                  <span title={c.help} aria-label={c.help} className="cursor-help text-slate-500 hover:text-slate-300">
+                    <HelpCircle className="size-3.5" />
+                  </span>
+                  <Badge variant="muted">{all.filter((s) => s.trim()).length}</Badge>
+                </button>
+                <Button variant="outline" size="sm" className="h-8 shrink-0" onClick={() => addItem(c.key)} disabled={save.isPending}>
+                  <Plus className="size-4" /> Add
+                </Button>
+              </div>
+              {isOpen && (
+                <div className="space-y-2 border-t border-white/[0.06] px-4 py-3">
+                  {all.length === 0 && (
+                    <p className="py-2 text-sm text-muted-foreground">{c.empty}</p>
+                  )}
+                  {all.length > 0 && visible.length === 0 && (
+                    <p className="py-2 text-sm text-muted-foreground">No matches.</p>
+                  )}
+                  {visible.map(([value, i]) => (
+                    <div key={i} className="flex items-start gap-2">
+                      <Textarea value={value} placeholder={c.placeholder}
+                        onChange={(e) => editItem(c.key, i, e.target.value)}
+                        onBlur={() => persist(c.key, items[c.key])}
+                        className="min-h-16" />
+                      <Button variant="ghost" size="icon" aria-label="Delete item" className="shrink-0"
+                        disabled={save.isPending} onClick={() => removeItem(c.key, i)}>
+                        <Trash2 className="size-4 text-muted-foreground" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 const KNOWLEDGE_CARDS = [
@@ -738,42 +846,101 @@ const KNOWLEDGE_CARDS = [
 ] as const;
 
 function KnowledgeStep({ id, docs, loading, onChange }: { id: string; docs?: Doc[]; loading: boolean; onChange: () => void }) {
-  const [open, setOpen] = useState<(typeof KNOWLEDGE_CARDS)[number]["key"] | null>(null);
+  // Two views, matching stage-app: "Add New" (the category accordions + document ingestion) and
+  // "Library" (the ingested documents, live from the shared per-worker KB that studio Sources reads).
+  const [view, setView] = useState<"add" | "library">("add");
+  const [open, setOpen] = useState<(typeof KNOWLEDGE_CARDS)[number]["key"] | null>("documents");
+  const count = docs?.length ?? 0;
 
   function val(name: string): string {
     return (document.getElementById(`f-${name}`) as HTMLInputElement | HTMLTextAreaElement | null)?.value ?? "";
   }
 
   return (
-    <div className="space-y-3">
-      <p className="font-medium">FAQs & docs</p>
-      {KNOWLEDGE_CARDS.map((c) => (
-        <Card key={c.key}>
-          <CardContent className="flex items-center justify-between py-4">
-            <button className="flex-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60" onClick={() => setOpen(open === c.key ? null : c.key)}>
-              <p className="text-sm font-medium">{c.title}</p>
-              <p className="text-xs text-muted-foreground">{c.description}</p>
-            </button>
-            {c.key === "documents" && <Badge variant="muted">{docs?.length ?? 0}</Badge>}
-          </CardContent>
-          {open === c.key && (
-            <CardContent className="border-t border-border pt-4">
-              {c.key === "faqs" && (
-                <SourceForm title="Add an FAQ" onSubmit={(sid) => addFaq(id, sid, val("q"), val("a"))}
-                  fields={[["q", "Question", false], ["a", "Answer", true]]} onDone={onChange} />
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold text-white">Knowledge</h2>
+        <p className="text-sm text-muted-foreground">FAQs &amp; docs</p>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button variant={view === "add" ? "default" : "outline"} size="sm" onClick={() => setView("add")}>
+          <Plus className="size-4" /> Add New
+        </Button>
+        <Button variant={view === "library" ? "default" : "outline"} size="sm" onClick={() => setView("library")}>
+          <Library className="size-4" /> Library ({count})
+        </Button>
+      </div>
+
+      {view === "library" ? (
+        <DocumentLibrary docs={docs} loading={loading} onChange={onChange} />
+      ) : (
+        <div className="space-y-3">
+          {KNOWLEDGE_CARDS.map((c) => (
+            <Card key={c.key}>
+              <CardContent className="flex items-center justify-between py-4">
+                <button className="flex-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60" onClick={() => setOpen(open === c.key ? null : c.key)}>
+                  <p className="text-sm font-medium">{c.title}</p>
+                  <p className="text-xs text-muted-foreground">{c.description}</p>
+                </button>
+                {c.key === "documents" && <Badge variant="muted">{count}</Badge>}
+              </CardContent>
+              {open === c.key && (
+                <CardContent className="border-t border-border pt-4">
+                  {c.key === "faqs" && (
+                    <SourceForm title="Add an FAQ" onSubmit={(sid) => addFaq(id, sid, val("q"), val("a"))}
+                      fields={[["q", "Question", false], ["a", "Answer", true]]} onDone={onChange} />
+                  )}
+                  {c.key === "websites" && (
+                    <SourceForm title="Add a website" onSubmit={(sid) => addWebsite(id, sid, val("name"), val("url"), val("details"))}
+                      fields={[["name", "Name", false], ["url", "URL", false], ["details", "Details", true]]} onDone={onChange} />
+                  )}
+                  {c.key === "documents" && <KnowledgeTab id={id} docs={docs} loading={loading} onChange={onChange} />}
+                  {c.key === "policies" && (
+                    <SourceForm title="Add a policy" onSubmit={(sid) => addPolicy(id, sid, val("title"), val("body"))}
+                      fields={[["title", "Title", false], ["body", "Body", true]]} onDone={onChange} />
+                  )}
+                </CardContent>
               )}
-              {c.key === "websites" && (
-                <SourceForm title="Add a website" onSubmit={(sid) => addWebsite(id, sid, val("name"), val("url"), val("details"))}
-                  fields={[["name", "Name", false], ["url", "URL", false], ["details", "Details", true]]} onDone={onChange} />
-              )}
-              {c.key === "documents" && <KnowledgeTab id={id} docs={docs} loading={loading} onChange={onChange} />}
-              {c.key === "policies" && (
-                <SourceForm title="Add a policy" onSubmit={(sid) => addPolicy(id, sid, val("title"), val("body"))}
-                  fields={[["title", "Title", false], ["body", "Body", true]]} onDone={onChange} />
-              )}
-            </CardContent>
-          )}
-        </Card>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// The ingested-documents "Library": the SAME per-worker knowledge base the studio Sources tab reads
+// (both use listDocuments / deleteDocument), so a doc added in either place shows up in the other.
+function DocumentLibrary({ docs, loading, onChange }: { docs?: Doc[]; loading: boolean; onChange: () => void }) {
+  const remove = useMutation({ mutationFn: (docId: string) => deleteDocument(docId), onSuccess: onChange });
+  return (
+    <div className="space-y-2">
+      {loading && [0, 1, 2].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
+      {!loading && (docs?.length ?? 0) === 0 && (
+        <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-12 text-center">
+          <span className="mb-3 flex size-11 items-center justify-center rounded-2xl bg-white/[0.04] text-slate-500">
+            <Database className="size-5" />
+          </span>
+          <p className="text-sm font-medium text-slate-300">Knowledge base is empty</p>
+          <p className="mt-1 max-w-sm text-xs text-slate-500">Add a document from the Add New tab and it will appear here (and in studio Sources).</p>
+        </div>
+      )}
+      {docs?.map((d) => (
+        <Card key={d.doc_id}><CardContent className="flex items-center justify-between gap-3 py-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <FileText className="size-4 shrink-0 text-muted-foreground" />
+            <span className="truncate text-sm font-medium text-white">{d.doc_id}</span>
+            <Badge variant="muted">{d.chunks} passage{d.chunks === 1 ? "" : "s"}</Badge>
+          </div>
+          <Button variant="ghost" size="icon" aria-label={`Delete ${d.doc_id}`}
+            disabled={remove.isPending && remove.variables === d.doc_id}
+            onClick={() => { if (window.confirm(`Remove "${d.doc_id}" from the knowledge base?`)) remove.mutate(d.doc_id); }}>
+            {remove.isPending && remove.variables === d.doc_id
+              ? <Loader2 className="size-4 animate-spin text-muted-foreground" />
+              : <Trash2 className="size-4 text-muted-foreground" />}
+          </Button>
+        </CardContent></Card>
       ))}
     </div>
   );
@@ -798,7 +965,7 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
       const reply = await ask(conversationId, q, id);
       setMessages((m) => [...m, reply]);
     } catch {
-      setMessages((m) => [...m, { role: "assistant", text: "Sorry — I couldn't answer that just now. Please try again in a moment." }]);
+      setMessages((m) => [...m, { role: "assistant", text: "Sorry, I couldn't answer that just now. Please try again in a moment." }]);
     } finally {
       setBusy(false);
     }
@@ -935,23 +1102,61 @@ function SettingsTab({ id, worker, onWorkerChange }: { id: string; worker?: Agen
   );
 }
 
+// Documents accordion: adds to the shared per-worker knowledge base. A "Choose file" picker + an
+// "Ingest" button upload via ingestFile -> POST /knowledge/ingest-file (editor role), mirroring the
+// studio Sources UX; free-text ingest stays as a lightweight alternative. Both refetch on success.
 function KnowledgeTab({ id, docs, loading, onChange }: { id: string; docs?: Doc[]; loading: boolean; onChange: () => void }) {
   const [text, setText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const add = useMutation({ mutationFn: () => ingest(`${id}-${Date.now()}`, text), onSuccess: () => { setText(""); onChange(); } });
   const remove = useMutation({ mutationFn: (d: string) => deleteDocument(d), onSuccess: onChange });
+  const ingestDoc = useMutation({
+    // doc_id is the filename without extension, mirroring the studio Sources ingest flow.
+    mutationFn: (f: File) => ingestFile(f.name.replace(/\.[^.]+$/, "") || f.name, f),
+    onSuccess: () => { setFile(null); onChange(); },
+  });
   return (
     <div className="space-y-4">
       <Card><CardContent className="space-y-3 pt-6">
+        <p className="text-sm font-medium text-white">Add a document</p>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-white/[0.06] focus-within:ring-2 focus-within:ring-cyan-500">
+            <Upload className="size-4" /> Choose file
+            <input type="file" accept=".pdf,.docx,.txt,.md" className="hidden" aria-label="Choose knowledge document"
+              onChange={(e) => { setFile(e.target.files?.[0] ?? null); e.target.value = ""; }} />
+          </label>
+          <span className="min-w-0 flex-1 truncate text-xs text-slate-500">{file?.name ?? "No file chosen"}</span>
+          <Button disabled={!file || ingestDoc.isPending} onClick={() => file && ingestDoc.mutate(file)}>
+            {ingestDoc.isPending ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+            {ingestDoc.isPending ? "Ingesting…" : "Ingest"}
+          </Button>
+        </div>
+        {ingestDoc.isError && (
+          <p className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-xs text-red-300">
+            <AlertTriangle className="size-3.5 shrink-0" /> Couldn&apos;t ingest that file (needs editor role). Please try again.
+          </p>
+        )}
+      </CardContent></Card>
+
+      <Card><CardContent className="space-y-3 pt-6">
+        <p className="text-sm font-medium text-white">Or add free-text knowledge</p>
         <Textarea id="f-knowledge" placeholder="Add free-text knowledge…" value={text} onChange={(e) => setText(e.target.value)} />
         <div className="flex justify-end"><Button disabled={!text.trim() || add.isPending} onClick={() => add.mutate()}>Add knowledge</Button></div>
       </CardContent></Card>
+
       <div className="space-y-2">
         {loading && [0, 1].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
         {docs?.map((d) => (
           <Card key={d.doc_id}><CardContent className="flex items-center justify-between py-3">
-            <div className="flex items-center gap-3"><FileText className="size-4 text-muted-foreground" />
-              <span className="text-sm font-medium">{d.doc_id}</span><Badge variant="muted">{d.chunks}</Badge></div>
-            <Button variant="ghost" size="icon" aria-label={`Delete ${d.doc_id}`} disabled={remove.isPending} onClick={() => remove.mutate(d.doc_id)}><Trash2 className="size-4 text-muted-foreground" /></Button>
+            <div className="flex min-w-0 items-center gap-3"><FileText className="size-4 shrink-0 text-muted-foreground" />
+              <span className="truncate text-sm font-medium">{d.doc_id}</span><Badge variant="muted">{d.chunks} passage{d.chunks === 1 ? "" : "s"}</Badge></div>
+            <Button variant="ghost" size="icon" aria-label={`Delete ${d.doc_id}`}
+              disabled={remove.isPending && remove.variables === d.doc_id}
+              onClick={() => { if (window.confirm(`Remove "${d.doc_id}" from the knowledge base?`)) remove.mutate(d.doc_id); }}>
+              {remove.isPending && remove.variables === d.doc_id
+                ? <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                : <Trash2 className="size-4 text-muted-foreground" />}
+            </Button>
           </CardContent></Card>
         ))}
         {docs?.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">No documents yet.</p>}
@@ -977,7 +1182,7 @@ function SourceForm({ title, fields, onSubmit, onDone }: {
         </div>
       ))}
       {m.isError && <p className="text-sm text-destructive">Not permitted (needs editor role).</p>}
-      {m.isSuccess && <p className="text-sm text-success">Added — grounding updated.</p>}
+      {m.isSuccess && <p className="text-sm text-success">Added. Grounding updated.</p>}
       <div className="flex justify-end"><Button disabled={m.isPending} onClick={() => m.mutate()}>Save</Button></div>
     </CardContent></Card>
   );
