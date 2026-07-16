@@ -61,10 +61,42 @@ def _read_jsonl(data: bytes) -> str:
 
 
 def _read_docx(data: bytes) -> str:
+    # Walk the document body in order so we capture BOTH paragraphs AND tables -- in tender packs
+    # (e.g. an Annex "Technical Proposal Template" or a compliance matrix) the substance lives in
+    # the tables, and a paragraphs-only read silently drops the bulk of the content. Also pull in
+    # header/footer text (deduped, since it repeats per section).
     from docx import Document
+    from docx.table import Table
+    from docx.text.paragraph import Paragraph
 
     doc = Document(io.BytesIO(data))
-    return "\n".join(p.text for p in doc.paragraphs)
+    parts: list[str] = []
+
+    def _table_lines(tbl: Table) -> None:
+        for row in tbl.rows:
+            cells = [c.text.strip() for c in row.cells]
+            if any(cells):
+                parts.append(" | ".join(cells))
+
+    for child in doc.element.body.iterchildren():
+        tag = child.tag.rsplit("}", 1)[-1]  # version-robust: 'p' | 'tbl' | ...
+        if tag == "p":
+            text = Paragraph(child, doc).text
+            if text.strip():
+                parts.append(text)
+        elif tag == "tbl":
+            _table_lines(Table(child, doc))
+
+    seen: set[str] = set()
+    for section in doc.sections:
+        for hf in (section.header, section.footer):
+            for p in hf.paragraphs:
+                t = p.text.strip()
+                if t and t not in seen:
+                    seen.add(t)
+                    parts.append(t)
+
+    return "\n".join(parts)
 
 
 def _read_xlsx(data: bytes) -> str:

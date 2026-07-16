@@ -41,6 +41,25 @@ def test_docx_real_extraction():
     assert "ISO 9001 certification" in extract_text("bid.docx", buf.getvalue())
 
 
+def test_docx_extracts_table_content():
+    # Regression: the docx reader used to read only paragraphs, silently dropping tables -- and in
+    # tender packs (Annex templates / compliance matrices) the substance lives in the tables.
+    from docx import Document
+
+    doc = Document()
+    doc.add_paragraph("Technical Proposal Template")
+    table = doc.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "Requirement"
+    table.cell(0, 1).text = "Response"
+    table.cell(1, 0).text = "Security clearance"
+    table.cell(1, 1).text = "SC-cleared personnel provided"
+    buf = io.BytesIO()
+    doc.save(buf)
+    text = extract_text("annex.docx", buf.getvalue())
+    assert "Security clearance" in text
+    assert "SC-cleared personnel provided" in text
+
+
 def test_xlsx_real_extraction():
     from openpyxl import Workbook
 
