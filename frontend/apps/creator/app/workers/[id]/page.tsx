@@ -6,8 +6,8 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft, Bot, BrainCircuit, Calendar, Check, ChevronUp, CircleCheck, Code, Copy, ExternalLink, FileText,
-  GraduationCap, Globe, Link2, ListChecks, MessageCircle, MessageSquare, Phone, SendHorizonal, Share2, Sparkles,
-  Trash2, Users, Zap,
+  GraduationCap, Globe, Link2, Lock, MessageCircle, MessageSquare, Phone, SendHorizonal, Settings, Share2, Sparkles,
+  Trash2, Users, Zap, type LucideIcon,
 } from "lucide-react";
 import { Badge, Button, Card, CardContent, Input, Label, Skeleton, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
@@ -15,23 +15,23 @@ import { WorkerAvatar } from "@/components/worker-avatar";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import { CrmPipeline } from "@/components/crm-pipeline";
 import {
-  addBehavior, addFaq, addPolicy, addWebsite, ask, batchAnswer, batchExportUrl, connectTeamsWebhook,
-  createRfpPack, deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, getSalesforceCredentials,
-  getTeamsWebhookStatus, getVapiCredentials, ingest, listAgents, listDocuments, listRfpPacks,
+  addBehavior, addFaq, addPolicy, addWebsite, ask, connectTeamsWebhook,
+  deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, getSalesforceCredentials,
+  getTeamsWebhookStatus, getVapiCredentials, ingest, listAgents, listDocuments, listRfpPacks, markReady,
   saveSalesforceCredentials, saveVapiCredentials, setPackOutcome, testSalesforceConnection, testTeamsWebhook,
-  updateAgentConfig, updateCalendlyEventType, type Agent, type BatchAnswer, type Doc, type RfpPack,
+  updateAgentConfig, updateCalendlyEventType, type Agent, type Doc, type RfpPack,
 } from "@/lib/api";
 import { formatShortDate, workerTypeLabel } from "@/lib/stringUtils";
 
-const TABS = [
+type Tab = "Overview" | "Chat" | "Train" | "CRM" | "Connections" | "Settings";
+const TABS: { id: Tab; icon: LucideIcon; locked?: boolean }[] = [
   { id: "Overview", icon: Sparkles },
   { id: "Chat", icon: MessageSquare },
   { id: "Train", icon: GraduationCap },
-  { id: "CRM", icon: Users },
+  { id: "CRM", icon: Users, locked: true },
   { id: "Connections", icon: Link2 },
-  { id: "Batch", icon: ListChecks },
-] as const;
-type Tab = (typeof TABS)[number]["id"];
+  { id: "Settings", icon: Settings },
+];
 
 function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea {...props} className="min-h-24 w-full rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-200 placeholder:text-slate-500 transition-colors focus-visible:border-cyan-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500" />;
@@ -42,7 +42,7 @@ export default function WorkerDetailPage() {
   const qc = useQueryClient();
   const searchParams = useSearchParams();
   const initialTab = searchParams.get("tab") as Tab | null;
-  const [tab, setTab] = useState<Tab>(TABS.some((t) => t.id === initialTab) ? (initialTab as Tab) : "Overview");
+  const [tab, setTab] = useState<Tab>(TABS.some((t) => t.id === initialTab && !t.locked) ? (initialTab as Tab) : "Overview");
   const docs = useQuery({ queryKey: ["documents"], queryFn: listDocuments });
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const worker = agents.data?.find((a) => a.id === id);
@@ -103,7 +103,17 @@ export default function WorkerDetailPage() {
           </div>
           <nav aria-label="Worker sections" className="overflow-x-auto px-4 py-2 sm:px-6">
             <div className="flex w-max items-center gap-2">
-              {TABS.map(({ id: t, icon: Icon }) => {
+              {TABS.map(({ id: t, icon: Icon, locked }) => {
+                if (locked) {
+                  return (
+                    <button key={t} type="button" disabled aria-disabled="true" title="Locked"
+                      className="inline-flex h-10 shrink-0 cursor-not-allowed items-center gap-2 whitespace-nowrap rounded-xl border border-transparent px-3 text-sm font-medium text-slate-500 opacity-60 sm:px-4">
+                      <Icon className="size-4 shrink-0 text-slate-600" />
+                      <span className="leading-none">{t}</span>
+                      <Lock className="size-3.5 shrink-0 text-slate-500" />
+                    </button>
+                  );
+                }
                 const isActive = tab === t;
                 return (
                   <button key={t} onClick={() => setTab(t)} aria-current={isActive ? "page" : undefined}
@@ -127,7 +137,9 @@ export default function WorkerDetailPage() {
           {tab === "CRM" && <CrmTab id={id} />}
           {tab === "Connections" && <ConnectionsTab id={id} worker={worker} />}
           {tab === "Chat" && <ChatTab id={id} worker={worker} />}
-          {tab === "Batch" && <BatchTab id={id} />}
+          {tab === "Settings" && (
+            <SettingsTab key={worker ? "loaded" : "loading"} id={id} worker={worker} onWorkerChange={refreshAgents} />
+          )}
         </div>
       </div>
     </AppShell>
@@ -276,14 +288,6 @@ const OUTCOME_STYLE: Record<string, string> = {
 };
 
 function TendersCard({ agentId, packs, onChange }: { agentId: string; packs?: RfpPack[]; onChange: () => void }) {
-  const [creating, setCreating] = useState(false);
-  const [title, setTitle] = useState("");
-  const [clientName, setClientName] = useState("");
-  const [deadline, setDeadline] = useState("");
-  const create = useMutation({
-    mutationFn: () => createRfpPack(agentId, title, clientName, deadline || null),
-    onSuccess: () => { setTitle(""); setClientName(""); setDeadline(""); setCreating(false); onChange(); },
-  });
   const setOutcome = useMutation({
     mutationFn: ({ packId, outcome, reason }: { packId: string; outcome: "won" | "lost"; reason?: string }) =>
       setPackOutcome(packId, outcome, reason),
@@ -295,40 +299,20 @@ function TendersCard({ agentId, packs, onChange }: { agentId: string; packs?: Rf
       <CardContent className="pt-6 space-y-3">
         <div className="flex items-center justify-between">
           <p className="text-sm font-semibold">Tenders</p>
-          <div className="flex items-center gap-2">
-            <Badge variant="muted">{packs?.length ?? 0}</Badge>
-            <Button size="sm" variant="outline" onClick={() => setCreating((c) => !c)}>
-              {creating ? "Cancel" : "+ New Tender"}
-            </Button>
-          </div>
+          <Badge variant="muted">{packs?.length ?? 0}</Badge>
         </div>
 
-        {creating && (
-          <div className="space-y-2 rounded-lg border border-border/60 p-3">
-            <Input placeholder="Tender title" value={title} onChange={(e) => setTitle(e.target.value)} />
-            <div className="flex gap-2">
-              <Input placeholder="Client name (optional)" value={clientName} onChange={(e) => setClientName(e.target.value)} />
-              <Input type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
-            </div>
-            <div className="flex justify-end">
-              <Button size="sm" disabled={!title || create.isPending} onClick={() => create.mutate()}>
-                {create.isPending ? "Creating..." : "Create tender"}
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {(packs?.length ?? 0) === 0 && !creating && (
+        {(packs?.length ?? 0) === 0 && (
           <div className="flex flex-col items-center justify-center py-8 text-center">
             <FileText className="mb-2 size-8 text-slate-600" />
             <p className="text-sm font-medium text-slate-300">No tenders yet</p>
-            <p className="mt-0.5 max-w-xs text-xs text-slate-500">Create one to start drafting responses grounded in this worker&apos;s knowledge base.</p>
+            <p className="mt-0.5 max-w-xs text-xs text-slate-500">Tenders drafted in the Studio pre-sales cockpit for this worker appear here.</p>
           </div>
         )}
 
         {packs?.map((p) => (
           <div key={p.id} className="flex items-center justify-between rounded-lg border border-border/60 p-3 text-sm transition-colors hover:bg-muted/50">
-            <Link href={`/workers/${agentId}/tenders/${p.id}`} className="min-w-0 flex-1">
+            <Link href={`/studio/${agentId}/pre-sales?pack=${p.id}`} className="min-w-0 flex-1">
               <p className="font-medium">{p.title}</p>
               <p className="text-xs text-muted-foreground">{p.client_name || "No client set"} {p.deadline ? `· Due ${formatShortDate(p.deadline)}` : ""}</p>
             </Link>
@@ -858,59 +842,95 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
   );
 }
 
-function BatchTab({ id }: { id: string }) {
-  const [raw, setRaw] = useState("");
-  const questions = raw.split("\n").map((q) => q.trim()).filter(Boolean);
-  const run = useMutation({ mutationFn: () => batchAnswer(questions, id) });
-  const [exporting, setExporting] = useState(false);
+function SettingsTab({ id, worker, onWorkerChange }: { id: string; worker?: Agent; onWorkerChange: () => void }) {
+  const cfg = worker?.config ?? {};
+  // Full Name defaults to the agent's top-level name (which has no dedicated update endpoint),
+  // then persists into config.full_name; the other three are free-form config keys. All four are
+  // saved through the same updateAgentConfig merge-patch the Train/Background tab uses.
+  const initial = {
+    fullName: (cfg.full_name as string) ?? worker?.name ?? "",
+    title: (cfg.title as string) ?? "",
+    location: (cfg.location as string) ?? "",
+    about: (cfg.about as string) ?? "",
+  };
+  const [fullName, setFullName] = useState(initial.fullName);
+  const [title, setTitle] = useState(initial.title);
+  const [location, setLocation] = useState(initial.location);
+  const [about, setAbout] = useState(initial.about);
+  const dirty =
+    fullName !== initial.fullName || title !== initial.title ||
+    location !== initial.location || about !== initial.about;
 
-  async function onExport() {
-    setExporting(true);
-    try {
-      const url = await batchExportUrl(questions, id);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "worker-answers.xlsx";
-      a.click();
-      URL.revokeObjectURL(url);
-    } finally {
-      setExporting(false);
-    }
-  }
+  const ready = worker?.status === "ready";
+  const toggleStatus = useMutation({ mutationFn: () => markReady(id), onSuccess: onWorkerChange });
+  const save = useMutation({
+    mutationFn: () => updateAgentConfig(id, { full_name: fullName, title, location, about }),
+    onSuccess: onWorkerChange,
+  });
 
   return (
-    <div className="space-y-4">
-      <Card><CardContent className="space-y-3 pt-6">
-        <p className="text-sm text-muted-foreground">Paste one question per line (e.g. RFP requirements). Each gets a grounded answer, a confidence score, and a decision — high-confidence answers auto-accept, the rest are flagged for human review.</p>
-        <Textarea placeholder={"Does the company hold ISO 9001?\nWhat services are offered in Region X?"} value={raw} onChange={(e) => setRaw(e.target.value)} />
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" disabled={!run.data || exporting} onClick={onExport}>
-            {exporting ? "Exporting…" : "Download .xlsx"}
-          </Button>
-          <Button disabled={questions.length === 0 || run.isPending} onClick={() => run.mutate()}>
-            {run.isPending ? "Answering…" : `Run ${questions.length || ""} question(s)`}
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold text-foreground">Worker Settings</h1>
+        <p className="text-muted-foreground">Manage your digital worker&apos;s profile and configuration</p>
+      </div>
+
+      <Card className="rounded-2xl"><CardContent className="space-y-4 pt-6">
+        <div>
+          <p className="text-sm font-semibold text-white">Worker Status</p>
+          <p className="text-xs text-muted-foreground">Control whether this worker is still training or ready to serve.</p>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium",
+            ready ? "bg-emerald-500/15 text-emerald-400" : "bg-white/[0.06] text-slate-300")}>
+            <span className={cn("size-1.5 rounded-full", ready ? "bg-emerald-400" : "bg-slate-400")} />
+            {ready ? "Ready" : "Training"}
+          </span>
+          <Button
+            variant={ready ? "outline" : "default"}
+            disabled={ready || toggleStatus.isPending}
+            title={ready ? "Reverting a ready worker to training isn't available yet" : undefined}
+            onClick={() => { if (!ready) toggleStatus.mutate(); }}
+          >
+            {ready ? "Switch to Training" : toggleStatus.isPending ? "Switching…" : "Switch to Ready"}
           </Button>
         </div>
-        {run.isError && <p className="text-xs text-red-500">Couldn&apos;t answer those questions — please try again.</p>}
-        {run.isSuccess && run.data.length === 0 && <p className="text-xs text-muted-foreground">No answers were returned.</p>}
+        {ready && (
+          <p className="text-xs text-muted-foreground">Reverting a ready worker back to training isn&apos;t supported yet.</p>
+        )}
+        {toggleStatus.isError && <p className="text-xs text-red-500">Couldn&apos;t update the worker status. Please try again.</p>}
       </CardContent></Card>
 
-      {run.data?.map((a: BatchAnswer) => (
-        <Card key={a.id}>
-          <CardContent className="space-y-2 pt-6">
-            <div className="flex items-start justify-between gap-3">
-              <p className="font-medium">{a.question}</p>
-              <Badge variant={a.decision === "auto_accept" ? "success" : "muted"}>
-                {a.decision === "auto_accept" ? "Auto-accepted" : "Needs review"} · {(a.confidence * 100).toFixed(0)}%
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground whitespace-pre-wrap">{a.answer}</p>
-            {a.citations.length > 0 && (
-              <p className="text-xs text-muted-foreground">{a.citations.length} supporting citation(s) from your knowledge base.</p>
-            )}
-          </CardContent>
-        </Card>
-      ))}
+      <Card className="rounded-2xl"><CardContent className="space-y-4 pt-6">
+        <div>
+          <p className="text-sm font-semibold text-white">Profile Settings</p>
+          <p className="text-xs text-muted-foreground">Details your worker uses to introduce itself.</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="set-fullname">Full Name</Label>
+          <Input id="set-fullname" placeholder="e.g., Ava Thompson" value={fullName} onChange={(e) => setFullName(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="set-title">Professional Title</Label>
+          <Input id="set-title" placeholder="e.g., Pre-Sales Solutions Specialist" value={title} onChange={(e) => setTitle(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="set-location">Location</Label>
+          <Input id="set-location" placeholder="e.g., Dubai, UAE" value={location} onChange={(e) => setLocation(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="set-about">About Yourself</Label>
+          <Textarea id="set-about" placeholder="A short summary of what this worker does and how it helps." value={about} onChange={(e) => setAbout(e.target.value)} />
+        </div>
+        {save.isSuccess && !dirty && <p className="text-xs text-emerald-600">Profile saved.</p>}
+        {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save. Please try again.</p>}
+        <div className="flex items-center justify-end gap-3">
+          {dirty && <p className="text-xs text-amber-400">You have unsaved changes</p>}
+          <Button disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
+            {save.isPending ? "Saving…" : "Save Changes"}
+          </Button>
+        </div>
+      </CardContent></Card>
     </div>
   );
 }

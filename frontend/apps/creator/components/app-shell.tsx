@@ -3,14 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronLeft, LayoutDashboard, LogOut, Menu, Settings, Sparkles, Users, CreditCard, Wrench, X } from "lucide-react";
+import { ChevronLeft, LayoutDashboard, Lock, LogOut, Menu, Settings, Sparkles, Users, CreditCard, Wrench, X } from "lucide-react";
 import { Logo, cn } from "@qiko/ui";
 import { logout } from "@/lib/api";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/workers", label: "Workers", icon: Users },
-  { href: "/billing", label: "Pricing", icon: CreditCard },
+  { href: "/billing", label: "Pricing", icon: CreditCard, locked: true },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -66,7 +66,26 @@ export function AppShell({ title, children }: { title: string; children: React.R
         </div>
         <nav aria-label="Primary" className="flex-1 px-3 py-3">
           <ul className="flex flex-col gap-1">
-            {NAV.map(({ href, label, icon: Icon }) => {
+            {NAV.map(({ href, label, icon: Icon, locked }) => {
+              if (locked) {
+                return (
+                  <li key={href}>
+                    <div
+                      aria-disabled="true"
+                      title="Locked"
+                      className="group relative flex w-full cursor-not-allowed items-center gap-3 rounded-xl border border-transparent px-3 py-3 text-slate-500 opacity-60"
+                    >
+                      <Icon className="size-5 shrink-0 text-slate-600" />
+                      {!collapsed && (
+                        <>
+                          <span className="text-sm font-medium whitespace-nowrap">{label}</span>
+                          <Lock className="ml-auto size-4 shrink-0 text-slate-500" />
+                        </>
+                      )}
+                    </div>
+                  </li>
+                );
+              }
               const active = pathname === href || pathname.startsWith(href + "/");
               return (
                 <li key={href}>

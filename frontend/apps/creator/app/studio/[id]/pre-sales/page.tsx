@@ -5,7 +5,7 @@
 // /rfp/packs/{id} section->question tree API. One route (this page) owns tab + active-tender state;
 // section detail is a view within the Sections tab, not a separate route.
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, FileText, Loader2 } from "lucide-react";
 import { listAgents, listRfpPacks, type RfpPack } from "@/lib/api";
@@ -21,8 +21,12 @@ import { NewTenderPanel } from "@/components/pre-sales/new-tender-panel";
 export default function PreSalesCockpitPage() {
   const { id: agentId } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Deep-link support: /studio/[id]/pre-sales?pack=<packId> (e.g. from the Worker Overview
+  // "Tenders" list) opens the cockpit with that tender preselected.
+  const requestedPackId = searchParams.get("pack");
   const [tab, setTab] = useState<PreSalesTab>("overview");
-  const [activePackId, setActivePackId] = useState<string | null>(null);
+  const [activePackId, setActivePackId] = useState<string | null>(requestedPackId);
   const [showNew, setShowNew] = useState(false);
 
   const agentsQ = useQuery({ queryKey: ["agents"], queryFn: listAgents });

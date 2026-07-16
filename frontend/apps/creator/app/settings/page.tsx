@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, CreditCard, KeyRound, Settings2, User, UserPlus, Users } from "lucide-react";
+import { ArrowRight, CreditCard, KeyRound, Lock, Settings2, User, UserPlus, Users } from "lucide-react";
 import { Badge, Button, Input, Label, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import { addTeamMember, createTeam, me, type Team } from "@/lib/api";
@@ -80,9 +80,9 @@ export default function SettingsPage() {
 
               <SettingsCard icon={CreditCard} iconColor="text-emerald-400" title="Billing">
                 <p className="mb-4 text-sm text-slate-400">Manage your subscription and payment methods</p>
-                <Button onClick={() => (window.location.href = "/billing")}
-                  className="w-full border-0 bg-gradient-to-r from-emerald-600 to-cyan-600 text-white shadow-lg shadow-emerald-900/30 hover:shadow-emerald-800/50">
-                  <CreditCard className="size-4" /> View Plans <ArrowRight className="size-4" />
+                <Button disabled aria-disabled="true" title="Locked"
+                  className="w-full cursor-not-allowed border-0 bg-gradient-to-r from-emerald-600 to-cyan-600 text-white opacity-60 shadow-lg shadow-emerald-900/30">
+                  <Lock className="size-4" /> View Plans
                 </Button>
               </SettingsCard>
 
