@@ -34,6 +34,19 @@ class _CannedProvider:
         return LLMResponse(text=self.text)
 
 
+class _FlakyProvider:
+    """Returns a different response per call so retry behaviour can be exercised: the first call
+    gets `responses[0]`, the second `responses[1]`, etc. (last is repeated if over-called)."""
+    def __init__(self, *responses: str):
+        self.responses = responses
+        self.calls = 0
+
+    def generate(self, prompt, *, system=None, temperature=0.2):
+        text = self.responses[min(self.calls, len(self.responses) - 1)]
+        self.calls += 1
+        return LLMResponse(text=text)
+
+
 def test_extract_compliance_grounds_and_defaults_owner():
     items = extract_compliance(TENDER_TEXT, _CannedProvider(COMPLIANCE_JSON))
     assert len(items) == 1
@@ -54,10 +67,102 @@ def test_extract_compliance_rejects_empty():
         extract_compliance(TENDER_TEXT, _CannedProvider("[]"))
 
 
+def test_extract_compliance_output_shape_unchanged():
+    """The per-item dict keeps EXACTLY the keys the endpoint persists and the FE `ComplianceItem`
+    type consumes, plus the derived `grounded` flag -- byte-for-byte with the pre-hardening shape."""
+    items = extract_compliance(TENDER_TEXT, _CannedProvider(COMPLIANCE_JSON))
+    assert set(items[0]) == {"requirement", "category", "mandatory", "owner", "note", "grounded"}
+    assert items[0]["mandatory"] is True and items[0]["note"] == "Requires wet signature"
+
+
+def test_extract_compliance_normalises_category_and_owner():
+    """Validators normalise an out-of-set category to "Format" and any non-"ai" owner to "Human"."""
+    raw = json.dumps([{"requirement": "Submit a signed ISO 27001 declaration", "category": "Weird",
+                       "mandatory": True, "owner": "robot", "note": ""}])
+    items = extract_compliance(TENDER_TEXT, _CannedProvider(raw))
+    assert items[0]["category"] == "Format" and items[0]["owner"] == "Human"
+
+
+def test_extract_compliance_drops_malformed_items_keeps_valid():
+    """A single malformed item (missing requirement / not an object) is dropped WITHOUT sinking the
+    well-formed ones."""
+    raw = json.dumps([
+        {"requirement": "Signed ISO 27001 declaration", "category": "Legal", "owner": "Human"},
+        {"category": "Legal", "owner": "Human"},          # no requirement -> dropped
+        {"requirement": "", "category": "Legal"},         # empty requirement -> dropped
+        "not an object",                                    # not a dict -> dropped
+        {"requirement": "Provide the tender submission format", "category": "Format"},
+    ])
+    items = extract_compliance(TENDER_TEXT, _CannedProvider(raw))
+    assert [i["requirement"] for i in items] == [
+        "Signed ISO 27001 declaration", "Provide the tender submission format"]
+
+
+def test_extract_compliance_retries_on_invalid_json_then_succeeds():
+    """A first unparseable response is retried; the second, valid response is accepted."""
+    provider = _FlakyProvider("not json", COMPLIANCE_JSON)
+    items = extract_compliance(TENDER_TEXT, provider)
+    assert provider.calls == 2 and len(items) == 1
+
+
+def test_extract_compliance_raises_after_retries_exhausted():
+    """Two unparseable responses in a row exhaust the retries and raise ComplianceError."""
+    provider = _FlakyProvider("not json", "still not json")
+    with pytest.raises(ComplianceError):
+        extract_compliance(TENDER_TEXT, provider)
+    assert provider.calls == 2
+
+
 def test_extract_brief_parses_all_fields():
     brief = extract_brief(TENDER_TEXT, _CannedProvider(BRIEF_JSON))
     assert brief["summary"] == "A short tender for IT security services."
     assert brief["key_dates"] == ["Deadline: 2026-08-01"]
+
+
+def test_extract_brief_output_shape_unchanged():
+    """The brief keeps EXACTLY the keys the endpoint persists and the FE `TenderBrief` type consumes
+    (three strings + three string arrays) -- byte-for-byte with the pre-hardening shape."""
+    brief = extract_brief(TENDER_TEXT, _CannedProvider(BRIEF_JSON))
+    assert set(brief) == {"summary", "scope", "submission_format", "key_dates",
+                          "success_criteria", "gaps_and_risks"}
+    assert brief["success_criteria"] == ["Lowest compliant bid"]
+    assert brief["gaps_and_risks"] == ["Tight timeline"]
+
+
+def test_extract_brief_handles_markdown_fenced_json():
+    fenced = f"Here you go:\n```json\n{BRIEF_JSON}\n```"
+    brief = extract_brief(TENDER_TEXT, _CannedProvider(fenced))
+    assert brief["summary"] == "A short tender for IT security services."
+
+
+def test_extract_brief_drops_malformed_list_entries_keeps_valid():
+    """Missing lists default to []; a non-scalar (object/array) or empty entry in a list field is
+    dropped while the valid string entries are kept."""
+    raw = json.dumps({
+        "summary": "A usable summary of the tender.",
+        "key_dates": ["Deadline: 2026-08-01", "", {"label": "bad"}, None, "Q&A: 2026-07-01"],
+        "success_criteria": ["Lowest compliant bid"],
+        # scope, submission_format, gaps_and_risks missing entirely
+    })
+    brief = extract_brief(TENDER_TEXT, _CannedProvider(raw))
+    assert brief["key_dates"] == ["Deadline: 2026-08-01", "Q&A: 2026-07-01"]
+    assert brief["scope"] == "" and brief["submission_format"] == ""
+    assert brief["gaps_and_risks"] == []
+
+
+def test_extract_brief_retries_on_invalid_json_then_succeeds():
+    """A first unparseable response is retried; the second, valid response is accepted."""
+    provider = _FlakyProvider("not json", BRIEF_JSON)
+    brief = extract_brief(TENDER_TEXT, provider)
+    assert provider.calls == 2 and brief["summary"] == "A short tender for IT security services."
+
+
+def test_extract_brief_raises_after_retries_exhausted():
+    """Two invalid responses (no usable summary) in a row exhaust the retries and raise BriefError."""
+    provider = _FlakyProvider(json.dumps({"summary": ""}), "not json at all")
+    with pytest.raises(BriefError):
+        extract_brief(TENDER_TEXT, provider)
+    assert provider.calls == 2
 
 
 def test_extract_brief_rejects_missing_summary():
