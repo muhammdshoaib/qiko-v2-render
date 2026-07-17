@@ -6,8 +6,10 @@ import pytest
 from app.modules.ai.gateway import LLMResponse
 from app.modules.rfp.extraction import (
     MAX_ITEMS,
+    MAX_SUBS,
     ExtractionError,
     chunk_document,
+    ensure_unique_codes,
     extract_requirements,
     split_subsections,
 )
@@ -154,6 +156,65 @@ def test_extract_requirements_id_prefix_disambiguates_fallback_ids():
                       {"title": "B", "classification": "KB", "requirement": "do b"}])
     items = extract_requirements("tender text", _CannedProvider(raw), id_prefix="c3-")
     assert [i["id"] for i in items] == ["c3-R1", "c3-R2"]
+
+
+def test_extract_requirements_dedupes_colliding_top_level_ids():
+    """M1: two sections the model returns with the SAME id but different titles must NOT collide.
+    The second gets a suffixed code so codes (and their sub-section req_ids, the export/answer key)
+    stay unique before questions are written."""
+    raw = json.dumps([
+        {"id": "B1", "title": "First", "classification": "KB", "requirement": "do first",
+         "subsections": [{"title": "x", "classification": "KB", "requirement": "sub x"}]},
+        {"id": "B1", "title": "Second", "classification": "KB", "requirement": "do second",
+         "subsections": [{"title": "y", "classification": "KB", "requirement": "sub y"}]},
+    ])
+    items = extract_requirements("tender text", _CannedProvider(raw))
+    assert [i["id"] for i in items] == ["B1", "B1-2"]
+    # sub-section req_ids are re-derived from the de-duplicated parent code, so they can't collide
+    assert items[0]["subsections"][0]["id"] == "B1.1"
+    assert items[1]["subsections"][0]["id"] == "B1-2.1"
+
+
+def test_ensure_unique_codes_suffixes_repeats_and_rewrites_sub_ids():
+    """ensure_unique_codes is the shared guard used after validation AND after the chunked merge:
+    repeated codes get contiguous suffixes and every sub id is re-derived from the final code."""
+    out = ensure_unique_codes([
+        {"id": "A1", "subsections": [{"id": "A1.1"}]},
+        {"id": "A1", "subsections": [{"id": "A1.1"}, {"id": "A1.2"}]},
+        {"id": "A1", "subsections": []},
+    ])
+    assert [s["id"] for s in out] == ["A1", "A1-2", "A1-3"]
+    assert [s["id"] for s in out[1]["subsections"]] == ["A1-2.1", "A1-2.2"]
+
+
+def test_extract_requirements_caps_subsections_per_section():
+    """M2: sub-sections are capped per section (MAX_SUBS) so one over-eager section can't mint
+    hundreds of sub-requirements (each a draft LLM call)."""
+    subs = [{"title": f"Part {i}", "classification": "KB", "requirement": f"describe part {i}"}
+            for i in range(30)]
+    raw = json.dumps([{"id": "B1", "title": "Big", "classification": "KB",
+                       "requirement": "describe.", "subsections": subs}])
+    items = extract_requirements("tender text", _CannedProvider(raw))
+    assert len(items[0]["subsections"]) == MAX_SUBS == 15
+    assert [s["id"] for s in items[0]["subsections"]] == [f"B1.{i}" for i in range(1, 16)]
+
+
+def test_extract_requirements_retries_on_transient_provider_error():
+    """L2: a RAW provider error (timeout/throttle) -- not an ExtractionError -- on the first attempt
+    is retried rather than propagating on attempt one."""
+    class _TransientThenOk:
+        def __init__(self):
+            self.calls = 0
+
+        def generate(self, prompt, *, system=None, temperature=0.2):
+            self.calls += 1
+            if self.calls == 1:
+                raise TimeoutError("provider read timeout")
+            return LLMResponse(text=SAMPLE_JSON)
+
+    provider = _TransientThenOk()
+    items = extract_requirements("tender text", provider)
+    assert provider.calls == 2 and len(items) == 2
 
 
 def test_extract_requirements_caps_at_coarse_max_items():

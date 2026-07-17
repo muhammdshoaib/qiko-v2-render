@@ -29,6 +29,10 @@ MAX_CONTEXT_CHARS = 160_000
 # idg caps its requirements catalogue at 20 items ("Include at most 20 items."); we mirror that so
 # a tender yields a small, COARSE set of top-level sections (~10-20) rather than a long flat list.
 MAX_ITEMS = 20
+# Sub-sections were previously unbounded, so a single over-eager section could mint hundreds of
+# sub-requirements -- each one a draft LLM call, exploding cost and the drafts stage. Cap them like
+# the top-level list so a section stays a small, coarse set of sub-parts.
+MAX_SUBS = 15
 
 SYSTEM = (
     "You are a bid-management analyst. Read the tender documents (terms of reference, evaluation "
@@ -170,6 +174,8 @@ def _validate_sections(raw_items: list, *, id_prefix: str = "") -> list[dict]:
         code = section.id or f"{id_prefix}R{i + 1}"
         subs: list[dict] = []
         for raw_sub in section.subsections:
+            if len(subs) >= MAX_SUBS:
+                break  # cap sub-sections per section (see MAX_SUBS) so one section can't explode
             if not isinstance(raw_sub, dict):
                 continue
             try:
@@ -191,7 +197,30 @@ def _validate_sections(raw_items: list, *, id_prefix: str = "") -> list[dict]:
             "requirement": section.requirement,
             "subsections": subs,
         })
-    return out
+    return ensure_unique_codes(out)
+
+
+def ensure_unique_codes(sections: list[dict]) -> list[dict]:
+    """Guarantee unique TOP-LEVEL section codes (and therefore unique sub-section req_ids) BEFORE
+    questions are written. The model can emit the same id twice, and the chunked-fallback merge
+    (generation._consolidate) keys on normalised title, so two chunks that both returned "B1" with
+    different titles would otherwise survive as two top-level sections with the SAME code -- and
+    mint colliding "B1.1" req_ids (the export/answer key). A repeated code is suffixed with a
+    counter ("B1", then "B1-2", "B1-3", ...) and each section's sub-section ids are re-derived from
+    its final code so they stay unique too. Mutates in place and returns the list."""
+    used: set[str] = set()
+    for sec in sections:
+        code = sec["id"]
+        if code in used:
+            n = 2
+            while f"{code}-{n}" in used:
+                n += 1
+            code = f"{code}-{n}"
+        used.add(code)
+        sec["id"] = code
+        for n, sub in enumerate(sec.get("subsections") or [], start=1):
+            sub["id"] = f"{code}.{n}"
+    return sections
 
 
 def extract_requirements(tender_text: str, provider: LLMProvider, *, max_chars: int = MAX_CONTEXT_CHARS,
@@ -225,6 +254,8 @@ def extract_requirements(tender_text: str, provider: LLMProvider, *, max_chars: 
                 return out[:MAX_ITEMS]
             last_error = ExtractionError("no valid requirements after schema validation")
         except ExtractionError as e:
+            last_error = e
+        except Exception as e:  # noqa: BLE001 - a raw provider timeout/throttle is transient: retry
             last_error = e
     raise last_error or ExtractionError("no requirements could be extracted from this document")
 

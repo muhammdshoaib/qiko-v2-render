@@ -155,4 +155,6 @@ def extract_compliance(tender_text: str, provider: LLMProvider, *, max_chars: in
             last_error = ComplianceError("no valid compliance items after schema validation")
         except ComplianceError as e:
             last_error = e
+        except Exception as e:  # noqa: BLE001 - a raw provider timeout/throttle is transient: retry
+            last_error = e
     raise last_error or ComplianceError("no compliance items could be extracted from this document")

@@ -100,3 +100,7 @@ class WorkerSettings:
     on_startup = on_startup
     on_shutdown = on_shutdown
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)
+    # Retry a killed/failed job (e.g. generate_tender_artifacts interrupted by a deploy) instead of
+    # leaving it stuck. Its drafts stage is resumable/idempotent (skips already-drafted questions),
+    # so a retry re-enters the loop and finishes the not-yet-drafted work without duplicating any.
+    max_tries = 3

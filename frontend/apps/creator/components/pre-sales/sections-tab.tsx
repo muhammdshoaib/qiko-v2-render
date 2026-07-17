@@ -8,7 +8,7 @@ import {
 } from "lucide-react";
 import { cn } from "@qiko/ui";
 import {
-  listPackSections, generatePackQuestion, savePackQuestionDraft,
+  listPackSections, generatePackQuestion, generatePack, savePackQuestionDraft,
   lockPackQuestion, unlockPackQuestion, lockAllInPackSection,
   getTenderStatus, getAssignees, setSectionReviewer, confirmAssignments,
   type PackSectionNode, type PackQuestion, type TenderGenStatus, type GenState, type Assignee,
@@ -49,12 +49,20 @@ function deriveStepper(status: TenderGenStatus, hasSections: boolean) {
   const parsingInFlight = isInFlight(reqState) || isInFlight(secState);
   const parseError = !parsedReady && (secState === "error" || reqState === "error");
   const draftsReady = draftsState === "ready";
+  // "partial" = drafting finished but some sections failed: treat as done-with-warnings so the
+  // user lands on the table (and can open/retry the failed ones), not the infinite spinner.
+  const draftsPartial = draftsState === "partial";
+  const draftsError = draftsState === "error";
   const draftingInFlight = isInFlight(draftsState);
+  // How many drafts failed (backend `failed`, else infer from the done/total gap).
+  const draftsFailed = status.drafts?.failed ?? Math.max(0, draftsTotal - draftsDone);
 
-  // The single "phase" drives the tab body (and the active-step highlight).
+  // The single "phase" drives the tab body (and the active-step highlight). Only sit in the
+  // "drafting" spinner phase while drafting is genuinely in-flight (pending/running); on
+  // ready/partial/error fall through to the table so sections stay openable.
   const phase: Phase = !parsedReady ? "parsing"
     : !assignmentsConfirmed ? "assigned"
-      : !draftsReady ? "drafting"
+      : draftingInFlight ? "drafting"
         : "review";
 
   const steps: Step[] = [
@@ -69,13 +77,14 @@ function deriveStepper(status: TenderGenStatus, hasSections: boolean) {
     },
     {
       key: "drafting", label: "Drafting",
-      state: draftsReady ? "done" : draftingInFlight ? "inprogress" : "pending",
+      state: draftsReady || draftsPartial ? "done" : draftsError ? "error" : draftingInFlight ? "inprogress" : "pending",
     },
     { key: "review", label: "Review", state: phase === "review" ? "active" : "pending" },
   ];
 
   return {
-    phase, steps, secState, draftsState, draftsReady, parsedReady, draftsDone, draftsTotal,
+    phase, steps, secState, draftsState, draftsReady, draftsPartial, draftsError,
+    parsedReady, draftsDone, draftsTotal, draftsFailed,
     pollActive: parsingInFlight || draftingInFlight,
   };
 }
@@ -84,6 +93,10 @@ export function SectionsTab({ packId }: { packId: string }) {
   const qc = useQueryClient();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expandedParents, setExpandedParents] = useState<Set<string>>(new Set());
+
+  // After a "Retry drafting", keep polling for a short window even if gen_status hasn't flipped
+  // back to in-flight yet, so a resumed background job is picked up without a manual reload.
+  const retryPollUntil = useRef(0);
 
   // gen_status is the source of truth for the stepper; poll it while work is in-flight.
   const statusQ = useQuery({
@@ -94,7 +107,8 @@ export function SectionsTab({ packId }: { packId: string }) {
       if (!s) return 3000;
       const parsing = isInFlight(s.requirements) || isInFlight(s.sections);
       const drafting = isInFlight(s.drafts?.state);
-      return parsing || drafting ? 3000 : false;
+      const retrying = Date.now() < retryPollUntil.current;
+      return parsing || drafting || retrying ? 3000 : false;
     },
   });
   const sectionsQ = useQuery({ queryKey: ["pack-sections", packId], queryFn: () => listPackSections(packId) });
@@ -102,7 +116,18 @@ export function SectionsTab({ packId }: { packId: string }) {
   const sections = useMemo(() => sectionsQ.data ?? [], [sectionsQ.data]);
   const status = useMemo<TenderGenStatus>(() => statusQ.data ?? {}, [statusQ.data]);
   const stepper = useMemo(() => deriveStepper(status, sections.length > 0), [status, sections.length]);
-  const { phase, steps, secState, draftsState, draftsDone, draftsTotal } = stepper;
+  const { phase, steps, secState, draftsState, draftsDone, draftsTotal, draftsError, draftsPartial, draftsFailed } = stepper;
+
+  // C2 recovery: re-run/resume drafting for the whole pack, then invalidate + resume polling so a
+  // background retry heals the errored/partial state without a manual reload.
+  const retryDrafts = useMutation({
+    mutationFn: () => generatePack(packId),
+    onSuccess: () => {
+      retryPollUntil.current = Date.now() + 15000;
+      qc.invalidateQueries({ queryKey: ["pack-sections", packId] });
+      qc.invalidateQueries({ queryKey: ["tender-status", packId] });
+    },
+  });
 
   const reviewerEditable = phase === "assigned";
   const assigneesQ = useQuery({
@@ -178,10 +203,10 @@ export function SectionsTab({ packId }: { packId: string }) {
   const showTable = phase === "assigned" || phase === "review";
 
   // "AI-drafted" is counted per TOP-LEVEL SECTION (like idg's "8/15"), NOT per leaf question: a
-  // top-level section is drafted when it (childless) or any of its sub-sections has an AI/user draft.
+  // top-level section is drafted when ANY of its own questions OR any of its sub-sections'
+  // questions has an AI/user draft (mirrors the backend fix - a parent's own questions count too).
   const sectionIsDrafted = (s: PackSectionNode) => {
-    const kids = childrenOf(s.id);
-    const qs = kids.length ? kids.flatMap((k) => k.questions) : s.questions;
+    const qs = [...s.questions, ...childrenOf(s.id).flatMap((k) => k.questions)];
     return qs.some((q) => q.ai_answer || q.user_draft);
   };
   const sectionsDrafted = topLevel.filter(sectionIsDrafted).length;
@@ -204,6 +229,16 @@ export function SectionsTab({ packId }: { packId: string }) {
         <NoSections />
       ) : (
         <>
+          {(draftsError || draftsPartial) && (
+            <DraftsErrorBanner
+              partial={draftsPartial}
+              failed={draftsFailed}
+              onRetry={() => retryDrafts.mutate()}
+              retrying={retryDrafts.isPending}
+              error={retryDrafts.isError}
+            />
+          )}
+
           <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
             <table className="w-full text-left text-[13px]">
               <thead>
@@ -322,6 +357,47 @@ function DraftingState({ done, total }: { done: number; total: number }) {
       <Loader2 className="mb-3 size-6 animate-spin text-amber-400" />
       <p className="text-sm font-semibold text-white">Answers are being generated in the background - you can come back later.</p>
       {total > 0 && <p className="mt-1 text-[12px] text-slate-500">{done}/{total} answers drafted</p>}
+    </div>
+  );
+}
+
+// C2: drafting hit an error (some/all sections failed) or finished partial. Rendered ABOVE the
+// sections table (never instead of it) so the user can still open the failed sections and, or,
+// kick off a full "Retry drafting" that re-runs/resumes the background job.
+function DraftsErrorBanner({ partial, failed, onRetry, retrying, error }: {
+  partial: boolean; failed: number; onRetry: () => void; retrying: boolean; error: boolean;
+}) {
+  const failedLabel = failed > 0 ? `${failed} section${failed === 1 ? "" : "s"}` : "some sections";
+  return (
+    <div
+      role="alert"
+      className="flex flex-col gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div className="flex items-start gap-2.5">
+        <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-amber-300" />
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold text-white">
+            {partial ? "Some answers couldn\u2019t be drafted" : "Drafting failed"}
+          </p>
+          <p className="mt-0.5 text-[12px] text-amber-200/90">
+            {failedLabel} didn&apos;t finish drafting. You can open them below to regenerate individually, or retry the whole batch.
+          </p>
+          {error && (
+            <p className="mt-1 flex items-center gap-1.5 text-[11px] text-red-300">
+              <AlertTriangle className="size-3" /> Couldn&apos;t restart drafting - please try again.
+            </p>
+          )}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onRetry}
+        disabled={retrying}
+        aria-label="Retry drafting the failed sections"
+        className="inline-flex shrink-0 items-center justify-center gap-1.5 self-start rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] font-semibold text-amber-300 hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50 disabled:opacity-50 sm:self-auto"
+      >
+        {retrying ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} Retry drafting
+      </button>
     </div>
   );
 }
@@ -828,7 +904,7 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
                 )}
                 {(save.isError || lock.isError || regenerate.isError) && (
                   <p className="mt-2 flex items-center gap-1.5 text-[11px] text-red-400">
-                    <AlertTriangle className="size-3" /> Something went wrong — please try again.
+                    <AlertTriangle className="size-3" /> Something went wrong - please try again.
                   </p>
                 )}
               </div>

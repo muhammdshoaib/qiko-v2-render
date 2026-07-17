@@ -235,6 +235,73 @@ async def test_parent_section_rolls_up_kb_gap_confidence_grounding_from_children
     assert node["B1.2"]["confidence"] == 0.4 and node["B1.2"]["kb_gap"] is True
 
 
+async def test_manual_section_satisfies_finalize_gate():
+    """H1: a MANUAL (human-owned) section is never AI-lockable, so it must COUNT as satisfying the
+    finalize gate -- otherwise any pack with a manual/compliance section could never finalize."""
+    svc = PackTreeService()
+    m = await svc.add_section("t", "p1", code="A1", name="Pricing", manual=True)
+    assert (await svc.get_section("t", m.id)).status == "manual"
+    # a lone manual section already satisfies the gate
+    assert await svc.all_sections_locked("t", "p1")
+
+    # add a normal (AI) section: finalize is now blocked until its question is locked
+    n = await svc.add_section("t", "p1", code="B1", name="Method")
+    q = await svc.add_question("t", n.id, text="Describe your method")
+    assert not await svc.all_sections_locked("t", "p1")
+    await svc.lock_question("t", q.id)
+    assert await svc.all_sections_locked("t", "p1")
+
+
+async def test_manual_parent_and_mixed_parent_finalize_correctly():
+    """H1: a fully-manual parent (manual children) stays "manual" and satisfies the gate, and a
+    MIXED parent (a manual child + an AI child) reaches "locked" once its AI child is locked."""
+    svc = PackTreeService()
+    extracted = [
+        {"id": "A1", "title": "Commercial", "classification": "KB", "requirement": "Section.",
+         "subsections": [
+             {"id": "A1.1", "title": "Forms", "classification": "MANUAL", "requirement": "Fill forms."},
+             {"id": "A1.2", "title": "Method", "classification": "KB", "requirement": "Describe method."},
+         ]},
+        {"id": "B1", "title": "Pricing", "classification": "MANUAL", "requirement": "Pricing.",
+         "subsections": [
+             {"id": "B1.1", "title": "Priced", "classification": "MANUAL", "requirement": "Priced BOQ."},
+             {"id": "B1.2", "title": "Unpriced", "classification": "COMPLIANCE", "requirement": "Unpriced BOQ."},
+         ]},
+    ]
+    await svc.populate_from_extraction("t", "pmix", extracted)
+    codes = {s.code: s for s in await svc.sections.list("t", "pmix")}
+    # B1 is a fully-manual parent -> "manual" (not spuriously flipped to "locked")
+    assert codes["B1"].status == "manual"
+    # A1 is a mixed parent -> not manual, still blocking until its AI child (A1.2) is locked
+    assert codes["A1"].status != "locked"
+    assert not await svc.all_sections_locked("t", "pmix")
+
+    a12_q = (await svc.questions.list_for_section("t", codes["A1.2"].id))[0]
+    await svc.lock_question("t", a12_q.id)
+    # the manual child A1.1 satisfies the gate, so locking the AI child locks the parent
+    assert (await svc.get_section("t", codes["A1"].id)).status == "locked"
+    assert await svc.all_sections_locked("t", "pmix")
+
+
+async def test_overview_counts_parent_with_own_drafted_question():
+    """M4: a legacy flat-path parent can carry BOTH its own questions AND child sub-sections. The
+    overview must count it as drafted when its OWN question is drafted, not only when a child is."""
+    svc = PackTreeService()
+    reqs = _reqs("pm4",
+                 ("A1", "Intro", "KB", "Describe intro."),        # plain -> a question ON the parent
+                 ("A1.1", "Intro \u2014 Detail", "KB", "Detail."))  # dotted -> a child sub-section
+    await svc.populate_from_requirements("t", "pm4", reqs)
+    parent = next(s for s in await svc.sections.list("t", "pm4") if s.code == "A1")
+    own = await svc.questions.list_for_section("t", parent.id)
+    assert own and own[0].req_id == "A1"  # the parent owns a direct question
+
+    # draft ONLY the parent's own question, leaving the child sub-section un-drafted
+    await svc.apply_generation("t", own[0].id, ai_answer="draft", ai_sources=["doc:iso"],
+                               confidence=0.7, decision="auto_accept", kb_gap=False)
+    ov = await svc.overview("t", "pm4")
+    assert ov["ai_drafted"] == 1 and ov["ai_drafted_total"] == 1
+
+
 def _reqs(pack_id, *specs):
     """Flat PackRequirement rows as an old (pre-tree-feature) pack would already have stored."""
     return [PackRequirement(id=f"row{i}", tenant="t", pack_id=pack_id, req_id=rid, title=title,
@@ -471,6 +538,41 @@ def test_extract_populates_tree_and_lock_all(client, monkeypatch):
     assert set(codes) == {"A1", "A2"}
     assert codes["A2"]["manual"] is True
     assert len(codes["A1"]["questions"]) == 1
+
+
+def test_manual_section_does_not_block_finalize_api(client, monkeypatch):
+    """H1 end-to-end: a pack with a MANUAL section (A2) can still finalize once the AI section (A1)
+    is locked -- the manual section counts as satisfied instead of blocking forever with a 409."""
+    import json as _json
+    payload = _json.dumps([
+        {"id": "A1", "title": "ISO", "classification": "KB", "requirement": "Describe ISO."},
+        {"id": "A2", "title": "Pricing", "classification": "MANUAL", "requirement": "Complete pricing."},
+    ])
+
+    def fake_get_provider(**_kw):
+        class P:
+            def generate(self, prompt, *, system=None, temperature=0.2):
+                from app.modules.ai.gateway import LLMResponse
+                return LLMResponse(text=payload)
+        return P()
+
+    monkeypatch.setattr("app.modules.rfp.generation.get_provider", fake_get_provider)
+    monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _fake_worker_factory(stub=True))
+    c, pid = _pack(client, "finalmanual1")
+    client.post(f"/api/v1/rfp/packs/{pid}/extract", cookies=c,
+                files={"file": ("t.txt", io.BytesIO(b"tender"), "text/plain")})
+
+    tree = client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()
+    codes = {s["code"]: s for s in tree}
+    assert codes["A2"]["manual"] is True
+    # cannot finalize yet: the AI section A1 is not locked
+    assert client.put(f"/api/v1/rfp/packs/{pid}/stage", json={"stage": "final"}, cookies=c).status_code == 409
+
+    a1_q = codes["A1"]["questions"][0]["id"]
+    client.post(f"/api/v1/rfp/packs/{pid}/questions/{a1_q}/lock", cookies=c)
+    ov = client.get(f"/api/v1/rfp/packs/{pid}/overview", cookies=c).json()
+    assert ov["can_finalize"] is True  # A1 locked + A2 manual -> gate satisfied
+    assert client.put(f"/api/v1/rfp/packs/{pid}/stage", json={"stage": "final"}, cookies=c).json()["stage"] == "final"
 
 
 def test_sections_backfill_lazily_for_old_pack(client, monkeypatch):

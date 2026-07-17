@@ -330,13 +330,19 @@ class PackTreeService:
         qs = await self.questions.list_for_section(tenant, section_id)
         kb_gap = any(q.kb_gap for q in qs) or any(c.kb_gap for c in children)
         has_units = bool(qs or children)
+        # Manual (human-owned) children satisfy the lock gate without being AI-lockable, so a
+        # (non-manual) parent that mixes manual + AI children can still reach "locked" once its
+        # AI children are locked -- otherwise a manual sub-section would block finalize forever.
         all_locked = ((all(q.locked for q in qs) if qs else True)
-                      and (all(c.status == "locked" for c in children) if children else True))
+                      and (all(c.status in ("locked", "manual") for c in children) if children else True))
         drafty = {"draft_ready", "reviewing", "locked"}
-        if has_units and all_locked:
-            status = "locked"
-        elif section.manual:
+        if section.manual:
+            # A manual section stays "manual" (human-owned); it is never AI-locked, and a fully
+            # manual parent must not flip to "locked" just because its manual children satisfy the
+            # gate above.
             status = "manual"
+        elif has_units and all_locked:
+            status = "locked"
         elif any(q.ai_answer or q.user_draft for q in qs) or any(c.status in drafty for c in children):
             status = "draft_ready"
         else:
@@ -347,8 +353,14 @@ class PackTreeService:
         return updated
 
     async def all_sections_locked(self, tenant: str, pack_id: str) -> bool:
+        """The finalize gate: every TOP-LEVEL section is either locked (AI drafts reviewed +
+        locked, rolled up from its children) or manual (human-owned, not AI-lockable). Manual
+        sections count as satisfied -- otherwise any pack containing a manual/compliance section
+        could never finalize. Child sub-sections are not checked directly here: their state rolls
+        up into the parent's status via _recompute_section."""
         sections = await self.sections.list(tenant, pack_id)
-        return bool(sections) and all(s.status == "locked" for s in sections)
+        top_level = [s for s in sections if not s.parent_id]
+        return bool(top_level) and all(s.status in ("locked", "manual") for s in top_level)
 
     # --- reads ---
     async def list_tree(self, tenant: str, pack_id: str) -> list[dict]:
@@ -416,10 +428,12 @@ class PackTreeService:
                 children_by_parent.setdefault(s.parent_id, []).append(s)
 
         def _section_drafted(sec) -> bool:
-            kids = children_by_parent.get(sec.id)
-            if kids:
-                return any(k.id in drafted_section_ids for k in kids)
-            return sec.id in drafted_section_ids
+            # A top-level section counts as drafted when it has its OWN drafted question OR any of
+            # its sub-sections does. A legacy flat-path parent (_build_tree_from_flat) can carry
+            # both its own questions AND children, so we must check the parent itself, not only its
+            # kids -- otherwise such a parent is undercounted in the overview.
+            kids = children_by_parent.get(sec.id) or []
+            return sec.id in drafted_section_ids or any(k.id in drafted_section_ids for k in kids)
 
         top_drafted = sum(1 for s in top_level if _section_drafted(s))
         return {

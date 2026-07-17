@@ -105,6 +105,24 @@ def test_extract_compliance_retries_on_invalid_json_then_succeeds():
     assert provider.calls == 2 and len(items) == 1
 
 
+def test_extract_compliance_retries_on_transient_provider_error():
+    """L2: a RAW provider error (timeout/throttle), not a ComplianceError, on the first attempt is
+    retried rather than propagating on attempt one."""
+    class _TransientThenOk:
+        def __init__(self):
+            self.calls = 0
+
+        def generate(self, prompt, *, system=None, temperature=0.2):
+            self.calls += 1
+            if self.calls == 1:
+                raise TimeoutError("provider read timeout")
+            return LLMResponse(text=COMPLIANCE_JSON)
+
+    provider = _TransientThenOk()
+    items = extract_compliance(TENDER_TEXT, provider)
+    assert provider.calls == 2 and len(items) == 1
+
+
 def test_extract_compliance_raises_after_retries_exhausted():
     """Two unparseable responses in a row exhaust the retries and raise ComplianceError."""
     provider = _FlakyProvider("not json", "still not json")
@@ -153,6 +171,24 @@ def test_extract_brief_drops_malformed_list_entries_keeps_valid():
 def test_extract_brief_retries_on_invalid_json_then_succeeds():
     """A first unparseable response is retried; the second, valid response is accepted."""
     provider = _FlakyProvider("not json", BRIEF_JSON)
+    brief = extract_brief(TENDER_TEXT, provider)
+    assert provider.calls == 2 and brief["summary"] == "A short tender for IT security services."
+
+
+def test_extract_brief_retries_on_transient_provider_error():
+    """L2: a RAW provider error (timeout/throttle), not a BriefError/ValidationError, on the first
+    attempt is retried rather than propagating on attempt one."""
+    class _TransientThenOk:
+        def __init__(self):
+            self.calls = 0
+
+        def generate(self, prompt, *, system=None, temperature=0.2):
+            self.calls += 1
+            if self.calls == 1:
+                raise TimeoutError("provider read timeout")
+            return LLMResponse(text=BRIEF_JSON)
+
+    provider = _TransientThenOk()
     brief = extract_brief(TENDER_TEXT, provider)
     assert provider.calls == 2 and brief["summary"] == "A short tender for IT security services."
 

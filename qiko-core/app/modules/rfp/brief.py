@@ -138,4 +138,6 @@ def extract_brief(tender_text: str, provider: LLMProvider, *, max_chars: int = 1
             last_error = e
         except ValidationError as e:
             last_error = BriefError(f"model response failed schema validation: {e}")
+        except Exception as e:  # noqa: BLE001 - a raw provider timeout/throttle is transient: retry
+            last_error = e
     raise last_error or BriefError("no usable brief could be extracted from this document")

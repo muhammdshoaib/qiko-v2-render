@@ -9,6 +9,10 @@ import json
 
 from app.modules.agentcore.models import AgentResult, Critique, Decision
 from app.modules.ai.gateway import LLMResponse
+from app.modules.rfp import generation
+from app.modules.rfp.extraction import ExtractionError
+from app.modules.rfp.service import PackAnswerService, RequirementService, RfpPackService
+from app.modules.rfp.tree import PackTreeService
 
 from tests.helpers import auth_cookies
 
@@ -101,8 +105,9 @@ def test_job_populates_every_artifact_and_marks_status_ready(client, monkeypatch
     assert status["sections"] == "ready"
     assert status["brief"] == "ready"
     assert status["compliance"] == "ready"
-    assert status["drafts"] == {"state": "ready", "done": 1, "total": 1}
+    assert status["drafts"] == {"state": "ready", "done": 1, "total": 1, "failed": 0, "failed_ids": []}
     assert status["error"] is None
+    assert status["errors"] == {}
 
 
 def test_stub_guard_stops_drafts_without_persisting(client, monkeypatch):
@@ -144,3 +149,166 @@ def test_read_endpoints_404_for_missing_pack(client):
     assert client.get("/api/v1/rfp/packs/nope/status", cookies=c).status_code == 404
     assert client.get("/api/v1/rfp/packs/nope/brief", cookies=c).status_code == 404
     assert client.get("/api/v1/rfp/packs/nope/compliance", cookies=c).status_code == 404
+
+
+# --- service-level run_generation: drafts isolation / resumability / per-stage errors ---
+async def _make_pack(document_text="tender doc"):
+    packs, reqs = RfpPackService(), RequirementService()
+    answers, tree = PackAnswerService(), PackTreeService()
+    pack = await packs.create("t", "w1", "Tender")
+    await packs.set_document_text("t", pack.id, document_text)
+    return packs, reqs, answers, tree, pack
+
+
+def _stub_supporting_stages(monkeypatch):
+    """Make the provider + brief + compliance stages trivially succeed so a run_generation test can
+    focus on the drafts stage."""
+    monkeypatch.setattr(generation, "get_provider", lambda **_kw: object())
+    monkeypatch.setattr(generation, "extract_brief", lambda *_a, **_kw: {"summary": "s"})
+    monkeypatch.setattr(generation, "extract_compliance", lambda *_a, **_kw: [])
+
+
+def _draft_worker(*, fail_ids=(), record=None):
+    """A fake worker whose answer() drafts a grounded result, but RAISES for any req_id in
+    `fail_ids` (to exercise per-item isolation) and appends each req_id it saw to `record`."""
+    async def _build(*_a, **_kw):
+        class _W:
+            async def answer(self, rid, text, **__):
+                if record is not None:
+                    record.append(rid)
+                if rid in fail_ids:
+                    raise RuntimeError(f"draft failed for {rid}")
+                return AgentResult(requirement_id=rid, answer="draft",
+                                   critique=Critique(grounding=0.9), decision=Decision.auto_accept,
+                                   citations=["doc:iso"], stub=False)
+        return _W()
+    return _build
+
+
+def _coarse(*codes):
+    return [{"id": c, "title": f"S{c}", "classification": "KB",
+             "requirement": f"describe {c}", "subsections": []} for c in codes]
+
+
+async def test_drafts_loop_isolates_a_failing_question_and_marks_partial(monkeypatch):
+    """C1: one question raising must NOT abort the rest -- the others still draft, the failure is
+    counted (failed/failed_ids) and the stage ends "partial", not "error"."""
+    packs, reqs, answers, tree, pack = await _make_pack()
+    _stub_supporting_stages(monkeypatch)
+
+    async def _extract(_text):
+        return _coarse("A1", "A2", "A3")
+    monkeypatch.setattr(generation, "extract_requirements_chunked", _extract)
+    monkeypatch.setattr(generation, "assemble_worker", _draft_worker(fail_ids={"A2"}))
+
+    status = await generation.run_generation(
+        tenant="t", pack_id=pack.id, agent_id=None, packs=packs, reqs=reqs, answers=answers,
+        tree=tree, knowledge=None, agents=None)
+
+    assert status["drafts"]["state"] == "partial"
+    assert status["drafts"]["total"] == 3
+    assert status["drafts"]["done"] == 2
+    assert status["drafts"]["failed"] == 1
+    assert status["drafts"]["failed_ids"] == ["A2"]
+    qs = {q.req_id: q for q in await tree.questions.list("t", pack.id)}
+    assert qs["A1"].ai_answer == "draft" and qs["A3"].ai_answer == "draft"
+    assert qs["A2"].ai_answer == ""  # the failing question was left un-drafted, not persisted
+    assert status["errors"] == {}  # a per-item failure is isolated, not a whole-stage error
+
+
+async def test_drafts_loop_resumes_and_skips_already_drafted(monkeypatch):
+    """C1 resumability: a question that ALREADY has a draft is skipped on a re-run, so an arq retry
+    (worker restart mid-run) resumes the not-yet-drafted work rather than re-drafting from zero."""
+    packs, reqs, answers, tree, pack = await _make_pack()
+    _stub_supporting_stages(monkeypatch)
+
+    # a prior run already built the tree and drafted A1
+    await tree.populate_from_extraction("t", pack.id, _coarse("A1", "A2"))
+    a1_q = next(q for q in await tree.questions.list("t", pack.id) if q.req_id == "A1")
+    await tree.apply_generation("t", a1_q.id, ai_answer="prior draft", ai_sources=[],
+                                confidence=0.5, decision="auto_accept", kb_gap=False)
+
+    # on the retry extraction transiently fails, so the existing tree is NOT wiped; drafts resume
+    async def _boom(_text):
+        raise ExtractionError("transient extraction outage")
+    monkeypatch.setattr(generation, "extract_requirements_chunked", _boom)
+    seen: list[str] = []
+    monkeypatch.setattr(generation, "assemble_worker", _draft_worker(record=seen))
+
+    status = await generation.run_generation(
+        tenant="t", pack_id=pack.id, agent_id=None, packs=packs, reqs=reqs, answers=answers,
+        tree=tree, knowledge=None, agents=None)
+
+    assert seen == ["A2"]  # only the not-yet-drafted question was (re)drafted, no duplicate work
+    assert status["drafts"] == {"state": "ready", "done": 2, "total": 2,
+                                "failed": 0, "failed_ids": []}
+    qs = {q.req_id: q for q in await tree.questions.list("t", pack.id)}
+    assert qs["A1"].ai_answer == "prior draft"  # untouched
+    assert qs["A2"].ai_answer == "draft"
+
+
+async def test_drafts_stub_fallback_still_fails_closed(monkeypatch):
+    """C1: a genuine provider outage (StubProviderUnavailable) still fails closed -- state "error",
+    nothing persisted -- rather than being swallowed as a per-item failure."""
+    packs, reqs, answers, tree, pack = await _make_pack()
+    _stub_supporting_stages(monkeypatch)
+
+    async def _extract(_text):
+        return _coarse("A1", "A2")
+    monkeypatch.setattr(generation, "extract_requirements_chunked", _extract)
+
+    async def _stub_build(*_a, **_kw):
+        class _W:
+            async def answer(self, rid, text, **__):
+                return AgentResult(requirement_id=rid, answer="echo", critique=Critique(grounding=0.0),
+                                   decision=Decision.human_review, citations=[], stub=True)
+        return _W()
+    monkeypatch.setattr(generation, "assemble_worker", _stub_build)
+
+    status = await generation.run_generation(
+        tenant="t", pack_id=pack.id, agent_id=None, packs=packs, reqs=reqs, answers=answers,
+        tree=tree, knowledge=None, agents=None)
+
+    assert status["drafts"]["state"] == "error"
+    assert status["errors"]["drafts"] == "answer generation is temporarily unavailable"
+    assert all(q.ai_answer == "" for q in await tree.questions.list("t", pack.id))
+
+
+async def test_per_stage_errors_are_attributed_not_clobbered(monkeypatch):
+    """M3: each failing stage records its own message under errors[stage] so a poller can tell WHICH
+    stage failed, instead of one shared `error` field clobbering the others."""
+    packs, reqs, answers, tree, pack = await _make_pack()
+    monkeypatch.setattr(generation, "get_provider", lambda **_kw: object())
+
+    async def _req_boom(_text):
+        raise ExtractionError("req boom")
+    monkeypatch.setattr(generation, "extract_requirements_chunked", _req_boom)
+    monkeypatch.setattr(generation, "extract_brief", lambda *_a, **_kw: {"summary": "s"})
+
+    def _comp_boom(*_a, **_kw):
+        raise RuntimeError("comp boom")
+    monkeypatch.setattr(generation, "extract_compliance", _comp_boom)
+    monkeypatch.setattr(generation, "assemble_worker", _draft_worker())
+
+    status = await generation.run_generation(
+        tenant="t", pack_id=pack.id, agent_id=None, packs=packs, reqs=reqs, answers=answers,
+        tree=tree, knowledge=None, agents=None)
+
+    assert status["requirements"] == "error" and status["compliance"] == "error"
+    assert status["brief"] == "ready"
+    assert "req boom" in status["errors"]["requirements"]
+    assert "comp boom" in status["errors"]["compliance"]
+    assert status["error"] is not None  # latest error kept for back-compat
+
+
+def test_consolidate_dedupes_colliding_codes_across_chunks():
+    """M1: two chunks that each returned "B1" with a different title survive the title-keyed merge,
+    so _consolidate must re-uniquify their codes (and sub-section req_ids)."""
+    out = generation._consolidate([
+        {"id": "B1", "title": "From chunk A", "classification": "KB", "requirement": "a",
+         "subsections": [{"id": "B1.1", "title": "sa", "classification": "KB", "requirement": "x"}]},
+        {"id": "B1", "title": "From chunk B", "classification": "KB", "requirement": "b",
+         "subsections": [{"id": "B1.1", "title": "sb", "classification": "KB", "requirement": "y"}]},
+    ])
+    assert [o["id"] for o in out] == ["B1", "B1-2"]
+    assert out[1]["subsections"][0]["id"] == "B1-2.1"

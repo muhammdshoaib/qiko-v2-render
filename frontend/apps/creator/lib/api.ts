@@ -251,13 +251,13 @@ export const setPackStage = (packId: string, stage: PackStage) =>
 // ── Stepper (Upload -> Parsed -> Assigned -> Drafting -> Review) ─────────────
 // The tender-generation background job's per-artifact progress. The Sections tab polls
 // GET /status (~3s) while anything is pending/running and derives the stepper state from it.
-export type GenState = "pending" | "running" | "ready" | "error";
+export type GenState = "pending" | "running" | "ready" | "partial" | "error";
 export type TenderGenStatus = {
   requirements?: GenState;
   sections?: GenState;
   brief?: GenState;
   compliance?: GenState;
-  drafts?: { state: GenState; done: number; total: number };
+  drafts?: { state: GenState; done: number; total: number; failed?: number };
   assignments_confirmed?: boolean;
   updated_at?: string;
   error?: string | null;
