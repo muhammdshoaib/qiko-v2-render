@@ -104,3 +104,8 @@ class WorkerSettings:
     # leaving it stuck. Its drafts stage is resumable/idempotent (skips already-drafted questions),
     # so a retry re-enters the loop and finishes the not-yet-drafted work without duplicating any.
     max_tries = 3
+    # The full generate_tender_artifacts pipeline (extract -> sections -> brief -> compliance ->
+    # per-section drafts) far exceeds arq's 300s default for a real tender (dozens of grounded LLM
+    # calls). Give it 30 minutes so a whole tender drafts in one run instead of timing out mid-way
+    # and thrashing on retries. Individual LLM calls keep their own read timeouts.
+    job_timeout = 1800

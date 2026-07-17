@@ -51,8 +51,10 @@ from app.modules.rfp.extraction import (
 
 # extract/brief/compliance are one-shot calls over a whole tender document (tens of thousands of
 # chars in, a full structured response out) -- the gateway's default read_timeout (20s) is tuned
-# for the fast per-requirement answering hot path and is routinely too tight for these.
-_DOCUMENT_READ_TIMEOUT = 90
+# for the fast per-requirement answering hot path and is routinely too tight for these. A single
+# near-160k-char extraction (mid-size docs that don't chunk) can take well over 90s, so give these
+# document-scale calls a generous ceiling.
+_DOCUMENT_READ_TIMEOUT = 180
 _EXTRACT_CONCURRENCY = 4  # bounded so a huge tender doesn't fire a dozen simultaneous LLM calls
 
 logger = logging.getLogger(__name__)
