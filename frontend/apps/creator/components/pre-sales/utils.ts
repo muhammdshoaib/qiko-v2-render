@@ -18,6 +18,25 @@ export function confidencePct(confidence: number): string {
   return `${Math.round((confidence || 0) * 100)}%`;
 }
 
+// Sub-section expand-card metric bands (matches idg.qiko.ai): a 0..1 metric is shown as an integer
+// percentage with a colour band -- green >= 80%, amber 60-79%, red < 60%. `metricPct` returns null
+// when the metric is missing (nothing drafted yet) so the card can render a neutral placeholder.
+export function metricPct(value: number | null | undefined): number | null {
+  return value == null ? null : Math.round(value * 100);
+}
+
+export function metricBandText(pct: number): string {
+  if (pct >= 80) return "text-emerald-400";
+  if (pct >= 60) return "text-amber-400";
+  return "text-red-400";
+}
+
+export function metricBandBar(pct: number): string {
+  if (pct >= 80) return "bg-emerald-400";
+  if (pct >= 60) return "bg-amber-400";
+  return "bg-red-400";
+}
+
 // Human-readable section status. `manual` sections are IDG-completed (commercial/pricing) sheets,
 // not AI-drafted -- surfaced as "IDG commercial" per the cockpit spec.
 const SECTION_STATUS_LABELS: Record<PackSectionStatus, string> = {

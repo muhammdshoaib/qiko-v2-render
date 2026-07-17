@@ -18,7 +18,7 @@ import { OutcomesStrip } from "@/components/cockpit/outcomes-strip";
 import { Textarea } from "@/components/cockpit/controls";
 import {
   confidenceBadgeClass, confidenceClass, confidencePct, sectionStatusBadgeClass, sectionStatusLabel,
-  truncate, wordCount,
+  metricPct, metricBandText, metricBandBar, truncate, wordCount,
 } from "@/components/pre-sales/utils";
 
 // ── Stepper state derived from gen_status (GET /rfp/packs/{id}/status) ────────
@@ -177,10 +177,19 @@ export function SectionsTab({ packId }: { packId: string }) {
 
   const showTable = phase === "assigned" || phase === "review";
 
+  // "AI-drafted" is counted per TOP-LEVEL SECTION (like idg's "8/15"), NOT per leaf question: a
+  // top-level section is drafted when it (childless) or any of its sub-sections has an AI/user draft.
+  const sectionIsDrafted = (s: PackSectionNode) => {
+    const kids = childrenOf(s.id);
+    const qs = kids.length ? kids.flatMap((k) => k.questions) : s.questions;
+    return qs.some((q) => q.ai_answer || q.user_draft);
+  };
+  const sectionsDrafted = topLevel.filter(sectionIsDrafted).length;
+
   return (
     <div className="space-y-6">
       <OutcomesStrip title="SECTIONS" tiles={[
-        { value: `${drafted.length}/${allQuestions.length}`, label: "AI-drafted", caption: "grounded, cited", trend: "up" },
+        { value: `${sectionsDrafted}/${topLevel.length}`, label: "AI-drafted", caption: "grounded, cited", trend: "up" },
         { value: confidencePct(avgConfidence), label: "Avg confidence", caption: "across drafted answers", trend: avgConfidence >= 0.85 ? "up" : avgConfidence >= 0.7 ? "neutral" : "down" },
         { value: confidencePct(avgConfidence), label: "Avg grounding", caption: "KB coverage", trend: avgConfidence >= 0.85 ? "up" : avgConfidence >= 0.7 ? "neutral" : "down" },
       ]} />
@@ -330,43 +339,74 @@ function NoSections() {
 }
 
 // ── Rows ─────────────────────────────────────────────────────────────────────
+// A top-level section renders as one clickable row; if it has sub-sections, clicking (or
+// Enter/Space) toggles them, and they render as idg-style cards in a full-width row below. Leaf
+// sections open straight into the editor. Mirrors idg.qiko.ai's Sections expand experience.
 function SectionRows({ packId, section, kids, expanded, onToggle, onOpen, reviewerEditable, assignees }: {
   packId: string; section: PackSectionNode; kids: PackSectionNode[]; expanded: boolean;
   onToggle: () => void; onOpen: (id: string) => void; reviewerEditable: boolean; assignees: Assignee[];
 }) {
+  const hasKids = kids.length > 0;
   return (
     <>
-      <SectionRow packId={packId} section={section} depth={0} hasKids={kids.length > 0} expanded={expanded}
+      <SectionRow packId={packId} section={section} hasKids={hasKids} expanded={expanded}
         onToggle={onToggle} onOpen={onOpen} reviewerEditable={reviewerEditable} assignees={assignees} />
-      {expanded && kids.map((k) => (
-        <SectionRow key={k.id} packId={packId} section={k} depth={1} hasKids={false} expanded={false}
-          onToggle={() => {}} onOpen={onOpen} reviewerEditable={false} assignees={assignees} />
-      ))}
+      {hasKids && expanded && (
+        <tr className="border-b border-white/[0.04] last:border-0 bg-white/[0.015]">
+          <td colSpan={6} className="px-4 pb-3 pt-0.5">
+            <div className="ml-6 space-y-2">
+              {kids.map((k) => <SubSectionCard key={k.id} section={k} onOpen={onOpen} />)}
+            </div>
+          </td>
+        </tr>
+      )}
     </>
   );
 }
 
-function SectionRow({ packId, section, depth, hasKids, expanded, onToggle, onOpen, reviewerEditable, assignees }: {
-  packId: string; section: PackSectionNode; depth: number; hasKids: boolean; expanded: boolean;
+function SectionRow({ packId, section, hasKids, expanded, onToggle, onOpen, reviewerEditable, assignees }: {
+  packId: string; section: PackSectionNode; hasKids: boolean; expanded: boolean;
   onToggle: () => void; onOpen: (id: string) => void; reviewerEditable: boolean; assignees: Assignee[];
 }) {
   const locked = section.questions.filter((q) => q.locked).length;
+  // Row activation: parents-with-kids toggle their cards; leaves open the editor.
+  const activate = () => (hasKids ? onToggle() : onOpen(section.id));
   return (
-    <tr className={cn("border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02]", depth > 0 && "bg-white/[0.01]")}>
+    <tr
+      role="button"
+      tabIndex={0}
+      aria-expanded={hasKids ? expanded : undefined}
+      aria-label={hasKids
+        ? `${section.name}, ${section.subsection_count} sub-section${section.subsection_count > 1 ? "s" : ""}, ${expanded ? "collapse" : "expand"}`
+        : `Open ${section.name}`}
+      onClick={activate}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(); } }}
+      className="cursor-pointer border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400/60"
+    >
       <td className="px-4 py-3 font-mono text-[12px] text-slate-400">
-        <span className="flex items-center gap-1" style={{ paddingLeft: depth * 14 }}>
-          {hasKids ? (
-            <button onClick={onToggle} aria-label={expanded ? "Collapse sub-sections" : "Expand sub-sections"} aria-expanded={expanded}
-              className="rounded text-slate-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
-              {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
-            </button>
-          ) : <span className="inline-block size-3.5" />}
+        <span className="flex items-center gap-1">
+          {hasKids
+            ? (expanded
+              ? <ChevronDown aria-hidden className="size-3.5 text-slate-500" />
+              : <ChevronRight aria-hidden className="size-3.5 text-slate-500" />)
+            : <span aria-hidden className="inline-block size-3.5" />}
           {section.code || "\u2014"}
         </span>
       </td>
       <td className="px-4 py-3">
-        <p className="font-medium text-white">{section.name}</p>
-        <p className="text-[11px] text-slate-500">{locked}/{section.questions.length} locked{section.weighting ? ` \u00b7 ${section.weighting}` : ""}</p>
+        <p className="font-medium text-white">
+          {section.name}
+          {section.subsection_count > 0 && (
+            <span className="ml-2 text-[11px] font-normal text-slate-500">
+              ({section.subsection_count} sub-section{section.subsection_count > 1 ? "s" : ""})
+            </span>
+          )}
+        </p>
+        <p className="text-[11px] text-slate-500">
+          {section.subsection_count > 0
+            ? `${section.subsection_count} sub-section${section.subsection_count > 1 ? "s" : ""} to review`
+            : `${locked}/${section.questions.length} locked${section.weighting ? ` \u00b7 ${section.weighting}` : ""}`}
+        </p>
       </td>
       <td className="px-4 py-3">
         {section.kb_gap ? (
@@ -380,19 +420,80 @@ function SectionRow({ packId, section, depth, hasKids, expanded, onToggle, onOpe
           {sectionStatusLabel(section.status)}
         </span>
       </td>
-      <td className="px-4 py-3">
-        {/* Reviewer is a top-level-section concept only; sub-sections inherit it. */}
-        {depth === 0
-          ? <ReviewerCell packId={packId} section={section} editable={reviewerEditable} assignees={assignees} />
-          : <span className="text-slate-600">{"\u2014"}</span>}
+      {/* Reviewer holds its own interactive controls -- keep clicks from bubbling to the row toggle. */}
+      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+        <ReviewerCell packId={packId} section={section} editable={reviewerEditable} assignees={assignees} />
       </td>
       <td className="px-4 py-3 text-right">
-        <button onClick={() => onOpen(section.id)}
-          className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
-          Open <ArrowRight className="size-3" />
-        </button>
+        {/* Visual affordance only -- the whole row is the actual button (avoids a duplicate tab stop). */}
+        <span
+          aria-hidden
+          className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[12px] font-medium text-slate-200"
+        >
+          {hasKids
+            ? (<>{expanded ? "Collapse" : "Expand"} {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}</>)
+            : (<>Open <ArrowRight className="size-3" /></>)}
+        </span>
       </td>
     </tr>
+  );
+}
+
+// ── Sub-section card (idg expand experience) ─────────────────────────────────
+// Stacked below an expanded parent: code pill + title + conf/grounding bars (%) + optional gaps
+// flag + status, with an "Open" action that drops straight into the sub-section's editor.
+function SubSectionCard({ section, onOpen }: { section: PackSectionNode; onOpen: (id: string) => void }) {
+  const conf = metricPct(section.confidence);
+  const grounding = metricPct(section.grounding);
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+      <span className="shrink-0 rounded-md border border-indigo-500/30 bg-indigo-500/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-indigo-300">
+        {section.code || "\u2014"}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-medium text-white">{section.name}</p>
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px]">
+          <MetricBar label="conf" pct={conf} />
+          <MetricBar label="grounding" pct={grounding} />
+          {section.kb_gap && (
+            <span className="inline-flex items-center gap-1 font-semibold text-amber-400">
+              <AlertTriangle className="size-3" /> gaps
+            </span>
+          )}
+          <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", sectionStatusBadgeClass(section.status))}>
+            {sectionStatusLabel(section.status)}
+          </span>
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={() => onOpen(section.id)}
+        aria-label={`Open ${section.name}`}
+        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+      >
+        Open <ArrowRight className="size-3" />
+      </button>
+    </div>
+  );
+}
+
+// One "label bar %" metric inside a sub-section card. Bar + % colour band by the 80/60 thresholds;
+// a neutral dash when the metric hasn't been drafted yet.
+function MetricBar({ label, pct }: { label: string; pct: number | null }) {
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span className="text-slate-500">{label}</span>
+      {pct == null ? (
+        <span className="text-slate-600">{"\u2014"}</span>
+      ) : (
+        <>
+          <span className="h-1.5 w-14 overflow-hidden rounded-full bg-white/10">
+            <span className={cn("block h-full rounded-full", metricBandBar(pct))} style={{ width: `${pct}%` }} />
+          </span>
+          <span className={cn("font-semibold tabular-nums", metricBandText(pct))}>{pct}%</span>
+        </>
+      )}
+    </span>
   );
 }
 

@@ -226,7 +226,9 @@ async def test_overview_metrics():
                                confidence=0.4, decision="human_review", kb_gap=False)
     ov = await svc.overview("t", "p1")
     assert ov["sections"] == 1 and ov["questions"] == 2
-    assert ov["ai_drafted"] == 1 and ov["ai_drafted_total"] == 2
+    # ai_drafted is counted per top-level SECTION (like idg's 8/15), not per question: the one
+    # section has a draft, so 1/1 (not 1/2).
+    assert ov["ai_drafted"] == 1 and ov["ai_drafted_total"] == 1
     assert ov["for_human_review"] == 1 and ov["kb_sources"] == 1
     assert ov["can_finalize"] is False
 

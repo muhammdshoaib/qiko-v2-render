@@ -404,13 +404,29 @@ class PackTreeService:
         for_human_review = [q for q in questions if q.decision == "human_review" and not q.locked]
         kb_sources = {c for q in questions for c in q.ai_sources}
         avg = round(sum(q.confidence for q in drafted) / len(drafted), 2) if drafted else 0.0
+        # "AI-drafted" is counted per TOP-LEVEL SECTION (like idg's "8/15"), NOT per leaf question:
+        # a top-level section counts as drafted when it (if childless) or any of its sub-sections has
+        # an AI/user draft. Counting leaves gave a misleading "3/144".
+        drafted_section_ids = {q.section_id for q in drafted}
+        children_by_parent: dict[str, list] = {}
+        for s in sections:
+            if s.parent_id:
+                children_by_parent.setdefault(s.parent_id, []).append(s)
+
+        def _section_drafted(sec) -> bool:
+            kids = children_by_parent.get(sec.id)
+            if kids:
+                return any(k.id in drafted_section_ids for k in kids)
+            return sec.id in drafted_section_ids
+
+        top_drafted = sum(1 for s in top_level if _section_drafted(s))
         return {
             "sections": len(top_level),
             "subsections": len(sections) - len(top_level),
             "sections_locked": sum(1 for s in top_level if s.status == "locked"),
             "questions": len(questions),
-            "ai_drafted": len(drafted),
-            "ai_drafted_total": len(questions),
+            "ai_drafted": top_drafted,
+            "ai_drafted_total": len(top_level),
             "for_human_review": len(for_human_review),
             "kb_sources": len(kb_sources),
             "kb_gaps": sum(1 for s in leaves if s.kb_gap),
