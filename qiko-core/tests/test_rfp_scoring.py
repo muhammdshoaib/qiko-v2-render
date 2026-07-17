@@ -61,6 +61,38 @@ def test_score_opportunity_rejects_missing_rationale():
         pass
 
 
+class _FlakyProvider:
+    """Returns each queued response in turn (last one sticks) so we can test retry-then-succeed."""
+    def __init__(self, *responses):
+        self.responses = list(responses)
+        self.calls = 0
+
+    def generate(self, prompt, *, system=None, temperature=0.2):
+        text = self.responses[min(self.calls, len(self.responses) - 1)]
+        self.calls += 1
+        return LLMResponse(text=text)
+
+
+def test_score_opportunity_retries_then_succeeds_on_bad_json():
+    p = _FlakyProvider("not json at all", GOOD_JSON)
+    result = score_opportunity("t", ["c1"], p)
+    assert result["score"] == 82
+    assert p.calls == 2  # first attempt failed to parse, retried and succeeded
+
+
+def test_score_opportunity_drops_malformed_criterion_keeps_valid():
+    raw = json.dumps({
+        "score": 60, "qualified": True, "rationale": "ok",
+        "criteria_results": [
+            {"criterion": "Valid one", "met": True, "note": "n"},
+            "not an object",
+            {"criterion": "Another valid", "met": False, "note": ""},
+        ],
+    })
+    result = score_opportunity("t", ["c1"], _CannedProvider(raw))
+    assert len(result["criteria_results"]) == 2  # the string entry is dropped, the two dicts survive
+
+
 # --- API-level ---
 def test_score_endpoint_uses_the_pack_worker_configured_criteria(client, monkeypatch):
     extract_json = json.dumps([{"id": "A1", "title": "Scope", "classification": "KB", "requirement": "Describe scope."}])
