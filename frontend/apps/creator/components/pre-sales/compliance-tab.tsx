@@ -1,22 +1,50 @@
 "use client";
 
-import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, Bot, FileText, Loader2, ShieldCheck, Upload, User } from "lucide-react";
-import { complianceCheck, getRfpPack, type ComplianceItem } from "@/lib/api";
+import { useEffect, useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, Bot, FileText, Loader2, RefreshCw, ShieldCheck, Upload, User } from "lucide-react";
+import {
+  complianceCheck, getCompliance, getRfpPack, getTenderStatus,
+  type ComplianceItem, type GenState,
+} from "@/lib/api";
 import { formatShortDate } from "@/lib/stringUtils";
 import { OutcomesStrip, type OutcomeTile } from "@/components/cockpit/outcomes-strip";
 
+const IN_FLIGHT: GenState[] = ["pending", "running"];
+const isInFlight = (s: GenState | undefined) => s != null && IN_FLIGHT.includes(s);
+
 export function ComplianceTab({ packId, onOpenSources }: { packId: string; onOpenSources: () => void }) {
+  const qc = useQueryClient();
   const packQ = useQuery({ queryKey: ["rfp-pack", packId], queryFn: () => getRfpPack(packId) });
   const docText = packQ.data?.document_text ?? "";
 
+  // Read the PERSISTED compliance result with a plain GET (no LLM) so it survives login/logout
+  // instead of re-parsing the tender on every mount. Regenerate is explicit only. GET returns null
+  // when nothing has been generated yet (distinct from an empty [] = generated, no items found).
   const checkQ = useQuery({
     queryKey: ["pack-compliance", packId],
-    queryFn: () => complianceCheck(packId, docText),
-    enabled: !!docText.trim(),
+    queryFn: () => getCompliance(packId),
     staleTime: Infinity,
     retry: false,
+  });
+
+  // Poll /status while the compliance check is still generating in the background, then refetch it.
+  const statusQ = useQuery({
+    queryKey: ["tender-status", packId],
+    queryFn: () => getTenderStatus(packId),
+    refetchInterval: (q) => (isInFlight(q.state.data?.compliance) ? 3000 : false),
+  });
+  const generating = isInFlight(statusQ.data?.compliance);
+
+  const complianceState = statusQ.data?.compliance;
+  useEffect(() => {
+    if (complianceState === "ready" && checkQ.data == null) checkQ.refetch();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [complianceState]);
+
+  const regenerate = useMutation({
+    mutationFn: () => complianceCheck(packId, docText),
+    onSuccess: (items) => qc.setQueryData(["pack-compliance", packId], items),
   });
 
   const items: ComplianceItem[] = checkQ.data ?? [];
@@ -52,23 +80,30 @@ export function ComplianceTab({ packId, onOpenSources }: { packId: string; onOpe
   }
 
   if (checkQ.isLoading) {
-    return (
-      <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-14 text-center">
-        <Loader2 className="mb-3 size-6 animate-spin text-indigo-400" />
-        <p className="text-sm font-medium text-slate-200">Checking compliance{"\u2026"}</p>
-        <p className="mt-1 text-[12px] text-slate-500">Extracting mandatory pass/fail requirements from the tender.</p>
-      </div>
-    );
+    return <div className="space-y-3">{[0, 1, 2].map((i) => <div key={i} className="h-16 animate-pulse rounded-2xl bg-white/[0.04]" />)}</div>;
   }
 
-  if (checkQ.isError) {
+  // No persisted compliance yet: either it's still being generated in the background (small
+  // generating state while /status is polled), or it needs an explicit generate/regenerate.
+  if (checkQ.data == null) {
+    if (generating || regenerate.isPending) {
+      return (
+        <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-14 text-center">
+          <Loader2 className="mb-3 size-6 animate-spin text-indigo-400" />
+          <p className="text-sm font-medium text-slate-200">Checking compliance{"\u2026"}</p>
+          <p className="mt-1 text-[12px] text-slate-500">Extracting mandatory pass/fail requirements from the tender.</p>
+        </div>
+      );
+    }
     return (
-      <div className="flex flex-col items-center rounded-2xl border border-red-500/20 bg-red-500/[0.06] px-4 py-12 text-center">
-        <AlertTriangle className="mb-3 size-6 text-red-400" />
-        <p className="text-sm font-medium text-red-200">Couldn&apos;t run the compliance check</p>
-        <button onClick={() => checkQ.refetch()}
-          className="mt-4 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-[13px] font-semibold text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
-          Try again
+      <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-12 text-center">
+        {regenerate.isError ? <AlertTriangle className="mb-3 size-6 text-amber-400" /> : <ShieldCheck className="mb-3 size-6 text-slate-500" />}
+        <p className="text-sm font-medium text-slate-200">
+          {regenerate.isError ? "Couldn't run the compliance check" : "No compliance check yet"}
+        </p>
+        <button onClick={() => regenerate.mutate()} disabled={regenerate.isPending}
+          className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
+          <RefreshCw className="size-4" /> Run compliance check
         </button>
       </div>
     );
@@ -85,14 +120,21 @@ export function ComplianceTab({ packId, onOpenSources }: { packId: string; onOpe
     <div className="space-y-6">
       <OutcomesStrip title="COMPLIANCE" tiles={tiles} />
 
-      <div>
-        <h2 className="flex items-center gap-2 text-[15px] font-semibold text-white">
-          <ShieldCheck className="size-4 text-indigo-400" /> Compliance Checker
-        </h2>
-        <p className="mt-1 max-w-2xl text-[13px] text-slate-400">
-          Mandatory requirements and disqualifiers extracted from the tender, tagged by who must action
-          each so nothing that could disqualify the bid is missed.
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="flex items-center gap-2 text-[15px] font-semibold text-white">
+            <ShieldCheck className="size-4 text-indigo-400" /> Compliance Checker
+          </h2>
+          <p className="mt-1 max-w-2xl text-[13px] text-slate-400">
+            Mandatory requirements and disqualifiers extracted from the tender, tagged by who must action
+            each so nothing that could disqualify the bid is missed.
+          </p>
+        </div>
+        <button onClick={() => regenerate.mutate()} disabled={regenerate.isPending}
+          aria-label="Regenerate the compliance check"
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] font-medium text-slate-300 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+          {regenerate.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} Regenerate
+        </button>
       </div>
 
       {items.length === 0 ? (

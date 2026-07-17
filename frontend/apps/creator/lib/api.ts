@@ -168,6 +168,13 @@ async function postDocumentText<T>(path: string, documentText: string): Promise<
   if (!res.ok) throw new ApiError(res.status, await res.text());
   return res.json() as Promise<T>;
 }
+// GET reads the persisted brief/compliance (no LLM). Returns null when nothing has been generated
+// yet, so tabs can distinguish "not generated" from "generating" (via /status) without re-parsing.
+export const getBrief = (packId: string) =>
+  request<TenderBrief | null>(`/rfp/packs/${packId}/brief`);
+export const getCompliance = (packId: string) =>
+  request<ComplianceItem[] | null>(`/rfp/packs/${packId}/compliance`);
+// POST re-parses the tender document (regenerate). Only invoked from an explicit action now.
 export const tenderBrief = (packId: string, documentText: string) =>
   postDocumentText<TenderBrief>(`/rfp/packs/${packId}/brief`, documentText);
 export const complianceCheck = (packId: string, documentText: string) =>
@@ -212,7 +219,10 @@ export type PackSectionStatus =
 
 export type PackQuestion = {
   id: string; tenant: string; pack_id: string; section_id: string; text: string; req_id: string;
-  word_limit: number | null; ai_answer: string; ai_sources: string[]; confidence: number;
+  word_limit: number | null; ai_answer: string; ai_sources: string[];
+  // Two distinct grounding metrics (0..1): `confidence` is the model's real self-report and
+  // `grounding` is the critic's independent score. `gaps` is a human-input prompt ("" if none).
+  confidence: number; grounding: number; gaps: string;
   decision: string; kb_gap: boolean; locked: boolean; user_draft: string; order_index: number;
 };
 

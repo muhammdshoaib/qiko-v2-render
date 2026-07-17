@@ -37,6 +37,22 @@ export function metricBandBar(pct: number): string {
   return "bg-red-400";
 }
 
+// Pill styling for the two idg section-detail metric badges (conf / grounding). Same 80/60 bands
+// as the sub-section bars: green >= 80%, amber 60-79%, red < 60%.
+export function metricBandBadge(pct: number): string {
+  if (pct >= 80) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+  if (pct >= 60) return "border-amber-500/30 bg-amber-500/10 text-amber-400";
+  return "border-red-500/30 bg-red-500/10 text-red-400";
+}
+
+// Split a free-text gaps string into bullet points on newlines or sentence breaks (". ").
+export function splitGaps(gaps: string): string[] {
+  return (gaps || "")
+    .split(/\r?\n|\.\s+/)
+    .map((s) => s.trim().replace(/\.$/, "").trim())
+    .filter(Boolean);
+}
+
 // Human-readable section status. `manual` sections are IDG-completed (commercial/pricing) sheets,
 // not AI-drafted -- surfaced as "IDG commercial" per the cockpit spec.
 const SECTION_STATUS_LABELS: Record<PackSectionStatus, string> = {

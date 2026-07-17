@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, ChevronDown, ChevronRight, Lock, Unlock, Loader2, RefreshCw, Copy, Save,
   ArrowLeft, ArrowRight, FileSpreadsheet, ListChecks, CheckCircle2, Upload, Users, X, Check,
+  ThumbsUp, ThumbsDown, Database,
 } from "lucide-react";
 import { cn } from "@qiko/ui";
 import {
@@ -17,8 +18,8 @@ import { AnswerMarkdown } from "@/components/chat-message";
 import { OutcomesStrip } from "@/components/cockpit/outcomes-strip";
 import { Textarea } from "@/components/cockpit/controls";
 import {
-  confidenceBadgeClass, confidenceClass, confidencePct, sectionStatusBadgeClass, sectionStatusLabel,
-  metricPct, metricBandText, metricBandBar, truncate, wordCount,
+  confidencePct, sectionStatusBadgeClass, sectionStatusLabel,
+  metricPct, metricBandText, metricBandBar, metricBandBadge, splitGaps, truncate, wordCount,
 } from "@/components/pre-sales/utils";
 
 // ── Stepper state derived from gen_status (GET /rfp/packs/{id}/status) ────────
@@ -162,10 +163,14 @@ export function SectionsTab({ packId }: { packId: string }) {
   }, [draftsState, packId, qc]);
 
   const allQuestions = useMemo(() => sections.flatMap((s) => s.questions), [sections]);
-  const drafted = allQuestions.filter((q) => q.ai_answer || q.user_draft);
   const withConfidence = allQuestions.filter((q) => q.confidence > 0);
   const avgConfidence = withConfidence.length
     ? withConfidence.reduce((n, q) => n + q.confidence, 0) / withConfidence.length
+    : 0;
+  // Grounding is the critic's DISTINCT score, so average it separately from confidence.
+  const withGrounding = allQuestions.filter((q) => q.grounding > 0);
+  const avgGrounding = withGrounding.length
+    ? withGrounding.reduce((n, q) => n + q.grounding, 0) / withGrounding.length
     : 0;
 
   const selected = selectedId ? sections.find((s) => s.id === selectedId) ?? null : null;
@@ -216,7 +221,7 @@ export function SectionsTab({ packId }: { packId: string }) {
       <OutcomesStrip title="SECTIONS" tiles={[
         { value: `${sectionsDrafted}/${topLevel.length}`, label: "AI-drafted", caption: "grounded, cited", trend: "up" },
         { value: confidencePct(avgConfidence), label: "Avg confidence", caption: "across drafted answers", trend: avgConfidence >= 0.85 ? "up" : avgConfidence >= 0.7 ? "neutral" : "down" },
-        { value: confidencePct(avgConfidence), label: "Avg grounding", caption: "KB coverage", trend: avgConfidence >= 0.85 ? "up" : avgConfidence >= 0.7 ? "neutral" : "down" },
+        { value: confidencePct(avgGrounding), label: "Avg grounding", caption: "KB coverage", trend: avgGrounding >= 0.85 ? "up" : avgGrounding >= 0.7 ? "neutral" : "down" },
       ]} />
 
       <Stepper steps={steps} />
@@ -784,6 +789,7 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
         : s));
   };
 
+  // Reject = regenerate the grounded AI draft (same as the Regenerate control).
   const regenerate = useMutation({
     mutationFn: () => generatePackQuestion(packId, question.id),
     onSuccess: (u) => { patchCache(u); onChanged(); },
@@ -796,10 +802,21 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
     mutationFn: () => (question.locked ? unlockPackQuestion(packId, question.id) : lockPackQuestion(packId, question.id)),
     onSuccess: (u) => { patchCache(u); onChanged(); },
   });
+  // Approve = accept the AI suggestion verbatim: copy it into the human draft, then lock.
+  const approve = useMutation({
+    mutationFn: async () => {
+      await savePackQuestionDraft(packId, question.id, question.ai_answer);
+      return lockPackQuestion(packId, question.id);
+    },
+    onSuccess: (u) => { setDraft(u.user_draft ?? ""); patchCache(u); onChanged(); },
+  });
 
-  const busy = regenerate.isPending || save.isPending || lock.isPending;
+  const busy = regenerate.isPending || save.isPending || lock.isPending || approve.isPending;
   const words = wordCount(draft);
   const overLimit = question.word_limit != null && words > question.word_limit;
+  const confPct = metricPct(question.confidence);
+  const groundingPct = metricPct(question.grounding);
+  const gaps = splitGaps(question.gaps);
 
   return (
     <div className={cn("rounded-2xl border bg-white/[0.015]", expanded ? "border-indigo-500/25" : "border-white/[0.06]")}>
@@ -810,7 +827,8 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
           <span className="block truncate text-[13px] font-medium text-white">{truncate(question.text, 110)}</span>
           <span className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
             {question.word_limit != null && <span>{question.word_limit} words max</span>}
-            {question.confidence > 0 && <span className={confidenceClass(question.confidence)}>{confidencePct(question.confidence)} conf.</span>}
+            {confPct != null && <span className={metricBandText(confPct)}>conf {confPct}%</span>}
+            {groundingPct != null && <span className={metricBandText(groundingPct)}>grounding {groundingPct}%</span>}
             {question.kb_gap && <span className="inline-flex items-center gap-0.5 text-amber-400"><AlertTriangle className="size-3" /> KB gap</span>}
           </span>
         </span>
@@ -824,7 +842,46 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
 
       {expanded && (
         <div className="border-t border-white/[0.06] p-4">
-          <p className="mb-4 text-[13px] leading-relaxed text-slate-300">{question.text}</p>
+          {/* Question + the two DISTINCT metric badges (conf = self-report, grounding = critic). */}
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <p className="min-w-0 flex-1 text-[13px] leading-relaxed text-slate-300">{question.text}</p>
+            <div className="flex shrink-0 items-center gap-1.5">
+              {confPct != null && (
+                <span aria-label={`Confidence ${confPct} percent`}
+                  className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", metricBandBadge(confPct))}>
+                  conf {confPct}%
+                </span>
+              )}
+              {groundingPct != null && (
+                <span aria-label={`Grounding ${groundingPct} percent`}
+                  className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", metricBandBadge(groundingPct))}>
+                  grounding {groundingPct}%
+                </span>
+              )}
+              {question.locked && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+                  <Lock className="size-3" /> Locked
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* Gaps for human input: only when the backend reports non-empty gaps for this answer. */}
+          {gaps.length > 0 && (
+            <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3.5">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-amber-400">
+                <AlertTriangle className="size-3.5 shrink-0" /> Gaps for human input
+              </div>
+              <ul className="mt-2 space-y-1.5">
+                {gaps.map((g, i) => (
+                  <li key={i} className="flex gap-2 text-[12px] leading-relaxed text-amber-100/90">
+                    <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-amber-400" />
+                    <span>{g}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {manual ? (
             <p className="flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-4 py-3 text-[12px] text-amber-300">
@@ -833,41 +890,58 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
           ) : (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {/* LEFT: grounded AI suggestion */}
-              <div className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-3.5">
+              <div className="flex flex-col rounded-xl border border-white/[0.06] bg-white/[0.01] p-3.5">
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-violet-300">
                     AI suggestion
                   </span>
-                  {question.confidence > 0 && (
-                    <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", confidenceBadgeClass(question.confidence))}>
-                      {confidencePct(question.confidence)} grounded
-                    </span>
-                  )}
+                  <span className="inline-flex items-center gap-1 text-[10px] font-medium text-slate-400">
+                    <Database className="size-3" /> {question.ai_sources.length} KB source{question.ai_sources.length === 1 ? "" : "s"}
+                  </span>
                 </div>
-                <div className="mt-2 min-h-[60px] text-[13px] leading-relaxed text-slate-300">
+                {/* Fixed-height scrolling window; markdown so no raw ## / ** leak through. */}
+                <div className="mt-2 max-h-[360px] overflow-y-auto text-[13px] leading-relaxed text-slate-300">
                   {question.ai_answer ? <AnswerMarkdown text={question.ai_answer} /> : <p className="text-slate-500">Not generated yet.</p>}
                 </div>
                 {question.ai_sources.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {question.ai_sources.map((src, i) => (
-                      <span key={i} className="rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[10px] text-slate-400">{src}</span>
-                    ))}
+                  <div className="mt-3">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Sources</p>
+                    <ol className="mt-1.5 space-y-1">
+                      {question.ai_sources.map((source, i) => (
+                        <li key={i} className="flex gap-2 text-[11px] text-slate-400">
+                          <span className="shrink-0 tabular-nums text-slate-500">{i + 1}.</span>
+                          <span className="min-w-0 break-words">{source}</span>
+                        </li>
+                      ))}
+                    </ol>
                   </div>
                 )}
                 <div className="mt-3 flex flex-wrap gap-2">
+                  <button onClick={() => approve.mutate()} disabled={busy || !question.ai_answer || question.locked}
+                    aria-label="Approve the AI suggestion and lock the answer"
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:opacity-40">
+                    {approve.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <ThumbsUp className="size-3.5" />} Approve
+                  </button>
+                  <button onClick={() => regenerate.mutate()} disabled={busy || question.locked}
+                    aria-label="Reject and regenerate the AI suggestion"
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[12px] font-semibold text-red-300 hover:bg-red-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-40">
+                    {regenerate.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <ThumbsDown className="size-3.5" />} Reject
+                  </button>
                   <button onClick={() => setDraft(question.ai_answer)} disabled={!question.ai_answer || question.locked}
+                    aria-label="Copy the AI suggestion into your answer"
                     className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
                     <Copy className="size-3.5" /> Copy to editor
                   </button>
                   <button onClick={() => regenerate.mutate()} disabled={busy || question.locked}
+                    aria-label="Regenerate the AI suggestion"
                     className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
                     {regenerate.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} Regenerate
                   </button>
                 </div>
               </div>
 
-              {/* RIGHT: human editor */}
-              <div className="rounded-xl border border-white/[0.06] bg-white/[0.01] p-3.5">
+              {/* RIGHT: human editor -- textarea matches the left answer window height, responsively. */}
+              <div className="flex flex-col rounded-xl border border-white/[0.06] bg-white/[0.01] p-3.5">
                 <div className="flex items-center justify-between">
                   <label htmlFor={`draft-${question.id}`} className="text-[11px] font-semibold uppercase tracking-wider text-indigo-400">Your answer</label>
                   <span className={cn("text-[11px]", overLimit ? "text-red-400" : "text-slate-500")}>
@@ -880,20 +954,23 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
                   onChange={(e) => setDraft(e.target.value)}
                   disabled={question.locked}
                   placeholder={"Write or paste the final answer here\u2026"}
-                  className="mt-2 min-h-[140px]"
+                  className="mt-2 min-h-[360px] flex-1"
                 />
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button onClick={() => save.mutate()} disabled={busy || question.locked}
+                    aria-label="Save your answer draft"
                     className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
                     {save.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />} Save draft
                   </button>
                   {question.locked ? (
                     <button onClick={() => lock.mutate()} disabled={busy}
+                      aria-label="Unlock the answer for editing"
                       className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] font-semibold text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
                       {lock.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Unlock className="size-3.5" />} Unlock
                     </button>
                   ) : (
                     <button onClick={() => lock.mutate()} disabled={busy || !draft.trim()}
+                      aria-label="Lock the answer"
                       className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:opacity-40">
                       {lock.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Lock className="size-3.5" />} Lock answer
                     </button>
@@ -902,7 +979,7 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
                 {!draft.trim() && !question.locked && (
                   <p className="mt-2 text-[11px] text-slate-500">Add an answer before locking.</p>
                 )}
-                {(save.isError || lock.isError || regenerate.isError) && (
+                {(save.isError || lock.isError || regenerate.isError || approve.isError) && (
                   <p className="mt-2 flex items-center gap-1.5 text-[11px] text-red-400">
                     <AlertTriangle className="size-3" /> Something went wrong - please try again.
                   </p>
