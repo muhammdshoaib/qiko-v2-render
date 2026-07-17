@@ -23,17 +23,24 @@ class LLMResponse:
 
 
 class LLMProvider(Protocol):
-    def generate(self, prompt: str, *, system: str | None = None, temperature: float = 0.2) -> LLMResponse: ...
+    # `prefill` seeds the start of the assistant turn (e.g. "{" to force a JSON object). Providers
+    # that support it continue from the seed and return the seed prepended to the text; providers
+    # that do not (the stub) ignore it. Optional and keyword-only so every existing caller is
+    # unaffected.
+    def generate(self, prompt: str, *, system: str | None = None, temperature: float = 0.2,
+                 prefill: str | None = None) -> LLMResponse: ...
 
 
 @dataclass
 class StubProvider:
     """Deterministic provider for dev/tests. Echoes the supplied context so the grounding critic
-    can be exercised end to end without a real model."""
+    can be exercised end to end without a real model. `prefill` is accepted for interface parity
+    but ignored: the stub is not a real model and never returns the JSON contract."""
 
     canned: str | None = None
 
-    def generate(self, prompt: str, *, system: str | None = None, temperature: float = 0.2) -> LLMResponse:
+    def generate(self, prompt: str, *, system: str | None = None, temperature: float = 0.2,
+                 prefill: str | None = None) -> LLMResponse:
         if self.canned is not None:
             return LLMResponse(text=self.canned, stub=True)
         # Extract the CONTEXT block and reflect it back as the "answer" (fully grounded by design).
@@ -51,15 +58,16 @@ class FallbackProvider:
     primary: LLMProvider
     fallback: LLMProvider
 
-    def generate(self, prompt: str, *, system: str | None = None, temperature: float = 0.2) -> LLMResponse:
+    def generate(self, prompt: str, *, system: str | None = None, temperature: float = 0.2,
+                 prefill: str | None = None) -> LLMResponse:
         try:
-            return self.primary.generate(prompt, system=system, temperature=temperature)
+            return self.primary.generate(prompt, system=system, temperature=temperature, prefill=prefill)
         except Exception:
             import logging
 
             logging.getLogger(__name__).warning(
                 "primary AI provider failed; using fallback provider", exc_info=True)
-            return self.fallback.generate(prompt, system=system, temperature=temperature)
+            return self.fallback.generate(prompt, system=system, temperature=temperature, prefill=prefill)
 
 
 def _build_one(name: str, *, read_timeout: int | None = None) -> LLMProvider:

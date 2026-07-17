@@ -5,9 +5,18 @@ The generator now asks the model for STRUCTURED output: the prose answer PLUS a 
 `confidence` (how well the evidence lets it answer) and a `gaps` note (what it could not support).
 This is genuinely distinct from the independent grounding critic (critic.py): confidence is the
 writer's own read of the evidence, grounding is a separate check of how much of the prose the
-evidence actually backs. Parsing is fault tolerant: a fenced ```json block or a bare object both
-work, and if the model returns plain prose we treat the whole text as the answer and leave
-confidence unset (the caller then derives it from grounding)."""
+evidence actually backs.
+
+To make the JSON reliable (the model previously often returned markdown prose, which collapsed
+confidence back onto grounding), we (1) seed the assistant turn with an opening "{" via the
+provider prefill hook so a prefill-capable provider must return a JSON object, and (2) strengthen
+the SYSTEM prompt to forbid markdown/prose outside the JSON. Parsing stays fault tolerant: a fenced
+```json block or a bare object both work, and if the model still returns plain prose we treat the
+whole text as the answer and leave confidence unset (the caller then derives it from grounding).
+
+Whichever path is taken, the answer text is passed through _clean_answer() as a safety net to strip
+any leading meta-scaffolding (a markdown title, an "## Answer" wrapper, a "Based on the evidence
+provided" preamble, or a "GSS Response:" style label) so the client sees clean bid prose."""
 from __future__ import annotations
 
 import json
@@ -20,15 +29,56 @@ from app.modules.agentcore.models import Requirement
 SYSTEM = (
     "You are a bid-response writer. Answer the requirement using ONLY the supplied evidence. "
     "Do not invent facts, dates, names, or figures. If the evidence is insufficient, say so. "
-    "Respond with a JSON object of exactly these keys: "
-    '"answer" (your prose response, grounded only in the evidence), '
-    '"confidence" (a number 0..1 for how well the evidence lets you answer), '
-    'and "gaps" (a short note of what the evidence did not let you support, or "" if none).'
+    "Return ONLY a single JSON object and nothing else: no markdown, no prose outside the JSON, "
+    "no code fences, no leading or trailing text. The object must have exactly these keys: "
+    '"answer" (string), "confidence" (a number 0..1), and "gaps" (string). '
+    'The "answer" value is the final bid response text only: clean, professional prose in short '
+    "paragraphs, with light structure at most. It must NOT contain any meta scaffolding: no "
+    "'## Answer' heading, no '## Available Evidence' section, no 'Based on the evidence provided' "
+    "preamble, no leading markdown title (no '# ...' or '## ...' first line), and no 'GSS Response:' "
+    "or 'IDG Response:' style labels. Write it as the words you would submit to the buyer. "
+    '"confidence" is your own read of how well the evidence lets you answer. '
+    '"gaps" is a short note of what the evidence did not let you support, or "" if none.'
 )
+
+# Seed the assistant turn with an opening brace so a prefill-capable provider is forced to return a
+# JSON object (and no markdown preamble). Providers that cannot prefill ignore it; the strengthened
+# SYSTEM prompt plus the tolerant parser below still recover the JSON in that case.
+_JSON_PREFILL = "{"
 
 # Matches a ```json ... ``` (or bare ``` ... ```) fenced block so we can pull the JSON out of a
 # model that wrapped its object in markdown. DOTALL so the body can span newlines.
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
+
+# --- answer clean-up (safety net) ---
+# The SYSTEM prompt tells the model not to emit scaffolding, but as a last line of defence we strip
+# it here if it still does. Each pattern is anchored at the START of the (stripped) text so we only
+# ever remove a leading wrapper and never touch genuine body content.
+# A leading markdown heading line, e.g. "# Detailed Security Arrangements" or "## Answer".
+_LEADING_HEADING = re.compile(r"^\s*#{1,6}[ \t]+[^\n]*(?:\n+|$)")
+# A leading "GSS Response:" / "IDG Response:" / bare "Response:" label, optionally bold-wrapped.
+_RESPONSE_LABEL = re.compile(r"^\s*\*{0,2}\s*(?:[A-Za-z0-9]{1,16}\s+)?Response\s*:\s*\*{0,2}\s*", re.IGNORECASE)
+# A leading "Based on the evidence provided," / "Based on the provided evidence:" preamble.
+_EVIDENCE_PREAMBLE = re.compile(
+    r"^\s*based on the (?:provided )?evidence(?:\s+provided)?\s*[:,]\s*", re.IGNORECASE)
+_CLEAN_PATTERNS = (_LEADING_HEADING, _RESPONSE_LABEL, _EVIDENCE_PREAMBLE)
+
+
+def _clean_answer(text: str) -> str:
+    """Strip leading meta-scaffolding the model may still add despite the prompt: a leading markdown
+    heading / title, an "## Answer" wrapper, a "GSS Response:"-style label, and a "Based on the
+    (provided) evidence" preamble. Applies repeatedly so stacked wrappers (e.g. a title followed by
+    "## Answer" followed by the preamble) all come off, while genuine body content is preserved."""
+    cleaned = (text or "").strip()
+    changed = True
+    while changed and cleaned:
+        changed = False
+        for pattern in _CLEAN_PATTERNS:
+            stripped = pattern.sub("", cleaned, count=1).strip()
+            if stripped != cleaned:
+                cleaned = stripped
+                changed = True
+    return cleaned
 
 
 @dataclass
@@ -105,21 +155,31 @@ class Generator:
         context_block = "\n".join(f"- {e}" for e in capped) if capped else "(none)"
         return f"CONTEXT:\n{context_block}\n\nREQUIREMENT:\n{req.text}\n"
 
-    def generate_response(self, req: Requirement, verified: list[str] | None = None) -> LLMResponse:
+    def generate_response(self, req: Requirement, verified: list[str] | None = None,
+                          *, prefill: str | None = None) -> LLMResponse:
         """Full provider response (carries the `stub` flag) for callers that must know whether the
         text is a real grounded draft or a StubProvider fallback -- see AgentCore.run."""
         prompt = self.build_prompt(req, verified)
-        return self.provider.generate(prompt, system=self.system_prompt or SYSTEM)
+        return self.provider.generate(prompt, system=self.system_prompt or SYSTEM, prefill=prefill)
 
     def generate(self, req: Requirement, verified: list[str] | None = None) -> str:
         return self.generate_response(req, verified).text.strip()
 
     def generate_structured(self, req: Requirement, verified: list[str] | None = None) -> GenOutput:
-        """Answer + self-reported confidence + gaps. Falls back to plain prose (confidence unset)
-        when the model did not return the JSON contract -- see parse_structured."""
-        response = self.generate_response(req, verified)
+        """Answer + self-reported confidence + gaps. Prefills the assistant turn with "{" (when the
+        default JSON contract is in force) so a prefill-capable provider returns a JSON object,
+        keeping `confidence` distinct from the critic's grounding. Falls back to plain prose
+        (confidence unset) only when the model still did not return the contract -- see
+        parse_structured. Either way the answer is run through _clean_answer to strip any leading
+        meta-scaffolding the model added."""
+        # Only prefill/expect JSON when using the default structured SYSTEM prompt. A worker with a
+        # custom (prose) system_prompt is not asked for JSON, so forcing "{" would corrupt its reply.
+        prefill = _JSON_PREFILL if not self.system_prompt else None
+        response = self.generate_response(req, verified, prefill=prefill)
         parsed = parse_structured(response.text)
         if parsed is None:
-            return GenOutput(answer=response.text.strip(), confidence=None, gaps="", stub=response.stub)
+            return GenOutput(answer=_clean_answer(response.text), confidence=None, gaps="",
+                             stub=response.stub)
         answer, confidence, gaps = parsed
-        return GenOutput(answer=answer, confidence=confidence, gaps=gaps, stub=response.stub)
+        return GenOutput(answer=_clean_answer(answer), confidence=confidence, gaps=gaps,
+                         stub=response.stub)

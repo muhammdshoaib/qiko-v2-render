@@ -35,7 +35,7 @@ def test_bedrock_provider_read_timeout_override():
 
 # --- fallback ---
 class _Boom:
-    def generate(self, prompt, *, system=None, temperature=0.2):
+    def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
         raise RuntimeError("bedrock unavailable")
 
 

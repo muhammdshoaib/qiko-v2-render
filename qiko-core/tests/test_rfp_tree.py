@@ -535,7 +535,7 @@ def test_extract_populates_tree_and_lock_all(client, monkeypatch):
 
     def fake_get_provider(**_kw):
         class P:
-            def generate(self, prompt, *, system=None, temperature=0.2):
+            def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
                 from app.modules.ai.gateway import LLMResponse
                 return LLMResponse(text=payload)
         return P()
@@ -564,7 +564,7 @@ def test_manual_section_does_not_block_finalize_api(client, monkeypatch):
 
     def fake_get_provider(**_kw):
         class P:
-            def generate(self, prompt, *, system=None, temperature=0.2):
+            def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
                 from app.modules.ai.gateway import LLMResponse
                 return LLMResponse(text=payload)
         return P()
@@ -600,7 +600,7 @@ def test_sections_backfill_lazily_for_old_pack(client, monkeypatch):
 
     def fake_get_provider(**_kw):
         class P:
-            def generate(self, prompt, *, system=None, temperature=0.2):
+            def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
                 from app.modules.ai.gateway import LLMResponse
                 return LLMResponse(text=payload)
         return P()
@@ -637,7 +637,7 @@ def test_export_overlay_locked_user_draft_overrides_ai(client, monkeypatch):
 
     def fake_get_provider(**_kw):
         class P:
-            def generate(self, prompt, *, system=None, temperature=0.2):
+            def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
                 from app.modules.ai.gateway import LLMResponse
                 return LLMResponse(text=payload)
         return P()

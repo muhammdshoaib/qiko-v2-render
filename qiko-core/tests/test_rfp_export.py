@@ -33,7 +33,7 @@ def _setup_pack_with_requirements(client, monkeypatch, tenant: str):
 
     def fake_get_provider(**_kwargs):
         class P:
-            def generate(self, prompt, *, system=None, temperature=0.2):
+            def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
                 from app.modules.ai.gateway import LLMResponse
                 return LLMResponse(text=payload)
         return P()
@@ -104,7 +104,7 @@ def test_answers_are_cached_and_force_bypasses_cache(client, monkeypatch):
 
     def counting_provider(**_kwargs):
         class P:
-            def generate(self, prompt, *, system=None, temperature=0.2):
+            def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
                 if "TENDER DOCUMENT" in prompt and "REQUIREMENT" not in prompt:
                     from app.modules.ai.gateway import LLMResponse
                     return LLMResponse(text=payload)

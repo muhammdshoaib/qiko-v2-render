@@ -3,7 +3,7 @@ from pydantic import BaseModel
 
 from app.modules.agentcore import critic, gate
 from app.modules.agentcore.flywheel import InMemoryVerifiedStore
-from app.modules.agentcore.generator import Generator, parse_structured
+from app.modules.agentcore.generator import Generator, _clean_answer, parse_structured
 from app.modules.agentcore.models import Critique, Decision, Requirement
 from app.modules.agentcore.runtime import AgentCore
 from app.modules.agentcore.tools import ToolError, ToolRegistry
@@ -17,7 +17,7 @@ class _CannedProvider:
     def __init__(self, text: str):
         self.text = text
 
-    def generate(self, prompt, *, system=None, temperature=0.2):
+    def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
         return LLMResponse(text=self.text, stub=False)
 
 ISO_EVIDENCE = ["IDG holds a current ISO 9001 quality management certification valid through 2027."]
@@ -88,6 +88,70 @@ def test_generator_structured_falls_back_to_prose_when_not_json():
     out = gen.generate_structured(Requirement(id="B1", text="Q", context=ISO_EVIDENCE))
     assert out.answer == "plain prose answer, no json"
     assert out.confidence is None and out.gaps == ""  # caller derives confidence from grounding
+
+
+# --- answer clean-up (safety net for scaffolding the model might still add) ---
+def test_clean_answer_strips_leading_title_and_answer_heading():
+    dirty = "# Detailed Security Arrangements\n## Answer\nWe run 24x7 monitoring."
+    assert _clean_answer(dirty) == "We run 24x7 monitoring."
+
+
+def test_clean_answer_strips_based_on_the_evidence_preamble():
+    assert _clean_answer("Based on the evidence provided: we hold ISO 9001.") == "we hold ISO 9001."
+    assert _clean_answer("Based on the provided evidence, we hold ISO 9001.") == "we hold ISO 9001."
+
+
+def test_clean_answer_strips_stacked_scaffolding_and_response_label():
+    dirty = ("# Title\n## Answer\n\n**GSS Response:** Based on the evidence provided, "
+             "we comply fully.")
+    assert _clean_answer(dirty) == "we comply fully."
+
+
+def test_clean_answer_keeps_genuine_content_without_scaffolding():
+    prose = "We hold ISO 9001. Our response times average four hours across all severities."
+    assert _clean_answer(prose) == prose  # no leading wrapper -> untouched
+
+
+def test_generator_structured_cleans_scaffolding_from_json_answer():
+    """A JSON answer that still smuggled in a title / preamble is cleaned before returning."""
+    payload = ('{"answer": "## Answer\\nBased on the evidence provided: IDG holds ISO 9001.", '
+               '"confidence": 0.6, "gaps": ""}')
+    gen = Generator(provider=_CannedProvider(payload))
+    out = gen.generate_structured(Requirement(id="B1", text="Q", context=ISO_EVIDENCE))
+    assert out.answer == "IDG holds ISO 9001." and out.confidence == 0.6
+
+
+# --- prefill (assistant-turn seed) forces a JSON object from a prefill-capable provider ---
+class _PrefillProvider:
+    """Records the prefill it was asked for and, like Bedrock, returns the seed prepended to a
+    continuation so the caller sees a complete JSON object."""
+
+    def __init__(self, continuation: str):
+        self.continuation = continuation
+        self.seen_prefill: str | None = None
+
+    def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
+        self.seen_prefill = prefill
+        text = (prefill or "") + self.continuation
+        return LLMResponse(text=text, stub=False)
+
+
+def test_generate_structured_prefills_json_and_parses_prefilled_object():
+    # Model "continues" from the seeded "{" and never emits the leading brace itself.
+    provider = _PrefillProvider('"answer": "We hold ISO 9001.", "confidence": 0.42, "gaps": ""}')
+    gen = Generator(provider=provider)
+    out = gen.generate_structured(Requirement(id="B1", text="Q", context=ISO_EVIDENCE))
+    assert provider.seen_prefill == "{"  # structured path seeds the assistant turn
+    assert out.answer == "We hold ISO 9001." and out.confidence == 0.42
+
+
+def test_generate_structured_does_not_prefill_for_custom_system_prompt():
+    # A worker with a custom (prose) system prompt is not asked for JSON, so no "{" is forced.
+    provider = _PrefillProvider("just prose")
+    gen = Generator(provider=provider, system_prompt="Write warmly.")
+    out = gen.generate_structured(Requirement(id="B1", text="Q", context=ISO_EVIDENCE))
+    assert provider.seen_prefill is None
+    assert out.answer == "just prose" and out.confidence is None
 
 
 async def test_runtime_confidence_distinct_from_grounding():

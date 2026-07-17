@@ -28,7 +28,7 @@ class _CannedProvider:
     def __init__(self, text: str):
         self.text = text
 
-    def generate(self, prompt, *, system=None, temperature=0.2):
+    def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
         return LLMResponse(text=self.text)
 
 
@@ -135,7 +135,7 @@ def test_extract_requirements_retries_on_invalid_json_then_succeeds():
         def __init__(self):
             self.calls = 0
 
-        def generate(self, prompt, *, system=None, temperature=0.2):
+        def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
             self.calls += 1
             return LLMResponse(text="not json" if self.calls == 1 else SAMPLE_JSON)
 
@@ -206,7 +206,7 @@ def test_extract_requirements_retries_on_transient_provider_error():
         def __init__(self):
             self.calls = 0
 
-        def generate(self, prompt, *, system=None, temperature=0.2):
+        def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
             self.calls += 1
             if self.calls == 1:
                 raise TimeoutError("provider read timeout")
@@ -329,7 +329,7 @@ def test_rfp_extract_chunks_a_large_document_and_merges_results(client, monkeypa
     big_doc = (marker_a + " " + "filler " * 14000) + "\n\n" + (marker_b + " " + "filler " * 14000)
 
     class _RespondingByMarker:
-        def generate(self, prompt, *, system=None, temperature=0.2):
+        def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
             if marker_a in prompt:
                 return LLMResponse(text=json.dumps([{"id": "A1", "title": "From chunk A",
                                                       "classification": "KB", "requirement": "req a"}]))
@@ -416,7 +416,7 @@ def test_rfp_extract_one_bad_chunk_does_not_sink_the_others(client, monkeypatch)
     big_doc = (marker_a + " " + "filler " * 14000) + "\n\n" + ("BAD_CHUNK " + "filler " * 14000)
 
     class _OneChunkFails:
-        def generate(self, prompt, *, system=None, temperature=0.2):
+        def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
             if marker_a in prompt:
                 return LLMResponse(text=json.dumps([{"id": "A1", "title": "Good", "classification": "KB",
                                                       "requirement": "req a"}]))

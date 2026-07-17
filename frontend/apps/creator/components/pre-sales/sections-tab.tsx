@@ -917,16 +917,6 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
                   </div>
                 )}
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <button onClick={() => approve.mutate()} disabled={busy || !question.ai_answer || question.locked}
-                    aria-label="Approve the AI suggestion and lock the answer"
-                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:opacity-40">
-                    {approve.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <ThumbsUp className="size-3.5" />} Approve
-                  </button>
-                  <button onClick={() => regenerate.mutate()} disabled={busy || question.locked}
-                    aria-label="Reject and regenerate the AI suggestion"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[12px] font-semibold text-red-300 hover:bg-red-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-40">
-                    {regenerate.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <ThumbsDown className="size-3.5" />} Reject
-                  </button>
                   <button onClick={() => setDraft(question.ai_answer)} disabled={!question.ai_answer || question.locked}
                     aria-label="Copy the AI suggestion into your answer"
                     className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
@@ -962,6 +952,20 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
                     className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
                     {save.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />} Save draft
                   </button>
+                  {!question.locked && (
+                    <>
+                      <button onClick={() => approve.mutate()} disabled={busy || !question.ai_answer}
+                        aria-label="Approve the AI suggestion and lock the answer"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:opacity-40">
+                        {approve.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <ThumbsUp className="size-3.5" />} Approve
+                      </button>
+                      <button onClick={() => regenerate.mutate()} disabled={busy}
+                        aria-label="Reject and regenerate the AI suggestion"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-[12px] font-semibold text-red-300 hover:bg-red-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-40">
+                        {regenerate.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <ThumbsDown className="size-3.5" />} Reject
+                      </button>
+                    </>
+                  )}
                   {question.locked ? (
                     <button onClick={() => lock.mutate()} disabled={busy}
                       aria-label="Unlock the answer for editing"

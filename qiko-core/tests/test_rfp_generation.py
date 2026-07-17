@@ -38,7 +38,7 @@ class _RoutingProvider:
     """One provider that answers extraction / brief / compliance differently, dispatching on the
     system prompt each pipeline uses (the background job builds all three via get_provider)."""
 
-    def generate(self, prompt, *, system=None, temperature=0.2):
+    def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
         s = (system or "").lower()
         if "compliance analyst" in s:
             return LLMResponse(text=COMPLIANCE_JSON)

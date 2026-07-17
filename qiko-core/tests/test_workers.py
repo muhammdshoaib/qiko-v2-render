@@ -39,9 +39,8 @@ def test_source_labels_dedupe_by_doc_and_cap_snippet():
     labels = source_labels(passages)
     # one label per DISTINCT doc_id, order preserved, first occurrence wins
     assert len(labels) == 2
-    assert labels[0].startswith("iso-cert.pdf:") and labels[1].startswith("method-statement.docx:")
-    # never the raw multi-KB body: each label is a short source label
-    assert all(len(lbl) <= 200 for lbl in labels)
+    # just the document name (clean pill), matching the idg cockpit -- not the raw passage body
+    assert labels == ["iso-cert.pdf", "method-statement.docx"]
     assert huge not in " ".join(labels)
 
 

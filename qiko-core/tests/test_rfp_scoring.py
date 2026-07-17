@@ -20,7 +20,7 @@ class _CannedProvider:
     def __init__(self, text: str):
         self.text = text
 
-    def generate(self, prompt, *, system=None, temperature=0.2):
+    def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
         return LLMResponse(text=self.text)
 
 
@@ -67,7 +67,7 @@ class _FlakyProvider:
         self.responses = list(responses)
         self.calls = 0
 
-    def generate(self, prompt, *, system=None, temperature=0.2):
+    def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
         text = self.responses[min(self.calls, len(self.responses) - 1)]
         self.calls += 1
         return LLMResponse(text=text)
@@ -98,7 +98,7 @@ def test_score_endpoint_uses_the_pack_worker_configured_criteria(client, monkeyp
     extract_json = json.dumps([{"id": "A1", "title": "Scope", "classification": "KB", "requirement": "Describe scope."}])
 
     class _RespondingByPrompt:
-        def generate(self, prompt, *, system=None, temperature=0.2):
+        def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
             if "CRITERIA:" in prompt:
                 return LLMResponse(text=GOOD_JSON)
             return LLMResponse(text=extract_json)

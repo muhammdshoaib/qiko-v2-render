@@ -63,8 +63,16 @@ class BedrockProvider:
             self._cached_client = boto3.client("bedrock-runtime", region_name=self.region, config=config)
         return self._cached_client
 
-    def generate(self, prompt: str, *, system: str | None = None, temperature: float = 0.2) -> LLMResponse:  # pragma: no cover - network
+    def generate(self, prompt: str, *, system: str | None = None, temperature: float = 0.2,
+                 prefill: str | None = None) -> LLMResponse:  # pragma: no cover - network
         messages = [{"role": "user", "content": [{"text": prompt}]}]
+        # Prefill (assistant-turn seed): Claude on Bedrock honours a seeded assistant message and
+        # continues from it, so seeding "{" forces a JSON object and suppresses any markdown
+        # preamble. The model's reply is only the continuation, so prepend the seed to rebuild the
+        # full text. The seed must not end in whitespace (Bedrock rejects that), which "{" satisfies.
+        seed = (prefill or "").rstrip()
+        if seed:
+            messages.append({"role": "assistant", "content": [{"text": seed}]})
         kwargs = {
             "modelId": self.model_id,
             "messages": messages,
@@ -74,4 +82,6 @@ class BedrockProvider:
             kwargs["system"] = [{"text": system}]
         resp = self._client().converse(**kwargs)
         text = resp["output"]["message"]["content"][0]["text"]
+        if seed:
+            text = seed + text
         return LLMResponse(text=text, model=self.model_id)

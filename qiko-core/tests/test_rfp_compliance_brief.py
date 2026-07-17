@@ -30,7 +30,7 @@ class _CannedProvider:
     def __init__(self, text: str):
         self.text = text
 
-    def generate(self, prompt, *, system=None, temperature=0.2):
+    def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
         return LLMResponse(text=self.text)
 
 
@@ -41,7 +41,7 @@ class _FlakyProvider:
         self.responses = responses
         self.calls = 0
 
-    def generate(self, prompt, *, system=None, temperature=0.2):
+    def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
         text = self.responses[min(self.calls, len(self.responses) - 1)]
         self.calls += 1
         return LLMResponse(text=text)
@@ -112,7 +112,7 @@ def test_extract_compliance_retries_on_transient_provider_error():
         def __init__(self):
             self.calls = 0
 
-        def generate(self, prompt, *, system=None, temperature=0.2):
+        def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
             self.calls += 1
             if self.calls == 1:
                 raise TimeoutError("provider read timeout")
@@ -182,7 +182,7 @@ def test_extract_brief_retries_on_transient_provider_error():
         def __init__(self):
             self.calls = 0
 
-        def generate(self, prompt, *, system=None, temperature=0.2):
+        def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
             self.calls += 1
             if self.calls == 1:
                 raise TimeoutError("provider read timeout")

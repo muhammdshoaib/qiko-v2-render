@@ -11,7 +11,7 @@ class _CannedProvider:
     def __init__(self, text: str):
         self.text = text
 
-    def generate(self, prompt, *, system=None, temperature=0.2):
+    def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
         return LLMResponse(text=self.text)
 
 
