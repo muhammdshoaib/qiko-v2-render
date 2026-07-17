@@ -301,12 +301,21 @@ class RequirementService:
         await self.store.delete_for_pack(tenant, pack_id)
 
     async def save_extracted(self, tenant: str, pack_id: str, extracted: list[dict]) -> list[PackRequirement]:
-        items = [
-            PackRequirement(id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id,
-                            req_id=e["id"], title=e["title"], classification=e["classification"],
-                            requirement=e["requirement"])
-            for e in extracted
-        ]
+        """Persist the flat PackRequirement rows behind a structured extraction. The extractor now
+        returns nested sections (each with an explicit `subsections` array); we flatten to one row
+        per ANSWERABLE leaf so the flat requirements list mirrors the section tree: a section WITH
+        sub-sections contributes one row per sub-section (dotted "{parent}.{n}" ids), a childless
+        section contributes its own row. Row ids stay hierarchical so a legacy backfill
+        (populate_from_requirements) can still coalesce them under their top-level section."""
+        items: list[PackRequirement] = []
+        for e in extracted:
+            subs = e.get("subsections") or []
+            leaves = subs if subs else [e]
+            for leaf in leaves:
+                items.append(PackRequirement(
+                    id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id,
+                    req_id=leaf["id"], title=leaf["title"], classification=leaf["classification"],
+                    requirement=leaf["requirement"]))
         return await self.store.replace_all(tenant, pack_id, items)
 
     async def list(self, tenant: str, pack_id: str) -> list[PackRequirement]:

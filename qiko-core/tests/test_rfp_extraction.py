@@ -54,8 +54,47 @@ def test_extract_requirements_parses_clean_json():
     items = extract_requirements("some tender text", _CannedProvider(SAMPLE_JSON))
     assert len(items) == 2
     assert items[0] == {"id": "A1", "title": "Company Profile", "classification": "KB",
-                        "requirement": "Describe your company's experience in security services."}
+                        "requirement": "Describe your company's experience in security services.",
+                        "subsections": []}
     assert items[1]["classification"] == "MANUAL"
+
+
+def test_extract_requirements_returns_explicit_subsections():
+    """The structured schema: a top-level section carries an EXPLICIT `subsections` array; each is
+    assigned a deterministic hierarchical code "{parent}.{n}" so the tree/rollups can group it."""
+    raw = json.dumps([{
+        "id": "B1", "title": "Organisational Structure", "classification": "KB",
+        "requirement": "Describe your organisation.",
+        "subsections": [
+            {"title": "Organogram", "classification": "KB", "requirement": "Provide an org chart."},
+            {"title": "Management", "classification": "DATA", "requirement": "Provide CVs."},
+        ],
+    }])
+    items = extract_requirements("tender text", _CannedProvider(raw))
+    assert len(items) == 1
+    sec = items[0]
+    assert sec["id"] == "B1" and sec["title"] == "Organisational Structure"
+    assert [s["id"] for s in sec["subsections"]] == ["B1.1", "B1.2"]
+    assert [s["title"] for s in sec["subsections"]] == ["Organogram", "Management"]
+    assert sec["subsections"][1]["classification"] == "DATA"
+
+
+def test_extract_requirements_drops_malformed_subsections_keeps_section():
+    """A single bad sub-section (empty requirement) is dropped WITHOUT sinking its section or the
+    other, well-formed sub-sections -- codes stay contiguous for the survivors."""
+    raw = json.dumps([{
+        "id": "B1", "title": "Section", "classification": "KB", "requirement": "Do it.",
+        "subsections": [
+            {"title": "Good", "classification": "KB", "requirement": "answer this"},
+            {"title": "Bad", "classification": "KB", "requirement": ""},  # dropped
+            {"title": "", "classification": "KB", "requirement": "no title"},  # dropped
+            {"title": "Also good", "classification": "KB", "requirement": "and this"},
+        ],
+    }])
+    items = extract_requirements("tender text", _CannedProvider(raw))
+    subs = items[0]["subsections"]
+    assert [s["title"] for s in subs] == ["Good", "Also good"]
+    assert [s["id"] for s in subs] == ["B1.1", "B1.2"]  # contiguous codes for survivors
 
 
 def test_extract_requirements_handles_markdown_fenced_json():
@@ -71,9 +110,36 @@ def test_extract_requirements_defaults_unknown_classification_to_kb():
     assert items[0]["classification"] == "KB"
 
 
+def test_extract_requirements_drops_malformed_sections():
+    """Section-level validators drop malformed elements (missing title) individually while keeping
+    the well-formed ones."""
+    raw = json.dumps([
+        {"id": "A1", "title": "Good", "classification": "KB", "requirement": "answer this"},
+        {"id": "A2", "classification": "KB", "requirement": "no title -> dropped"},
+        {"id": "A3", "title": "Empty", "classification": "KB", "requirement": ""},  # no req, no subs
+    ])
+    items = extract_requirements("tender text", _CannedProvider(raw))
+    assert [i["id"] for i in items] == ["A1"]
+
+
 def test_extract_requirements_rejects_non_json():
     with pytest.raises(ExtractionError):
         extract_requirements("tender text", _CannedProvider("not json at all"))
+
+
+def test_extract_requirements_retries_on_invalid_json_then_succeeds():
+    """A first unparseable response is retried; the second, valid response is accepted."""
+    class _FlakyProvider:
+        def __init__(self):
+            self.calls = 0
+
+        def generate(self, prompt, *, system=None, temperature=0.2):
+            self.calls += 1
+            return LLMResponse(text="not json" if self.calls == 1 else SAMPLE_JSON)
+
+    provider = _FlakyProvider()
+    items = extract_requirements("tender text", provider)
+    assert provider.calls == 2 and len(items) == 2
 
 
 def test_extract_requirements_rejects_empty_array():

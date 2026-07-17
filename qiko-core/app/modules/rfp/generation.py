@@ -51,19 +51,37 @@ class StubProviderUnavailable(Exception):
 
 
 def _consolidate(items: list[dict]) -> list[dict]:
-    """Dedupe/merge the chunked-fallback's per-chunk items into a small COARSE catalogue and cap
-    it at MAX_ITEMS. Overlapping chunks (and a section straddling a boundary) surface the same
-    section more than once; we merge by normalised title so the section tree still lands ~10-20
-    top-level sections rather than dozens. First occurrence of a title wins."""
+    """Dedupe/merge the chunked-fallback's per-chunk sections into a small COARSE catalogue and cap
+    it at MAX_ITEMS TOP-LEVEL sections. Overlapping chunks (and a section straddling a boundary)
+    surface the same top-level section more than once; we merge by normalised title so the section
+    tree still lands ~10-20 top-level sections rather than dozens. The first occurrence of a title
+    wins for the section's own fields, but a duplicate's `subsections` are UNIONED into it (by
+    normalised sub-section title) so no sub-requirement seen in only one chunk is lost."""
     out: list[dict] = []
-    seen_titles: set[str] = set()
+    by_title: dict[str, dict] = {}
+
+    def _key(title: str) -> str:
+        return re.sub(r"\s+", " ", (title or "").strip().lower())
+
     for item in items:
-        key = re.sub(r"\s+", " ", (item.get("title") or "").strip().lower())
-        if key and key in seen_titles:
+        key = _key(item.get("title"))
+        existing = by_title.get(key) if key else None
+        if existing is None:
+            merged = dict(item)
+            merged["subsections"] = list(item.get("subsections") or [])
+            out.append(merged)
+            if key:
+                by_title[key] = merged
             continue
-        if key:
-            seen_titles.add(key)
-        out.append(item)
+        # merge this duplicate's sub-sections into the first occurrence, deduped by title
+        seen = {_key(s.get("title")) for s in existing["subsections"]}
+        for sub in item.get("subsections") or []:
+            sub_key = _key(sub.get("title"))
+            if sub_key and sub_key in seen:
+                continue
+            if sub_key:
+                seen.add(sub_key)
+            existing["subsections"].append(sub)
     return out[:MAX_ITEMS]
 
 

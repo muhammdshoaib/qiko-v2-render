@@ -3,18 +3,23 @@
 Replaces the IDG prototype's hand-curated, tender-specific CATALOGUE (pipeline/build_requirements_map.py
 in the original idg-worker) with a single LLM pass that works for any uploaded tender document.
 
-Schema-validated (Pydantic) with a one-shot retry on failure, matching the hardening applied to
+Structured + schema-validated (Pydantic) with retries on failure, matching the hardening applied to
 idg-worker's own generalized extractor (app/agents/requirements_extractor.py) after it went live
-against a second, real, non-BOC-2171 tender (PROC/ECS/2025/028) -- malformed items are dropped
-individually rather than failing the whole batch, and a bad model response gets one retry before
+against a second, real, non-BOC-2171 tender (PROC/ECS/2025/028) -- malformed entries are dropped
+individually rather than failing the whole batch, and a bad model response gets a retry before
 surfacing as an error.
+
+Sub-sections are an EXPLICIT, model-returned `subsections` array on each top-level section rather
+than something regex-derived from the requirement prose (see split_subsections, kept only as a
+legacy fallback). That makes the section+sub-section tree deterministic on every tender instead of
+depending on whether the model happened to embed "B1.1"/"(a)" markers in free text.
 """
 from __future__ import annotations
 
 import json
 import re
 
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from app.modules.ai.gateway import LLMProvider
 
@@ -30,26 +35,29 @@ SYSTEM = (
     "grid, instructions to tenderers) and produce a requirements CATALOGUE: the coarse list of "
     "the top-level sections or appendices the bidder must respond to. Each item is a whole "
     "section a tenderer responds to, NOT a single sentence or sub-clause.\n\n"
-    "For EACH section, classify it as exactly one of:\n"
+    "For EACH section (and each sub-section), classify it as exactly one of:\n"
     "- KB: a narrative/technical section that can be drafted from the bidder's knowledge base "
     "(methodology, approach, experience, organisation, quality, HSSE, etc.).\n"
     "- DATA: requires specific records only the bidder holds (CVs, equipment lists, financial "
     "statements) -- not AI-answerable.\n"
     "- MANUAL: a prescribed commercial/legal form or pricing schedule completed by humans.\n"
     "- COMPLIANCE: a signed confirmation or declaration of eligibility.\n\n"
-    "Return ONLY a JSON array (no prose, no markdown fences). Each element has exactly these keys: "
+    "Return ONLY a JSON array (no prose, no markdown fences) of AT MOST 20 top-level sections. "
+    "Each element has exactly these keys: "
     '"id" (a short top-level section id from the document\'s own numbering if present, e.g. '
     '"A1", "B3"; sequential if the document has none -- one id per top-level section), "title" '
     '(the section\'s short title), "classification" (one of "KB", "DATA", "MANUAL", '
-    '"COMPLIANCE"), and "requirement" (a 1-3 sentence description of what the bidder must '
-    "provide for that section). "
-    "When a section clearly breaks down into distinct numbered (e.g. B1.1, B1.2) or lettered "
-    "((a), (b)) sub-requirements in the source, list those sub-parts on their OWN LINES inside "
-    "the requirement text (one per line, keeping the source's own numbering) so each can be "
-    "answered separately -- do NOT emit them as separate top-level items. "
-    "Include AT MOST 20 items: aim for a small, COARSE set of top-level sections (roughly 10-20 "
-    "for a whole tender, following the document's own top-level lettered/numbered headings, e.g. "
-    "commercial A1..A4 and technical B1..Bn). Do not invent items that are not in the documents."
+    '"COMPLIANCE"), "requirement" (a 1-3 sentence description of what the bidder must provide for '
+    'that section), and "subsections" (a JSON array). '
+    "For EACH section, list its discrete sub-requirements in the \"subsections\" array: each entry "
+    "is a distinct thing the tenderer answers or provides SEPARATELY, with keys \"title\" (its "
+    'short title), "classification" (one of the four above), and "requirement" (a 1-3 sentence '
+    "description of that sub-part). If a section has no natural sub-parts, its \"subsections\" is "
+    "[]. Do NOT emit sub-parts as separate top-level items -- nest them under their section. "
+    "Include AT MOST 20 top-level sections: aim for a small, COARSE set (roughly 10-20 for a "
+    "whole tender, following the document's own top-level lettered/numbered headings, e.g. "
+    "commercial A1..A4 and technical B1..Bn). Do not invent sections or sub-sections that are not "
+    "in the documents."
 )
 
 _JSON_ARRAY = re.compile(r"\[.*\]", re.DOTALL)
@@ -57,6 +65,7 @@ _VALID_CLASSIFICATIONS = {"KB", "DATA", "MANUAL", "COMPLIANCE"}
 _MAX_ATTEMPTS = 2
 # A dotted sub-section heading inside a requirement's text ("B1.1", "A2.3"). Generalised from
 # idg's BOC-specific `B\d+\.\d+` so it fires for any lettered top-level section V2 extracts.
+# Only used by split_subsections, the LEGACY fallback for flat backfills.
 _SUBSECTION_HEADING = re.compile(r"^\s*[A-Za-z]{1,3}\d+\.\d+")
 
 
@@ -64,17 +73,30 @@ class ExtractionError(Exception):
     pass
 
 
-class _ExtractedItem(BaseModel):
-    id: str = ""
-    title: str = ""
+def _normalise_classification(v: str) -> str:
+    v = (v or "").strip().upper()
+    return v if v in _VALID_CLASSIFICATIONS else "KB"
+
+
+class ExtractedSubsection(BaseModel):
+    """A discrete sub-requirement the tenderer answers/provides separately, returned EXPLICITLY by
+    the model as an element of a section's `subsections` array (no regex over prose)."""
+    title: str  # required: a missing/empty title drops the sub-section (see validator)
     classification: str = "KB"
-    requirement: str
+    requirement: str = ""
+
+    @field_validator("title")
+    @classmethod
+    def _check_title(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("empty title")
+        return v
 
     @field_validator("classification")
     @classmethod
     def _check_classification(cls, v: str) -> str:
-        v = (v or "").strip().upper()
-        return v if v in _VALID_CLASSIFICATIONS else "KB"
+        return _normalise_classification(v)
 
     @field_validator("requirement")
     @classmethod
@@ -83,6 +105,38 @@ class _ExtractedItem(BaseModel):
         if not v:
             raise ValueError("empty requirement")
         return v
+
+
+class ExtractedSection(BaseModel):
+    """A top-level section the tenderer responds to, with its sub-requirements as an EXPLICIT
+    nested `subsections` array. `requirement` may be empty when the section is purely a container
+    for its sub-sections; such a section is still kept as long as it has at least one valid
+    sub-section (see _validate_sections)."""
+    id: str = ""
+    title: str  # required: a missing/empty title drops the section (see validator)
+    classification: str = "KB"
+    requirement: str = ""
+    # Kept as raw dicts (not typed ExtractedSubsection) so ONE malformed sub-section is dropped
+    # individually rather than sinking the whole section.
+    subsections: list = Field(default_factory=list)
+
+    @field_validator("title")
+    @classmethod
+    def _check_title(cls, v: str) -> str:
+        v = (v or "").strip()
+        if not v:
+            raise ValueError("empty title")
+        return v
+
+    @field_validator("classification")
+    @classmethod
+    def _check_classification(cls, v: str) -> str:
+        return _normalise_classification(v)
+
+    @field_validator("requirement")
+    @classmethod
+    def _check_requirement(cls, v: str) -> str:
+        return (v or "").strip()
 
 
 def _parse_llm_json_array(text: str) -> list[dict]:
@@ -98,20 +152,44 @@ def _parse_llm_json_array(text: str) -> list[dict]:
     return parsed
 
 
-def _validate_items(raw_items: list, *, id_prefix: str = "") -> list[dict]:
+def _validate_sections(raw_items: list, *, id_prefix: str = "") -> list[dict]:
+    """Validate each top-level element against ExtractedSection, dropping malformed sections (and,
+    within a kept section, malformed sub-sections) individually. Assigns hierarchical codes
+    deterministically: a top-level code per section (the model's own id, else "{id_prefix}R{n}")
+    and sub-section codes as "{parentCode}.{n}" -- so tree._top_level_code still groups a
+    sub-section under its parent and the rollups keep working. A section with neither a requirement
+    of its own NOR any valid sub-section has nothing answerable and is dropped."""
     out: list[dict] = []
     for i, item in enumerate(raw_items):
         if not isinstance(item, dict):
             continue
         try:
-            validated = _ExtractedItem(**item)
+            section = ExtractedSection(**item)
         except ValidationError:
-            continue  # drop malformed items, keep the well-formed ones
+            continue  # drop malformed sections, keep the well-formed ones
+        code = section.id or f"{id_prefix}R{i + 1}"
+        subs: list[dict] = []
+        for raw_sub in section.subsections:
+            if not isinstance(raw_sub, dict):
+                continue
+            try:
+                sub = ExtractedSubsection(**raw_sub)
+            except ValidationError:
+                continue  # drop malformed sub-sections, keep the rest of the section
+            subs.append({
+                "id": f"{code}.{len(subs) + 1}",
+                "title": sub.title,
+                "classification": sub.classification,
+                "requirement": sub.requirement,
+            })
+        if not section.requirement and not subs:
+            continue  # nothing answerable -- neither a section requirement nor a sub-section
         out.append({
-            "id": validated.id or f"{id_prefix}R{i + 1}",
-            "title": validated.title or f"Section {i + 1}",
-            "classification": validated.classification,
-            "requirement": validated.requirement,
+            "id": code,
+            "title": section.title,
+            "classification": section.classification,
+            "requirement": section.requirement,
+            "subsections": subs,
         })
     return out
 
@@ -120,10 +198,13 @@ def extract_requirements(tender_text: str, provider: LLMProvider, *, max_chars: 
                          id_prefix: str = "") -> list[dict]:
     """Extract a document-agnostic, COARSE requirements catalogue from raw tender text.
 
-    Returns a list of {id, title, classification, requirement} dicts, schema-validated (malformed
-    items dropped individually) and capped at MAX_ITEMS (idg's "at most 20 items") so a tender
-    yields a small set of coarse top-level sections rather than a long flat list. Retries once if
-    the model's response can't be parsed at all.
+    Returns a list of {id, title, classification, requirement, subsections} dicts, where
+    `subsections` is an EXPLICIT (model-returned) list of {id, title, classification, requirement}
+    sub-requirements -- so the section+sub-section tree is deterministic on every tender instead of
+    depending on whether the model embedded "B1.1"/"(a)" markers in prose. Schema-validated
+    (malformed sections and sub-sections dropped individually) and capped at MAX_ITEMS (idg's "at
+    most 20 items") TOP-LEVEL sections. Retries up to _MAX_ATTEMPTS times if the model's response
+    can't be parsed/validated.
 
     A whole typical tender fits in one call (max_chars defaults to MAX_CONTEXT_CHARS = 160k, like
     idg's requirements_extractor); the smaller per-chunk budget is only used on the >160k fallback
@@ -139,7 +220,7 @@ def extract_requirements(tender_text: str, provider: LLMProvider, *, max_chars: 
         try:
             response = provider.generate(f"TENDER DOCUMENT:\n{truncated}", system=SYSTEM, temperature=0.0)
             raw_items = _parse_llm_json_array(response.text)
-            out = _validate_items(raw_items, id_prefix=id_prefix)
+            out = _validate_sections(raw_items, id_prefix=id_prefix)
             if out:
                 return out[:MAX_ITEMS]
             last_error = ExtractionError("no valid requirements after schema validation")

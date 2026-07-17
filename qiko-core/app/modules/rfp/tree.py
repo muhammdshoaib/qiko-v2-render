@@ -439,10 +439,11 @@ class PackTreeService:
 
     # --- extraction wiring ---
     async def populate_from_extraction(self, tenant: str, pack_id: str, extracted: list[dict]) -> list[PackSection]:
-        """Build the two-level section tree from extracted items: items sharing a top-level code
-        ("B1.1"/"B1.2" -> "B1") become one top-level section, with each dotted item a child
-        sub-section (its own gradeable answer) and each plain item a question answered directly on
-        the section. A section (or sub-section) whose items are all MANUAL/COMPLIANCE is flagged
+        """Build the two-level section tree from STRUCTURED extracted sections: each element is one
+        top-level section with an EXPLICIT `subsections` array. Each section -> one top-level
+        PackSection; each sub-section -> a child PackSection (parent_id set) with its own question;
+        a section with no sub-sections keeps a single question (its own requirement) on the
+        top-level section. A section (or sub-section) that is all MANUAL/COMPLIANCE is flagged
         manual (team-completed, not AI-drafted)."""
         await self.sections.delete_for_pack(tenant, pack_id)
         await self.questions.delete_for_pack(tenant, pack_id)
@@ -452,30 +453,68 @@ class PackTreeService:
         """Backfill the section->question tree for a pack extracted BEFORE this feature existed:
         packs that pre-date populate_from_extraction have flat PackRequirement rows but no tree, so
         the validated Sections view shows nothing. Reuse those already-stored requirements (NO LLM
-        re-run) and apply the SAME grouping as populate_from_extraction. Idempotent and tenant-
-        scoped: if a tree already exists for this pack it is left untouched (never duplicated)."""
+        re-run) via the LEGACY coalescing path (group by top-level id, derive sub-sections from the
+        requirement text) rather than the structured path, since those rows have no explicit
+        `subsections`. Idempotent and tenant-scoped: if a tree already exists for this pack it is
+        left untouched (never duplicated)."""
         if await self.sections.list(tenant, pack_id):
             return []  # a tree already exists -- don't rebuild or duplicate it
         extracted = [{"id": r.req_id, "title": r.title, "classification": r.classification,
                       "requirement": r.requirement} for r in requirements]
-        return await self._build_tree(tenant, pack_id, extracted)
+        return await self._build_tree_from_flat(tenant, pack_id, extracted)
 
     async def _build_tree(self, tenant: str, pack_id: str, extracted: list[dict]) -> list[PackSection]:
-        """Build the two-level section tree from COARSE extracted items (idg quality): each item is
-        a whole top-level section a tenderer responds to, and its sub-sections are DERIVED from the
-        requirement text (port of idg's split_subsections) rather than extracted separately.
+        """Build the two-level section tree from STRUCTURED extracted sections, consuming the
+        EXPLICIT `subsections` array on each (no regex over prose).
 
-        For each extracted item -> ONE top-level PackSection. Its `requirement` is split via
-        split_subsections (dotted "B1.1/B1.2" headings, else "(a)/(b)" clauses, else none): >= 2
-        sub-parts become child sub-sections (each a PackSection with parent_id + its own question);
-        a single part stays one question on the section (idg: a section with no distinct numbered
-        sub-parts is a single answer).
-
-        Legacy compatibility: items are still grouped by top-level section token, so an OLD flat
-        backfill whose stored req_ids are dotted ("B1.1", "B1.2") or suffixed ("A1_unpriced") still
-        coalesces under one top-level section (dotted items -> child sub-sections, plain items ->
-        questions) instead of exploding into dozens of top-level sections. Returns every created
+        For each extracted section -> ONE top-level PackSection. If it has sub-sections, each
+        becomes a child PackSection (parent_id set) carrying its own single question, and the
+        parent holds NO direct question (it rolls up from its children, mirroring idg's
+        answer_subsections aggregation). If it has no sub-sections, the section keeps a single
+        question (its own requirement) directly on the top-level section. A section (or
+        sub-section) that is entirely MANUAL/COMPLIANCE is flagged manual. Returns every created
         section (top-level and sub-section)."""
+        created: list[PackSection] = []
+        for order, section in enumerate(extracted):
+            subs = section.get("subsections") or []
+            if subs:
+                manual = all(s["classification"] in {"MANUAL", "COMPLIANCE"} for s in subs)
+            else:
+                manual = section["classification"] in {"MANUAL", "COMPLIANCE"}
+            parent = PackSection(id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id,
+                                 code=section["id"], name=section["title"].strip() or section["title"],
+                                 status="manual" if manual else "not_generated",
+                                 manual=manual, order_index=order)
+            await self.sections.add(parent)
+            created.append(parent)
+            if subs:
+                for sub_order, sub in enumerate(subs):
+                    sub_manual = sub["classification"] in {"MANUAL", "COMPLIANCE"}
+                    child = PackSection(id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id,
+                                        code=sub["id"], name=sub["title"].strip() or sub["title"],
+                                        parent_id=parent.id,
+                                        status="manual" if sub_manual else "not_generated",
+                                        manual=sub_manual, order_index=sub_order)
+                    await self.sections.add(child)
+                    await self.questions.add(PackQuestion(
+                        id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, section_id=child.id,
+                        text=sub["requirement"], req_id=sub["id"], order_index=0))
+                    created.append(child)
+            else:
+                await self.questions.add(PackQuestion(
+                    id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, section_id=parent.id,
+                    text=section["requirement"], req_id=section["id"], order_index=0))
+        return created
+
+    async def _build_tree_from_flat(self, tenant: str, pack_id: str, extracted: list[dict]) -> list[PackSection]:
+        """LEGACY builder for flat backfills (populate_from_requirements): items are grouped by
+        top-level section token so an OLD flat backfill whose stored req_ids are dotted ("B1.1",
+        "B1.2") or suffixed ("A1_unpriced") coalesces under one top-level section (dotted items ->
+        child sub-sections, plain items -> questions) instead of exploding into dozens of top-level
+        sections. A single plain item's requirement TEXT is further split via split_subsections
+        (dotted "B1.1/B1.2" headings, else "(a)/(b)" clauses) so a coarse legacy section can still
+        expand into per-sub-part answers. Returns every created section (top-level and
+        sub-section)."""
         groups: dict[str, list[dict]] = {}
         for item in extracted:
             groups.setdefault(_top_level_code(item["id"]), []).append(item)

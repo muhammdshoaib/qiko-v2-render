@@ -72,10 +72,15 @@ async def test_lock_all_in_section():
 async def test_extraction_wiring_builds_two_level_tree():
     svc = PackTreeService()
     extracted = [
-        {"id": "A1", "title": "Intro", "classification": "KB", "requirement": "Describe intro."},
-        {"id": "B1.1", "title": "Org \u2014 Organogram", "classification": "KB", "requirement": "Org chart."},
-        {"id": "B1.2", "title": "Org \u2014 Structure", "classification": "KB", "requirement": "Structure."},
-        {"id": "C1", "title": "Pricing", "classification": "MANUAL", "requirement": "Complete pricing."},
+        {"id": "A1", "title": "Intro", "classification": "KB", "requirement": "Describe intro.",
+         "subsections": []},
+        {"id": "B1", "title": "Org", "classification": "KB", "requirement": "Describe org.",
+         "subsections": [
+             {"id": "B1.1", "title": "Organogram", "classification": "KB", "requirement": "Org chart."},
+             {"id": "B1.2", "title": "Structure", "classification": "KB", "requirement": "Structure."},
+         ]},
+        {"id": "C1", "title": "Pricing", "classification": "MANUAL", "requirement": "Complete pricing.",
+         "subsections": []},
     ]
     await svc.populate_from_extraction("t", "p1", extracted)
     sections = await svc.sections.list("t", "p1")
@@ -88,53 +93,60 @@ async def test_extraction_wiring_builds_two_level_tree():
     assert await svc.questions.list_for_section("t", b1.id) == []
     kids = [s for s in sections if s.parent_id == b1.id]
     assert {k.code for k in kids} == {"B1.1", "B1.2"}
-    assert codes["B1"].name == "Org"  # parent heading before the em-dash
+    assert codes["B1"].name == "Org"  # the section's own explicit title
     assert codes["B1.1"].name == "Organogram" and codes["B1.2"].name == "Structure"
     for k in kids:
         kq = await svc.questions.list_for_section("t", k.id)
         assert len(kq) == 1 and kq[0].req_id == k.code
-    # A1 (no dotted children) keeps a single question directly on the section
+    # A1 (no sub-sections) keeps a single question directly on the section
     a1_qs = await svc.questions.list_for_section("t", codes["A1"].id)
     assert len(a1_qs) == 1 and a1_qs[0].req_id == "A1"
     # a section whose items are all MANUAL/COMPLIANCE is flagged manual
     assert codes["C1"].manual is True and codes["A1"].manual is False
 
 
-async def test_build_tree_yields_few_top_level_sections_from_many_items():
-    """BOC-style input: many fine-grained sub-parts collapse under a handful of top-level
-    sections (~idg's ~15), not one top-level section per item."""
+async def test_build_tree_yields_few_top_level_sections_from_explicit_subsections():
+    """BOC-style input: many fine-grained sub-parts are nested as EXPLICIT sub-sections under a
+    handful of top-level sections (~idg's ~15), not one top-level section per sub-part."""
     svc = PackTreeService()
-    extracted = [{"id": "A1", "title": "Commercial", "classification": "MANUAL", "requirement": "Forms."}]
-    for sec in range(1, 6):  # B1..B5, each with 6 dotted sub-parts -> 30 sub-parts
-        for sub in range(1, 7):
-            extracted.append({"id": f"B{sec}.{sub}", "title": f"Section {sec} \u2014 Part {sub}",
-                              "classification": "KB", "requirement": f"Describe B{sec}.{sub}."})
+    extracted = [{"id": "A1", "title": "Commercial", "classification": "MANUAL", "requirement": "Forms.",
+                  "subsections": []}]
+    for sec in range(1, 6):  # B1..B5, each with 6 explicit sub-parts -> 30 sub-parts
+        extracted.append({
+            "id": f"B{sec}", "title": f"Section {sec}", "classification": "KB",
+            "requirement": f"Describe B{sec}.",
+            "subsections": [{"id": f"B{sec}.{sub}", "title": f"Part {sub}", "classification": "KB",
+                             "requirement": f"Describe B{sec}.{sub}."} for sub in range(1, 7)],
+        })
     await svc.populate_from_extraction("t", "pboc", extracted)
     sections = await svc.sections.list("t", "pboc")
     top = [s for s in sections if s.parent_id is None]
-    assert len(top) == 6  # A1 + B1..B5, far fewer than the 31 extracted items
-    assert len(top) < len(extracted)
+    assert len(top) == 6  # A1 + B1..B5, far fewer than the 31 leaf answers
     # every top-level B section carries 6 sub-sections; the sub-sections hold the questions
     assert all(len([s for s in sections if s.parent_id == p.id]) == 6
                for p in top if p.code.startswith("B"))
-    assert len(await svc.questions.list("t", "pboc")) == 31  # one leaf question per item
+    # 30 sub-section leaf questions + 1 on childless A1
+    assert len(await svc.questions.list("t", "pboc")) == 31
 
 
-async def test_build_tree_derives_subsections_from_requirement_text():
-    """Coarse+split model (idg quality): a SINGLE coarse extracted section whose requirement text
-    embeds dotted "B1.1/B1.2" sub-parts expands into two child sub-sections derived from the text
-    -- the extractor did NOT emit them as separate items."""
+async def test_build_tree_section_with_explicit_subsections_builds_parent_and_children():
+    """A single section with an EXPLICIT `subsections` array deterministically builds one parent
+    plus one child sub-section per entry -- no dependence on markers in the requirement prose."""
     svc = PackTreeService()
     extracted = [{
         "id": "B1", "title": "Organisational Structure & Manpower", "classification": "KB",
-        "requirement": ("B1.1 Contractor's Organogram: provide an organisation chart.\n"
-                        "B1.2 Contractor's Organisation: describe the management structure."),
+        "requirement": "Describe your organisational structure.",
+        "subsections": [
+            {"id": "B1.1", "title": "Organogram", "classification": "KB",
+             "requirement": "Provide an organisation chart."},
+            {"id": "B1.2", "title": "Management", "classification": "KB",
+             "requirement": "Describe the management structure."},
+        ],
     }]
     await svc.populate_from_extraction("t", "psplit", extracted)
     sections = await svc.sections.list("t", "psplit")
     top = [s for s in sections if s.parent_id is None]
-    assert len(top) == 1 and top[0].code == "B1"  # ONE top-level coarse section
-    # its two sub-sections were derived from the requirement text
+    assert len(top) == 1 and top[0].code == "B1"  # ONE top-level section
     kids = [s for s in sections if s.parent_id == top[0].id]
     assert {k.code for k in kids} == {"B1.1", "B1.2"}
     # the parent holds no direct question; each child holds its own single question
@@ -143,12 +155,26 @@ async def test_build_tree_derives_subsections_from_requirement_text():
         assert len(await svc.questions.list_for_section("t", k.id)) == 1
 
 
+async def test_build_tree_section_with_empty_subsections_builds_single_leaf():
+    """A section with an empty `subsections` array is a single leaf: one top-level section with one
+    question (its own requirement) and no children."""
+    svc = PackTreeService()
+    extracted = [{"id": "A1", "title": "Company Profile", "classification": "KB",
+                  "requirement": "Describe your company.", "subsections": []}]
+    await svc.populate_from_extraction("t", "pleaf", extracted)
+    sections = await svc.sections.list("t", "pleaf")
+    assert len(sections) == 1 and sections[0].parent_id is None
+    qs = await svc.questions.list_for_section("t", sections[0].id)
+    assert len(qs) == 1 and qs[0].req_id == "A1"
+    assert qs[0].text == "Describe your company."
+
+
 async def test_build_tree_coarse_items_yield_at_most_that_many_top_level_sections():
-    """20 coarse extracted items (each a whole top-level section, single-sentence requirement)
-    yield 20 top-level sections -- no over-granular explosion, matching idg's ~10-20 catalogue."""
+    """20 coarse extracted sections (each a whole top-level section, no sub-sections) yield 20
+    top-level sections -- no over-granular explosion, matching idg's ~10-20 catalogue."""
     svc = PackTreeService()
     extracted = [{"id": f"S{i}", "title": f"Section {i}", "classification": "KB",
-                  "requirement": f"Describe section {i}."} for i in range(1, 21)]
+                  "requirement": f"Describe section {i}.", "subsections": []} for i in range(1, 21)]
     await svc.populate_from_extraction("t", "pcoarse", extracted)
     sections = await svc.sections.list("t", "pcoarse")
     top = [s for s in sections if s.parent_id is None]
@@ -158,15 +184,15 @@ async def test_build_tree_coarse_items_yield_at_most_that_many_top_level_section
 
 
 async def test_build_tree_coalesces_flat_legacy_ids():
-    """An old flat backfill emits non-dotted ids like 'A1_unpriced'/'A1_priced'; they must group
-    by leading section token, not each become a top-level section."""
+    """An old flat backfill (populate_from_requirements) emits non-dotted ids like
+    'A1_unpriced'/'A1_priced'; the LEGACY coalescing path groups them by leading section token,
+    not each becoming a top-level section."""
     svc = PackTreeService()
-    extracted = [
-        {"id": "A1_unpriced", "title": "Pricing", "classification": "MANUAL", "requirement": "Unpriced BOQ."},
-        {"id": "A1_priced", "title": "Pricing", "classification": "MANUAL", "requirement": "Priced BOQ."},
-        {"id": "2", "title": "Declaration", "classification": "COMPLIANCE", "requirement": "Sign."},
-    ]
-    await svc.populate_from_extraction("t", "pflat", extracted)
+    reqs = _reqs("pflat",
+                 ("A1_unpriced", "Pricing", "MANUAL", "Unpriced BOQ."),
+                 ("A1_priced", "Pricing", "MANUAL", "Priced BOQ."),
+                 ("2", "Declaration", "COMPLIANCE", "Sign."))
+    await svc.populate_from_requirements("t", "pflat", reqs)
     sections = await svc.sections.list("t", "pflat")
     top = {s.code for s in sections if s.parent_id is None}
     assert top == {"A1", "2"}  # the two A1_* ids coalesce under one top-level "A1"
@@ -177,10 +203,13 @@ async def test_build_tree_coalesces_flat_legacy_ids():
 
 async def test_parent_section_rolls_up_kb_gap_confidence_grounding_from_children():
     svc = PackTreeService()
-    extracted = [
-        {"id": "B1.1", "title": "Org \u2014 Organogram", "classification": "KB", "requirement": "Chart."},
-        {"id": "B1.2", "title": "Org \u2014 Structure", "classification": "KB", "requirement": "Structure."},
-    ]
+    extracted = [{
+        "id": "B1", "title": "Org", "classification": "KB", "requirement": "Describe org.",
+        "subsections": [
+            {"id": "B1.1", "title": "Organogram", "classification": "KB", "requirement": "Chart."},
+            {"id": "B1.2", "title": "Structure", "classification": "KB", "requirement": "Structure."},
+        ],
+    }]
     await svc.populate_from_extraction("t", "proll", extracted)
     sections = {s.code: s for s in await svc.sections.list("t", "proll")}
     b1_1_q = (await svc.questions.list_for_section("t", sections["B1.1"].id))[0]
