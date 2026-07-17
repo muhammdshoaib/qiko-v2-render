@@ -19,6 +19,24 @@ def test_update_agent_config_merges_and_persists(client):
     assert listed[0]["config"]["expertise"] == "RFP writer"
 
 
+def test_list_agents_hides_archived_config(client):
+    """Archiving is a reversible soft-hide: PUT config {"archived": true} drops the worker from
+    GET /agents, and {"archived": false} brings it back. No hard delete."""
+    c = auth_cookies("archco", "owner")
+    agent = client.post("/api/v1/agents", json={"name": "SI worker"}, cookies=c).json()
+    assert [a["id"] for a in client.get("/api/v1/agents", cookies=c).json()] == [agent["id"]]
+
+    # archive -> hidden from the list, but the row and its config are NOT deleted
+    client.put(f"/api/v1/agents/{agent['id']}/config", cookies=c, json={"patch": {"archived": True}})
+    assert client.get("/api/v1/agents", cookies=c).json() == []
+    # still fetchable directly (proves it was hidden, not destroyed)
+    assert client.get(f"/api/v1/agents/{agent['id']}/vapi-credentials", cookies=c).status_code == 200
+
+    # reversible: un-archive restores it exactly
+    client.put(f"/api/v1/agents/{agent['id']}/config", cookies=c, json={"patch": {"archived": False}})
+    assert [a["id"] for a in client.get("/api/v1/agents", cookies=c).json()] == [agent["id"]]
+
+
 def test_update_agent_config_404_for_missing_agent(client):
     c = auth_cookies("configco2", "owner")
     r = client.put("/api/v1/agents/missing/config", cookies=c, json={"patch": {"x": "y"}})

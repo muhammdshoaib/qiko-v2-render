@@ -407,7 +407,8 @@ class SqlPackQuestionStore:
         return PackQuestion(id=r.id, tenant=r.tenant_id, pack_id=r.pack_id, section_id=r.section_id,
                             text=r.text, req_id=r.req_id or "", word_limit=r.word_limit,
                             ai_answer=r.ai_answer or "", ai_sources=list(r.ai_sources or []),
-                            confidence=r.confidence, decision=r.decision or "", kb_gap=r.kb_gap,
+                            confidence=r.confidence, grounding=r.grounding, gaps=r.gaps or "",
+                            decision=r.decision or "", kb_gap=r.kb_gap,
                             locked=r.locked, user_draft=r.user_draft or "", order_index=r.order_index)
 
     async def add(self, question: PackQuestion) -> PackQuestion:
@@ -416,6 +417,7 @@ class SqlPackQuestionStore:
                                   section_id=question.section_id, text=question.text, req_id=question.req_id,
                                   word_limit=question.word_limit, ai_answer=question.ai_answer,
                                   ai_sources=question.ai_sources, confidence=question.confidence,
+                                  grounding=question.grounding, gaps=question.gaps,
                                   decision=question.decision, kb_gap=question.kb_gap, locked=question.locked,
                                   user_draft=question.user_draft, order_index=question.order_index))
         return question

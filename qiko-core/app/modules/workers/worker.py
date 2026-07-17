@@ -7,8 +7,29 @@ from dataclasses import dataclass
 from app.modules.agentcore.generator import Generator
 from app.modules.agentcore.models import AgentResult, Requirement
 from app.modules.agentcore.runtime import AgentCore
+from app.modules.knowledge.models import Passage
 from app.modules.knowledge.service import KnowledgeService
 from app.modules.workers.config import WorkerConfig
+
+# Citations must be short SOURCE LABELS a UI can enumerate as "N Sources", never the raw passage
+# body (which can be a whole table of contents). Cap the appended snippet hard so a citation is
+# always a small string regardless of how large the retrieved passage is.
+_MAX_SNIPPET_CHARS = 160
+
+
+def source_labels(passages: list[Passage]) -> list[str]:
+    """Clean citation labels from retrieved passages: one per DISTINCT doc_id (first occurrence
+    wins, original order kept), each the document name plus a short snippet -- not the full body."""
+    labels: list[str] = []
+    seen: set[str] = set()
+    for p in passages:
+        doc_id = p.doc_id or ""
+        if doc_id in seen:
+            continue
+        seen.add(doc_id)
+        snippet = " ".join((p.text or "").split())[:_MAX_SNIPPET_CHARS].strip()
+        labels.append(f"{doc_id}: {snippet}" if doc_id and snippet else (doc_id or snippet))
+    return [label for label in labels if label]
 
 
 @dataclass
@@ -27,7 +48,8 @@ class Worker:
     async def answer(self, requirement_id: str, requirement_text: str, *, topic: str | None = None) -> AgentResult:
         passages = await self.knowledge.retrieve(self.config.tenant, requirement_text, k=self.config.retrieval_k)
         req = Requirement(id=requirement_id, text=requirement_text,
-                          context=[p.text for p in passages], topic=topic)
+                          context=[p.text for p in passages], topic=topic,
+                          sources=source_labels(passages))
         return await self.agent.run(req, tenant=self.config.tenant)
 
     async def approve(self, requirement_id: str, approved_text: str, *, topic: str | None = None) -> None:

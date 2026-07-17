@@ -214,11 +214,14 @@ async def test_parent_section_rolls_up_kb_gap_confidence_grounding_from_children
     sections = {s.code: s for s in await svc.sections.list("t", "proll")}
     b1_1_q = (await svc.questions.list_for_section("t", sections["B1.1"].id))[0]
     b1_2_q = (await svc.questions.list_for_section("t", sections["B1.2"].id))[0]
-    # one child grounded, the other a KB gap
+    # one child grounded, the other a KB gap. confidence (writer self-report) and grounding
+    # (independent critic) are DISTINCT numbers per child, so the parent averages them separately.
     await svc.apply_generation("t", b1_1_q.id, ai_answer="draft", ai_sources=["doc:iso"],
-                               confidence=0.8, decision="auto_accept", kb_gap=False)
+                               confidence=0.8, grounding=0.9, gaps="", decision="auto_accept",
+                               kb_gap=False)
     await svc.apply_generation("t", b1_2_q.id, ai_answer="draft", ai_sources=[],
-                               confidence=0.4, decision="human_review", kb_gap=True)
+                               confidence=0.4, grounding=0.3, gaps="no pricing evidence",
+                               decision="human_review", kb_gap=True)
     # the stored parent section now reflects the child KB gap (drives the FE Gaps column)
     assert (await svc.get_section("t", sections["B1"].id)).kb_gap is True
 
@@ -226,13 +229,15 @@ async def test_parent_section_rolls_up_kb_gap_confidence_grounding_from_children
     node = {n["code"]: n for n in tree}
     b1 = node["B1"]
     assert b1["kb_gap"] is True                    # any child is a KB gap
-    assert b1["confidence"] == 0.6                 # avg of drafted children (0.8, 0.4)
-    assert b1["grounding"] == 0.6
+    assert b1["confidence"] == 0.6                 # avg confidence of drafted children (0.8, 0.4)
+    assert b1["grounding"] == 0.6                  # avg grounding of drafted children (0.9, 0.3)
     assert b1["subsection_count"] == 2
     assert b1["questions"] == []                   # parent has no direct questions
-    # per-sub-section rollup stays scoped to that sub-section
-    assert node["B1.1"]["confidence"] == 0.8 and node["B1.1"]["kb_gap"] is False
-    assert node["B1.2"]["confidence"] == 0.4 and node["B1.2"]["kb_gap"] is True
+    # per-sub-section rollup stays scoped to that sub-section, with distinct confidence/grounding
+    assert node["B1.1"]["confidence"] == 0.8 and node["B1.1"]["grounding"] == 0.9
+    assert node["B1.1"]["kb_gap"] is False
+    assert node["B1.2"]["confidence"] == 0.4 and node["B1.2"]["grounding"] == 0.3
+    assert node["B1.2"]["kb_gap"] is True
 
 
 async def test_manual_section_satisfies_finalize_gate():
@@ -416,13 +421,17 @@ def test_tree_is_tenant_scoped(client):
                         json={"name": "hacked"}, cookies=c2).status_code == 404
 
 
-def _fake_worker_factory(answer="AI draft", grounding=0.9, citations=("doc:iso",),
-                         decision=Decision.auto_accept, stub=False):
+def _fake_worker_factory(answer="AI draft", grounding=0.9, confidence=None, gaps="",
+                         citations=("doc:iso",), decision=Decision.auto_accept, stub=False):
+    # confidence defaults to the grounding value only so callers that don't care keep the old
+    # behaviour; tests that assert the two are DISTINCT pass an explicit confidence.
+    conf = grounding if confidence is None else confidence
+
     class _FakeWorker:
         async def answer(self, rid, text, **_kw):
             return AgentResult(requirement_id=rid, answer=answer,
                                critique=Critique(grounding=grounding), decision=decision,
-                               citations=list(citations), stub=stub)
+                               citations=list(citations), confidence=conf, gaps=gaps, stub=stub)
 
     async def _build(*_a, **_kw):
         return _FakeWorker()
@@ -430,7 +439,10 @@ def _fake_worker_factory(answer="AI draft", grounding=0.9, citations=("doc:iso",
 
 
 def test_generate_question_reuses_agentcore(client, monkeypatch):
-    monkeypatch.setattr("app.modules.rfp.router.build_tenant_worker", _fake_worker_factory())
+    # confidence (writer self-report) and grounding (independent critic) are DISTINCT and both
+    # persisted, along with the writer's gaps note.
+    monkeypatch.setattr("app.modules.rfp.router.build_tenant_worker",
+                        _fake_worker_factory(grounding=0.9, confidence=0.7, gaps="no SLA evidence"))
     c, pid = _pack(client, "genco1")
     s = client.post(f"/api/v1/rfp/packs/{pid}/sections", json={"name": "Intro"}, cookies=c).json()
     q = client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
@@ -438,7 +450,8 @@ def test_generate_question_reuses_agentcore(client, monkeypatch):
 
     gen = client.post(f"/api/v1/rfp/packs/{pid}/questions/{q['id']}/generate", cookies=c).json()
     assert gen["ai_answer"] == "AI draft"
-    assert gen["confidence"] == 0.9 and gen["decision"] == "auto_accept"
+    assert gen["confidence"] == 0.7 and gen["grounding"] == 0.9 and gen["decision"] == "auto_accept"
+    assert gen["gaps"] == "no SLA evidence"
     assert gen["ai_sources"] == ["doc:iso"] and gen["kb_gap"] is False
 
 

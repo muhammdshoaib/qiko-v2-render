@@ -61,7 +61,10 @@ async def create_agent(body: CreateAgentBody, tenant: str = Depends(authed_tenan
 
 @router.get("")
 async def list_agents(tenant: str = Depends(authed_tenant), svc=Depends(get_agents)) -> list[Agent]:
-    return [_redact(a) for a in await svc.list(tenant)]
+    # Hide archived agents (reversible soft-hide): config.archived is set via PUT /{id}/config
+    # {"archived": true} and cleared with false. No hard delete -- the row and its data stay put,
+    # so flipping the flag back restores the worker exactly as it was.
+    return [_redact(a) for a in await svc.list(tenant) if a.config.get("archived") is not True]
 
 
 class UpdateConfigBody(BaseModel):

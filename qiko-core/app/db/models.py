@@ -152,7 +152,9 @@ class PackQuestion(Base):
     word_limit: Mapped[int | None] = mapped_column(nullable=True)
     ai_answer: Mapped[str] = mapped_column(String, default="")
     ai_sources: Mapped[list] = mapped_column(JSON, default=list)
-    confidence: Mapped[float] = mapped_column(default=0.0)
+    confidence: Mapped[float] = mapped_column(default=0.0)  # writer's self-reported confidence
+    grounding: Mapped[float] = mapped_column(default=0.0)   # independent critic grounding, distinct
+    gaps: Mapped[str] = mapped_column(String, default="")   # writer's note of unsupported points
     decision: Mapped[str] = mapped_column(String(32), default="")
     kb_gap: Mapped[bool] = mapped_column(default=False)
     locked: Mapped[bool] = mapped_column(default=False)

@@ -58,7 +58,9 @@ class PackQuestion:
     word_limit: int | None = None
     ai_answer: str = ""
     ai_sources: list[str] = field(default_factory=list)
-    confidence: float = 0.0
+    confidence: float = 0.0  # the writer's self-reported confidence (0..1)
+    grounding: float = 0.0   # the independent critic's grounding score (0..1), distinct from above
+    gaps: str = ""           # the writer's note of what the evidence did not let it support
     decision: str = ""
     kb_gap: bool = False
     locked: bool = False
@@ -293,11 +295,15 @@ class PackTreeService:
 
     async def apply_generation(self, tenant: str, question_id: str, *, ai_answer: str,
                                ai_sources: list[str], confidence: float, decision: str,
-                               kb_gap: bool) -> PackQuestion:
-        """Persist an agentcore draft onto a question and roll the result up to its section."""
+                               kb_gap: bool, grounding: float = 0.0, gaps: str = "") -> PackQuestion:
+        """Persist an agentcore draft onto a question and roll the result up to its section.
+
+        `confidence` (the writer's self-report) and `grounding` (the independent critic) are stored
+        as DISTINCT values; `gaps` is the writer's note of what the evidence did not support."""
         question = await self.get_question(tenant, question_id)
         updated = await self.questions.update(tenant, question_id, ai_answer=ai_answer,
                                               ai_sources=ai_sources, confidence=confidence,
+                                              grounding=grounding, gaps=gaps,
                                               decision=decision, kb_gap=kb_gap)
         await self._recompute_section(tenant, question.section_id)
         return updated
@@ -394,7 +400,10 @@ class PackTreeService:
             own = by_section.get(s.id, [])
             rolled = leaf_questions(s.id)
             drafted = [q for q in rolled if q.ai_answer or q.user_draft]
+            # confidence (writer's self-report) and grounding (independent critic) roll up as
+            # DISTINCT averages across drafted leaves (null when nothing is drafted yet).
             confidence = round(sum(q.confidence for q in drafted) / len(drafted), 2) if drafted else None
+            grounding = round(sum(q.grounding for q in drafted) / len(drafted), 2) if drafted else None
             out.append({
                 **s.__dict__,
                 "questions": [q.__dict__ for q in own],
@@ -402,7 +411,7 @@ class PackTreeService:
                 # additive rollup for the FE's grounding/confidence/gaps columns
                 "kb_gap": any(q.kb_gap for q in rolled),
                 "confidence": confidence,
-                "grounding": confidence,
+                "grounding": grounding,
                 "subsection_count": len(children_of.get(s.id, [])),
             })
         return out
@@ -417,7 +426,9 @@ class PackTreeService:
         drafted = [q for q in questions if q.ai_answer or q.user_draft]
         for_human_review = [q for q in questions if q.decision == "human_review" and not q.locked]
         kb_sources = {c for q in questions for c in q.ai_sources}
-        avg = round(sum(q.confidence for q in drafted) / len(drafted), 2) if drafted else 0.0
+        # avg_confidence (writer self-report) and avg_grounding (independent critic) are DISTINCT.
+        avg_conf = round(sum(q.confidence for q in drafted) / len(drafted), 2) if drafted else 0.0
+        avg_grounding = round(sum(q.grounding for q in drafted) / len(drafted), 2) if drafted else 0.0
         # "AI-drafted" is counted per TOP-LEVEL SECTION (like idg's "8/15"), NOT per leaf question:
         # a top-level section counts as drafted when it (if childless) or any of its sub-sections has
         # an AI/user draft. Counting leaves gave a misleading "3/144".
@@ -446,8 +457,8 @@ class PackTreeService:
             "for_human_review": len(for_human_review),
             "kb_sources": len(kb_sources),
             "kb_gaps": sum(1 for s in leaves if s.kb_gap),
-            "avg_confidence": avg,
-            "avg_grounding": avg,
+            "avg_confidence": avg_conf,
+            "avg_grounding": avg_grounding,
             "can_finalize": await self.all_sections_locked(tenant, pack_id),
         }
 

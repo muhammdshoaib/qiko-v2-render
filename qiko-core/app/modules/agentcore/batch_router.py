@@ -44,7 +44,7 @@ async def _run_batch(request: Request, tenant: str, body: BatchAskBody) -> list[
         result = await worker.answer(f"q{i + 1}", question)
         out.append(BatchAnswer(
             id=result.requirement_id, question=question, answer=result.answer,
-            confidence=round(result.critique.grounding, 2), decision=result.decision.value,
+            confidence=round(result.confidence, 2), decision=result.decision.value,
             citations=result.citations,
         ))
     return out

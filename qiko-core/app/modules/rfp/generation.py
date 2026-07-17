@@ -150,10 +150,13 @@ async def generate_question(tenant: str, question, worker, tree):
     result = await worker.answer(question.req_id or question.id, question.text)
     if result.stub:
         raise StubProviderUnavailable()
-    grounding = round(result.critique.grounding, 2)
+    # confidence (the writer's self-report) and grounding (the independent critic) are now
+    # DISTINCT values; persist both plus the writer's gaps note. kb_gap keeps its meaning: no
+    # citations OR the gate escalated to human review.
     return await tree.apply_generation(
         tenant, question.id, ai_answer=result.answer, ai_sources=result.citations,
-        confidence=grounding, decision=result.decision.value,
+        confidence=round(result.confidence, 2), grounding=round(result.critique.grounding, 2),
+        gaps=result.gaps, decision=result.decision.value,
         kb_gap=not result.citations or result.decision == Decision.human_review)
 
 

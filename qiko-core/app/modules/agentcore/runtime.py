@@ -31,16 +31,24 @@ class AgentCore:
     async def run(self, req: Requirement, *, tenant: str) -> AgentResult:
         topic = req.topic or req.id
         verified = await self.verified.get(tenant, topic)
-        # generator.generate() makes a blocking network call to the LLM provider. Run it off the
-        # event loop thread -- otherwise one slow call freezes every other request this process is
-        # handling (health checks included) for its entire duration, not just this one.
-        response = await asyncio.to_thread(self.generator.generate_response, req, verified)
-        answer = response.text.strip()
-        # The critic scores against the retrieved evidence plus any verified prior answers.
+        # generator.generate_structured() makes a blocking network call to the LLM provider. Run
+        # it off the event loop thread -- otherwise one slow call freezes every other request this
+        # process is handling (health checks included) for its entire duration, not just this one.
+        gen = await asyncio.to_thread(self.generator.generate_structured, req, verified)
+        answer = gen.answer
+        # The critic scores against the retrieved evidence plus any verified prior answers. This is
+        # the GROUNDING score and stays independent of the writer's self-reported confidence.
         critique = critic_mod.grounding_score(answer, list(req.context) + verified)
         decision = gate_mod.decide(critique, threshold=self.threshold)
+        # Confidence is the generator's own read of the evidence; when it did not self-report one
+        # (plain-prose fallback) we derive it from grounding so the field is always populated.
+        confidence = gen.confidence if gen.confidence is not None else critique.grounding
+        # Citations are clean source labels (doc_id + short snippet) built by the worker; fall back
+        # to the raw context only for callers that build a Requirement without sources.
+        citations = list(req.sources) if req.sources else list(req.context)
         return AgentResult(requirement_id=req.id, answer=answer, critique=critique,
-                           decision=decision, citations=list(req.context), stub=response.stub)
+                           decision=decision, citations=citations,
+                           confidence=round(confidence, 3), gaps=gen.gaps, stub=gen.stub)
 
     async def record_feedback(self, req: Requirement, *, tenant: str, approved_text: str) -> None:
         """Human approval/edit becomes trusted ground truth for this tenant + topic."""
