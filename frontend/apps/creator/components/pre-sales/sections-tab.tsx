@@ -58,12 +58,14 @@ function deriveStepper(status: TenderGenStatus, hasSections: boolean) {
   // How many drafts failed (backend `failed`, else infer from the done/total gap).
   const draftsFailed = status.drafts?.failed ?? Math.max(0, draftsTotal - draftsDone);
 
-  // The single "phase" drives the tab body (and the active-step highlight). Only sit in the
-  // "drafting" spinner phase while drafting is genuinely in-flight (pending/running); on
-  // ready/partial/error fall through to the table so sections stay openable.
+  // The single "phase" drives the tab body (and the active-step highlight). Only show the FULL
+  // blocking "drafting" spinner when NOTHING is drafted yet (draftsDone === 0). Once any answers
+  // exist -- even if more are still generating, or a job was interrupted and gen_status is stuck on
+  // "running" -- fall through to the table so the persisted answers are always visible/openable and
+  // a non-blocking progress banner shows the rest are still coming.
   const phase: Phase = !parsedReady ? "parsing"
     : !assignmentsConfirmed ? "assigned"
-      : draftingInFlight ? "drafting"
+      : draftingInFlight && draftsDone === 0 ? "drafting"
         : "review";
 
   const steps: Step[] = [
@@ -85,7 +87,7 @@ function deriveStepper(status: TenderGenStatus, hasSections: boolean) {
 
   return {
     phase, steps, secState, draftsState, draftsReady, draftsPartial, draftsError,
-    parsedReady, draftsDone, draftsTotal, draftsFailed,
+    parsedReady, draftsDone, draftsTotal, draftsFailed, draftingInFlight,
     pollActive: parsingInFlight || draftingInFlight,
   };
 }
@@ -117,7 +119,7 @@ export function SectionsTab({ packId }: { packId: string }) {
   const sections = useMemo(() => sectionsQ.data ?? [], [sectionsQ.data]);
   const status = useMemo<TenderGenStatus>(() => statusQ.data ?? {}, [statusQ.data]);
   const stepper = useMemo(() => deriveStepper(status, sections.length > 0), [status, sections.length]);
-  const { phase, steps, secState, draftsState, draftsDone, draftsTotal, draftsError, draftsPartial, draftsFailed } = stepper;
+  const { phase, steps, secState, draftsState, draftsDone, draftsTotal, draftsError, draftsPartial, draftsFailed, draftingInFlight } = stepper;
 
   // C2 recovery: re-run/resume drafting for the whole pack, then invalidate + resume polling so a
   // background retry heals the errored/partial state without a manual reload.
@@ -161,6 +163,15 @@ export function SectionsTab({ packId }: { packId: string }) {
     }
     prevDrafts.current = draftsState;
   }, [draftsState, packId, qc]);
+  // While drafting is in flight the table is shown (not the blocking spinner), so refetch it as each
+  // new answer lands (draftsDone increments via the status poller) to reveal drafts incrementally.
+  const prevDone = useRef(draftsDone);
+  useEffect(() => {
+    if (draftsDone !== prevDone.current) {
+      qc.invalidateQueries({ queryKey: ["pack-sections", packId] });
+      prevDone.current = draftsDone;
+    }
+  }, [draftsDone, packId, qc]);
 
   const allQuestions = useMemo(() => sections.flatMap((s) => s.questions), [sections]);
   const withConfidence = allQuestions.filter((q) => q.confidence > 0);
@@ -242,6 +253,13 @@ export function SectionsTab({ packId }: { packId: string }) {
               retrying={retryDrafts.isPending}
               error={retryDrafts.isError}
             />
+          )}
+
+          {draftingInFlight && draftsDone > 0 && (
+            <div role="status" className="flex items-center gap-2 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] px-3.5 py-2.5 text-[12px] text-amber-300">
+              <Loader2 className="size-3.5 shrink-0 animate-spin" />
+              Generating answers in the background ({draftsDone}/{draftsTotal}). Drafted sections are ready to review now; the rest will appear automatically.
+            </div>
           )}
 
           <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
