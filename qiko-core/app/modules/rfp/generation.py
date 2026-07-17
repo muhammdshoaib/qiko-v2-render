@@ -22,13 +22,20 @@ gen_status contract (persisted on RfpPack.gen_status, polled via GET /rfp/packs/
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import datetime, timezone
 
 from app.core.deps import assemble_worker
 from app.modules.ai.gateway import get_provider
 from app.modules.rfp.brief import extract_brief
 from app.modules.rfp.compliance import extract_compliance
-from app.modules.rfp.extraction import ExtractionError, chunk_document, extract_requirements
+from app.modules.rfp.extraction import (
+    MAX_CONTEXT_CHARS,
+    MAX_ITEMS,
+    ExtractionError,
+    chunk_document,
+    extract_requirements,
+)
 
 # extract/brief/compliance are one-shot calls over a whole tender document (tens of thousands of
 # chars in, a full structured response out) -- the gateway's default read_timeout (20s) is tuned
@@ -43,16 +50,41 @@ class StubProviderUnavailable(Exception):
     were a ready draft, or a reviewer could lock and submit a fabricated-looking answer."""
 
 
-async def extract_requirements_chunked(text: str) -> list[dict]:
-    """Split a large tender document into independent chunks and extract each in parallel, instead
-    of one call over the whole document -- see extraction.chunk_document for why. Chunk results are
-    merged and deduped by id (the overlap means a section straddling a boundary can appear twice;
-    the first occurrence wins)."""
-    chunks = chunk_document(text)
-    if len(chunks) == 1:
-        return await asyncio.to_thread(extract_requirements, chunks[0],
-                                       get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+def _consolidate(items: list[dict]) -> list[dict]:
+    """Dedupe/merge the chunked-fallback's per-chunk items into a small COARSE catalogue and cap
+    it at MAX_ITEMS. Overlapping chunks (and a section straddling a boundary) surface the same
+    section more than once; we merge by normalised title so the section tree still lands ~10-20
+    top-level sections rather than dozens. First occurrence of a title wins."""
+    out: list[dict] = []
+    seen_titles: set[str] = set()
+    for item in items:
+        key = re.sub(r"\s+", " ", (item.get("title") or "").strip().lower())
+        if key and key in seen_titles:
+            continue
+        if key:
+            seen_titles.add(key)
+        out.append(item)
+    return out[:MAX_ITEMS]
 
+
+async def extract_requirements_chunked(text: str) -> list[dict]:
+    """Produce the COARSE requirements catalogue for a tender.
+
+    For a typical document (<= MAX_CONTEXT_CHARS = 160k) do ONE extraction call over the whole
+    text, capped at MAX_ITEMS (~20) coarse top-level sections -- exactly like idg-worker's
+    requirements_extractor. A single 160k input with a small (<=20-item) completion finishes well
+    within the document read-timeout, so this does NOT reintroduce the Bedrock read-timeout problem
+    that motivated chunking.
+
+    Chunking is only a FALLBACK for very large documents (> 160k): each chunk extracts in parallel,
+    then the merged result is consolidated (deduped/merged by title) and capped to <= MAX_ITEMS so
+    a huge tender still yields a coarse ~15-section tree, not 80."""
+    if len(text) <= MAX_CONTEXT_CHARS:
+        return await asyncio.to_thread(extract_requirements, text,
+                                       get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT),
+                                       max_chars=MAX_CONTEXT_CHARS)
+
+    chunks = chunk_document(text)
     semaphore = asyncio.Semaphore(_EXTRACT_CONCURRENCY)
 
     async def extract_chunk(i: int, chunk: str) -> list[dict]:
@@ -65,14 +97,7 @@ async def extract_requirements_chunked(text: str) -> list[dict]:
                 return []  # one bad/timed-out chunk shouldn't sink requirements found in the rest
 
     results = await asyncio.gather(*(extract_chunk(i, c) for i, c in enumerate(chunks)))
-    merged: list[dict] = []
-    seen_ids: set[str] = set()
-    for chunk_items in results:
-        for item in chunk_items:
-            if item["id"] in seen_ids:
-                continue
-            seen_ids.add(item["id"])
-            merged.append(item)
+    merged = _consolidate([item for chunk_items in results for item in chunk_items])
     if not merged:
         raise ExtractionError("no requirements could be extracted from this document")
     return merged

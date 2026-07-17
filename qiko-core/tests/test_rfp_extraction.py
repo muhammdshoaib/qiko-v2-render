@@ -4,7 +4,13 @@ import json
 import pytest
 
 from app.modules.ai.gateway import LLMResponse
-from app.modules.rfp.extraction import ExtractionError, chunk_document, extract_requirements
+from app.modules.rfp.extraction import (
+    MAX_ITEMS,
+    ExtractionError,
+    chunk_document,
+    extract_requirements,
+    split_subsections,
+)
 
 from tests.helpers import auth_cookies
 
@@ -84,6 +90,37 @@ def test_extract_requirements_id_prefix_disambiguates_fallback_ids():
     assert [i["id"] for i in items] == ["c3-R1", "c3-R2"]
 
 
+def test_extract_requirements_caps_at_coarse_max_items():
+    """idg's "Include at most 20 items": even if the model over-produces, extraction caps the
+    catalogue at MAX_ITEMS so a tender stays a small COARSE set of top-level sections."""
+    raw = json.dumps([{"id": f"R{i}", "title": f"Section {i}", "classification": "KB",
+                       "requirement": f"Describe section {i}."} for i in range(40)])
+    items = extract_requirements("tender text", _CannedProvider(raw))
+    assert len(items) == MAX_ITEMS == 20
+
+
+# --- split_subsections (port of idg-worker answer.py) ---
+def test_split_subsections_prefers_dotted_headings():
+    req = ("B1.1 Contractor's Organogram: provide an org chart.\n"
+           "B1.2 Organisation: describe the management structure.")
+    parts = split_subsections("B1", req)
+    assert [p["sub_id"] for p in parts] == ["B1.1", "B1.2"]
+    assert parts[0]["title"].startswith("B1.1")
+    assert "org chart" in parts[0]["body"]
+
+
+def test_split_subsections_falls_back_to_lettered_clauses():
+    req = "(a) Provide method statements.\n(b) Provide a risk assessment."
+    parts = split_subsections("A3", req)
+    assert [p["sub_id"] for p in parts] == ["(a)", "(b)"]
+
+
+def test_split_subsections_single_when_no_structure():
+    parts = split_subsections("A1", "Describe your company's experience.")
+    assert len(parts) == 1
+    assert parts[0]["sub_id"] == "A1" and parts[0]["body"] == "Describe your company's experience."
+
+
 # --- chunk_document ---
 def test_chunk_document_returns_single_chunk_for_short_text():
     assert chunk_document("short document", max_chars=1000) == ["short document"]
@@ -155,13 +192,14 @@ def test_rfp_extract_404_for_missing_pack(client, monkeypatch):
 
 
 def test_rfp_extract_chunks_a_large_document_and_merges_results(client, monkeypatch):
-    """A document over chunk_document's default max_chars (25k) must be split into multiple
-    chunks, each extracted independently and in parallel, with the results merged -- not
-    truncated to one call's worth of the document like before."""
+    """A VERY large document (over MAX_CONTEXT_CHARS = 160k, the single-call budget) falls back to
+    the chunked path: split into multiple chunks, each extracted independently and in parallel,
+    with the results consolidated (deduped/merged by title) -- not truncated to one call's worth of
+    the document. A typical (<=160k) tender instead uses one coarse extraction call."""
     marker_a, marker_b = "UNIQUE_MARKER_ALPHA", "UNIQUE_MARKER_BETA"
-    # Two paragraphs, each padded well past the chunk budget on its own, so this document is
-    # guaranteed to split into (at least) two chunks -- one containing each marker.
-    big_doc = (marker_a + " " + "filler " * 6000) + "\n\n" + (marker_b + " " + "filler " * 6000)
+    # Two paragraphs, each ~98k chars, so the whole document (~196k) exceeds the 160k single-call
+    # budget and is guaranteed to split into several chunks -- one containing each marker.
+    big_doc = (marker_a + " " + "filler " * 14000) + "\n\n" + (marker_b + " " + "filler " * 14000)
 
     class _RespondingByMarker:
         def generate(self, prompt, *, system=None, temperature=0.2):
@@ -247,7 +285,8 @@ def test_rfp_extract_url_404_for_missing_pack(client):
 
 def test_rfp_extract_one_bad_chunk_does_not_sink_the_others(client, monkeypatch):
     marker_a = "UNIQUE_MARKER_GOOD"
-    big_doc = (marker_a + " " + "filler " * 6000) + "\n\n" + ("BAD_CHUNK " + "filler " * 6000)
+    # > 160k so the chunked fallback path runs (one good chunk, one that fails to parse).
+    big_doc = (marker_a + " " + "filler " * 14000) + "\n\n" + ("BAD_CHUNK " + "filler " * 14000)
 
     class _OneChunkFails:
         def generate(self, prompt, *, system=None, temperature=0.2):

@@ -120,6 +120,43 @@ async def test_build_tree_yields_few_top_level_sections_from_many_items():
     assert len(await svc.questions.list("t", "pboc")) == 31  # one leaf question per item
 
 
+async def test_build_tree_derives_subsections_from_requirement_text():
+    """Coarse+split model (idg quality): a SINGLE coarse extracted section whose requirement text
+    embeds dotted "B1.1/B1.2" sub-parts expands into two child sub-sections derived from the text
+    -- the extractor did NOT emit them as separate items."""
+    svc = PackTreeService()
+    extracted = [{
+        "id": "B1", "title": "Organisational Structure & Manpower", "classification": "KB",
+        "requirement": ("B1.1 Contractor's Organogram: provide an organisation chart.\n"
+                        "B1.2 Contractor's Organisation: describe the management structure."),
+    }]
+    await svc.populate_from_extraction("t", "psplit", extracted)
+    sections = await svc.sections.list("t", "psplit")
+    top = [s for s in sections if s.parent_id is None]
+    assert len(top) == 1 and top[0].code == "B1"  # ONE top-level coarse section
+    # its two sub-sections were derived from the requirement text
+    kids = [s for s in sections if s.parent_id == top[0].id]
+    assert {k.code for k in kids} == {"B1.1", "B1.2"}
+    # the parent holds no direct question; each child holds its own single question
+    assert await svc.questions.list_for_section("t", top[0].id) == []
+    for k in kids:
+        assert len(await svc.questions.list_for_section("t", k.id)) == 1
+
+
+async def test_build_tree_coarse_items_yield_at_most_that_many_top_level_sections():
+    """20 coarse extracted items (each a whole top-level section, single-sentence requirement)
+    yield 20 top-level sections -- no over-granular explosion, matching idg's ~10-20 catalogue."""
+    svc = PackTreeService()
+    extracted = [{"id": f"S{i}", "title": f"Section {i}", "classification": "KB",
+                  "requirement": f"Describe section {i}."} for i in range(1, 21)]
+    await svc.populate_from_extraction("t", "pcoarse", extracted)
+    sections = await svc.sections.list("t", "pcoarse")
+    top = [s for s in sections if s.parent_id is None]
+    assert len(top) == 20  # one coarse top-level section per item, none split
+    assert not [s for s in sections if s.parent_id is not None]  # no sub-sections
+    assert len(await svc.questions.list("t", "pcoarse")) == 20  # one question per section
+
+
 async def test_build_tree_coalesces_flat_legacy_ids():
     """An old flat backfill emits non-dotted ids like 'A1_unpriced'/'A1_priced'; they must group
     by leading section token, not each become a top-level section."""

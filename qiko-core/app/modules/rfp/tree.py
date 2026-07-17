@@ -17,6 +17,8 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from app.modules.rfp.extraction import split_subsections
+
 # Section status vocabulary, mirroring the FE cockpit's local `status` union.
 SECTION_STATUSES = ("not_generated", "generating", "draft_ready", "reviewing", "locked", "manual", "overdue")
 
@@ -459,10 +461,20 @@ class PackTreeService:
         return await self._build_tree(tenant, pack_id, extracted)
 
     async def _build_tree(self, tenant: str, pack_id: str, extracted: list[dict]) -> list[PackSection]:
-        """Shared two-level grouping used by both populate_from_extraction and
-        populate_from_requirements. Items are grouped by top-level section token; dotted items in a
-        group become child sub-sections (each a PackSection with parent_id set + one question),
-        plain items become questions directly on the top-level section. Returns every created
+        """Build the two-level section tree from COARSE extracted items (idg quality): each item is
+        a whole top-level section a tenderer responds to, and its sub-sections are DERIVED from the
+        requirement text (port of idg's split_subsections) rather than extracted separately.
+
+        For each extracted item -> ONE top-level PackSection. Its `requirement` is split via
+        split_subsections (dotted "B1.1/B1.2" headings, else "(a)/(b)" clauses, else none): >= 2
+        sub-parts become child sub-sections (each a PackSection with parent_id + its own question);
+        a single part stays one question on the section (idg: a section with no distinct numbered
+        sub-parts is a single answer).
+
+        Legacy compatibility: items are still grouped by top-level section token, so an OLD flat
+        backfill whose stored req_ids are dotted ("B1.1", "B1.2") or suffixed ("A1_unpriced") still
+        coalesces under one top-level section (dotted items -> child sub-sections, plain items ->
+        questions) instead of exploding into dozens of top-level sections. Returns every created
         section (top-level and sub-section)."""
         groups: dict[str, list[dict]] = {}
         for item in extracted:
@@ -478,14 +490,25 @@ class PackTreeService:
                                  manual=manual, order_index=order)
             await self.sections.add(parent)
             created.append(parent)
-            # plain items answer directly on the top-level section (idg: a section with no distinct
-            # numbered sub-parts is a single answer)
+
+            # Coarse extraction: a single plain item for this section. Derive its sub-sections from
+            # the requirement TEXT (idg split_subsections) -- so "B1.1 ...\nB1.2 ..." in the text
+            # becomes two independently gradeable child answers without the extractor emitting them.
+            if len(plain) == 1 and not subs:
+                item = plain[0]
+                parts = split_subsections(item["id"], item["requirement"])
+                if len(parts) >= 2:
+                    created += await self._add_split_children(tenant, pack_id, parent, parts, manual)
+                    continue
+                # single part -> one question directly on the section (fall through below)
+
+            # plain items answer directly on the top-level section (also the legacy flat-coalesce
+            # case where multiple non-dotted ids share one top-level token)
             for qi, item in enumerate(plain):
                 await self.questions.add(PackQuestion(
                     id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, section_id=parent.id,
                     text=item["requirement"], req_id=item["id"], order_index=qi))
-            # each dotted item is a child sub-section with its own single question (idg:
-            # "B1.1 Organogram", "B1.2 Organisation" -> two independently gradeable answers)
+            # legacy dotted items -> child sub-sections, each its own single question
             for sub_order, item in enumerate(subs):
                 sub_manual = item["classification"] in {"MANUAL", "COMPLIANCE"}
                 child = PackSection(id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id,
@@ -497,6 +520,24 @@ class PackTreeService:
                     id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, section_id=child.id,
                     text=item["requirement"], req_id=item["id"], order_index=0))
                 created.append(child)
+        return created
+
+    async def _add_split_children(self, tenant: str, pack_id: str, parent: PackSection,
+                                   parts: list[dict], manual: bool) -> list[PackSection]:
+        """Create one child sub-section (with its own question) per sub-part derived from a coarse
+        section's requirement text. The parent then holds no direct questions -- it rolls up from
+        its children, mirroring idg's answer_subsections aggregation."""
+        created: list[PackSection] = []
+        for sub_order, part in enumerate(parts):
+            child = PackSection(id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id,
+                                code=part["sub_id"], name=part["title"], parent_id=parent.id,
+                                status="manual" if manual else "not_generated",
+                                manual=manual, order_index=sub_order)
+            await self.sections.add(child)
+            await self.questions.add(PackQuestion(
+                id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, section_id=child.id,
+                text=part["body"], req_id=part["sub_id"], order_index=0))
+            created.append(child)
         return created
 
     async def delete_for_pack(self, tenant: str, pack_id: str) -> None:

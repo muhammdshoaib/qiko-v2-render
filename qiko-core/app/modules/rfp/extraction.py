@@ -18,38 +18,46 @@ from pydantic import BaseModel, ValidationError, field_validator
 
 from app.modules.ai.gateway import LLMProvider
 
+# A whole typical tender fits in one model call (Claude handles ~200k ctx); idg's own generalized
+# extractor (app/agents/requirements_extractor.py) uses exactly this budget with a single call.
+MAX_CONTEXT_CHARS = 160_000
+# idg caps its requirements catalogue at 20 items ("Include at most 20 items."); we mirror that so
+# a tender yields a small, COARSE set of top-level sections (~10-20) rather than a long flat list.
+MAX_ITEMS = 20
+
 SYSTEM = (
-    "You are a bid/RFP analyst. Read the tender document text and extract every discrete "
-    "requirement or section a bidder must respond to. Return ONLY a JSON array (no prose, no "
-    "markdown fences), where each item has exactly these keys: "
-    '"id" (a section id inferred from the document\'s own numbering if present, otherwise '
-    'sequential -- use a short top-level id like "A1" or "B3" for a section with no distinct '
-    'numbered sub-parts, but if the section itself contains multiple clearly distinct numbered '
-    'or lettered sub-requirements (e.g. the source text reads "B1.1 Contractor\'s Organogram" '
-    'and "B1.2 Contractor\'s Organisation" under a "B1" heading), emit ONE ITEM PER SUB-PART with '
-    'a dotted id ("B1.1", "B1.2", ...) instead of one item for the whole section -- each becomes '
-    "its own independently gradeable answer, which is what a human reviewer actually needs; do "
-    'not invent sub-parts that are not clearly present in the source), "title" (for a dotted id, '
-    'prefix the sub-part\'s own title with the parent heading\'s title and " \u2014 ", e.g. '
-    '"Organisational Structure & Manpower \u2014 Contractor\'s Organogram" for id "B1.1" under '
-    'heading "B1 Organisational Structure & Manpower"; for a non-dotted id, just the section '
-    'title), "classification" (one of "KB", "DATA", "MANUAL", "COMPLIANCE" -- KB = a narrative '
-    "answer can be grounded in a knowledge base; DATA = requires the bidder's own factual data "
-    "(CVs, pricing, equipment lists); MANUAL = a prescribed form/template completed outside the "
-    'AI; COMPLIANCE = a pass/fail confirmation or signature), and "requirement" (the verbatim or '
-    "closely-paraphrased requirement text for that item). "
-    "STRUCTURE: aim for a SMALL set of coarse top-level sections (roughly 10-25 for a whole "
-    "tender, following the document's own top-level lettered/numbered headings, e.g. commercial "
-    'A1..A4 and technical B1..Bn) -- do NOT emit dozens of separate top-level ids. Push finer '
-    "detail DOWN into dotted sub-parts of the section it belongs to (a sub-requirement of "
-    'section "B1" is "B1.1", "B1.2", ... NOT its own top-level "B7"), so a reviewer sees a '
-    "handful of top-level sections each expanding into its sub-sections rather than a long flat "
-    "list. Use the SAME top-level id for every sub-part of the same section."
+    "You are a bid-management analyst. Read the tender documents (terms of reference, evaluation "
+    "grid, instructions to tenderers) and produce a requirements CATALOGUE: the coarse list of "
+    "the top-level sections or appendices the bidder must respond to. Each item is a whole "
+    "section a tenderer responds to, NOT a single sentence or sub-clause.\n\n"
+    "For EACH section, classify it as exactly one of:\n"
+    "- KB: a narrative/technical section that can be drafted from the bidder's knowledge base "
+    "(methodology, approach, experience, organisation, quality, HSSE, etc.).\n"
+    "- DATA: requires specific records only the bidder holds (CVs, equipment lists, financial "
+    "statements) -- not AI-answerable.\n"
+    "- MANUAL: a prescribed commercial/legal form or pricing schedule completed by humans.\n"
+    "- COMPLIANCE: a signed confirmation or declaration of eligibility.\n\n"
+    "Return ONLY a JSON array (no prose, no markdown fences). Each element has exactly these keys: "
+    '"id" (a short top-level section id from the document\'s own numbering if present, e.g. '
+    '"A1", "B3"; sequential if the document has none -- one id per top-level section), "title" '
+    '(the section\'s short title), "classification" (one of "KB", "DATA", "MANUAL", '
+    '"COMPLIANCE"), and "requirement" (a 1-3 sentence description of what the bidder must '
+    "provide for that section). "
+    "When a section clearly breaks down into distinct numbered (e.g. B1.1, B1.2) or lettered "
+    "((a), (b)) sub-requirements in the source, list those sub-parts on their OWN LINES inside "
+    "the requirement text (one per line, keeping the source's own numbering) so each can be "
+    "answered separately -- do NOT emit them as separate top-level items. "
+    "Include AT MOST 20 items: aim for a small, COARSE set of top-level sections (roughly 10-20 "
+    "for a whole tender, following the document's own top-level lettered/numbered headings, e.g. "
+    "commercial A1..A4 and technical B1..Bn). Do not invent items that are not in the documents."
 )
 
 _JSON_ARRAY = re.compile(r"\[.*\]", re.DOTALL)
 _VALID_CLASSIFICATIONS = {"KB", "DATA", "MANUAL", "COMPLIANCE"}
 _MAX_ATTEMPTS = 2
+# A dotted sub-section heading inside a requirement's text ("B1.1", "A2.3"). Generalised from
+# idg's BOC-specific `B\d+\.\d+` so it fires for any lettered top-level section V2 extracts.
+_SUBSECTION_HEADING = re.compile(r"^\s*[A-Za-z]{1,3}\d+\.\d+")
 
 
 class ExtractionError(Exception):
@@ -108,16 +116,22 @@ def _validate_items(raw_items: list, *, id_prefix: str = "") -> list[dict]:
     return out
 
 
-def extract_requirements(tender_text: str, provider: LLMProvider, *, max_chars: int = 60_000,
+def extract_requirements(tender_text: str, provider: LLMProvider, *, max_chars: int = MAX_CONTEXT_CHARS,
                          id_prefix: str = "") -> list[dict]:
-    """Extract a document-agnostic requirements list from raw tender text.
+    """Extract a document-agnostic, COARSE requirements catalogue from raw tender text.
 
     Returns a list of {id, title, classification, requirement} dicts, schema-validated (malformed
-    items dropped individually). Retries once if the model's response can't be parsed at all.
+    items dropped individually) and capped at MAX_ITEMS (idg's "at most 20 items") so a tender
+    yields a small set of coarse top-level sections rather than a long flat list. Retries once if
+    the model's response can't be parsed at all.
+
+    A whole typical tender fits in one call (max_chars defaults to MAX_CONTEXT_CHARS = 160k, like
+    idg's requirements_extractor); the smaller per-chunk budget is only used on the >160k fallback
+    path (see generation.extract_requirements_chunked).
 
     `id_prefix` disambiguates the fallback id ("R1", "R2", ...) used when the model omits one --
-    only relevant when this is called once per chunk of a larger document (see chunk_document /
-    extract_requirements_from_document) so two chunks' fallback ids can't collide.
+    only relevant when this is called once per chunk of a larger document so two chunks' fallback
+    ids can't collide.
     """
     truncated = tender_text[:max_chars]
     last_error: Exception | None = None
@@ -127,11 +141,45 @@ def extract_requirements(tender_text: str, provider: LLMProvider, *, max_chars: 
             raw_items = _parse_llm_json_array(response.text)
             out = _validate_items(raw_items, id_prefix=id_prefix)
             if out:
-                return out
+                return out[:MAX_ITEMS]
             last_error = ExtractionError("no valid requirements after schema validation")
         except ExtractionError as e:
             last_error = e
     raise last_error or ExtractionError("no requirements could be extracted from this document")
+
+
+def split_subsections(req_id: str, requirement: str) -> list[dict]:
+    """Derive a requirement's sub-sections from its OWN text (port of idg-worker's
+    app/agents/answer.py::split_subsections). Prefers dotted numbered headings ("B1.1", "B1.2");
+    falls back to top-level (a)/(b) clauses; otherwise a single sub-section. Each sub-section is
+    independently gradeable, so a coarse extracted section can expand into per-sub-part answers
+    without the extractor having to emit one item per sub-requirement.
+
+    Returns a list of {"sub_id", "title", "body"}; a single-element list means "no split" (the
+    requirement is answered directly on its section).
+    """
+    lines = [line.rstrip() for line in (requirement or "").split("\n") if line.strip()]
+    subs: list[dict] = []
+    cur: dict | None = None
+    for line in lines:
+        if _SUBSECTION_HEADING.match(line):
+            if cur:
+                subs.append(cur)
+            cur = {"title": line.strip(), "body": []}
+        elif cur is not None:
+            cur["body"].append(line.strip())
+    if cur:
+        subs.append(cur)
+    if len(subs) >= 2:
+        # body = the heading line plus any following detail, so the question is self-contained
+        return [{"sub_id": s["title"].split()[0], "title": s["title"],
+                 "body": "\n".join([s["title"], *s["body"]]).strip()} for s in subs]
+    parts = re.split(r"(?m)(?=^\s*\([a-z]\)\s)", requirement or "")
+    parts = [p.strip() for p in parts if re.match(r"^\([a-z]\)", p.strip() or "")]
+    if len(parts) >= 2:
+        return [{"sub_id": re.match(r"^\(([a-z])\)", p).group(0), "title": p.split("\n")[0][:70],
+                 "body": p} for p in parts]
+    return [{"sub_id": req_id, "title": req_id, "body": requirement or ""}]
 
 
 def chunk_document(text: str, *, max_chars: int = 25_000, overlap_chars: int = 1_500) -> list[str]:
