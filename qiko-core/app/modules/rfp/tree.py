@@ -204,6 +204,15 @@ def _subsection_name(item: dict) -> str:
     return (parts[1].strip() if len(parts) == 2 else item["title"].strip()) or item["title"]
 
 
+def _question_has_gap(q: PackQuestion) -> bool:
+    """Whether a question would surface the reviewer-facing "Gaps for human input" box, and so must
+    also raise the section-listing KB-gap pill. A question "has a gap" when the critic flagged a KB
+    gap (grounding below threshold) OR the writer left a non-empty self-reported gaps note. Rolling
+    THIS predicate up keeps the listing pill and the detail gaps box consistent -- a question with
+    gaps text but kb_gap=False no longer slips past the pill."""
+    return q.kb_gap or bool((q.gaps or "").strip())
+
+
 @dataclass
 class PackTreeService:
     """Owns the section+question tree for RFP packs, with the lock roll-up and overview metrics."""
@@ -334,7 +343,7 @@ class PackTreeService:
         all_sections = await self.sections.list(tenant, section.pack_id)
         children = [s for s in all_sections if s.parent_id == section_id]
         qs = await self.questions.list_for_section(tenant, section_id)
-        kb_gap = any(q.kb_gap for q in qs) or any(c.kb_gap for c in children)
+        kb_gap = any(_question_has_gap(q) for q in qs) or any(c.kb_gap for c in children)
         has_units = bool(qs or children)
         # Manual (human-owned) children satisfy the lock gate without being AI-lockable, so a
         # (non-manual) parent that mixes manual + AI children can still reach "locked" once its
@@ -408,8 +417,10 @@ class PackTreeService:
                 **s.__dict__,
                 "questions": [q.__dict__ for q in own],
                 "avg_confidence": round(sum(q.confidence for q in own) / len(own), 2) if own else 0.0,
-                # additive rollup for the FE's grounding/confidence/gaps columns
-                "kb_gap": any(q.kb_gap for q in rolled),
+                # additive rollup for the FE's grounding/confidence/gaps columns. `kb_gap` uses the
+                # "has gap" predicate (kb_gap OR non-empty gaps text) so the listing pill lights up
+                # for exactly the sections whose detail would show a "Gaps for human input" box.
+                "kb_gap": any(_question_has_gap(q) for q in rolled),
                 "confidence": confidence,
                 "grounding": grounding,
                 "subsection_count": len(children_of.get(s.id, [])),

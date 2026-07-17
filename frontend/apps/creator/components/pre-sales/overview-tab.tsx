@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle, ArrowRight, Building2, CalendarClock, CheckCircle2, FileText, Sparkles,
 } from "lucide-react";
-import { getPackOverview, getRfpPack } from "@/lib/api";
+import { getPackOverview, getRfpPack, getTenderStatus } from "@/lib/api";
 import { formatShortDate } from "@/lib/stringUtils";
 import { OutcomesStrip, type OutcomeTile } from "@/components/cockpit/outcomes-strip";
 import { truncate } from "@/components/pre-sales/utils";
@@ -14,9 +14,17 @@ export function OverviewTab({ packId, onOpenSections, onOpenBrief }: {
 }) {
   const overviewQ = useQuery({ queryKey: ["pack-overview", packId], queryFn: () => getPackOverview(packId) });
   const packQ = useQuery({ queryKey: ["rfp-pack", packId], queryFn: () => getRfpPack(packId) });
+  const statusQ = useQuery({ queryKey: ["tender-status", packId], queryFn: () => getTenderStatus(packId) });
 
   const o = overviewQ.data;
   const pack = packQ.data;
+
+  // KB gaps are only KNOWN once EVERY answer is drafted (a gap = a question that couldn't be grounded
+  // in the KB). Drafting is complete only when every top-level section is drafted AND the background
+  // drafts job reports "ready" -- until then a "no gaps" claim can wrongly flip to "has gaps" as more
+  // answers land, so we hold the neutral message.
+  const draftsReady = statusQ.data?.drafts?.state === "ready";
+  const draftingComplete = !!o && o.ai_drafted >= o.ai_drafted_total && draftsReady;
 
   const tiles: OutcomeTile[] = [
     { value: o ? String(o.sections) : "\u2014", label: "Sections", caption: `${o?.sections_locked ?? 0} locked` },
@@ -100,21 +108,21 @@ export function OverviewTab({ packId, onOpenSections, onOpenBrief }: {
               </li>
             ))}
           </ol>
-          {o?.kb_gaps ? (
-            <p className="mt-4 flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-2.5 py-2 text-[11px] text-amber-300">
-              <AlertTriangle className="size-3.5 shrink-0" /> {o.kb_gaps} question(s) flagged as KB gaps -- add sources to improve grounding.
-            </p>
-          ) : o && o.ai_drafted > 0 ? (
-            <p className="mt-4 flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.06] px-2.5 py-2 text-[11px] text-emerald-300">
-              <CheckCircle2 className="size-3.5 shrink-0" /> No knowledge-base gaps detected.
-            </p>
-          ) : o ? (
-            // Gaps are only known once answers have been drafted (a gap = a question that couldn't be
-            // grounded in the KB). Before any draft exists, claiming "no gaps" is misleading.
+          {!o ? null : !draftingComplete ? (
+            // Drafting still in progress: never claim "no gaps" (it can flip to "has gaps" as more
+            // answers land). Hold the neutral message until every answer is generated.
             <p className="mt-4 flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-2 text-[11px] text-slate-400">
               <AlertTriangle className="size-3.5 shrink-0" /> Knowledge-base gaps are flagged once answers are generated.
             </p>
-          ) : null}
+          ) : o.kb_gaps > 0 ? (
+            <p className="mt-4 flex items-center gap-1.5 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-2.5 py-2 text-[11px] text-amber-300">
+              <AlertTriangle className="size-3.5 shrink-0" /> {o.kb_gaps} question(s) flagged as KB gaps -- add sources to improve grounding.
+            </p>
+          ) : (
+            <p className="mt-4 flex items-center gap-1.5 rounded-lg border border-emerald-500/20 bg-emerald-500/[0.06] px-2.5 py-2 text-[11px] text-emerald-300">
+              <CheckCircle2 className="size-3.5 shrink-0" /> No knowledge-base gaps detected.
+            </p>
+          )}
         </div>
       </div>
     </div>

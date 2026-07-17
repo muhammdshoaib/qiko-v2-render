@@ -240,6 +240,52 @@ async def test_parent_section_rolls_up_kb_gap_confidence_grounding_from_children
     assert node["B1.2"]["kb_gap"] is True
 
 
+async def test_section_kb_gap_pill_lights_up_for_gaps_text_without_kb_gap_flag():
+    """The listing KB-gap pill (section.kb_gap, rolled up in list_tree) must be consistent with the
+    detail "Gaps for human input" box: a question with a non-empty gaps note but kb_gap=False still
+    "has a gap", so its section must show the pill."""
+    svc = PackTreeService()
+    extracted = [{
+        "id": "A6", "title": "BOC A6", "classification": "KB", "requirement": "Answer A6.",
+        "subsections": [
+            {"id": "A6.1", "title": "Part one", "classification": "KB", "requirement": "One."},
+        ],
+    }]
+    await svc.populate_from_extraction("t", "pgap", extracted)
+    sections = {s.code: s for s in await svc.sections.list("t", "pgap")}
+    a6_1_q = (await svc.questions.list_for_section("t", sections["A6.1"].id))[0]
+    # grounded above threshold (kb_gap=False) but the writer flagged missing evidence in gaps text
+    await svc.apply_generation("t", a6_1_q.id, ai_answer="draft", ai_sources=["doc:iso"],
+                               confidence=0.9, grounding=0.9, gaps="missing recent case study",
+                               decision="auto_accept", kb_gap=False)
+    # stored rollup + serialized nodes both raise the pill off the gaps text alone
+    assert (await svc.get_section("t", sections["A6"].id)).kb_gap is True
+    node = {n["code"]: n for n in await svc.list_tree("t", "pgap")}
+    assert node["A6"]["kb_gap"] is True    # parent rolls up the child's gaps text
+    assert node["A6.1"]["kb_gap"] is True  # the leaf itself has a gap despite kb_gap=False
+
+
+async def test_section_kb_gap_pill_off_when_no_gap_flag_and_no_gaps_text():
+    """The inverse: a fully-grounded answer with no gaps text and kb_gap=False shows no pill."""
+    svc = PackTreeService()
+    extracted = [{
+        "id": "A7", "title": "BOC A7", "classification": "KB", "requirement": "Answer A7.",
+        "subsections": [
+            {"id": "A7.1", "title": "Part one", "classification": "KB", "requirement": "One."},
+        ],
+    }]
+    await svc.populate_from_extraction("t", "pnogap", extracted)
+    sections = {s.code: s for s in await svc.sections.list("t", "pnogap")}
+    a7_1_q = (await svc.questions.list_for_section("t", sections["A7.1"].id))[0]
+    await svc.apply_generation("t", a7_1_q.id, ai_answer="draft", ai_sources=["doc:iso"],
+                               confidence=0.9, grounding=0.9, gaps="   ",
+                               decision="auto_accept", kb_gap=False)
+    assert (await svc.get_section("t", sections["A7"].id)).kb_gap is False
+    node = {n["code"]: n for n in await svc.list_tree("t", "pnogap")}
+    assert node["A7"]["kb_gap"] is False
+    assert node["A7.1"]["kb_gap"] is False
+
+
 async def test_manual_section_satisfies_finalize_gate():
     """H1: a MANUAL (human-owned) section is never AI-lockable, so it must COUNT as satisfying the
     finalize gate -- otherwise any pack with a manual/compliance section could never finalize."""

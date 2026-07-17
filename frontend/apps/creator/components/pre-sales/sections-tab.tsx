@@ -835,6 +835,10 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
   const confPct = metricPct(question.confidence);
   const groundingPct = metricPct(question.grounding);
   const gaps = splitGaps(question.gaps);
+  // A question "has a gap" -- and so shows the KB-gap indicator + the "Gaps for human input" box --
+  // when the critic flagged a KB gap OR the writer left a non-empty gaps note. This mirrors the
+  // backend section rollup so the listing pill and this detail box are always consistent.
+  const hasGap = question.kb_gap || gaps.length > 0;
 
   return (
     <div className={cn("rounded-2xl border bg-white/[0.015]", expanded ? "border-indigo-500/25" : "border-white/[0.06]")}>
@@ -847,7 +851,7 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
             {question.word_limit != null && <span>{question.word_limit} words max</span>}
             {confPct != null && <span className={metricBandText(confPct)}>conf {confPct}%</span>}
             {groundingPct != null && <span className={metricBandText(groundingPct)}>grounding {groundingPct}%</span>}
-            {question.kb_gap && <span className="inline-flex items-center gap-0.5 text-amber-400"><AlertTriangle className="size-3" /> KB gap</span>}
+            {hasGap && <span className="inline-flex items-center gap-0.5 text-amber-400"><AlertTriangle className="size-3" /> KB gap</span>}
           </span>
         </span>
         {question.locked && (
@@ -884,20 +888,27 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
             </div>
           </div>
 
-          {/* Gaps for human input: only when the backend reports non-empty gaps for this answer. */}
-          {gaps.length > 0 && (
+          {/* Gaps for human input: shown whenever this answer "has a gap" (non-empty gaps note OR a
+              KB-gap flag), so it stays consistent with the section-listing KB-gap pill. */}
+          {hasGap && (
             <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3.5">
               <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-amber-400">
                 <AlertTriangle className="size-3.5 shrink-0" /> Gaps for human input
               </div>
-              <ul className="mt-2 space-y-1.5">
-                {gaps.map((g, i) => (
-                  <li key={i} className="flex gap-2 text-[12px] leading-relaxed text-amber-100/90">
-                    <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-amber-400" />
-                    <span>{g}</span>
-                  </li>
-                ))}
-              </ul>
+              {gaps.length > 0 ? (
+                <ul className="mt-2 space-y-1.5">
+                  {gaps.map((g, i) => (
+                    <li key={i} className="flex gap-2 text-[12px] leading-relaxed text-amber-100/90">
+                      <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-amber-400" />
+                      <span>{g}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-[12px] leading-relaxed text-amber-100/90">
+                  This answer could not be fully grounded in the knowledge base. Add sources to improve grounding.
+                </p>
+              )}
             </div>
           )}
 
