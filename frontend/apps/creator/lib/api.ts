@@ -129,6 +129,7 @@ export type RfpPack = {
   id: string; tenant: string; agent_id: string; title: string; client_name: string; deadline: string | null;
   stage: string; created_at: string;
   outcome: "won" | "lost" | "withdrawn" | null; outcome_reason: string; outcome_value: number | null; outcome_at: string | null;
+  gen_status?: TenderGenStatus | null;
 };
 export const listRfpPacks = (agentId: string) => request<RfpPack[]>(`/rfp/packs?agent_id=${encodeURIComponent(agentId)}`);
 export const createRfpPack = (agentId: string, title: string, client_name = "", deadline: string | null = null) =>

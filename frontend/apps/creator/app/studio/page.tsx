@@ -160,8 +160,19 @@ export default function StudioPage() {
                     } else if (preSales) {
                       const packs: RfpPack[] = packsQ[idx]?.data ?? [];
                       const activeBids = packs.length;
-                      const inReview = packs.filter((p) => p.stage === "review" || p.stage === "final").length;
-                      const avgReadiness = activeBids > 0 ? Math.round((inReview / activeBids) * 100) : 0;
+                      // Readiness = how far each bid's answers are drafted (from the live gen_status
+                      // drafts progress), averaged. The legacy pack.stage is no longer advanced by the
+                      // stepper flow, so counting stage==="review"/"final" always read 0%.
+                      const readinessOf = (p: RfpPack) => {
+                        const d = p.gen_status?.drafts;
+                        if (d && typeof d.total === "number" && d.total > 0) {
+                          return Math.round(((d.done ?? 0) / d.total) * 100);
+                        }
+                        return p.stage === "review" || p.stage === "final" ? 100 : 0;
+                      };
+                      const avgReadiness = activeBids > 0
+                        ? Math.round(packs.reduce((sum, p) => sum + readinessOf(p), 0) / activeBids)
+                        : 0;
                       const nextDeadline = packs.map((p) => p.deadline).filter(Boolean).sort()[0] ?? null;
                       metrics = [
                         { label: "Active Bids", value: String(activeBids) },

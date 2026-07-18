@@ -19,12 +19,17 @@ export function OverviewTab({ packId, onOpenSections, onOpenBrief }: {
   const o = overviewQ.data;
   const pack = packQ.data;
 
-  // KB gaps are only KNOWN once EVERY answer is drafted (a gap = a question that couldn't be grounded
-  // in the KB). Drafting is complete only when every top-level section is drafted AND the background
-  // drafts job reports "ready" -- until then a "no gaps" claim can wrongly flip to "has gaps" as more
-  // answers land, so we hold the neutral message.
-  const draftsReady = statusQ.data?.drafts?.state === "ready";
-  const draftingComplete = !!o && o.ai_drafted >= o.ai_drafted_total && draftsReady;
+  // KB gaps are only KNOWN once answers are drafted (a gap = a question that couldn't be grounded in
+  // the KB), so hold the neutral message until drafting is done to avoid a "no gaps" claim flipping to
+  // "has gaps" as answers land.
+  // Drafting is "complete" when the background job reports it (ready, or partial = finished with some
+  // failures). Do NOT require ai_drafted >= ai_drafted_total: manual/commercial sections are never
+  // AI-drafted, so that ratio never reaches 100% and the neutral message would show forever even
+  // after every answer that CAN be drafted has been. Fall back to "has drafts" for legacy packs
+  // that predate gen_status.
+  const draftsState = statusQ.data?.drafts?.state;
+  const draftingComplete = draftsState === "ready" || draftsState === "partial"
+    || (!draftsState && !!o && o.ai_drafted > 0);
 
   const tiles: OutcomeTile[] = [
     { value: o ? String(o.sections) : "\u2014", label: "Sections", caption: `${o?.sections_locked ?? 0} locked` },
