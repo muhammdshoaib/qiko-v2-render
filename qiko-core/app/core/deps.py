@@ -165,6 +165,10 @@ def get_otp_store(request: Request):
     return request.app.state.otp_store
 
 
+def get_pending_invites(request: Request):
+    return request.app.state.pending_invites
+
+
 def get_channel_sessions(request: Request):
     return request.app.state.channel_sessions
 

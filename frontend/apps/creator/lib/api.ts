@@ -124,6 +124,36 @@ export const createTeam = (owner_id: string) =>
 export const addTeamMember = (teamId: string, user_id: string, role: string) =>
   request<Team>(`/teams/${teamId}/members`, { method: "POST", body: JSON.stringify({ user_id, role }) });
 
+// Team Access (Settings > Team): the tenant's users with roles, plus pending invites.
+// Backend Role enum <-> stage labels: viewer=User, editor=Creator, admin=Admin, owner=Owner.
+// Only viewer/editor/admin are assignable; owner is a protected account owner.
+export type TenantRole = "viewer" | "editor" | "admin" | "owner";
+export const ASSIGNABLE_ROLES: { value: Exclude<TenantRole, "owner">; label: string }[] = [
+  { value: "viewer", label: "User" },
+  { value: "editor", label: "Creator" },
+  { value: "admin", label: "Admin" },
+];
+export const ROLE_LABELS: Record<TenantRole, string> = {
+  viewer: "User", editor: "Creator", admin: "Admin", owner: "Owner",
+};
+export type TenantUser = {
+  id: string; email: string; name: string; role: TenantRole; role_label: string;
+  status: "accepted"; is_owner: boolean;
+};
+export type PendingInvite = {
+  email: string; role: TenantRole; role_label: string; status: "pending"; invited_at: number;
+};
+export type TenantUsers = { users: TenantUser[]; pending: PendingInvite[] };
+export const listTenantUsers = () => request<TenantUsers>("/identity/users");
+export const inviteUser = (email: string, role: Exclude<TenantRole, "owner">) =>
+  request<PendingInvite>("/identity/users/invite", { method: "POST", body: JSON.stringify({ email, role }) });
+export const updateUserRole = (userId: string, role: Exclude<TenantRole, "owner">) =>
+  request<TenantUser>(`/identity/users/${encodeURIComponent(userId)}/role`, { method: "PUT", body: JSON.stringify({ role }) });
+export const removeUser = (userId: string) =>
+  request<{ removed: string }>(`/identity/users/${encodeURIComponent(userId)}`, { method: "DELETE" });
+export const cancelInvite = (email: string) =>
+  request<{ removed: string }>(`/identity/users/pending/${encodeURIComponent(email)}`, { method: "DELETE" });
+
 // RFP packs (tenders a worker is answering) + section assignments
 export type RfpPack = {
   id: string; tenant: string; agent_id: string; title: string; client_name: string; deadline: string | null;

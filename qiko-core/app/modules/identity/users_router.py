@@ -1,0 +1,129 @@
+"""Team Access API (tenant-scoped): list the tenant's users, invite new ones, change roles, and
+remove them. Backs the Creator Settings > Team tab.
+
+Wiring choice: the member list is the identity UserStore's tenant users (list_by_tenant), so the
+tenant's real, login-capable users (Accepted) show up immediately, plus an in-memory registry of
+Pending invites. Mutations are RBAC-guarded to owner/admin (require_role(Role.admin) -- an owner
+outranks an admin within their own tenant). Every lookup is tenant-scoped (a user_id belonging to
+another tenant returns 404, not 403, so an outsider can't probe ids -- OWASP API1/BOLA).
+
+The account owner is protected: their role can't be changed and they can't be removed, and the
+owner role is never assignable through this API, so the last owner of a tenant is never lost.
+
+See app.modules.identity.team_access for the Role <-> label mapping (viewer=User, editor=Creator,
+admin=Admin, owner=Owner) and the pending-invite store.
+"""
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+
+from app.core.deps import authed_tenant, get_pending_invites, require_role
+from app.modules.identity.rbac import Role
+from app.modules.identity.router import get_store
+from app.modules.identity.store import User, UserStore
+from app.modules.identity.team_access import (
+    ASSIGNABLE_ROLES,
+    ROLE_LABELS,
+    PendingInviteStore,
+)
+
+router = APIRouter(prefix="/identity", tags=["identity"])
+_admin = Depends(require_role(Role.admin))
+
+
+def _display_name(u: User) -> str:
+    return u.email.split("@")[0] if u.email else u.id
+
+
+def _user_dict(u: User) -> dict:
+    return {"id": u.id, "email": u.email, "name": _display_name(u),
+            "role": u.role.value, "role_label": ROLE_LABELS.get(u.role, u.role.value),
+            "status": "accepted", "is_owner": u.role is Role.owner}
+
+
+def _assert_assignable(role: Role) -> None:
+    if role not in ASSIGNABLE_ROLES:
+        raise HTTPException(status_code=400, detail="role must be one of: User, Creator, Admin")
+
+
+async def _get_tenant_user(user_id: str, tenant: str, store: UserStore) -> User:
+    user = await store.get_by_id(user_id)
+    if user is None or user.tenant != tenant:
+        raise HTTPException(status_code=404, detail="user not found")
+    return user
+
+
+class InviteBody(BaseModel):
+    email: str = Field(min_length=3, max_length=320)
+    role: Role = Role.viewer
+
+
+class RoleBody(BaseModel):
+    role: Role
+
+
+@router.get("/users")
+async def list_users(tenant: str = Depends(authed_tenant), store: UserStore = Depends(get_store),
+                     pending: PendingInviteStore = Depends(get_pending_invites)) -> dict:
+    """The tenant's users (Accepted) plus outstanding invites (Pending). Read-open to any
+    authenticated member of the tenant."""
+    users = [_user_dict(u) for u in await store.list_by_tenant(tenant)]
+    users.sort(key=lambda u: u["email"])
+    invites = [{"email": i.email, "role": i.role.value,
+                "role_label": ROLE_LABELS.get(i.role, i.role.value),
+                "status": "pending", "invited_at": i.invited_at}
+               for i in pending.list(tenant)]
+    return {"users": users, "pending": invites}
+
+
+@router.post("/users/invite")
+async def invite_user(body: InviteBody, tenant: str = Depends(authed_tenant), _r: dict = _admin,
+                      store: UserStore = Depends(get_store),
+                      pending: PendingInviteStore = Depends(get_pending_invites)) -> dict:
+    """Invite someone into the tenant. They land in Pending until they accept and set a password
+    (via the existing team-invite flow). owner/admin only."""
+    _assert_assignable(body.role)
+    email = body.email.strip().lower()
+    existing = await store.get_by_email(email)
+    if existing is not None and existing.tenant == tenant:
+        raise HTTPException(status_code=409, detail="a user with that email already exists")
+    invite = pending.add(tenant, email, body.role)
+    return {"email": invite.email, "role": invite.role.value,
+            "role_label": ROLE_LABELS.get(invite.role, invite.role.value),
+            "status": "pending", "invited_at": invite.invited_at}
+
+
+@router.put("/users/{user_id}/role")
+async def update_role(user_id: str, body: RoleBody, tenant: str = Depends(authed_tenant),
+                      _r: dict = _admin, store: UserStore = Depends(get_store)) -> dict:
+    """Change a member's role. owner/admin only. The account owner's role is protected and the
+    owner role is never assignable (so the last owner can't be demoted away)."""
+    _assert_assignable(body.role)
+    user = await _get_tenant_user(user_id, tenant, store)
+    if user.role is Role.owner:
+        raise HTTPException(status_code=400, detail="cannot change the owner's role")
+    await store.set_role(user_id, body.role)
+    updated = await store.get_by_id(user_id)
+    return _user_dict(updated) if updated else _user_dict(user)
+
+
+@router.delete("/users/{user_id}")
+async def remove_user(user_id: str, tenant: str = Depends(authed_tenant), _r: dict = _admin,
+                      store: UserStore = Depends(get_store)) -> dict:
+    """Remove a member from the tenant. owner/admin only. The account owner can never be removed
+    (protects the last owner / sole-owner-removing-themselves)."""
+    user = await _get_tenant_user(user_id, tenant, store)
+    if user.role is Role.owner:
+        raise HTTPException(status_code=400, detail="cannot remove the owner")
+    await store.delete(user_id)
+    return {"removed": user_id}
+
+
+@router.delete("/users/pending/{email}")
+async def cancel_invite(email: str, tenant: str = Depends(authed_tenant), _r: dict = _admin,
+                        pending: PendingInviteStore = Depends(get_pending_invites)) -> dict:
+    """Cancel a still-pending invite. owner/admin only."""
+    if not pending.remove(tenant, email):
+        raise HTTPException(status_code=404, detail="invite not found")
+    return {"removed": email.lower()}

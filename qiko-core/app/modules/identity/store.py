@@ -29,6 +29,8 @@ class UserStore(Protocol):
     async def set_sid(self, user_id: str, sid: str | None) -> None: ...
     async def enable_twofa(self, user_id: str, secret: str) -> None: ...
     async def set_password(self, user_id: str, password_hash: str) -> None: ...
+    async def set_role(self, user_id: str, role: Role) -> None: ...
+    async def delete(self, user_id: str) -> None: ...
 
 
 @dataclass
@@ -67,6 +69,14 @@ class InMemoryUserStore:
         user = self._by_id.get(user_id)
         if user:
             user.password_hash = password_hash
+
+    async def set_role(self, user_id: str, role: Role) -> None:
+        user = self._by_id.get(user_id)
+        if user:
+            user.role = role
+
+    async def delete(self, user_id: str) -> None:
+        self._by_id.pop(user_id, None)
 
 
 def seeded_store() -> InMemoryUserStore:

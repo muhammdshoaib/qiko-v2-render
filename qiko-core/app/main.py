@@ -86,6 +86,8 @@ from app.modules.health.router import router as health_router
 from app.modules.identity.admin_org_router import router as admin_org_router
 from app.modules.identity.onboarding_router import router as onboarding_router
 from app.modules.identity.router import router as identity_router
+from app.modules.identity.team_access import PendingInviteStore
+from app.modules.identity.users_router import router as identity_users_router
 from app.modules.identity.twofa_router import router as twofa_router
 from app.modules.knowledge.router import router as knowledge_router
 from app.modules.knowledge.service import KnowledgeService
@@ -272,6 +274,7 @@ def create_app() -> FastAPI:
     app.state.payment_links = PaymentLinkService(gateway=stripe_gateway, email=get_email_sender())
     app.state.admin_org = AdminOrg()
     app.state.otp_store = OtpStore()
+    app.state.pending_invites = PendingInviteStore()
     app.state.channel_sessions = ChannelSessionStore()
     app.state.slack_oauth = SlackOAuth(InstallationStore())
     app.state.slack_links = WorkspaceLinkStore()
@@ -285,10 +288,10 @@ def create_app() -> FastAPI:
     # Every request is tenant-scoped.
     app.include_router(health_router)
     app.include_router(health_router, prefix="/api/v1", dependencies=[Depends(tenant_dependency)])
-    for r in (identity_router, knowledge_router, agents_router, rfp_router, assignments_router, admin_router,
-              chat_router, teams_router, leads_router, billing_router, channels_router, excel_router,
-              voice_router, signal_router, public_chat_router, sources_router, twofa_router,
-              onboarding_router, admin_org_router, batch_router, marketing_router, crm_router,
+    for r in (identity_router, identity_users_router, knowledge_router, agents_router, rfp_router,
+              assignments_router, admin_router, chat_router, teams_router, leads_router, billing_router,
+              channels_router, excel_router, voice_router, signal_router, public_chat_router, sources_router,
+              twofa_router, onboarding_router, admin_org_router, batch_router, marketing_router, crm_router,
               sales_intelligence_router, finance_router, notifications_router):
         app.include_router(r, prefix="/api/v1")
     return app

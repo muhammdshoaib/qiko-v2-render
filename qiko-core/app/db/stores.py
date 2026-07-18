@@ -125,6 +125,18 @@ class SqlUserStore:
             if row:
                 row.password_hash = password_hash
 
+    async def set_role(self, user_id: str, role: Role) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(UserRow, user_id)
+            if row:
+                row.role = role.value
+
+    async def delete(self, user_id: str) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(UserRow, user_id)
+            if row:
+                await s.delete(row)
+
 
 @dataclass
 class SqlVerifiedStore:

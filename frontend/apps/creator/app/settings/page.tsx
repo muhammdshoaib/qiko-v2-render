@@ -1,11 +1,22 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, CreditCard, KeyRound, Lock, Settings2, User, UserPlus, Users } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowRight, CreditCard, KeyRound, Lock, Search, Settings2, Trash2, User, UserPlus, Users } from "lucide-react";
 import { Badge, Button, Input, Label, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
-import { addTeamMember, createTeam, me, type Team } from "@/lib/api";
+import {
+  ASSIGNABLE_ROLES,
+  ROLE_LABELS,
+  cancelInvite,
+  inviteUser,
+  listTenantUsers,
+  me,
+  removeUser,
+  updateUserRole,
+  type TenantRole,
+  type TenantUser,
+} from "@/lib/api";
 
 const SETTINGS_TABS = [
   { id: "general", label: "General", icon: Settings2 },
@@ -103,69 +114,213 @@ export default function SettingsPage() {
   );
 }
 
-function TeamPanel() {
-  const [team, setTeam] = useState<Team | null>(null);
-  const [owner, setOwner] = useState("");
-  const [memberId, setMemberId] = useState("");
-  const [role, setRole] = useState("editor");
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const ROLES = ["viewer", "editor", "admin"];
+const SELECT_CLS =
+  "h-9 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-slate-200 transition-colors " +
+  "focus-visible:border-cyan-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 " +
+  "disabled:cursor-not-allowed disabled:opacity-50 [&>option]:bg-[#0b0e16] [&>option]:text-slate-200";
 
-  async function create() {
-    setBusy(true); setError(null);
-    try { setTeam(await createTeam(owner)); } finally { setBusy(false); }
-  }
-  async function add() {
-    setBusy(true); setError(null);
-    try { setTeam(await addTeamMember(team!.team_id, memberId, role)); setMemberId(""); }
-    catch { setError("Could not add member."); } finally { setBusy(false); }
-  }
+function roleBadgeVariant(role: TenantRole): "default" | "success" | "muted" {
+  if (role === "owner" || role === "admin") return "default";
+  if (role === "editor") return "success";
+  return "muted";
+}
+
+function TeamPanel() {
+  const qc = useQueryClient();
+  const account = useQuery({ queryKey: ["me"], queryFn: me });
+  const canManage = account.data?.role === "owner" || account.data?.role === "admin";
+
+  const teamQuery = useQuery({ queryKey: ["tenant-users"], queryFn: listTenantUsers });
+  const users = useMemo(() => teamQuery.data?.users ?? [], [teamQuery.data]);
+  const pending = useMemo(() => teamQuery.data?.pending ?? [], [teamQuery.data]);
+
+  const [subTab, setSubTab] = useState<"accepted" | "pending">("accepted");
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"all" | TenantRole>("all");
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState<Exclude<TenantRole, "owner">>("viewer");
+  const [error, setError] = useState<string | null>(null);
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["tenant-users"] });
+
+  const inviteMut = useMutation({
+    mutationFn: () => inviteUser(inviteEmail.trim(), inviteRole),
+    onSuccess: () => { setInviteEmail(""); setInviteRole("viewer"); setShowInvite(false); setError(null); setSubTab("pending"); invalidate(); },
+    onError: () => setError("Could not send the invite. Check the email and try again."),
+  });
+  const roleMut = useMutation({
+    mutationFn: (v: { userId: string; role: Exclude<TenantRole, "owner"> }) => updateUserRole(v.userId, v.role),
+    onSuccess: () => { setError(null); invalidate(); },
+    onError: () => setError("Could not update the role."),
+  });
+  const removeMut = useMutation({
+    mutationFn: (userId: string) => removeUser(userId),
+    onSuccess: () => { setError(null); invalidate(); },
+    onError: () => setError("Could not remove the user."),
+  });
+  const cancelMut = useMutation({
+    mutationFn: (email: string) => cancelInvite(email),
+    onSuccess: () => { setError(null); invalidate(); },
+    onError: () => setError("Could not cancel the invite."),
+  });
+
+  const q = search.trim().toLowerCase();
+  const filteredUsers = users.filter((u) =>
+    (roleFilter === "all" || u.role === roleFilter) &&
+    (!q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)));
+  const filteredPending = pending.filter((p) =>
+    (roleFilter === "all" || p.role === roleFilter) &&
+    (!q || p.email.toLowerCase().includes(q)));
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="flex items-center gap-2 text-2xl font-semibold text-white">
-          <Users className="size-6 text-cyan-400" /> Team
-        </h2>
-        <p className="mt-1 text-slate-400">Invite teammates and manage roles.</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h2 className="flex items-center gap-2 text-2xl font-semibold text-white">
+            <Users className="size-6 text-cyan-400" /> Team Access
+          </h2>
+          <p className="mt-1 text-slate-400">Invite users and assign roles: User, Creator, or Admin.</p>
+        </div>
+        {canManage && (
+          <Button onClick={() => { setShowInvite((v) => !v); setError(null); }} aria-expanded={showInvite}
+            className="border-0 bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-lg shadow-cyan-900/30">
+            <UserPlus className="size-4" /> Add Team
+          </Button>
+        )}
       </div>
 
-      {!team ? (
-        <SettingsCard icon={UserPlus} iconColor="text-[#6366F1]" title="Create your team">
-          <div className="space-y-4">
-            <div className="space-y-1.5"><Label>Owner (your user id / email)</Label>
-              <Input placeholder="owner@company.com" value={owner} onChange={(e) => setOwner(e.target.value)} /></div>
-            <Button className="w-full" disabled={!owner || busy} onClick={create}>Create team</Button>
-          </div>
+      {showInvite && canManage && (
+        <SettingsCard icon={UserPlus} iconColor="text-[#6366F1]" title="Invite a user">
+          <form className="flex flex-col gap-3 sm:flex-row sm:items-end"
+            onSubmit={(e) => { e.preventDefault(); if (inviteEmail.trim()) inviteMut.mutate(); }}>
+            <div className="flex-1 space-y-1.5">
+              <Label htmlFor="invite-email">Email</Label>
+              <Input id="invite-email" type="email" placeholder="teammate@company.com"
+                value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="invite-role">Role</Label>
+              <select id="invite-role" className={cn(SELECT_CLS, "w-full sm:w-40")}
+                value={inviteRole} onChange={(e) => setInviteRole(e.target.value as Exclude<TenantRole, "owner">)}>
+                {ASSIGNABLE_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+              </select>
+            </div>
+            <Button type="submit" disabled={!inviteEmail.trim() || inviteMut.isPending}>
+              <UserPlus className="size-4" /> Send invite
+            </Button>
+          </form>
         </SettingsCard>
-      ) : (
-        <>
-          <SettingsCard icon={Users} iconColor="text-emerald-400" title="Members">
-            <div className="space-y-2">
-              {Object.entries(team.members).map(([uid, r]) => (
-                <div key={uid} className="flex items-center justify-between rounded-md border border-border px-3 py-2">
-                  <span className="text-sm">{uid}</span>
-                  <Badge variant={r === "owner" ? "default" : "muted"}>{r}</Badge>
-                </div>
-              ))}
-            </div>
-          </SettingsCard>
-          <SettingsCard icon={UserPlus} iconColor="text-[#6366F1]" title="Invite a member">
-            <div className="space-y-4">
-              <div className="space-y-1.5"><Label>User id / email</Label>
-                <Input placeholder="teammate@company.com" value={memberId} onChange={(e) => setMemberId(e.target.value)} /></div>
-              <div className="space-y-1.5"><Label>Role</Label>
-                <select className="h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-slate-200 transition-colors focus-visible:border-cyan-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 [&>option]:bg-[#0b0e16] [&>option]:text-slate-200"
-                  value={role} onChange={(e) => setRole(e.target.value)}>
-                  {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
-                </select></div>
-              {error && <p className="text-sm text-destructive">{error}</p>}
-              <Button className="w-full" disabled={!memberId || busy} onClick={add}><UserPlus className="size-4" /> Add member</Button>
-            </div>
-          </SettingsCard>
-        </>
       )}
+
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+
+      <div className="inline-flex h-11 w-fit items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.015] p-1.5">
+        {([["accepted", "Accepted", users.length], ["pending", "Pending", pending.length]] as const).map(([id, label, count]) => (
+          <button key={id} onClick={() => setSubTab(id)} aria-current={subTab === id ? "page" : undefined}
+            className={cn("inline-flex h-full items-center justify-center rounded-xl border px-5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
+              subTab === id ? "border-cyan-500/30 bg-cyan-500/10 text-white" : "border-transparent text-slate-300 hover:text-white")}>
+            {label} ({count})
+          </button>
+        ))}
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+          <Input aria-label="Search by name or email" placeholder="Search by name or email"
+            value={search} onChange={(e) => setSearch(e.target.value)}
+            className="border-white/10 bg-white/[0.03] pl-9 text-slate-200" />
+        </div>
+        <select aria-label="Filter by role" className={cn(SELECT_CLS, "w-full sm:w-44")}
+          value={roleFilter} onChange={(e) => setRoleFilter(e.target.value as "all" | TenantRole)}>
+          <option value="all">All roles</option>
+          {(Object.keys(ROLE_LABELS) as TenantRole[]).map((r) => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+        </select>
+      </div>
+
+      <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.015]">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-white/[0.06] text-left text-xs uppercase tracking-wide text-slate-500">
+              <th scope="col" className="px-4 py-3 font-medium">Name</th>
+              <th scope="col" className="px-4 py-3 font-medium">Email</th>
+              <th scope="col" className="px-4 py-3 font-medium">Role</th>
+              <th scope="col" className="px-4 py-3 text-right font-medium">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {teamQuery.isLoading && (
+              <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">Loading team...</td></tr>
+            )}
+            {teamQuery.isError && (
+              <tr><td colSpan={4} className="px-4 py-8 text-center text-destructive">Could not load the team.</td></tr>
+            )}
+            {!teamQuery.isLoading && !teamQuery.isError && subTab === "accepted" && (
+              filteredUsers.length === 0 ? (
+                <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">No users match your filters.</td></tr>
+              ) : filteredUsers.map((u) => (
+                <AcceptedRow key={u.id} user={u} canManage={!!canManage}
+                  onRole={(role) => roleMut.mutate({ userId: u.id, role })}
+                  onRemove={() => { if (window.confirm(`Remove ${u.name} from the team?`)) removeMut.mutate(u.id); }}
+                  busy={roleMut.isPending || removeMut.isPending} />
+              ))
+            )}
+            {!teamQuery.isLoading && !teamQuery.isError && subTab === "pending" && (
+              filteredPending.length === 0 ? (
+                <tr><td colSpan={4} className="px-4 py-8 text-center text-slate-500">No pending invites.</td></tr>
+              ) : filteredPending.map((p) => (
+                <tr key={p.email} className="border-b border-white/[0.04] last:border-0">
+                  <td className="px-4 py-3 text-slate-400">Invited</td>
+                  <td className="px-4 py-3 text-white">{p.email}</td>
+                  <td className="px-4 py-3"><Badge variant={roleBadgeVariant(p.role)}>{p.role_label}</Badge></td>
+                  <td className="px-4 py-3 text-right">
+                    {canManage && (
+                      <button type="button" aria-label={`Cancel invite for ${p.email}`}
+                        onClick={() => cancelMut.mutate(p.email)} disabled={cancelMut.isPending}
+                        className="inline-flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60 disabled:opacity-50">
+                        <Trash2 className="size-4" />
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
+  );
+}
+
+function AcceptedRow({ user, canManage, onRole, onRemove, busy }: {
+  user: TenantUser; canManage: boolean;
+  onRole: (role: Exclude<TenantRole, "owner">) => void; onRemove: () => void; busy: boolean;
+}) {
+  const editable = canManage && !user.is_owner;
+  return (
+    <tr className="border-b border-white/[0.04] last:border-0">
+      <td className="px-4 py-3 font-medium text-white">{user.name}</td>
+      <td className="px-4 py-3 text-slate-300">{user.email}</td>
+      <td className="px-4 py-3">
+        {editable ? (
+          <select aria-label={`Change role for ${user.name}`} className={cn(SELECT_CLS, "w-36")}
+            value={user.role} disabled={busy}
+            onChange={(e) => onRole(e.target.value as Exclude<TenantRole, "owner">)}>
+            {ASSIGNABLE_ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}
+          </select>
+        ) : (
+          <Badge variant={roleBadgeVariant(user.role)}>{user.role_label}</Badge>
+        )}
+      </td>
+      <td className="px-4 py-3 text-right">
+        {canManage && !user.is_owner && (
+          <button type="button" aria-label={`Remove ${user.name}`} onClick={onRemove} disabled={busy}
+            className="inline-flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60 disabled:opacity-50">
+            <Trash2 className="size-4" />
+          </button>
+        )}
+      </td>
+    </tr>
   );
 }
