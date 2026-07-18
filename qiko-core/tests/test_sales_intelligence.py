@@ -58,6 +58,124 @@ def test_qualification_dimensions_present():
         assert key in dims
 
 
+# --- config-driven qualification (per-agent si_* config) ---
+_CATERING_OPP = {
+    "title": "Provision of school catering and canteen services", "category": "Catering",
+    "country": "Portugal", "buyer": "Ministry of Education", "estimated_value": 250000,
+}
+
+
+def _with_deadline(opp: dict) -> dict:
+    return {**opp, "deadline_at": datetime.now(timezone.utc) + timedelta(days=45)}
+
+
+def test_with_config_empty_or_missing_matches_idg_defaults():
+    base = QualificationService()
+    opp = _with_deadline({
+        "title": "Provision of static security guarding services", "category": "Security services",
+        "country": "United Arab Emirates", "buyer": "Ministry of Interior", "estimated_value": 500000,
+    })
+    assert base.with_config(None).qualify(opp) == base.qualify(opp)
+    assert base.with_config({}).qualify(opp) == base.qualify(opp)
+
+
+def test_default_keywords_still_no_bid_a_non_security_opportunity():
+    result = QualificationService().qualify(_with_deadline(_CATERING_OPP))
+    assert result["recommendation"] == "No Bid"
+    assert result["stage"] == "rejected"
+
+
+def test_custom_keywords_and_countries_change_score_and_recommendation():
+    scorer = QualificationService().with_config({
+        "si_service_keywords": ["catering", "canteen", "food", "kitchen"],
+        "si_target_countries": ["Portugal", "Spain"],
+    })
+    result = scorer.qualify(_with_deadline(_CATERING_OPP))
+    assert result["recommendation"] != "No Bid"
+    assert result["stage"] != "rejected"
+    assert result["qualification_dimensions"]["serviceMatch"] > 0
+    assert result["qualification_dimensions"]["geography"] == 100
+
+
+def test_custom_config_no_bids_an_out_of_scope_security_opportunity():
+    # An agent configured for catering should not bid on a pure security tender.
+    scorer = QualificationService().with_config({"si_service_keywords": ["catering", "canteen"]})
+    result = scorer.qualify(_with_deadline({
+        "title": "Static security guarding services", "category": "Security",
+        "country": "United Arab Emirates", "buyer": "MoI", "estimated_value": 500000,
+    }))
+    assert result["recommendation"] == "No Bid"
+
+
+def test_invalid_or_empty_config_values_fall_back_to_defaults():
+    base = QualificationService()
+    opp = _with_deadline({"title": "Security guarding services", "category": "Security",
+                          "country": "Kenya", "buyer": "Buyer", "estimated_value": 1000})
+    for bad in ({"si_service_keywords": []}, {"si_service_keywords": "security"},
+                {"si_service_keywords": [1, 2]}, {"si_target_countries": []},
+                {"si_target_countries": "Portugal"}):
+        assert base.with_config(bad).qualify(opp) == base.qualify(opp)
+
+
+def test_target_countries_from_config_accepts_names_and_dicts():
+    from_names = TargetCountries.from_config(["Portugal", "Spain"])
+    assert from_names.matches("Portugal") is True
+    assert from_names.matches("United Arab Emirates") is False
+    from_dicts = TargetCountries.from_config([{"code": "PT", "name": "Portugal", "aliases": ["portugal"]}])
+    assert from_dicts.matches("portugal") is True
+    # Empty / non-list falls back to the IDG default allowlist.
+    assert TargetCountries.from_config([]).matches("United Arab Emirates") is True
+    assert TargetCountries.from_config(None).matches("Kenya") is True
+
+
+class _StubAgent:
+    def __init__(self, config: dict) -> None:
+        self.config = config
+
+
+class _StubAgents:
+    """Minimal AgentService-shaped resolver for exercising the per-agent scan path."""
+    def __init__(self, config: dict) -> None:
+        self._config = config
+
+    async def get(self, tenant: str, agent_id: str):
+        return _StubAgent(self._config)
+
+
+async def test_scan_uses_per_agent_config_from_agents_resolver(monkeypatch):
+    agents = _StubAgents({"si_service_keywords": ["catering", "canteen"],
+                          "si_target_countries": ["Portugal"]})
+    svc = OpportunityService(agents=agents)
+    await svc.update_source_status("acme", "agent-1", "ted", "active")
+
+    def fake_search(filters=None):
+        return {"notices": [_with_deadline({**_CATERING_OPP, "external_id": "t1"})], "skipped": 0}
+
+    monkeypatch.setattr(svc.ted, "search", fake_search)
+    opp = (await svc.scan_ted("acme", "agent-1", {}))["opportunities"][0]
+    assert opp.recommendation != "No Bid"
+
+
+async def test_scan_without_agents_falls_back_to_idg_defaults(monkeypatch):
+    svc = OpportunityService()  # no agents resolver, no explicit config
+    await svc.update_source_status("acme", "agent-1", "ted", "active")
+
+    def fake_search(filters=None):
+        return {"notices": [_with_deadline({**_CATERING_OPP, "external_id": "t1"})], "skipped": 0}
+
+    monkeypatch.setattr(svc.ted, "search", fake_search)
+    opp = (await svc.scan_ted("acme", "agent-1", {}))["opportunities"][0]
+    assert opp.recommendation == "No Bid"
+
+
+async def test_create_manual_respects_explicit_agent_config():
+    mutation = OpportunityMutationService()
+    opp = await mutation.create_manual(
+        "acme", "agent-1", dict(_CATERING_OPP), run_qualification=True,
+        agent_config={"si_service_keywords": ["catering", "canteen"], "si_target_countries": ["Portugal"]})
+    assert opp.recommendation != "No Bid"
+
+
 # --- target countries / category matcher / ingest filter ---
 def test_target_countries_matches_alias_substring():
     tc = TargetCountries()

@@ -147,6 +147,49 @@ def test_analytics_empty_portfolio_is_safe():
     assert len(result["trends"]) == 4
 
 
+def _two_month_workbook() -> bytes:
+    """One property with income + expenses split across Feb and Mar 2024, so a month filter can be
+    shown to narrow the totals to a single month."""
+    wb = Workbook()
+    exp = wb.active
+    exp.title = "Exp YTD"
+    exp.append(_EXPENSE_HEADER)
+    exp.append(["A001", "12 High Street", "A001/1", "Flat 1, 12 High Street", "Repairs",
+                "Acme Maintenance", 100.0, 20.0, 120.0, "05/02/2024"])  # Feb
+    exp.append(["A001", "12 High Street", "A001/1", "Flat 1, 12 High Street", "Repairs",
+                "Acme Maintenance", 200.0, 40.0, 240.0, "10/03/2024"])  # Mar
+
+    inc = wb.create_sheet("Income Receivable YTD")
+    inc.append(_INCOME_HEADER)
+    inc.append(["A001", "A001/1", "Flat 1, 12 High Street", 1000.0, 0.0, "05/02/2024"])  # Feb
+    inc.append(["A001", "A001/1", "Flat 1, 12 High Street", 500.0, 0.0, "10/03/2024"])  # Mar
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+async def test_service_analytics_month_filter_narrows_to_that_month():
+    svc = FinanceService(provider=StubProvider(canned="ok"))
+    await svc.upload("acme", "agent-m", _two_month_workbook(), filename="p.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    full = await svc.analytics("acme", "agent-m")
+    assert full["summary"]["totalIncome"] == 1500.0
+    assert full["summary"]["totalExpenses"] == 360.0
+
+    march = await svc.analytics("acme", "agent-m", month="2024-03")
+    assert march["summary"]["totalIncome"] == 500.0
+    assert march["summary"]["totalExpenses"] == 240.0
+    # The month is expanded to that month's inclusive ISO range.
+    assert march["dateRange"]["from"] == "2024-03-01"
+    assert march["dateRange"]["to"] == "2024-03-31"
+
+    # An explicit from/to still wins over a supplied month.
+    feb = await svc.analytics("acme", "agent-m", frm="2024-02-01", to="2024-02-29", month="2024-03")
+    assert feb["summary"]["totalIncome"] == 1000.0
+
+
 # --- service (with injected stub LLM) --------------------------------------------------------
 
 async def test_service_upload_parse_store_and_analytics():
@@ -231,6 +274,21 @@ def test_finance_upload_and_analytics_via_api(client):
 
     files = client.get("/api/v1/finance/agent-fin-1/files", cookies=cookies)
     assert files.json()["totalFiles"] == 1
+
+
+def test_finance_analytics_month_filter_via_api(client):
+    cookies = auth_cookies(tenant="acme")
+    client.post("/api/v1/finance/agent-fin-month/upload", cookies=cookies,
+                files={"file": ("p.xlsx", _two_month_workbook(),
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+
+    full = client.get("/api/v1/finance/agent-fin-month/analytics", cookies=cookies).json()
+    assert full["summary"]["totalIncome"] == 1500.0
+
+    feb = client.get("/api/v1/finance/agent-fin-month/analytics?month=2024-02", cookies=cookies).json()
+    assert feb["summary"]["totalIncome"] == 1000.0
+    assert feb["summary"]["totalExpenses"] == 120.0
+    assert feb["dateRange"]["from"] == "2024-02-01" and feb["dateRange"]["to"] == "2024-02-29"
 
 
 def test_finance_upload_requires_editor_role(client):

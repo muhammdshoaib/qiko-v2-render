@@ -81,7 +81,7 @@ export default function SalesIntelligencePipelinePage() {
           { value: String(metrics.total), label: "Total in Pipeline", caption: "all stages", trend: "up" },
           { value: String(metrics.pushed), label: "Pushed to Salesforce", caption: "successfully synced", trend: "up" },
           { value: String(metrics.upcoming), label: "Upcoming Deadlines", caption: "within 14 days", trend: metrics.upcoming > 0 ? "down" : "neutral" },
-          { value: formatDate(metrics.lastScan, true), label: "Last Portal Scan", caption: metrics.sources.join(" \u00b7 ") || "\u2014", trend: "up" },
+          { value: formatDate(metrics.lastScan, true), label: "Last Portal Scan", caption: metrics.sources.join(" \u00b7 ") || "-", trend: "up" },
         ]} />
 
         <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.02] p-0.5">
@@ -158,14 +158,14 @@ export default function SalesIntelligencePipelinePage() {
                     className="cursor-pointer border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400/60">
                     <td className="max-w-[320px] truncate px-4 py-3 text-white">{o.title}</td>
                     <td className="px-4 py-3 text-slate-400">{sourceLabel(o.sourceKey)}</td>
-                    <td className="px-4 py-3 text-slate-400">{o.buyer ?? "\u2014"}</td>
+                    <td className="px-4 py-3 text-slate-400">{o.buyer ?? "-"}</td>
                     <td className="px-4 py-3 font-medium text-emerald-400">{formatMoney(o.estimatedValue, o.currency)}</td>
                     <td className="px-4 py-3">
                       {o.qualificationScore != null ? (
                         <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${scoreBadgeClass(o.qualificationScore)}`}>
                           {o.qualificationScore}/100
                         </span>
-                      ) : <span className="text-slate-600">{"\u2014"}</span>}
+                      ) : <span className="text-slate-600">{"-"}</span>}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase ${stageBadgeClass(o.stage)}`}>
@@ -213,11 +213,11 @@ function OpportunityCard({ opp, onDragStart, onClick, onMove, moving }: {
             </span>
           )}
         </div>
-        <p className="truncate pl-5 text-[11px] text-slate-400">{opp.buyer ?? "\u2014"}</p>
+        <p className="truncate pl-5 text-[11px] text-slate-400">{opp.buyer ?? "-"}</p>
         <div className="flex items-center justify-between gap-2 pl-5">
           {opp.estimatedValue != null
             ? <span className="text-[12px] font-semibold text-emerald-400">{formatMoney(opp.estimatedValue, opp.currency)}</span>
-            : <span className="text-[12px] text-slate-600">{"\u2014"}</span>}
+            : <span className="text-[12px] text-slate-600">{"-"}</span>}
           {opp.deadlineAt && (
             <span className={cn("flex items-center gap-1 text-[11px] font-medium", deadlineUrgencyClass(opp.deadlineAt))}>
               <CalendarClock className="size-3" /> {deadlineLabel(opp.deadlineAt)}

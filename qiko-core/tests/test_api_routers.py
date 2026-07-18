@@ -124,6 +124,19 @@ def test_batch_export_returns_xlsx(client):
     assert len(r.content) > 0
 
 
+def test_batch_answer_requires_editor_role(client):
+    # A read-only viewer must not be able to run bulk LLM generation (up to 200 calls per request).
+    c = auth_cookies("batchviewer", "viewer")
+    r = client.post("/api/v1/agents/batch-answer", json={"questions": ["Does IDG hold ISO 9001?"]}, cookies=c)
+    assert r.status_code == 403
+
+
+def test_batch_export_requires_editor_role(client):
+    c = auth_cookies("batchviewer2", "viewer")
+    r = client.post("/api/v1/agents/batch-export", json={"questions": ["Any question?"]}, cookies=c)
+    assert r.status_code == 403
+
+
 def test_agents_write_requires_editor_role(client):
     # a viewer cannot create agents
     r = client.post("/api/v1/agents", json={"name": "x"}, cookies=auth_cookies("t", "viewer"))

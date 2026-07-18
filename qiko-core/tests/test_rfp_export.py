@@ -5,21 +5,43 @@ from tests.helpers import auth_cookies
 ISO = "IDG holds a current ISO 9001 certification valid through 2027, verified annually."
 
 
-async def _stub_assemble_worker(**_kw):
-    """Fake worker so the background job's drafts stage runs offline (stub -> no persist). These
-    tests exercise the /answers + export paths (which build their own worker), not the job drafts."""
-    from app.modules.agentcore.models import AgentResult, Critique, Decision
-
-    class _W:
-        async def answer(self, rid, text, **__):
-            return AgentResult(requirement_id=rid, answer="", critique=Critique(grounding=0.0),
-                               decision=Decision.human_review, citations=[], stub=True)
-    return _W()
+DRAFT_ANSWER = "IDG holds a current ISO 9001 certification, drafted and reviewed in the cockpit."
 
 
-def _setup_pack_with_requirements(client, monkeypatch, tenant: str):
+def _stub_worker():
+    """A worker builder whose answer() reports a StubProvider fallback (stub=True), so any draft
+    path fails closed. Shaped to stand in for BOTH generation.assemble_worker (kwargs) and
+    router.build_tenant_worker (positional request/tenant)."""
+    async def _build(*_a, **_kw):
+        from app.modules.agentcore.models import AgentResult, Critique, Decision
+
+        class _W:
+            async def answer(self, rid, text, **__):
+                return AgentResult(requirement_id=rid, answer="", critique=Critique(grounding=0.0),
+                                   decision=Decision.human_review, citations=[], stub=True)
+        return _W()
+    return _build
+
+
+def _drafting_worker(answer: str = DRAFT_ANSWER):
+    """A worker whose answer() returns a real (non-stub) grounded draft, so the background /extract
+    job persists it onto the tree question -- this is the reviewed cockpit answer the /answers +
+    export read paths now build from."""
+    async def _build(*_a, **_kw):
+        from app.modules.agentcore.models import AgentResult, Critique, Decision
+
+        class _W:
+            async def answer(self, rid, text, **__):
+                return AgentResult(requirement_id=rid, answer=answer, critique=Critique(grounding=0.9),
+                                   decision=Decision.auto_accept, citations=["doc:iso"], stub=False)
+        return _W()
+    return _build
+
+
+def _setup_pack_with_requirements(client, monkeypatch, tenant: str, *, answer: str = DRAFT_ANSWER):
     """Create a pack, ingest KB, and drive the background /extract job (eager) to populate its flat
-    requirements + tree from a canned extraction, offline. Returns (cookies, pack)."""
+    requirements + tree from a canned extraction AND draft the KB question into the tree, offline.
+    Returns (cookies, pack). The /answers + exports then read the reviewed tree, no fresh LLM."""
     c = auth_cookies(tenant, "owner")
     client.post("/api/v1/knowledge/ingest", json={"doc_id": "iso", "text": ISO}, cookies=c)
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender"}, cookies=c).json()
@@ -39,7 +61,7 @@ def _setup_pack_with_requirements(client, monkeypatch, tenant: str):
         return P()
 
     monkeypatch.setattr("app.modules.rfp.generation.get_provider", fake_get_provider)
-    monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _stub_assemble_worker)
+    monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _drafting_worker(answer))
     client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
                 files={"file": ("t.txt", io.BytesIO(b"tender text"), "text/plain")})
     return c, pack
@@ -90,50 +112,90 @@ def test_get_answers_json_for_cockpit(client, monkeypatch):
     answers = r.json()
     assert len(answers) == 2
     kb = next(a for a in answers if a["req_id"] == "A1")
-    assert kb["classification"] == "KB" and kb["answer"] and "confidence" in kb and "citations" in kb
+    # The KB answer is the reviewed cockpit draft on the tree, not a fresh read-path LLM call.
+    assert kb["classification"] == "KB" and kb["answer"] == DRAFT_ANSWER
+    assert kb["citations"] == ["doc:iso"] and "confidence" in kb
     manual = next(a for a in answers if a["req_id"] == "A2")
     assert manual["answer"] == "" and "team" in manual["note"].lower()
 
 
-def test_answers_are_cached_and_force_bypasses_cache(client, monkeypatch):
-    c = auth_cookies("cacheco1", "owner")
-    client.post("/api/v1/knowledge/ingest", json={"doc_id": "iso", "text": ISO}, cookies=c)
-    pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender"}, cookies=c).json()
-    payload = '[{"id": "A1", "title": "ISO Certification", "classification": "KB", "requirement": "Describe your ISO 9001 certification."}]'
-    calls = {"n": 0}
+def _fail_if_called_worker(*_a, **_kw):
+    raise AssertionError("the read path must NOT build a worker / call the generator")
 
-    def counting_provider(**_kwargs):
-        class P:
-            def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
-                if "TENDER DOCUMENT" in prompt and "REQUIREMENT" not in prompt:
-                    from app.modules.ai.gateway import LLMResponse
-                    return LLMResponse(text=payload)
-                calls["n"] += 1
-                from app.modules.ai.gateway import LLMResponse
-                return LLMResponse(text="cached answer text")
-        return P()
 
-    # Extraction (the background /extract job) reads its provider from the generation module.
-    monkeypatch.setattr("app.modules.rfp.generation.get_provider", counting_provider)
-    # Keep the job's drafts stage offline so it doesn't consume the answer-generation counter --
-    # this test measures the /answers cache, not the job's drafts.
-    monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _stub_assemble_worker)
-    # worker.answer() -> AgentCore -> Generator builds its own provider via a separately imported
-    # get_provider() reference -- patch that one too so the answer-generation call is also faked.
-    monkeypatch.setattr("app.modules.agentcore.generator.get_provider", counting_provider)
-    client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
-               files={"file": ("t.txt", io.BytesIO(b"tender text"), "text/plain")})
+def test_answers_read_path_uses_tree_and_never_calls_generator(client, monkeypatch):
+    # After FIX 1 the plain (non-force) /answers read is built entirely from the reviewed tree --
+    # it must never build a worker or fire a fresh LLM draft, no matter how many times it is read.
+    c, pack = _setup_pack_with_requirements(client, monkeypatch, "cacheco1")
+    monkeypatch.setattr("app.modules.rfp.router.build_tenant_worker", _fail_if_called_worker)
 
-    first = client.get(f"/api/v1/rfp/packs/{pack['id']}/answers", cookies=c).json()
-    calls_after_first = calls["n"]
-    assert calls_after_first > 0  # A1 is a KB item -- one real generation
+    first = client.get(f"/api/v1/rfp/packs/{pack['id']}/answers", cookies=c)
+    assert first.status_code == 200
+    second = client.get(f"/api/v1/rfp/packs/{pack['id']}/answers", cookies=c)
+    assert second.status_code == 200 and second.json() == first.json()
+    kb = next(a for a in first.json() if a["req_id"] == "A1")
+    assert kb["answer"] == DRAFT_ANSWER  # served straight from the tree
 
-    second = client.get(f"/api/v1/rfp/packs/{pack['id']}/answers", cookies=c).json()
-    assert calls["n"] == calls_after_first  # served from cache, no new LLM calls
-    assert second == first
 
-    client.get(f"/api/v1/rfp/packs/{pack['id']}/answers?force=true", cookies=c)
-    assert calls["n"] > calls_after_first  # force= bypasses the cache
+def test_answers_reflect_user_draft_then_locked_precedence(client, monkeypatch):
+    # Precedence on the read/export path: locked user_draft > user_draft (saved) > ai_answer.
+    c, pack = _setup_pack_with_requirements(client, monkeypatch, "precedenceco")
+    pid = pack["id"]
+
+    # Locate the A1 question in the tree.
+    sections = client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()
+    q = next(q for s in sections for q in s["questions"] if q["req_id"] == "A1")
+
+    # 1) ai_answer only -> the AI draft shows.
+    a = client.get(f"/api/v1/rfp/packs/{pid}/answers", cookies=c).json()
+    assert next(x for x in a if x["req_id"] == "A1")["answer"] == DRAFT_ANSWER
+
+    # 2) a saved (unlocked) user_draft overrides the ai_answer.
+    client.put(f"/api/v1/rfp/packs/{pid}/questions/{q['id']}/draft", cookies=c,
+               json={"user_draft": "Reviewer edited draft."})
+    a = client.get(f"/api/v1/rfp/packs/{pid}/answers", cookies=c).json()
+    row = next(x for x in a if x["req_id"] == "A1")
+    assert row["answer"] == "Reviewer edited draft." and row["note"] == ""
+
+    # 3) locking that user_draft keeps it as the source of truth and flags it human-approved.
+    client.post(f"/api/v1/rfp/packs/{pid}/questions/{q['id']}/lock", cookies=c)
+    a = client.get(f"/api/v1/rfp/packs/{pid}/answers", cookies=c).json()
+    row = next(x for x in a if x["req_id"] == "A1")
+    assert row["answer"] == "Reviewer edited draft." and "human-approved" in row["note"].lower()
+
+    # The clean submission .docx carries the reviewed (locked user_draft) text, not the AI draft.
+    from docx import Document
+    clean = client.get(f"/api/v1/rfp/packs/{pid}/export/docx-clean", cookies=c)
+    text = "\n".join(p.text for p in Document(io.BytesIO(clean.content)).paragraphs)
+    assert "Reviewer edited draft." in text and DRAFT_ANSWER not in text
+
+
+def test_force_regenerate_raises_503_on_stub(client, monkeypatch):
+    # The explicit editor-triggered force=true path may call the generator, but a StubProvider
+    # fallback must fail closed with 503 so echo text is never persisted or exported.
+    c, pack = _setup_pack_with_requirements(client, monkeypatch, "stubforce")
+    pid = pack["id"]
+    # Undrafted-worker style: worker.answer() reports stub=True on the regenerate path.
+    monkeypatch.setattr("app.modules.rfp.router.build_tenant_worker", _stub_worker())
+
+    r = client.get(f"/api/v1/rfp/packs/{pid}/answers", params={"force": "true"}, cookies=c)
+    assert r.status_code == 503
+    # The pre-existing reviewed draft on the tree is untouched (nothing overwritten by the stub).
+    sections = client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()
+    q = next(q for s in sections for q in s["questions"] if q["req_id"] == "A1")
+    assert q["ai_answer"] == DRAFT_ANSWER
+
+
+def test_force_regenerate_redrafts_the_tree(client, monkeypatch):
+    # A working provider on force=true re-drafts the tree questions, and the read reflects it.
+    c, pack = _setup_pack_with_requirements(client, monkeypatch, "regenco")
+    pid = pack["id"]
+    monkeypatch.setattr("app.modules.rfp.router.build_tenant_worker",
+                        _drafting_worker("Regenerated grounded answer."))
+
+    r = client.get(f"/api/v1/rfp/packs/{pid}/answers", params={"force": "true"}, cookies=c)
+    assert r.status_code == 200
+    assert next(x for x in r.json() if x["req_id"] == "A1")["answer"] == "Regenerated grounded answer."
 
 
 def test_feedback_approve_and_reject(client):

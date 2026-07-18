@@ -61,13 +61,18 @@ def _is_source_due(source: IngestionSource, *, interval_minutes: int, now: datet
 
 
 async def scan_due_sources(service: OpportunityService, *, now: datetime | None = None,
-                           interval_minutes: int | None = None) -> dict:
+                           interval_minutes: int | None = None, agents=None) -> dict:
     """Scan every ENABLED ingestion source (across all tenants/agents) whose cadence is due.
 
     Reuses `OpportunityService.scan_ungm`/`scan_ted`, so the existing notification triggers fire
-    (new awaiting_review -> review-required; failure -> scan-failed). Returns a structured summary."""
+    (new awaiting_review -> review-required; failure -> scan-failed). Returns a structured summary.
+
+    `agents` (an AgentService/AgentStore with async get(tenant, agent_id)) is optional: when given
+    (or set on `service.agents`), each source is scored with its own agent's si_* config; otherwise
+    the scorer falls back to the IDG defaults, preserving existing behaviour."""
     now = now or _now()
     interval_minutes = interval_minutes if interval_minutes is not None else service.scan_interval_minutes
+    agents = agents if agents is not None else getattr(service, "agents", None)
 
     sources = await service.sources.list_active()  # tenant=None -> all tenants
     scanned = skipped = failed = 0
@@ -79,7 +84,12 @@ async def scan_due_sources(service: OpportunityService, *, now: datetime | None 
             continue
         scan = getattr(service, method_name)
         try:
-            await scan(source.tenant, source.agent_id, {})  # empty filters == the manual "scan now"
+            agent_config = None
+            if agents is not None:
+                agent = await agents.get(source.tenant, source.agent_id)
+                agent_config = getattr(agent, "config", None) if agent is not None else None
+            # empty filters == the manual "scan now"
+            await scan(source.tenant, source.agent_id, {}, agent_config=agent_config)
             scanned += 1
         except SalesIntelligenceError as exc:
             # Includes SourceInactiveError (source disabled mid-sweep) and re-raised scan failures --

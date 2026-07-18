@@ -1,7 +1,7 @@
 import type { OpportunityStage, Recommendation } from "@/lib/api";
 
 export function formatMoney(value: number | null | undefined, currency?: string | null): string {
-  if (value === null || value === undefined) return "\u2014";
+  if (value === null || value === undefined) return "-";
   try {
     return new Intl.NumberFormat("en-GB", { style: "currency", currency: currency || "GBP", maximumFractionDigits: 0 }).format(value);
   } catch {
@@ -10,7 +10,7 @@ export function formatMoney(value: number | null | undefined, currency?: string 
 }
 
 export function formatCompact(value: number | null | undefined, currency?: string | null): string {
-  if (value === null || value === undefined || value === 0) return "\u2014";
+  if (value === null || value === undefined || value === 0) return "-";
   try {
     return new Intl.NumberFormat("en-GB", { style: "currency", currency: currency || "GBP", notation: "compact", maximumFractionDigits: 1 }).format(value);
   } catch {
@@ -19,9 +19,9 @@ export function formatCompact(value: number | null | undefined, currency?: strin
 }
 
 export function formatDate(value: string | null | undefined, withTime = false): string {
-  if (!value) return "\u2014";
+  if (!value) return "-";
   const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "\u2014";
+  if (Number.isNaN(d.getTime())) return "-";
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) +
     (withTime ? `, ${d.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit" })}` : "");
 }
@@ -80,12 +80,12 @@ export function scoreBadgeClass(score: number | null | undefined): string {
 // Source keys are portal acronyms (TED = Tenders Electronic Daily, UNGM = UN Global Marketplace),
 // so they read best fully upper-cased rather than title-cased.
 export function sourceLabel(sourceKey: string | null | undefined): string {
-  return (sourceKey || "").toUpperCase() || "\u2014";
+  return (sourceKey || "").toUpperCase() || "-";
 }
 
 // Turn a raw enum/slug ("push_failed", "awaiting_review") into human Title Case for display.
 export function humanize(value: string | null | undefined): string {
-  if (!value) return "\u2014";
+  if (!value) return "-";
   return value
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
@@ -104,7 +104,7 @@ export function daysUntil(value: string | null | undefined): number | null {
 // Relative deadline copy ("in 5 days", "Today", "3 days ago") for the deadline queue.
 export function deadlineLabel(value: string | null | undefined): string {
   const days = daysUntil(value);
-  if (days === null) return "\u2014";
+  if (days === null) return "-";
   if (days === 0) return "Due today";
   if (days === 1) return "Due tomorrow";
   if (days > 1) return `In ${days} days`;

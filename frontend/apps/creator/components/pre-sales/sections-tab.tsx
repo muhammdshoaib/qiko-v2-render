@@ -489,7 +489,7 @@ function SectionRow({ packId, section, hasKids, expanded, onToggle, onOpen, revi
               ? <ChevronDown aria-hidden className="size-3.5 text-slate-500" />
               : <ChevronRight aria-hidden className="size-3.5 text-slate-500" />)
             : <span aria-hidden className="inline-block size-3.5" />}
-          {section.code || "\u2014"}
+          {section.code || "-"}
         </span>
       </td>
       <td className="px-4 py-3">
@@ -512,7 +512,7 @@ function SectionRow({ packId, section, hasKids, expanded, onToggle, onOpen, revi
           <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
             <AlertTriangle className="size-3" /> KB gap
           </span>
-        ) : <span className="text-slate-600">{"\u2014"}</span>}
+        ) : <span className="text-slate-600">{"-"}</span>}
       </td>
       <td className="px-4 py-3">
         <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", sectionStatusBadgeClass(section.status))}>
@@ -547,7 +547,7 @@ function SubSectionCard({ section, onOpen }: { section: PackSectionNode; onOpen:
   return (
     <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
       <span className="shrink-0 rounded-md border border-indigo-500/30 bg-indigo-500/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-indigo-300">
-        {section.code || "\u2014"}
+        {section.code || "-"}
       </span>
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium text-white">{section.name}</p>
@@ -583,7 +583,7 @@ function MetricBar({ label, pct }: { label: string; pct: number | null }) {
     <span className="inline-flex items-center gap-1.5">
       <span className="text-slate-500">{label}</span>
       {pct == null ? (
-        <span className="text-slate-600">{"\u2014"}</span>
+        <span className="text-slate-600">{"-"}</span>
       ) : (
         <>
           <span className="h-1.5 w-14 overflow-hidden rounded-full bg-white/10">
@@ -622,7 +622,7 @@ function ReviewerCell({ packId, section, editable, assignees }: {
           <Users className="size-3 text-slate-400" /> {displayName}
         </span>
       )
-      : <span className="text-slate-600">{"\u2014"}</span>;
+      : <span className="text-slate-600">{"-"}</span>;
   }
 
   // Editable (Assigned step).
@@ -735,7 +735,7 @@ function SectionEditor({ packId, section, canPrev, canNext, onPrev, onNext, onBa
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <span className="font-mono text-[12px] text-slate-500">{section.code || "\u2014"}</span>
+              <span className="font-mono text-[12px] text-slate-500">{section.code || "-"}</span>
               <span className={cn("rounded-full border px-2 py-0.5 text-[10px] font-semibold", sectionStatusBadgeClass(section.status))}>
                 {sectionStatusLabel(section.status)}
               </span>

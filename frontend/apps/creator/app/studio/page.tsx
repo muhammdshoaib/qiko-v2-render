@@ -102,7 +102,7 @@ export default function StudioPage() {
 
           {!agentsQ.isLoading && deployed.length === 0 && (
             <div className="py-16 text-center">
-              <p className="mb-3 text-sm text-slate-400">No deployed workers yet — mark a worker ready in Creator first.</p>
+              <p className="mb-3 text-sm text-slate-400">No deployed workers yet - mark a worker ready in Creator first.</p>
               <Button variant="outline" onClick={() => router.push("/workers")}>Go to Workers</Button>
             </div>
           )}
@@ -134,10 +134,10 @@ export default function StudioPage() {
                         ? Math.round(riskProps.reduce((sum, p) => sum + Number(p.riskScore ?? 0), 0) / riskProps.length)
                         : 0;
                       metrics = [
-                        { label: "Properties", value: propertyCount > 0 ? String(propertyCount) : "—" },
-                        { label: "Total Income", value: s.totalIncome > 0 ? formatCompactCurrency(s.totalIncome) : "—" },
-                        { label: "Net Profit", value: s.netProfit ? formatCompactCurrency(s.netProfit) : "—" },
-                        { label: "Avg Risk", value: avgRisk > 0 ? `${avgRisk}/100` : "—" },
+                        { label: "Properties", value: propertyCount > 0 ? String(propertyCount) : "-" },
+                        { label: "Total Income", value: s.totalIncome > 0 ? formatCompactCurrency(s.totalIncome) : "-" },
+                        { label: "Net Profit", value: s.netProfit ? formatCompactCurrency(s.netProfit) : "-" },
+                        { label: "Avg Risk", value: avgRisk > 0 ? `${avgRisk}/100` : "-" },
                       ];
                       useCaseCount = 3;
                       href = `/studio/${a.id}/finance`;
@@ -153,7 +153,7 @@ export default function StudioPage() {
                         { label: "New Found", value: String(newFound) },
                         { label: "Qualified", value: String(qualified) },
                         { label: "Awaiting Review", value: String(awaitingReview) },
-                        { label: "Pipeline Value", value: pipelineValue > 0 ? formatCompactCurrency(pipelineValue) : "—" },
+                        { label: "Pipeline Value", value: pipelineValue > 0 ? formatCompactCurrency(pipelineValue) : "-" },
                       ];
                       useCaseCount = 5;
                       href = `/studio/${a.id}/sales-intelligence`;
@@ -176,9 +176,9 @@ export default function StudioPage() {
                       const nextDeadline = packs.map((p) => p.deadline).filter(Boolean).sort()[0] ?? null;
                       metrics = [
                         { label: "Active Bids", value: String(activeBids) },
-                        { label: "Avg Readiness", value: activeBids > 0 ? `${avgReadiness}%` : "—" },
+                        { label: "Avg Readiness", value: activeBids > 0 ? `${avgReadiness}%` : "-" },
                         { label: "Data volume", value: `${dataVolume} chunks` },
-                        { label: "Next Bid", value: nextDeadline ? formatShortDate(nextDeadline) : "—" },
+                        { label: "Next Bid", value: nextDeadline ? formatShortDate(nextDeadline) : "-" },
                       ];
                       useCaseCount = 6;
                       href = `/studio/${a.id}/pre-sales`;

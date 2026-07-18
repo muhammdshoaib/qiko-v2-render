@@ -113,6 +113,12 @@ class Settings(BaseSettings):
     access_token_ttl_seconds: int = 900
     refresh_token_ttl_seconds: int = 1209600
 
+    # Dedicated key for encryption-at-rest (channel tokens, Vapi/Salesforce secrets). Kept SEPARATE
+    # from session_secret so the two rotate independently -- rotating SESSION_SECRET must never brick
+    # already-encrypted secrets. Empty -> legacy behaviour (key derived from session_secret); see
+    # app.core.crypto, which falls back to the legacy key for decryption so old ciphertext survives.
+    encryption_key: str = ""
+
     @property
     def is_production(self) -> bool:
         return self.environment is Environment.live
@@ -123,12 +129,35 @@ class Settings(BaseSettings):
         return self.environment is Environment.dev
 
     def assert_secrets_set(self) -> None:
-        """Fail closed: a non-dev deploy must refuse to start on the forgeable default
-        session_secret, so production can never silently sign/verify tokens with a known key."""
-        if self.environment is not Environment.dev and self.session_secret == DEFAULT_SESSION_SECRET:
+        """Fail closed before serving traffic in a non-dev environment.
+
+        1. Refuse to start on the forgeable default session_secret, so production can never
+           silently sign/verify tokens with a known key.
+        2. Refuse to start on the in-memory / inline defaults (use_db_stores=False,
+           task_backend="eager"). Those are dev/test conveniences: on a live deploy they would
+           silently drop all data on every restart and run the 30-min generation inline (hitting
+           the load-balancer timeout). A misconfigured deploy that forgets USE_DB_STORES=true /
+           TASK_BACKEND=arq must crash loudly, not degrade silently.
+
+        dev is unaffected on all counts.
+        """
+        if self.environment is Environment.dev:
+            return
+        env = self.environment.value
+        if self.session_secret == DEFAULT_SESSION_SECRET:
             raise RuntimeError(
                 "session_secret is still the insecure default; set SESSION_SECRET before starting "
-                f"in a non-dev environment (environment={self.environment.value})")
+                f"in a non-dev environment (environment={env})")
+        misconfigured = []
+        if self.use_db_stores is not True:
+            misconfigured.append("USE_DB_STORES=true (persistent Postgres-backed stores)")
+        if self.task_backend != "arq":
+            misconfigured.append("TASK_BACKEND=arq (out-of-band worker tier)")
+        if misconfigured:
+            raise RuntimeError(
+                "unsafe production config: a non-dev deploy must not run on in-memory stores or "
+                "the inline task backend (data is lost on restart and long jobs run inline). Set "
+                f"{', '.join(misconfigured)} before starting (environment={env})")
 
 
 @lru_cache

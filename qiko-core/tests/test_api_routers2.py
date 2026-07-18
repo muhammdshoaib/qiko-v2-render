@@ -43,6 +43,19 @@ def test_teams_router_blocks_cross_tenant_access(client):
     assert client.get(f"/api/v1/teams/{tid}/members", cookies=C).status_code == 200
 
 
+def test_teams_router_requires_admin_for_create_and_add_member(client):
+    # RBAC regression guard: a viewer must not be able to create a team or add members (incl.
+    # escalating someone to owner) -- create_team/add_member are admin-gated like the other
+    # mutating team endpoints.
+    viewer = auth_cookies("acme", "viewer")
+    assert client.post("/api/v1/teams", json={"owner_id": "owner"}, cookies=viewer).status_code == 403
+
+    # an admin can set the team up; the viewer still cannot add members to it.
+    tid = client.post("/api/v1/teams", json={"owner_id": "owner"}, cookies=C).json()["team_id"]
+    assert client.post(f"/api/v1/teams/{tid}/members", json={"user_id": "u2", "role": "editor"},
+                       cookies=viewer).status_code == 403
+
+
 def test_leads_router(client):
     ok = client.post("/api/v1/leads", json={"kind": "enterprise", "name": "Acme", "email": "b@acme.com"}, cookies=C)
     assert ok.status_code == 200 and ok.json()["kind"] == "enterprise"

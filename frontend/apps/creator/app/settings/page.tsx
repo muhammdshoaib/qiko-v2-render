@@ -80,11 +80,11 @@ export default function SettingsPage() {
                 <div className="space-y-4">
                   <div>
                     <label className="text-sm text-slate-400">Name</label>
-                    <p className="text-white">{account.data?.email?.split("@")[0] ?? "—"}</p>
+                    <p className="text-white">{account.data?.email?.split("@")[0] ?? "-"}</p>
                   </div>
                   <div>
                     <label className="text-sm text-slate-400">Email</label>
-                    <p className="text-white">{account.data?.email ?? "—"}</p>
+                    <p className="text-white">{account.data?.email ?? "-"}</p>
                   </div>
                 </div>
               </SettingsCard>

@@ -99,7 +99,7 @@ export default function SalesforcePushLogPage() {
                   <td className="whitespace-nowrap px-4 py-3 text-slate-300">{actionLabel(log.activityType)}</td>
                   <td className={cn("max-w-[280px] truncate px-4 py-3", log.tone === "error" ? "text-red-300" : "text-slate-300")}>{log.action}</td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[12px] text-slate-400">
-                    {(log.metadata?.salesforce_opportunity_id as string) ?? "\u2014"}
+                    {(log.metadata?.salesforce_opportunity_id as string) ?? "-"}
                   </td>
                   <td className="whitespace-nowrap px-4 py-3 text-slate-400">{formatDate(log.createdAt)}</td>
                   <td className="max-w-[320px] truncate px-4 py-3 text-slate-500">{log.detail ?? log.action}</td>

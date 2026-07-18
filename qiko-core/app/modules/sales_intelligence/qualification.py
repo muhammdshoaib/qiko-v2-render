@@ -1,11 +1,19 @@
-"""Port of app/Services/IdgSales/IdgSalesQualificationService.php.
+"""Deterministic, rule-based bid/no-bid scorer for Sales Intelligence opportunities.
 
-IMPORTANT DISCREPANCY vs. the task brief: this is a **deterministic, rule-based** bid/no-bid
-scorer (keyword matching + country/buyer/value/deadline heuristics), NOT an LLM call. The real
-branch never routes qualification through an LLM provider/gateway -- there is no prompt to port.
-This module intentionally does *not* use app.modules.ai.gateway.LLMProvider, to stay faithful to
-the real, working production logic. (A future LLM-assisted qualification pass could be layered on
-top of this as an enhancement, but that would be new functionality, not a port.)
+This is a rule-based scorer (keyword matching + country/buyer/value/deadline heuristics), NOT an
+LLM call.
+
+It is now config-driven per agent: the service/vertical keywords and the target-country allowlist
+are read from the agent's own free-form `Agent.config` (the same dict where RFP
+`opportunity_criteria`, Vapi, and Salesforce settings already live), via
+`QualificationService.with_config(agent.config)`. Recognised config keys:
+
+  - `si_service_keywords`   (list[str]) service/vertical keywords for the alignment scorer
+  - `si_target_countries`   (list[str] or list[dict]) target-country allowlist
+  - `si_technology_keywords` (list[str]) technology-signal keywords for the tech dimension
+
+Each defaults to the IDG physical-security values below, so an agent that configures nothing scores
+exactly as before. Non-security tenants override these per agent to make the pipeline relevant.
 """
 from __future__ import annotations
 
@@ -14,12 +22,22 @@ from datetime import datetime, timezone
 
 from app.modules.sales_intelligence.target_countries import TargetCountries
 
-SERVICE_KEYWORDS = (
+# IDG physical-security defaults, used when an agent config does not override them.
+DEFAULT_SERVICE_KEYWORDS = (
     "security", "guarding", "guard", "protection", "risk", "safety", "access control",
     "perimeter", "surveillance", "cctv", "response", "k9",
 )
 
-TECHNOLOGY_KEYWORDS = ("software", "it", "computer", "technology", "digital", "cloud", "system", "network")
+DEFAULT_TECHNOLOGY_KEYWORDS = ("software", "it", "computer", "technology", "digital", "cloud", "system", "network")
+
+
+def _as_keywords(value, default: tuple[str, ...]) -> tuple[str, ...]:
+    """Normalise an agent-config keyword list to a lowercased tuple, falling back to `default`
+    when the value is missing, empty, or not a list of strings."""
+    if not isinstance(value, list):
+        return tuple(default)
+    keywords = tuple(kw.strip().lower() for kw in value if isinstance(kw, str) and kw.strip())
+    return keywords or tuple(default)
 
 
 def _now() -> datetime:
@@ -35,6 +53,20 @@ def _days_until(deadline: datetime) -> int:
 @dataclass
 class QualificationService:
     target_countries: TargetCountries = field(default_factory=TargetCountries)
+    service_keywords: tuple[str, ...] = DEFAULT_SERVICE_KEYWORDS
+    technology_keywords: tuple[str, ...] = DEFAULT_TECHNOLOGY_KEYWORDS
+
+    def with_config(self, config: dict | None) -> "QualificationService":
+        """Return a scorer configured from an agent's free-form config, using this instance's
+        values as the fallback for any key the agent has not set. Passing None/{} yields a scorer
+        equivalent to this one, so unconfigured agents score exactly as before."""
+        config = config or {}
+        return QualificationService(
+            target_countries=TargetCountries.from_config(
+                config.get("si_target_countries"), default=self.target_countries),
+            service_keywords=_as_keywords(config.get("si_service_keywords"), self.service_keywords),
+            technology_keywords=_as_keywords(config.get("si_technology_keywords"), self.technology_keywords),
+        )
 
     def qualify(self, opportunity: dict) -> dict:
         title = str(opportunity.get("title") or "").lower()
@@ -150,7 +182,7 @@ class QualificationService:
         }
 
     def _technology_score(self, text: str) -> int:
-        matches = sum(1 for kw in TECHNOLOGY_KEYWORDS if kw in text)
+        matches = sum(1 for kw in self.technology_keywords if kw in text)
         return min(100, matches * 25)
 
     def _recommendations(self, recommendation: str, missing: list[str], risks: list[str]) -> list[str]:
@@ -170,7 +202,7 @@ class QualificationService:
         return items
 
     def _service_alignment_score(self, text: str) -> int:
-        matches = sum(1 for kw in SERVICE_KEYWORDS if kw in text)
+        matches = sum(1 for kw in self.service_keywords if kw in text)
         if matches >= 3:
             return 35
         if matches == 2:

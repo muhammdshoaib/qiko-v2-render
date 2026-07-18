@@ -91,7 +91,7 @@ export default function OpportunityDetailPage() {
               </span>
             </div>
             <h1 className="text-xl font-semibold leading-snug text-white">{opp.title}</h1>
-            <p className="mt-1 text-[13px] text-slate-400">{[opp.buyer, opp.externalId].filter(Boolean).join(" \u00b7 ") || "\u2014"}</p>
+            <p className="mt-1 text-[13px] text-slate-400">{[opp.buyer, opp.externalId].filter(Boolean).join(" \u00b7 ") || "-"}</p>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
@@ -131,9 +131,9 @@ export default function OpportunityDetailPage() {
         {(review.isError || push.isError || runQualification.isError) && (
           <p className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-[12px] text-red-300">
             <AlertTriangle className="size-3.5 shrink-0" />
-            {push.isError ? "Couldn't push to Salesforce — try again in a moment."
-              : review.isError ? "Couldn't save that review decision — try again."
-              : "Couldn't run qualification — try again."}
+            {push.isError ? "Couldn't push to Salesforce - try again in a moment."
+              : review.isError ? "Couldn't save that review decision - try again."
+              : "Couldn't run qualification - try again."}
           </p>
         )}
 
@@ -170,7 +170,7 @@ function Field({ label, value, tooltip }: { label: string; value: React.ReactNod
         {label}
         {tooltip && <HelpCircle className="size-3" aria-label={tooltip} />}
       </p>
-      <p className="mt-1.5 text-[14px] text-white">{value ?? "\u2014"}</p>
+      <p className="mt-1.5 text-[14px] text-white">{value ?? "-"}</p>
     </div>
   );
 }
@@ -188,7 +188,7 @@ function OverviewTab({ opp, detail }: { opp: import("@/lib/api").SalesOpportunit
         <Field label="Notice Type" value={ov?.noticeType} />
         <Field label="Security Clearance" value={ov?.securityClearance} />
         <Field label="Extraction Confidence" tooltip="Model confidence in the fields extracted from the source notice"
-          value={ov?.extractionConfidence != null ? `${Math.round(ov.extractionConfidence)}%` : "\u2014"} />
+          value={ov?.extractionConfidence != null ? `${Math.round(ov.extractionConfidence)}%` : "-"} />
         <Field label="Framework" value={ov?.framework} />
         <Field label="Contract Duration" value={ov?.contractDuration} />
         <Field label="Technology" value={ov?.technology} />
@@ -199,11 +199,11 @@ function OverviewTab({ opp, detail }: { opp: import("@/lib/api").SalesOpportunit
         {ov?.contacts && ov.contacts.length > 0 ? (
           <div className="mt-2 space-y-1.5">
             {ov.contacts.map((c, i) => (
-              <p key={i} className="text-[13px] text-slate-300">{[c.name, c.email, c.phone].filter(Boolean).join(" \u00b7 ") || "\u2014"}</p>
+              <p key={i} className="text-[13px] text-slate-300">{[c.name, c.email, c.phone].filter(Boolean).join(" \u00b7 ") || "-"}</p>
             ))}
           </div>
         ) : (
-          <p className="mt-2 text-[13px] text-slate-500">{"\u2014"}</p>
+          <p className="mt-2 text-[13px] text-slate-500">{"-"}</p>
         )}
       </div>
     </div>
@@ -224,19 +224,19 @@ function SummaryTab({ detail }: { detail?: OpportunityDetail }) {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <SummaryCard title="Executive Summary">{s?.executiveSummary ?? "\u2014"}</SummaryCard>
-        <SummaryCard title="Risk Summary">{s?.riskSummary ?? "\u2014"}</SummaryCard>
-        <SummaryCard title="Opportunity Summary">{s?.opportunitySummary ?? "\u2014"}</SummaryCard>
+        <SummaryCard title="Executive Summary">{s?.executiveSummary ?? "-"}</SummaryCard>
+        <SummaryCard title="Risk Summary">{s?.riskSummary ?? "-"}</SummaryCard>
+        <SummaryCard title="Opportunity Summary">{s?.opportunitySummary ?? "-"}</SummaryCard>
         <SummaryCard title="Requirements">
           {s?.requirements && s.requirements.length > 0 ? (
             <ul className="list-disc space-y-1 pl-4">{s.requirements.map((r, i) => <li key={i}>{r}</li>)}</ul>
-          ) : "\u2014"}
+          ) : "-"}
         </SummaryCard>
       </div>
       <SummaryCard title="Deliverables">
         {s?.deliverables && s.deliverables.length > 0 ? (
           <ul className="list-disc space-y-1 pl-4">{s.deliverables.map((d, i) => <li key={i}>{d}</li>)}</ul>
-        ) : "\u2014"}
+        ) : "-"}
       </SummaryCard>
     </div>
   );
@@ -252,7 +252,7 @@ function ScoreGauge({ score }: { score: number | null | undefined }) {
       <circle cx="56" cy="56" r="44" fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="10" />
       <circle cx="56" cy="56" r="44" fill="none" stroke={color} strokeWidth="10" strokeLinecap="round"
         strokeDasharray={`${dash} ${circumference}`} transform="rotate(-90 56 56)" />
-      <text x="56" y="52" textAnchor="middle" fontSize="26" fontWeight="700" fill="white">{score ?? "\u2014"}</text>
+      <text x="56" y="52" textAnchor="middle" fontSize="26" fontWeight="700" fill="white">{score ?? "-"}</text>
       <text x="56" y="70" textAnchor="middle" fontSize="11" fill="#94a3b8">/ 100</text>
     </svg>
   );
@@ -333,9 +333,9 @@ function QualificationTab({ opp, detail }: { opp: import("@/lib/api").SalesOppor
               <p className="text-[13px] text-slate-400">Qualification Score</p>
               <p className="mt-0.5 text-[13px] leading-relaxed text-slate-300">
                 {q?.overallScore != null
-                  ? q.overallScore >= 70 ? "Strong fit \u2014 recommended to bid."
-                    : q.overallScore >= 40 ? "Moderate fit \u2014 review flagged dimensions before approval."
-                    : "Weak fit \u2014 likely no-bid."
+                  ? q.overallScore >= 70 ? "Strong fit - recommended to bid."
+                    : q.overallScore >= 40 ? "Moderate fit - review flagged dimensions before approval."
+                    : "Weak fit - likely no-bid."
                   : "Not yet scored."}
               </p>
               {q?.recommendation && (
@@ -397,7 +397,7 @@ function NotesTab({ agentId, oppId, detail, onSaved }: { agentId: string; oppId:
 function Pill({ value }: { value: string | null | undefined }) {
   return (
     <span className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[12px] font-medium text-slate-200">
-      {value ?? "\u2014"}
+      {value ?? "-"}
     </span>
   );
 }

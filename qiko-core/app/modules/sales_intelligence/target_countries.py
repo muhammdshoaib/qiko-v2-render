@@ -1,18 +1,13 @@
-"""Port of app/Services/IdgSales/IdgSalesTargetCountries.php.
+"""Target-country allowlist for opportunity qualification.
 
-KNOWN GAP IN THE SOURCE BRANCH: `IdgSalesTargetCountries::all()` reads `config('idg_sales.target_countries', [])`,
-but `config/idg_sales.php` on `origin/idg-sales` only defines `scan_interval_minutes` -- the
-`target_countries` key is never populated anywhere in the branch (grep confirms no other file
-sets it), so in production that class always returns `[]` and `matches()` always returns False
-unless it is set via an uncommitted `.env`/runtime config. This is a real discrepancy between the
-"14-country IDG allowlist" referenced in the product brief and what actually ships in the
-branch's committed code.
+This is now config-driven per agent: the qualification scorer builds its `TargetCountries` from
+the agent's own `config.si_target_countries` (a list of country names/aliases, or full
+{code,name,aliases} dicts) via `TargetCountries.from_config`. When an agent sets nothing, we fall
+back to DEFAULT_TARGET_COUNTRIES so existing (IDG) behaviour is unchanged.
 
-DEFAULT_TARGET_COUNTRIES below is Qiko's own reasonable placeholder (IDG's core GCC + East
-Africa/Horn of Africa security markets, inferred from the non-EU/EEA countries
-`TedCountryResolver::ALPHA3_TO_ALPHA2` was deliberately extended with: IRQ, ARE, SOM, KEN, UGA,
-SSD, AFG). Confirm the authoritative 14-country list with product/IDG before relying on this in
-production -- override via `IDG_SALES_TARGET_COUNTRIES` (comma-separated country names) if needed.
+DEFAULT_TARGET_COUNTRIES is IDG's core GCC + East Africa/Horn of Africa security markets (the
+non-EU/EEA countries `TedCountryResolver::ALPHA3_TO_ALPHA2` was extended with: IRQ, ARE, SOM, KEN,
+UGA, SSD, AFG). Non-security tenants override it per agent through `si_target_countries`.
 """
 from __future__ import annotations
 
@@ -44,6 +39,33 @@ def _normalize(value: str) -> str:
 @dataclass
 class TargetCountries:
     countries: list[dict] = field(default_factory=lambda: list(DEFAULT_TARGET_COUNTRIES))
+
+    @classmethod
+    def from_config(cls, value, default: "TargetCountries | None" = None) -> "TargetCountries":
+        """Build from an agent-config `si_target_countries` value. Accepts a list of country
+        names/aliases (strings) or full {code, name, aliases} dicts. Falls back to `default`
+        (or the IDG GCC default) when the value is missing, empty, or not a list."""
+        fallback = default if default is not None else cls()
+        if not isinstance(value, list) or not value:
+            return fallback
+
+        countries: list[dict] = []
+        for item in value:
+            if isinstance(item, dict):
+                name = str(item.get("name") or "").strip()
+                aliases = [str(a) for a in (item.get("aliases") or []) if str(a).strip()]
+                if name and name.lower() not in [a.lower() for a in aliases]:
+                    aliases = [name, *aliases]
+                if not name and not aliases:
+                    continue
+                countries.append({"code": str(item.get("code") or ""), "name": name, "aliases": aliases})
+            else:
+                name = str(item).strip()
+                if not name:
+                    continue
+                countries.append({"code": "", "name": name, "aliases": [name]})
+
+        return cls(countries=countries) if countries else fallback
 
     def all(self) -> list[dict]:
         return list(self.countries)

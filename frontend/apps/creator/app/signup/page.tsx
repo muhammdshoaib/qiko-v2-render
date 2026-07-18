@@ -208,9 +208,9 @@ export default function SignUp() {
 
             <p className="mt-4 text-xs text-slate-500 text-center">
               By creating an account, you agree to our{" "}
-              <a href="#" className="text-cyan-400 hover:underline">Terms of Service</a>
+              <a href="https://qiko.ai/terms" target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline">Terms of Service</a>
               {" "}and{" "}
-              <a href="#" className="text-cyan-400 hover:underline">Privacy Policy</a>
+              <a href="https://qiko.ai/privacy" target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline">Privacy Policy</a>
             </p>
           </CardContent>
         </Card>

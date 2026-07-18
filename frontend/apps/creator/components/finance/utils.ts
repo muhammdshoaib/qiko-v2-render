@@ -148,7 +148,7 @@ export function propertyBars(analytics: FinanceAnalytics | undefined): PropertyB
     const expenses = Math.round(Number(p.expenses ?? 0));
     const profit = Math.round(Number(p.netProfit ?? income - expenses));
     const margin = income > 0 ? Math.round((profit / income) * 100) : Math.round(Number(p.marginPercent ?? 0));
-    const name = String(p.name ?? p.propertyId ?? "—");
+    const name = String(p.name ?? p.propertyId ?? "-");
     return { name, fullName: name, staNo: String(p.propertyId ?? name), income, expenses, profit, margin };
   });
   return rows.sort((a, b) => b.profit - a.profit).slice(0, 10);
@@ -222,7 +222,7 @@ export type RiskRow = { name: string; fullName: string; staNo: string; riskScore
 export function riskRows(analytics: FinanceAnalytics | undefined): RiskRow[] {
   return activeProperties(analytics)
     .map((p) => {
-      const name = String(p.name ?? p.propertyId ?? "—");
+      const name = String(p.name ?? p.propertyId ?? "-");
       const level = String(p.riskLevel ?? "low").toLowerCase();
       return {
         name, fullName: name, staNo: String(p.propertyId ?? name),

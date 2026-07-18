@@ -12,6 +12,7 @@ Every store call is tenant + agent scoped (BOLA-safe).
 from __future__ import annotations
 
 import asyncio
+import calendar
 import re
 import uuid
 from dataclasses import dataclass
@@ -63,6 +64,25 @@ def _safe_filename(name: str | None) -> str:
 
 def _namespace_for(agent_id: str, file_id: str) -> str:
     return f"finance-{agent_id}-{file_id}"
+
+
+_MONTH_RE = re.compile(r"^(\d{4})-(\d{2})$")
+
+
+def _resolve_range(frm: str | None, to: str | None,
+                   month: str | None) -> tuple[str | None, str | None]:
+    """The FE date filter can arrive as an explicit from/to window OR as a single `month`
+    ("YYYY-MM"). When only a month is given, expand it to that month's inclusive ISO range so the
+    analytics date filter (which compares ISO YYYY-MM-DD strings) narrows to exactly that month.
+    An explicit from/to always wins; a malformed month is ignored (treated as no filter)."""
+    if month and not frm and not to:
+        m = _MONTH_RE.match(month.strip())
+        if m:
+            year, mon = int(m.group(1)), int(m.group(2))
+            if 1 <= mon <= 12:
+                last = calendar.monthrange(year, mon)[1]
+                return f"{month}-01", f"{month}-{last:02d}"
+    return frm, to
 
 
 @dataclass
@@ -126,7 +146,8 @@ class FinanceService:
         }
 
     async def analytics(self, tenant: str, agent_id: str, *, frm: str | None = None,
-                        to: str | None = None) -> dict:
+                        to: str | None = None, month: str | None = None) -> dict:
+        frm, to = _resolve_range(frm, to, month)
         files = await self.files.list_for_agent(tenant, agent_id)
         expenses: list = []
         incomes: list = []

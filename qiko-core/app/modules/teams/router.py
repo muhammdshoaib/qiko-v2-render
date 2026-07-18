@@ -38,7 +38,8 @@ async def _get_owned_team(team_id: str, tenant: str, svc):
 
 
 @router.post("")
-async def create_team(body: CreateTeamBody, _tenant: str = Depends(authed_tenant), svc=Depends(get_teams)) -> dict:
+async def create_team(body: CreateTeamBody, _tenant: str = Depends(authed_tenant),
+                      _r: dict = _admin, svc=Depends(get_teams)) -> dict:
     return _members(await svc.create_team(_tenant, body.owner_id))
 
 
@@ -49,7 +50,8 @@ async def members(team_id: str, tenant: str = Depends(authed_tenant), svc=Depend
 
 
 @router.post("/{team_id}/members")
-async def add_member(team_id: str, body: MemberBody, tenant: str = Depends(authed_tenant), svc=Depends(get_teams)) -> dict:
+async def add_member(team_id: str, body: MemberBody, tenant: str = Depends(authed_tenant),
+                     _r: dict = _admin, svc=Depends(get_teams)) -> dict:
     await _get_owned_team(team_id, tenant, svc)
     try:
         return _members(await svc.add_member(team_id, body.user_id, body.role))

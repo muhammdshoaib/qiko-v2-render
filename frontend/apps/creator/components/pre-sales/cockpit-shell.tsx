@@ -182,7 +182,7 @@ export function PreSalesCockpitShell({
             placeholder={"Ask about this tender\u2026"}
             notReadyPlaceholder={"Select a tender first\u2026"}
             inputHint="Enter to send &middot; answers cite the tender document"
-            errorText={"Sorry \u2014 I couldn't answer that. Make sure a tender document has been uploaded, then try again."}
+            errorText={"Sorry, I couldn't answer that. Make sure a tender document has been uploaded, then try again."}
           />
         )}
       </div>

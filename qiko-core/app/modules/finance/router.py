@@ -71,7 +71,10 @@ async def analytics(agent_id: str, request: Request, tenant: str = Depends(authe
                     svc=Depends(get_finance)) -> dict:
     frm = request.query_params.get("from")
     to = request.query_params.get("to")
-    return await svc.analytics(tenant, agent_id, frm=frm, to=to)
+    # The FE date filter can arrive as an explicit from/to window OR a single `month` ("YYYY-MM"),
+    # which the service expands to that month's inclusive range (explicit from/to wins).
+    month = request.query_params.get("month")
+    return await svc.analytics(tenant, agent_id, frm=frm, to=to, month=month)
 
 
 class ChatBody(BaseModel):

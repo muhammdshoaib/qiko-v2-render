@@ -64,6 +64,10 @@ class OpportunityService:
     opportunities: OpportunityStore = None  # type: ignore[assignment]
     activity_logs: ActivityLogStore = None  # type: ignore[assignment]
     notifier: SalesNotificationService | None = None
+    # Optional agent resolver (AgentService/AgentStore with async get(tenant, agent_id) -> agent
+    # with a `.config` dict). When set, per-agent si_* config drives qualification even for the
+    # scheduler/background scan path; the manual API path passes agent_config explicitly instead.
+    agents: object | None = None
     scan_interval_minutes: int = 1
 
     def __post_init__(self) -> None:
@@ -124,16 +128,29 @@ class OpportunityService:
         if not source.is_enabled():
             raise SourceInactiveError(f"{source.source_key.upper()} is inactive for this agent. Enable it before scanning.")
 
-    async def scan_ungm(self, tenant: str, agent_id: str, filters: dict, actor_user_id: str | None = None) -> dict:
+    async def scan_ungm(self, tenant: str, agent_id: str, filters: dict, actor_user_id: str | None = None,
+                        agent_config: dict | None = None) -> dict:
         return await self._scan_source(tenant, agent_id, "ungm", "UNGM Public Notices",
-                                        lambda: self.ungm.search(filters), actor_user_id)
+                                        lambda: self.ungm.search(filters), actor_user_id, agent_config)
 
-    async def scan_ted(self, tenant: str, agent_id: str, filters: dict, actor_user_id: str | None = None) -> dict:
+    async def scan_ted(self, tenant: str, agent_id: str, filters: dict, actor_user_id: str | None = None,
+                       agent_config: dict | None = None) -> dict:
         return await self._scan_source(tenant, agent_id, "ted", "TED - EU Tenders",
-                                        lambda: self.ted.search(filters), actor_user_id)
+                                        lambda: self.ted.search(filters), actor_user_id, agent_config)
+
+    async def _resolve_scorer(self, tenant: str, agent_id: str,
+                              agent_config: dict | None) -> QualificationService:
+        """Build the per-agent qualification scorer. Uses an explicitly-passed agent_config (from
+        the manual API path) or, failing that, resolves the agent via the optional `agents` store
+        (scheduler/background path). Falls back to the default IDG scorer when neither is available."""
+        if agent_config is None and self.agents is not None:
+            agent = await self.agents.get(tenant, agent_id)
+            agent_config = getattr(agent, "config", None) if agent is not None else None
+        return self.qualification.with_config(agent_config)
 
     async def _scan_source(self, tenant: str, agent_id: str, source_key: str, source_name: str,
-                           search_fn, actor_user_id: str | None = None) -> dict:
+                           search_fn, actor_user_id: str | None = None,
+                           agent_config: dict | None = None) -> dict:
         import asyncio
 
         source = await (self.ensure_ted_source(tenant, agent_id) if source_key == "ted"
@@ -143,6 +160,8 @@ class OpportunityService:
         source.last_error = None
         await self.sources.update(source)
 
+        scorer = await self._resolve_scorer(tenant, agent_id, agent_config)
+
         try:
             result = await asyncio.to_thread(search_fn)
             upserted: list[Opportunity] = []
@@ -151,7 +170,7 @@ class OpportunityService:
             skipped = int(result.get("skipped", 0))
 
             for notice in result["notices"]:
-                qualification = self.qualification.qualify(notice)
+                qualification = scorer.qualify(notice)
                 external_id = notice.get("external_id") or _new_id()
                 opportunity = await self.opportunities.find_by_external_id(tenant, agent_id, source_key, external_id)
                 is_new = opportunity is None
@@ -288,12 +307,22 @@ class OpportunityMutationService:
     opportunities: OpportunityStore = None  # type: ignore[assignment]
     activity_logs: ActivityLogStore = None  # type: ignore[assignment]
     notifier: SalesNotificationService | None = None
+    # Optional agent resolver (see OpportunityService.agents). When set, per-agent si_* config
+    # drives manual create/requalify even without an explicit agent_config argument.
+    agents: object | None = None
 
     def __post_init__(self) -> None:
         if self.opportunities is None:
             self.opportunities = InMemoryOpportunityStore()
         if self.activity_logs is None:
             self.activity_logs = InMemoryActivityLogStore()
+
+    async def _resolve_scorer(self, tenant: str, agent_id: str,
+                              agent_config: dict | None) -> QualificationService:
+        if agent_config is None and self.agents is not None:
+            agent = await self.agents.get(tenant, agent_id)
+            agent_config = getattr(agent, "config", None) if agent is not None else None
+        return self.qualification.with_config(agent_config)
 
     async def _log(self, tenant: str, agent_id: str, opportunity_id: str, action: str, detail: str, *,
                    tone: str = "info", actor_user_id: str | None = None, metadata: dict | None = None) -> None:
@@ -303,7 +332,7 @@ class OpportunityMutationService:
         ))
 
     async def create_manual(self, tenant: str, agent_id: str, payload: dict, actor_user_id: str | None = None,
-                            run_qualification: bool = True) -> Opportunity:
+                            run_qualification: bool = True, agent_config: dict | None = None) -> Opportunity:
         source_key = (payload.get("source_key") or "manual").strip() or "manual"
         source_name = (payload.get("source_name") or "").strip() or (
             "Manual Entry" if source_key == "manual" else source_key.replace("_", " ").title())
@@ -320,7 +349,8 @@ class OpportunityMutationService:
         )
 
         if run_qualification:
-            qualification = self.qualification.qualify({
+            scorer = await self._resolve_scorer(tenant, agent_id, agent_config)
+            qualification = scorer.qualify({
                 "title": opportunity.title, "buyer": opportunity.buyer, "country": opportunity.country,
                 "category": opportunity.category, "estimated_value": opportunity.estimated_value,
                 "currency": opportunity.currency, "deadline_at": opportunity.deadline_at,
@@ -413,7 +443,7 @@ class OpportunityMutationService:
         return opportunity
 
     async def update_fields(self, opportunity: Opportunity, payload: dict, actor_user_id: str | None = None,
-                            requalify: bool = False) -> Opportunity:
+                            requalify: bool = False, agent_config: dict | None = None) -> Opportunity:
         changes: dict = {}
         for field_name in EDITABLE_OPPORTUNITY_FIELDS:
             if field_name not in payload:
@@ -434,7 +464,8 @@ class OpportunityMutationService:
             opportunity.updated_by = actor_user_id
 
         if requalify:
-            qualification = self.qualification.qualify({
+            scorer = await self._resolve_scorer(opportunity.tenant, opportunity.agent_id, agent_config)
+            qualification = scorer.qualify({
                 "title": opportunity.title, "buyer": opportunity.buyer, "country": opportunity.country,
                 "category": opportunity.category, "estimated_value": opportunity.estimated_value,
                 "currency": opportunity.currency, "deadline_at": opportunity.deadline_at,

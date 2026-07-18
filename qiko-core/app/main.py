@@ -106,7 +106,8 @@ from app.modules.email.sender import get_email_sender
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Fail closed before serving any request: a non-dev deploy must never run on the forgeable
-    # default session_secret (see Settings.assert_secrets_set).
+    # default session_secret, nor on the in-memory stores / inline task backend (see
+    # Settings.assert_secrets_set).
     get_settings().assert_secrets_set()
     # Build the async engine + sessionmaker (lazy connect) so DB-backed stores can be wired.
     engine = build_engine()

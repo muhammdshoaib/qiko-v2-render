@@ -130,7 +130,7 @@ export function CockpitShell({ agentId, workerName, active, children }: {
             emptyPrompt="Ask about RFPs, document uploads, or anything in your workflow."
             placeholder="Ask something..."
             inputHint="Enter to send &middot; ask about opportunities, sources or Salesforce pushes"
-            errorText={"Sorry \u2014 I couldn't answer that just now. Please try again in a moment."}
+            errorText={"Sorry, I couldn't answer that just now. Please try again in a moment."}
           />
         )}
       </div>

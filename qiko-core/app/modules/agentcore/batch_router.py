@@ -51,8 +51,12 @@ async def _run_batch(request: Request, tenant: str, body: BatchAskBody) -> list[
 
 
 @router.post("/batch-answer", response_model=list[BatchAnswer])
-async def batch_answer(body: BatchAskBody, request: Request, tenant: str = Depends(authed_tenant)) -> list[BatchAnswer]:
-    """Answer a list of requirements/questions, each grounded + confidence-scored + gated."""
+async def batch_answer(body: BatchAskBody, request: Request, tenant: str = Depends(authed_tenant),
+                      _role: dict = Depends(require_role(Role.editor))) -> list[BatchAnswer]:
+    """Answer a list of requirements/questions, each grounded + confidence-scored + gated.
+
+    Editor-or-above: each question is a real LLM call (up to 200 per request), so a read-only
+    viewer must not be able to run unbounded bulk generation."""
     return await _run_batch(request, tenant, body)
 
 
@@ -72,9 +76,12 @@ async def feedback(body: FeedbackBody, request: Request, tenant: str = Depends(a
 
 
 @router.post("/batch-export")
-async def batch_export(body: BatchAskBody, request: Request, tenant: str = Depends(authed_tenant)) -> StreamingResponse:
+async def batch_export(body: BatchAskBody, request: Request, tenant: str = Depends(authed_tenant),
+                      _role: dict = Depends(require_role(Role.editor))) -> StreamingResponse:
     """Same as batch-answer, downloadable as xlsx (Question/Answer/Confidence/Decision/Citations
-    + a blank Feedback column, matching the coverage-report shape a reviewer fills in)."""
+    + a blank Feedback column, matching the coverage-report shape a reviewer fills in).
+
+    Editor-or-above for the same reason as batch-answer: it runs a real LLM call per question."""
     answers = await _run_batch(request, tenant, body)
     rows = [["#", "Question", "Answer", "Confidence", "Decision", "Citations", "Feedback"]]
     for a in answers:

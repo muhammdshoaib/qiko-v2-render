@@ -921,7 +921,7 @@ export default function Onboarding() {
               <p className="text-slate-400 text-lg">
                 The more detail you provide, the better your AI will represent you.
                 <br />
-                <span className="text-sm text-slate-500">All sections are optional — you can come back to this later.</span>
+                <span className="text-sm text-slate-500">All sections are optional - you can come back to this later.</span>
               </p>
             </div>
             <div className="space-y-3">
@@ -966,7 +966,7 @@ export default function Onboarding() {
                   <Textarea value={wizardData.frameworks || ""} onChange={(e) => updateWizard("frameworks", e.target.value)} placeholder="e.g., I always assess risk tolerance first..." rows={3} className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 rounded-xl" />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-slate-300 text-sm">Boundaries — what should your AI NOT do?</Label>
+                  <Label className="text-slate-300 text-sm">Boundaries - what should your AI NOT do?</Label>
                   <Textarea value={wizardData.boundaries || ""} onChange={(e) => updateWizard("boundaries", e.target.value)} placeholder="e.g., Never give specific financial advice" rows={2} className="bg-white/5 border-white/10 text-white placeholder:text-slate-500 rounded-xl" />
                 </div>
               </TrainingSection>

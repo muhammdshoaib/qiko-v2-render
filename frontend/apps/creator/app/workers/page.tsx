@@ -87,7 +87,7 @@ export default function WorkersPage() {
 
         {!agents.isLoading && !agents.isError && workers.length === 0 && (
           <div className="py-16 text-center">
-            <p className="text-sm text-muted-foreground mb-3">No workers yet — build your first AI expert.</p>
+            <p className="text-sm text-muted-foreground mb-3">No workers yet - build your first AI expert.</p>
           </div>
         )}
 

@@ -48,6 +48,17 @@ def _actor_user_id(claims: dict) -> str | None:
     return claims.get("sub") or claims.get("user_id")
 
 
+async def _agent_config(request: Request, tenant: str, agent_id: str) -> dict | None:
+    """Resolve the per-agent free-form config so qualification can read its si_* keys
+    (si_service_keywords / si_target_countries / si_technology_keywords). Returns None when the
+    agent is unknown, so the scorer falls back to the IDG defaults."""
+    agents = getattr(request.app.state, "agents", None)
+    if agents is None:
+        return None
+    agent = await agents.get(tenant, agent_id)
+    return getattr(agent, "config", None) if agent is not None else None
+
+
 def _source_out(s, *, scan_interval_minutes: int = 1) -> dict:
     return {
         "id": s.id, "agentId": s.agent_id, "sourceKey": s.source_key, "name": s.name, "type": s.type,
@@ -156,10 +167,11 @@ class ScanBody(BaseModel):
 
 
 @router.post("/{agent_id}/scan/ungm")
-async def scan_ungm(agent_id: str, body: ScanBody, tenant: str = Depends(authed_tenant),
+async def scan_ungm(agent_id: str, body: ScanBody, request: Request, tenant: str = Depends(authed_tenant),
                     claims: dict = Depends(require_role(Role.editor)), svc=Depends(get_sales_intel)) -> dict:
     try:
-        result = await svc.scan_ungm(tenant, agent_id, body.model_dump(exclude_none=True), _actor_user_id(claims))
+        result = await svc.scan_ungm(tenant, agent_id, body.model_dump(exclude_none=True), _actor_user_id(claims),
+                                     agent_config=await _agent_config(request, tenant, agent_id))
     except SourceInactiveError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except Exception as e:
@@ -173,10 +185,11 @@ async def scan_ungm(agent_id: str, body: ScanBody, tenant: str = Depends(authed_
 
 
 @router.post("/{agent_id}/scan/ted")
-async def scan_ted(agent_id: str, body: ScanBody, tenant: str = Depends(authed_tenant),
+async def scan_ted(agent_id: str, body: ScanBody, request: Request, tenant: str = Depends(authed_tenant),
                    claims: dict = Depends(require_role(Role.editor)), svc=Depends(get_sales_intel)) -> dict:
     try:
-        result = await svc.scan_ted(tenant, agent_id, body.model_dump(exclude_none=True), _actor_user_id(claims))
+        result = await svc.scan_ted(tenant, agent_id, body.model_dump(exclude_none=True), _actor_user_id(claims),
+                                    agent_config=await _agent_config(request, tenant, agent_id))
     except SourceInactiveError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except Exception as e:
@@ -248,7 +261,8 @@ class CreateOpportunityBody(BaseModel):
 
 
 @router.post("/{agent_id}/opportunities", status_code=201)
-async def create_opportunity(agent_id: str, body: CreateOpportunityBody, tenant: str = Depends(authed_tenant),
+async def create_opportunity(agent_id: str, body: CreateOpportunityBody, request: Request,
+                             tenant: str = Depends(authed_tenant),
                              claims: dict = Depends(require_role(Role.editor)),
                              mutation=Depends(get_sales_intel_mutation)) -> dict:
     if body.stage and body.stage not in STAGES:
@@ -259,7 +273,8 @@ async def create_opportunity(agent_id: str, body: CreateOpportunityBody, tenant:
             from dateutil import parser as dateutil_parser
 
             data[key] = dateutil_parser.parse(data[key])
-    o = await mutation.create_manual(tenant, agent_id, data, _actor_user_id(claims), body.run_qualification)
+    o = await mutation.create_manual(tenant, agent_id, data, _actor_user_id(claims), body.run_qualification,
+                                     agent_config=await _agent_config(request, tenant, agent_id))
     return {"opportunity": _opportunity_out(o)}
 
 
@@ -278,7 +293,7 @@ class UpdateOpportunityBody(BaseModel):
 
 
 @router.patch("/{agent_id}/opportunities/{opportunity_id}")
-async def update_opportunity(agent_id: str, opportunity_id: str, body: UpdateOpportunityBody,
+async def update_opportunity(agent_id: str, opportunity_id: str, body: UpdateOpportunityBody, request: Request,
                              tenant: str = Depends(authed_tenant), claims: dict = Depends(require_role(Role.editor)),
                              svc=Depends(get_sales_intel), mutation=Depends(get_sales_intel_mutation)) -> dict:
     o = await _get_opportunity_or_404(svc, tenant, agent_id, opportunity_id)
@@ -296,7 +311,8 @@ async def update_opportunity(agent_id: str, opportunity_id: str, body: UpdateOpp
     if not data and not body.requalify:
         raise HTTPException(status_code=422, detail="At least one editable field or requalify is required.")
 
-    o = await mutation.update_fields(o, data, _actor_user_id(claims), body.requalify)
+    o = await mutation.update_fields(o, data, _actor_user_id(claims), body.requalify,
+                                     agent_config=await _agent_config(request, tenant, agent_id))
     return {"opportunity": _opportunity_out(o)}
 
 

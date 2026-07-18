@@ -22,7 +22,7 @@ export function FinanceChatPanel({ agentId, workerName }: { agentId: string; wor
     mutationFn: (message: string) => financeChat(agentId, message),
     onMutate: (message) => setMessages((m) => [...m, { role: "user", text: message }]),
     onSuccess: (reply) => setMessages((m) => [...m, { role: "assistant", text: reply.reply }]),
-    onError: (err) => setMessages((m) => [...m, { role: "assistant", text: `Sorry — I couldn't answer that. (${(err as Error).message})` }]),
+    onError: (err) => setMessages((m) => [...m, { role: "assistant", text: `Sorry, I couldn't answer that. (${(err as Error).message})` }]),
   });
 
   function submit(value: string) {

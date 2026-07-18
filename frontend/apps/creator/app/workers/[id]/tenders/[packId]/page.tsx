@@ -204,7 +204,7 @@ function OverviewTab({ packId, answers, pack, onOpenTab }: {
                   {score.data.criteria_results.map((cr, i) => (
                     <li key={i} className="flex gap-1.5 items-start">
                       <span className={cr.met ? "text-emerald-400" : "text-amber-400"}>{cr.met ? "✓" : "△"}</span>
-                      <span className="text-muted-foreground">{cr.criterion}{cr.note ? ` — ${cr.note}` : ""}</span>
+                      <span className="text-muted-foreground">{cr.criterion}{cr.note ? ` - ${cr.note}` : ""}</span>
                     </li>
                   ))}
                 </ul>
@@ -476,7 +476,7 @@ function SectionsTab({ answers, loading, onOpenSection, onRegenerateAll }: {
                     <td className="p-3 text-xs">
                       {anyGap
                         ? <span className="inline-flex items-center gap-1 text-amber-400"><ShieldCheck className="size-3" /> KB gap</span>
-                        : <span className="text-muted-foreground">—</span>}
+                        : <span className="text-muted-foreground">-</span>}
                     </td>
                     <td className="p-3 text-xs">
                       {hasSubSections
@@ -652,7 +652,7 @@ function SectionEditor({ packId, answer, draft, onDraftChange, onBack }: {
                 <Button size="sm" variant="ghost" className="text-emerald-400" disabled={fb.isPending} onClick={() => fb.mutate({ decision: "Approve" })}><ThumbsUp className="size-3.5" /> Approve</Button>
                 <Button size="sm" variant="ghost" className="text-red-400" disabled={fb.isPending} onClick={() => fb.mutate({ decision: "Reject" })}><ThumbsDown className="size-3.5" /> Reject</Button>
                 {savedMsg && <span className="text-xs text-emerald-400 inline-flex items-center gap-1"><Check className="size-3.5" /> {savedMsg}</span>}
-                {fb.isError && <span className="text-xs text-red-400">Couldn&apos;t save — try again.</span>}
+                {fb.isError && <span className="text-xs text-red-400">Couldn&apos;t save - try again.</span>}
               </div>
             </CardContent>
           </Card>
@@ -727,7 +727,7 @@ function ChatTab({ packId, rfpTitle }: { packId: string; rfpTitle: string }) {
   const ask = useMutation({
     mutationFn: () => askBidContext(packId, question),
     onSuccess: (res) => setThread((t) => [...t, { role: "bot", text: res.answer }]),
-    onError: () => setThread((t) => [...t, { role: "bot", text: "Sorry — I couldn't answer that just now. Please try again in a moment." }]),
+    onError: () => setThread((t) => [...t, { role: "bot", text: "Sorry, I couldn't answer that just now. Please try again in a moment." }]),
   });
 
   const send = (e: React.FormEvent) => {

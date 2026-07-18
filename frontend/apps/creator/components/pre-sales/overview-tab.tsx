@@ -32,10 +32,10 @@ export function OverviewTab({ packId, onOpenSections, onOpenBrief }: {
     || (!draftsState && !!o && o.ai_drafted > 0);
 
   const tiles: OutcomeTile[] = [
-    { value: o ? String(o.sections) : "\u2014", label: "Sections", caption: `${o?.sections_locked ?? 0} locked` },
-    { value: o ? `${o.ai_drafted}/${o.ai_drafted_total}` : "\u2014", label: "AI-drafted", caption: "grounded in KB, cited", trend: "up" },
-    { value: o ? String(o.for_human_review) : "\u2014", label: "For human review", caption: "before use", trend: o && o.for_human_review > 0 ? "down" : "neutral" },
-    { value: o ? String(o.kb_sources) : "\u2014", label: "KB sources", caption: "real IDG documents", trend: "up" },
+    { value: o ? String(o.sections) : "-", label: "Sections", caption: `${o?.sections_locked ?? 0} locked` },
+    { value: o ? `${o.ai_drafted}/${o.ai_drafted_total}` : "-", label: "AI-drafted", caption: "grounded in KB, cited", trend: "up" },
+    { value: o ? String(o.for_human_review) : "-", label: "For human review", caption: "before use", trend: o && o.for_human_review > 0 ? "down" : "neutral" },
+    { value: o ? String(o.kb_sources) : "-", label: "KB sources", caption: "real IDG documents", trend: "up" },
   ];
 
   return (

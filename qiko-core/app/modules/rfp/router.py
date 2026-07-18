@@ -32,7 +32,7 @@ from app.modules.rfp.generation import (
     initial_gen_status,
 )
 from app.modules.rfp.scoring import ScoringError, score_opportunity
-from app.modules.rfp.service import CachedAnswer, PackRequirement, RfpPack, RfpPackNotFound
+from app.modules.rfp.service import PackRequirement, RfpPack, RfpPackNotFound
 from app.modules.rfp.tree import PackQuestionNotFound, PackSection, PackSectionNotFound
 from app.tasks.queue import EagerTaskQueue
 
@@ -429,55 +429,71 @@ _STATUS_LABELS = {"auto_accept": "AI-drafted (met internal bar)", "human_review"
 _ANSWER_CONCURRENCY = 4  # bounded so a 15-section tender doesn't fire 15 simultaneous LLM calls
 
 
+def _tree_answer_row(r: PackRequirement, q) -> dict:
+    """The single reviewed answer for one requirement, read from its cockpit tree question (never
+    a fresh LLM call). Per-question precedence mirrors what the reviewer sees and locks:
+    locked user_draft > user_draft (saved) > ai_answer (the drafted answer shown in the cockpit).
+
+    Non-KB (MANUAL/COMPLIANCE) requirements are never AI-drafted -- they carry the team-completion
+    note. A KB requirement whose question has no draft yet is returned blank ("not generated")
+    rather than being drafted inline on this read/export path."""
+    if r.classification != "KB":
+        return {"req": r, "answer": "", "confidence": 0.0, "decision": "human_review",
+                "citations": [], "note": f"{r.classification}: to be completed by the team, not drafted by AI."}
+    if q is None:
+        return {"req": r, "answer": "", "confidence": 0.0, "decision": "human_review",
+                "citations": [], "note": ""}
+    if q.locked and q.user_draft:
+        answer, note = q.user_draft, "Human-approved (locked); reviewer draft overrides the AI answer."
+    elif q.user_draft:
+        answer, note = q.user_draft, ""
+    else:
+        answer, note = q.ai_answer or "", ""
+    return {"req": r, "answer": answer, "confidence": round(q.grounding, 2),
+            "decision": q.decision or "human_review", "citations": list(q.ai_sources), "note": note}
+
+
+async def _regenerate_tree(request: Request, tenant: str, pack_id: str, tree) -> None:
+    """Explicit editor-triggered regenerate (force=true): re-draft every non-locked question in a
+    non-manual section via the SAME grounded generator the cockpit uses, persisting each result
+    onto its tree question. Fails closed with 503 on a StubProvider fallback (mirroring
+    generation.generate_question) so echo text is never persisted or exported. Locked questions
+    (human sign-off) and manual sections are left untouched."""
+    pack = await request.app.state.rfp_packs.get(tenant, pack_id)
+    worker = await build_tenant_worker(request, tenant, agent_id=pack.agent_id if pack else None)
+    manual_sections = {s.id for s in await tree.sections.list(tenant, pack_id) if s.manual}
+    to_draft = [q for q in await tree.questions.list(tenant, pack_id)
+                if q.section_id not in manual_sections and not q.locked]
+    semaphore = asyncio.Semaphore(_ANSWER_CONCURRENCY)
+
+    async def _regen(q):
+        async with semaphore:
+            return await generate_question_core(tenant, q, worker, tree)
+
+    try:
+        await asyncio.gather(*(_regen(q) for q in to_draft))
+    except StubProviderUnavailable as e:
+        raise HTTPException(status_code=503, detail="answer generation is temporarily unavailable") from e
+
+
 async def _answer_pack(request: Request, tenant: str, pack_id: str, reqs, answers, *,
                        force: bool = False, tree=None) -> list[dict]:
-    """Answer every KB requirement in the pack, backed by a Postgres cache (rfp_pack_answers) so a
-    15-section tender isn't re-drafted (each section a real LLM call) on every page visit -- only
-    the first time, or when force=True (the cockpit's per-section Regenerate action).
+    """Build the pack's deliverable answer set from the REVIEWED section/question tree -- exactly
+    what the reviewer approved in the cockpit -- so /answers and every export reflect the tree and
+    never silently re-draft or emit StubProvider echo text.
 
-    When `tree` is given, a locked question's human user_draft overrides the AI draft for its
-    requirement (idg-worker's human-answer overlay governance -- the reviewer's approved text is
-    the source of truth in the output)."""
+    Per requirement the answer comes from its tree question, precedence locked user_draft >
+    user_draft > ai_answer (see _tree_answer_row). This is a pure READ: it does NOT trigger any
+    LLM drafting. `force=True` is the explicit editor-triggered regenerate path only: it re-runs
+    the grounded generator over the tree first (failing closed with 503 on a stub), then reads the
+    freshly persisted tree answers back."""
     requirements = await reqs.list(tenant, pack_id)
     if not requirements:
         raise HTTPException(status_code=404, detail="no extracted requirements for this pack -- run /extract first")
-    # Answer as the specific worker this tender belongs to, not a generic tenant-wide one -- so a
-    # pack owned by e.g. a "Pre Sales Writer" agent drafts in that worker's own voice/threshold.
-    pack = await request.app.state.rfp_packs.get(tenant, pack_id)
-    worker = await build_tenant_worker(request, tenant, agent_id=pack.agent_id if pack else None)
-    semaphore = asyncio.Semaphore(_ANSWER_CONCURRENCY)
-    cached = {} if force else await answers.get_all(tenant, pack_id)
-
-    async def answer_one(r: PackRequirement) -> dict:
-        if r.classification != "KB":
-            return {"req": r, "answer": "", "confidence": 0.0, "decision": "human_review",
-                   "citations": [], "note": f"{r.classification}: to be completed by the team, not drafted by AI."}
-        hit = cached.get(r.req_id)
-        if hit is not None:
-            return {"req": r, "answer": hit.answer, "confidence": hit.confidence,
-                   "decision": hit.decision, "citations": hit.citations, "note": hit.note}
-        async with semaphore:
-            result = await worker.answer(r.req_id, r.requirement)
-        out = {"req": r, "answer": result.answer, "confidence": round(result.critique.grounding, 2),
-              "decision": result.decision.value, "citations": result.citations, "note": ""}
-        await answers.put(tenant, pack_id, r.req_id, CachedAnswer(
-            pack_id=pack_id, req_id=r.req_id, tenant=tenant, answer=out["answer"],
-            confidence=out["confidence"], decision=out["decision"], citations=out["citations"], note=out["note"]))
-        return out
-
-    # Runs the (now off-event-loop) LLM calls concurrently, bounded by the semaphore, instead of
-    # one requirement at a time -- cuts wall-clock time for a multi-section tender roughly in
-    # proportion to the concurrency limit instead of the total requirement count.
-    out = list(await asyncio.gather(*(answer_one(r) for r in requirements)))
-    if tree is not None:
-        overlay = {q.req_id: q.user_draft for q in await tree.questions.list(tenant, pack_id)
-                   if q.locked and q.user_draft and q.req_id}
-        for a in out:
-            override = overlay.get(a["req"].req_id)
-            if override:
-                a["answer"] = override
-                a["note"] = "Human-approved (locked); reviewer draft overrides the AI answer."
-    return out
+    if force:
+        await _regenerate_tree(request, tenant, pack_id, tree)
+    by_req = {q.req_id: q for q in await tree.questions.list(tenant, pack_id) if q.req_id}
+    return [_tree_answer_row(r, by_req.get(r.req_id)) for r in requirements]
 
 
 class FeedbackBody(BaseModel):
