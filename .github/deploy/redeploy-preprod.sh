@@ -54,6 +54,10 @@ if ! grep -q '^POSTGRES_PASSWORD=' .env; then
 fi
 
 C="docker compose -f docker-compose.yml -f docker-compose.preprod.yml"
+# Pre-build sweep: free space so a build can't hit ENOSPC on a disk left cluttered by prior runs.
+# Only dangling images + build cache here (safe: never removes a tagged/in-use image or a volume).
+docker image prune -f >/dev/null 2>&1 || true
+docker builder prune -f >/dev/null 2>&1 || true
 # Build must succeed -- a failed build must never be silently swallowed (set -e is not on, so
 # check explicitly) or the deploy would "succeed" while serving the previous stale images.
 if ! $C build; then
@@ -78,5 +82,17 @@ if [ "$migrated" -ne 1 ]; then
   echo "FATAL: alembic upgrade head did not succeed after 8 attempts" >&2
   exit 1
 fi
+
+# 5. Reclaim disk (garbage collection). Every deploy builds fresh images; the previous build's
+#    images become unused and, left unchecked, filled the 40G disk until ENOSPC killed a deploy.
+#    Now that the new stack is up + migrated, prune images not referenced by a running container
+#    plus the build cache, and drop the previous release dir. `image prune -af` cannot remove the
+#    images the 7 running containers use, and NOTHING here touches named volumes (Postgres data is
+#    safe). Non-fatal: a cleanup hiccup must not fail an otherwise-successful deploy.
+echo "reclaiming disk (docker prune)..."
+docker image prune -af >/dev/null 2>&1 || true
+docker builder prune -f >/dev/null 2>&1 || true
+rm -rf "$BASE/platform.prev" >/dev/null 2>&1 || true
+df -h / | tail -1
 
 $C ps --format "{{.Service}} {{.State}} {{.Status}}"
