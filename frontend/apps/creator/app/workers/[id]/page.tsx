@@ -288,6 +288,19 @@ const OUTCOME_STYLE: Record<string, string> = {
   won: "text-emerald-500", lost: "text-red-500", withdrawn: "text-muted-foreground",
 };
 
+// Live tender status from the generation pipeline (the stepper's source of truth), NOT the legacy
+// pack.stage, which the stepper flow no longer advances so it would read "parsed" forever.
+function tenderStatusLabel(p: RfpPack): string {
+  const g = p.gen_status;
+  const drafts = g?.drafts?.state;
+  if (drafts === "ready") return "Ready for review";
+  if (drafts === "partial") return "Drafting (partial)";
+  if (drafts === "running" || drafts === "pending") return "Drafting";
+  if (g?.sections === "error" || g?.requirements === "error") return "Parse error";
+  if (g?.sections === "running" || g?.sections === "pending" || g?.requirements === "running" || g?.requirements === "pending") return "Parsing";
+  return p.stage || "parsed";
+}
+
 function TendersCard({ agentId, packs, onChange }: { agentId: string; packs?: RfpPack[]; onChange: () => void }) {
   const setOutcome = useMutation({
     mutationFn: ({ packId, outcome, reason }: { packId: string; outcome: "won" | "lost"; reason?: string }) =>
@@ -328,7 +341,7 @@ function TendersCard({ agentId, packs, onChange }: { agentId: string; packs?: Rf
                     onClick={() => setOutcome.mutate({ packId: p.id, outcome: "lost" })}>Lost</button>
                 </>
               )}
-              <Badge variant="muted">{p.stage}</Badge>
+              <Badge variant="muted">{tenderStatusLabel(p)}</Badge>
             </div>
           </div>
         ))}
