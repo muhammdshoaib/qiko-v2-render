@@ -1,13 +1,19 @@
 # SLOs and pre-launch hardening checklist (SCRUM-17)
 
-## Service level objectives (enforced by loadtest/smoke.js thresholds)
-- Availability: error rate < 1% under 50 concurrent users.
-- Latency: p95 request duration < 800 ms; p99 < 1500 ms.
-- Workers: no task backlog growth under steady load (queue depth stable).
+## Service level objectives
+Enforced by `loadtest/smoke.js` thresholds (the run fails if breached):
+- Availability: error rate < 1% under 50 concurrent users (`http_req_failed: rate<0.01`).
+- Latency: p95 request duration < 800 ms (`http_req_duration: p(95)<800`).
+
+Targets to monitor (not yet enforced as a k6 threshold):
+- Latency: p99 request duration < 1500 ms.
+- Workers: no task backlog growth under steady load (arq queue depth stable).
 
 ## Load test
-- `BASE_URL=https://preprod.qiko.ai k6 run loadtest/smoke.js` (run against preprod, then live pre-cutover).
-- Extend scenarios per endpoint (auth, chat, ingest) before go-live.
+- `BASE_URL=https://preprod.qiko.ai k6 run loadtest/smoke.js` (run against preprod, then live
+  pre-cutover). `BASE_URL` defaults to `http://localhost:8000` for a local run.
+- The scenario ramps to 50 VUs and holds for 2 minutes. Extend scenarios per endpoint (auth, chat,
+  ingest) before go-live.
 
 ## OWASP review (maps to delivered work)
 - [x] A01 Broken access control: central tenant scoping (tenancy.py), RBAC guards (identity), tenant-scoped storage keys.

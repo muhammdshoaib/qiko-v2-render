@@ -15,6 +15,6 @@ frontend/
 └── e2e/             Playwright end-to-end tests across creator/admin
 ```
 
-Both `apps/creator` and `apps/admin` are fully built out (not scaffolding) and are what's
+Both `apps/creator` and `apps/admin` are fully built out (not scaffolding) and are what is
 deployed to preprod/live. See `../README.md` for setup/test/deploy instructions and
-`../04-migration-plan.md` for the broader migration context.
+`../docs/creating-a-worker.md` for how a worker is created and how a new Studio cockpit is added.
