@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Brain, Lightbulb, Plus, Sparkles, Star } from "lucide-react";
@@ -17,12 +17,31 @@ const CARD = "rounded-2xl border border-white/[0.06] bg-white/[0.015]";
 
 // Small ramp-shaped sparkline under a stat value -- matches the live site's per-metric mini
 // bar chart (11 bars, rising height + rising opacity left to right), color keyed per metric.
+// Bars grow from the baseline (scaleY 0 -> 1) on mount, staggered left to right, matching the
+// live-site entrance animation.
 const SPARK_HEIGHTS = [30, 45, 35, 60, 50, 75, 65, 80, 70, 90, 85];
 function Sparkline({ color }: { color: string }) {
+  const [shown, setShown] = useState(false);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setShown(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
   return (
     <div className="flex h-6 items-end gap-0.5">
       {SPARK_HEIGHTS.map((h, i) => (
-        <div key={i} className="flex-1 rounded-sm" style={{ height: `${h}%`, background: color, opacity: 0.3 + (i / SPARK_HEIGHTS.length) * 0.65 }} />
+        <div
+          key={i}
+          className="flex-1 rounded-sm motion-reduce:!transform-none"
+          style={{
+            height: `${h}%`,
+            background: color,
+            opacity: 0.3 + (i / SPARK_HEIGHTS.length) * 0.65,
+            transform: shown ? "scaleY(1)" : "scaleY(0)",
+            transformOrigin: "center bottom",
+            transition: "transform 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
+            transitionDelay: `${200 + i * 50}ms`,
+          }}
+        />
       ))}
     </div>
   );
