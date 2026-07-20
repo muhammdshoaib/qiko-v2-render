@@ -7,15 +7,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, ChevronLeft, FileText, LayoutGrid, ListChecks, MessageSquare, Plus, ShieldCheck,
+  ChevronRight, FileText, LayoutGrid, ListChecks, MessageSquare, Plus, ShieldCheck,
   Upload, Download,
 } from "lucide-react";
 import { cn } from "@qiko/ui";
 import { NotificationBell } from "@/components/cockpit/notification-bell";
 import { CockpitChatPanel } from "@/components/cockpit/chat-panel";
-import { Select } from "@/components/cockpit/controls";
+import { TenderSwitcher } from "@/components/pre-sales/tender-switcher";
 import { askTenderChat, getTenderChatHistory, type RfpPack } from "@/lib/api";
-import { formatShortDate } from "@/lib/stringUtils";
 
 export type PreSalesTab = "overview" | "sources" | "brief" | "sections" | "compliance" | "export";
 
@@ -55,52 +54,56 @@ export function PreSalesCockpitShell({
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-[#05070d] text-slate-200">
       <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-white/[0.06] px-3 sm:px-4">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
-          <button onClick={() => router.push("/studio")} className="flex shrink-0 items-center gap-1.5 rounded-md px-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
-            <ArrowLeft className="size-4" /> <span className="hidden sm:inline">Studio</span>
-          </button>
-          {onBack && (
-            <button onClick={onBack} aria-label="Back to all RFPs" className="flex shrink-0 items-center gap-1 rounded-md px-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
-              <ChevronLeft className="size-4" /> <span className="hidden sm:inline">Back</span>
-            </button>
-          )}
-          <span className="hidden h-4 w-px bg-white/10 sm:block" />
+        {/* Breadcrumb trail so entering an RFP reads as drilling into the same tool (not a new area):
+            Studio (routes to /studio) / worker (returns to the worker landing via onBack) / active
+            tender. Every segment stays visible so Back always has an obvious destination. */}
+        <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 sm:gap-2">
           <span className="hidden size-6 shrink-0 items-center justify-center rounded-md bg-indigo-500/15 text-indigo-400 sm:flex">
             <FileText className="size-3.5" />
           </span>
-          <div className="flex min-w-0 flex-col">
-            <h1 className="truncate text-sm font-semibold leading-tight text-white">{workerName}</h1>
-            <p className="flex items-center gap-1 text-[10px] leading-tight text-slate-500">
-              <span className="size-1.5 rounded-full bg-emerald-400" /> IDG Security &middot; Ready
-            </p>
-          </div>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-2">
+          <button
+            onClick={() => router.push("/studio")}
+            className="shrink-0 rounded-md px-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+          >
+            Studio
+          </button>
+          <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-slate-600" />
+          {onBack ? (
+            <button
+              onClick={onBack}
+              aria-label="All RFPs"
+              className="max-w-[9rem] shrink-0 truncate rounded-md px-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+              title={workerName}
+            >
+              {workerName}
+            </button>
+          ) : (
+            <span className="max-w-[9rem] shrink-0 truncate px-1 text-sm text-slate-300" title={workerName}>
+              {workerName}
+            </span>
+          )}
           {activePack && (
-            <div className="hidden min-w-0 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.02] px-2.5 py-1 sm:flex">
-              <span className="truncate text-[12px] font-medium text-white" title={activePack.title}>
+            <>
+              <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-slate-600" />
+              <span
+                aria-current="page"
+                className="min-w-0 flex-1 truncate px-1 text-sm font-semibold text-white"
+                title={activePack.title}
+              >
                 {activePack.title}
               </span>
-              <span className="text-[11px] text-slate-500">
-                &middot; Due {formatShortDate(activePack.deadline)}
-              </span>
-            </div>
-          )}
-          {packs.length > 0 && (
-            <>
-              <label htmlFor="tender-switch" className="sr-only">Active tender</label>
-              <Select
-                id="tender-switch"
-                wrapperClassName="max-w-[160px]"
-                value={activePackId ?? ""}
-                onChange={(e) => onSelectPack(e.target.value)}
-              >
-                {packs.map((p) => (
-                  <option key={p.id} value={p.id}>{p.title}</option>
-                ))}
-              </Select>
             </>
+          )}
+        </nav>
+
+        <div className="flex shrink-0 items-center gap-2">
+          {packs.length > 0 && (
+            <TenderSwitcher
+              className="w-[160px]"
+              packs={packs}
+              activePackId={activePackId}
+              onSelectPack={onSelectPack}
+            />
           )}
           <button
             onClick={onNewTender}
