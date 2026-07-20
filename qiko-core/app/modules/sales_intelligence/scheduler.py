@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from app.modules.sales_intelligence.models import IngestionSource, Opportunity
+from app.modules.sales_intelligence.models import IngestionSource, Opportunity, cadence_to_minutes
 from app.modules.sales_intelligence.service import OpportunityService, SalesIntelligenceError
 
 logger = logging.getLogger(__name__)
@@ -50,14 +50,19 @@ def _as_utc(value: datetime) -> datetime:
 
 
 def _is_source_due(source: IngestionSource, *, interval_minutes: int, now: datetime) -> bool:
-    """A source is due when it has never been scanned or its last scan is at least one interval old.
+    """A source is due when it has never been scanned or its last scan is at least one cadence
+    interval old. The interval comes from the source's own `scan_cadence` (falling back to the
+    global `interval_minutes` for legacy cadences); a "manual" cadence is never auto-due.
     `last_scan_at` is stamped on both success and failure by `_scan_source`, so a failing source
     still backs off one interval rather than being retried every tick."""
     if not source.is_enabled():
         return False
+    minutes = cadence_to_minutes(source.scan_cadence, default=interval_minutes)
+    if minutes is None:  # manual cadence -> never auto-scanned
+        return False
     if source.last_scan_at is None:
         return True
-    return _as_utc(source.last_scan_at) + timedelta(minutes=max(1, interval_minutes)) <= now
+    return _as_utc(source.last_scan_at) + timedelta(minutes=max(1, minutes)) <= now
 
 
 async def scan_due_sources(service: OpportunityService, *, now: datetime | None = None,

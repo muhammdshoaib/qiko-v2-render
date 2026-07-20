@@ -3,15 +3,30 @@
 import { useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Layers, RadioTower, RefreshCw, Search, Sparkles } from "lucide-react";
+import { ChevronDown, Layers, Loader2, RadioTower, RefreshCw, Search, Sparkles } from "lucide-react";
 import { cn } from "@qiko/ui";
 import {
-  listAgents, listSalesOpportunities, listSalesSources, scanTedSource, scanUngmSource, type SalesIntelSource,
+  listAgents, listSalesOpportunities, listSalesSources, scanTedSource, scanUngmSource, updateSalesSource,
+  type SalesIntelSource, type SalesScanCadence,
 } from "@/lib/api";
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
 import { OutcomesStrip } from "@/components/sales-intelligence/outcomes-strip";
 import { Input, Switch } from "@/components/cockpit/controls";
 import { formatDate, humanize } from "@/components/sales-intelligence/utils";
+
+// Per-source scheduled scan cadence options (mirrors Ali's SCAN_CADENCE_OPTIONS).
+const SCAN_CADENCE_OPTIONS: { value: SalesScanCadence; label: string }[] = [
+  { value: "minutely", label: "Per minute" },
+  { value: "hourly", label: "Per hour" },
+  { value: "daily", label: "Per day" },
+  { value: "weekly", label: "Per week" },
+  { value: "manual", label: "Manual only" },
+];
+
+// Coerce a stored cadence (which may be a legacy "every_N_minutes" value) to a select option.
+function cadenceValue(cadence: string | null | undefined): SalesScanCadence {
+  return SCAN_CADENCE_OPTIONS.some((o) => o.value === cadence) ? (cadence as SalesScanCadence) : "minutely";
+}
 
 // Tone colour for a source's last-scan status string (>= 4.5:1 on the dark card).
 function scanStatusClass(status: string | null | undefined): string {
@@ -56,6 +71,15 @@ export default function SalesIntelligenceIngestionPage() {
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-sources", agentId] }); qc.invalidateQueries({ queryKey: ["sales-opportunities", agentId] }); },
   });
 
+  // Per-source scan-cadence change. Tracks the in-flight source key so only that card shows a
+  // loading state while the mutation settles.
+  const cadenceMut = useMutation({
+    mutationFn: ({ sourceKey, cadence }: { sourceKey: "ted" | "ungm"; cadence: SalesScanCadence }) =>
+      updateSalesSource(agentId, sourceKey, { scan_cadence: cadence }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sales-sources", agentId] }),
+  });
+  const updatingCadenceKey = cadenceMut.isPending ? cadenceMut.variables?.sourceKey : null;
+
   const activeSources = sources.filter((s) => s.status === "active").length;
   const newFromLastScan = useMemo(() => opps.filter((o) => o.stage === "ingested").length, [opps]);
 
@@ -88,9 +112,11 @@ export default function SalesIntelligenceIngestionPage() {
 
           <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <SourceCard icon={<Layers className="size-5" />} name="TED - EU Tenders" sourceKey="TED" fullName="EU Tenders Electronic Daily"
-              source={ted} onScan={() => scanTed.mutate()} scanning={scanTed.isPending} error={scanTed.isError} />
+              source={ted} onScan={() => scanTed.mutate()} scanning={scanTed.isPending} error={scanTed.isError}
+              onCadenceChange={(cadence) => cadenceMut.mutate({ sourceKey: "ted", cadence })} cadenceUpdating={updatingCadenceKey === "ted"} />
             <SourceCard icon={<RadioTower className="size-5" />} name="UNGM Public Notices" sourceKey="UNGM" fullName="UN Global Marketplace"
-              source={ungm} onScan={() => scanUngm.mutate()} scanning={scanUngm.isPending} error={scanUngm.isError} />
+              source={ungm} onScan={() => scanUngm.mutate()} scanning={scanUngm.isPending} error={scanUngm.isError}
+              onCadenceChange={(cadence) => cadenceMut.mutate({ sourceKey: "ungm", cadence })} cadenceUpdating={updatingCadenceKey === "ungm"} />
           </div>
         </div>
 
@@ -121,11 +147,14 @@ export default function SalesIntelligenceIngestionPage() {
   );
 }
 
-function SourceCard({ icon, name, sourceKey, fullName, source, onScan, scanning, error }: {
+function SourceCard({ icon, name, sourceKey, fullName, source, onScan, scanning, error, onCadenceChange, cadenceUpdating }: {
   icon: React.ReactNode; name: string; sourceKey: string; fullName: string;
   source?: SalesIntelSource; onScan: () => void; scanning: boolean; error?: boolean;
+  onCadenceChange: (cadence: SalesScanCadence) => void; cadenceUpdating: boolean;
 }) {
   const active = (source?.status ?? "active") === "active";
+  const cadence = cadenceValue(source?.scanCadence);
+  const nextScanLabel = cadence === "manual" ? "Manual only" : formatDate(source?.nextScanAt, true);
   return (
     <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
       <div className="flex items-start justify-between">
@@ -150,7 +179,7 @@ function SourceCard({ icon, name, sourceKey, fullName, source, onScan, scanning,
         </div>
         <div className="rounded-lg bg-white/[0.02] py-2">
           <p className="text-[9px] uppercase tracking-wide text-slate-500">Next Scan</p>
-          <p className="mt-1 text-[11px] text-slate-300">{formatDate(source?.nextScanAt, true)}</p>
+          <p className="mt-1 text-[11px] text-slate-300">{nextScanLabel}</p>
         </div>
         <div className="rounded-lg bg-white/[0.02] py-2">
           <p className="text-[9px] uppercase tracking-wide text-slate-500">Status</p>
@@ -160,6 +189,27 @@ function SourceCard({ icon, name, sourceKey, fullName, source, onScan, scanning,
           <p className="text-[9px] uppercase tracking-wide text-slate-500">Found</p>
           <p className="mt-1 text-[11px] text-slate-300">{source?.opportunitiesFound ?? 0} opps</p>
         </div>
+      </div>
+
+      <div className="mt-4">
+        <label htmlFor={`scan-cadence-${sourceKey}`} className="mb-1.5 block text-[9px] font-semibold uppercase tracking-wide text-slate-500">
+          Scan frequency
+        </label>
+        <div className="relative">
+          <select id={`scan-cadence-${sourceKey}`} value={cadence} disabled={cadenceUpdating || !source?.sourceKey}
+            onChange={(e) => onCadenceChange(e.target.value as SalesScanCadence)}
+            className="w-full cursor-pointer appearance-none rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 pr-9 text-[12px] text-slate-200 outline-none hover:border-white/20 focus-visible:border-indigo-400/50 focus-visible:ring-2 focus-visible:ring-indigo-400/40 disabled:cursor-not-allowed disabled:opacity-50">
+            {SCAN_CADENCE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value} className="bg-[#0a0f1a] text-slate-200">{o.label}</option>
+            ))}
+          </select>
+          {cadenceUpdating
+            ? <Loader2 className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-slate-400" />
+            : <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />}
+        </div>
+        <p className="mt-1.5 text-[10px] text-slate-500">
+          {cadence === "manual" ? "Auto-scan off. Use Run Scan when needed." : "Runs on this schedule while the source is enabled."}
+        </p>
       </div>
 
       <button onClick={onScan} disabled={scanning}

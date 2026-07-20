@@ -17,6 +17,24 @@ from typing import Protocol
 SOURCE_KEYS = ("ungm", "ted")
 SOURCE_STATUSES = ("active", "inactive")
 
+# Per-source scheduled scan cadence (mirrors Ali's idg-sales SCAN_CADENCE_OPTIONS). "manual" means
+# the source is never auto-scanned by the background scheduler; the operator runs it on demand.
+SCAN_CADENCES = ("minutely", "hourly", "daily", "weekly", "manual")
+# Cadence -> minutes between auto-scans. "manual" is deliberately absent (never auto-scan).
+CADENCE_MINUTES = {"minutely": 1, "hourly": 60, "daily": 1440, "weekly": 10080}
+
+
+def cadence_to_minutes(cadence: str | None, *, default: int) -> int | None:
+    """Minutes between auto-scans for a source's cadence.
+
+    Returns None for "manual" (never auto-scan). A known cadence maps to its fixed interval;
+    anything else (e.g. a legacy "every_N_minutes" default) falls back to the caller's global
+    `default` interval, so pre-existing sources keep their previous behaviour."""
+    if cadence == "manual":
+        return None
+    return CADENCE_MINUTES.get(cadence or "", default)
+
+
 STAGES = (
     "ingested", "qualifying", "qualified", "awaiting_review", "validated",
     "ready_salesforce", "push_pending", "pushed", "rejected", "push_failed",
@@ -47,7 +65,7 @@ def resolve_activity_type(action: str) -> str | None:
     """Same mapping as IdgSalesActivityLog::resolveActivityType (PHP)."""
     import re
 
-    if action in ("source_enabled", "source_disabled"):
+    if action in ("source_enabled", "source_disabled", "source_cadence_changed"):
         return "source_status"
     if re.match(r"^(ungm|ted)_scan_(completed|failed)$", action):
         return "source_scan"
@@ -82,10 +100,15 @@ class IngestionSource:
         """When this active source is next due to scan. One interval after its last scan (the same
         due-ness rule the scheduler uses: last_scan_at + interval), or -- if it has never scanned --
         the next interval boundary from now so a freshly-enabled source still shows a time rather
-        than a blank. Returns None for a disabled source (nothing is scheduled)."""
+        than a blank. The interval is derived from the source's own `scan_cadence` (falling back to
+        the global `scan_interval_minutes` for legacy cadences). Returns None for a disabled source
+        or a "manual" cadence (nothing is auto-scheduled in either case)."""
         if not self.is_enabled():
             return None
-        interval = max(1, scan_interval_minutes)
+        minutes = cadence_to_minutes(self.scan_cadence, default=scan_interval_minutes)
+        if minutes is None:  # manual cadence -> never auto-scanned
+            return None
+        interval = max(1, minutes)
         if self.last_scan_at is not None:
             last = self.last_scan_at if self.last_scan_at.tzinfo else self.last_scan_at.replace(tzinfo=timezone.utc)
             return last + timedelta(minutes=interval)

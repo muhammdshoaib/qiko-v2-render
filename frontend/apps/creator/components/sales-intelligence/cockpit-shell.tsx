@@ -6,19 +6,20 @@
 // studio-sales-intel-detail.png / pipeline-view.png / ingestion-filters.png / studio-sf-push-log.png).
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Bell, LayoutGrid, MessageSquare, Radar, TableProperties, Upload } from "lucide-react";
+import { ArrowLeft, Bell, Gavel, LayoutGrid, MessageSquare, Radar, TableProperties, Upload } from "lucide-react";
 import { cn } from "@qiko/ui";
 import { NotificationBell } from "@/components/cockpit/notification-bell";
 import { CockpitChatPanel } from "@/components/cockpit/chat-panel";
 import { ask } from "@/lib/api";
 
-export type CockpitSection = "overview" | "pipeline" | "ingestion" | "log" | "notifications";
+export type CockpitSection = "overview" | "pipeline" | "ingestion" | "log" | "notifications" | "decision-history";
 
 const NAV_ITEMS: { section: CockpitSection; label: string; sub: string; icon: typeof LayoutGrid; group: "OVERVIEW" | "USE CASES" }[] = [
   { section: "overview", label: "Overview", sub: "DASHBOARD", icon: LayoutGrid, group: "OVERVIEW" },
   { section: "notifications", label: "Notifications", sub: "INBOX", icon: Bell, group: "OVERVIEW" },
   { section: "pipeline", label: "Opportunity Pipeline", sub: "PIPELINE", icon: TableProperties, group: "USE CASES" },
   { section: "ingestion", label: "Ingestion", sub: "SOURCES", icon: Radar, group: "USE CASES" },
+  { section: "decision-history", label: "Decision History", sub: "AUDIT", icon: Gavel, group: "USE CASES" },
   { section: "log", label: "Salesforce Push Log", sub: "LOG", icon: Upload, group: "USE CASES" },
 ];
 

@@ -558,6 +558,109 @@ def test_sales_intelligence_sources_round_trip_via_api(client):
     assert patch.json()["source"]["nextScanAt"] is not None
 
 
+def test_sales_intelligence_update_source_persists_scan_cadence(client):
+    """FEATURE 1: per-source scan cadence is settable via PATCH, persisted, and validated; a
+    'manual' cadence clears the scheduled next scan even while the source is active."""
+    cookies = auth_cookies(tenant="acme")
+    agent = "agent-si-cadence"
+    client.get(f"/api/v1/sales-intelligence/{agent}/sources", cookies=cookies)
+
+    # status + cadence in one patch
+    patch = client.patch(f"/api/v1/sales-intelligence/{agent}/sources/ted", cookies=cookies,
+                         json={"status": "active", "scan_cadence": "hourly"})
+    assert patch.status_code == 200
+    assert patch.json()["source"]["scanCadence"] == "hourly"
+    assert patch.json()["source"]["nextScanAt"] is not None
+
+    # persisted across a re-fetch
+    sources = client.get(f"/api/v1/sales-intelligence/{agent}/sources", cookies=cookies).json()["sources"]
+    ted = next(s for s in sources if s["sourceKey"] == "ted")
+    assert ted["scanCadence"] == "hourly"
+
+    # cadence-only patch works, and 'manual' means no scheduled next scan
+    manual = client.patch(f"/api/v1/sales-intelligence/{agent}/sources/ted", cookies=cookies,
+                          json={"scan_cadence": "manual"})
+    assert manual.status_code == 200
+    assert manual.json()["source"]["scanCadence"] == "manual"
+    assert manual.json()["source"]["status"] == "active"
+    assert manual.json()["source"]["nextScanAt"] is None
+
+    # invalid cadence rejected; empty body rejected
+    assert client.patch(f"/api/v1/sales-intelligence/{agent}/sources/ted", cookies=cookies,
+                        json={"scan_cadence": "hyperspeed"}).status_code == 422
+    assert client.patch(f"/api/v1/sales-intelligence/{agent}/sources/ted", cookies=cookies,
+                        json={}).status_code == 422
+
+
+def test_sales_intelligence_update_source_cadence_requires_editor_role(client):
+    viewer_cookies = auth_cookies(tenant="acme", role="viewer")
+    resp = client.patch("/api/v1/sales-intelligence/agent-si-cadence-rbac/sources/ted",
+                        cookies=viewer_cookies, json={"scan_cadence": "daily"})
+    assert resp.status_code == 403
+
+
+def test_sales_intelligence_decision_history_aggregates_across_opportunities(client):
+    """FEATURE 2: the agent-level decision history aggregates human-review decisions across all
+    opportunities, honours the decision + reviewer filters, and reports correct summary counts."""
+    cookies_a = auth_cookies(tenant="acme", user_id="rev-a")
+    cookies_b = auth_cookies(tenant="acme", user_id="rev-b")
+    agent = "agent-si-decisions"
+
+    ids = []
+    for i in range(3):
+        r = client.post(f"/api/v1/sales-intelligence/{agent}/opportunities", cookies=cookies_a,
+                        json={"title": f"Opportunity {i}", "run_qualification": False})
+        ids.append(r.json()["opportunity"]["id"])
+
+    # rev-a approves opp0 and rejects opp1; rev-b overrides (needs_review) opp2
+    client.post(f"/api/v1/sales-intelligence/{agent}/opportunities/{ids[0]}/review", cookies=cookies_a,
+                json={"decision": "approved"})
+    client.post(f"/api/v1/sales-intelligence/{agent}/opportunities/{ids[1]}/review", cookies=cookies_a,
+                json={"decision": "rejected"})
+    client.post(f"/api/v1/sales-intelligence/{agent}/opportunities/{ids[2]}/review", cookies=cookies_b,
+                json={"decision": "needs_review"})
+
+    body = client.get(f"/api/v1/sales-intelligence/{agent}/decision-history", cookies=cookies_a).json()
+    assert body["summary"] == {"approved": 1, "rejected": 1, "overrides": 1, "total": 3}
+    assert len(body["decisionHistory"]) == 3
+    assert all("opportunityTitle" in e and "opportunityStage" in e for e in body["decisionHistory"])
+    assert {r["id"] for r in body["reviewers"]} == {"rev-a", "rev-b"}
+
+    # decision filter: 'override' maps to the stored needs_review decision
+    overrides = client.get(f"/api/v1/sales-intelligence/{agent}/decision-history?decision=override",
+                           cookies=cookies_a).json()
+    assert overrides["summary"] == {"approved": 0, "rejected": 0, "overrides": 1, "total": 1}
+    assert overrides["decisionHistory"][0]["decision"] == "needs_review"
+
+    # reviewer filter narrows the rows but keeps the full reviewers dropdown
+    by_a = client.get(f"/api/v1/sales-intelligence/{agent}/decision-history?reviewer_user_id=rev-a",
+                      cookies=cookies_a).json()
+    assert by_a["summary"]["total"] == 2
+    assert {e["reviewerUserId"] for e in by_a["decisionHistory"]} == {"rev-a"}
+    assert {r["id"] for r in by_a["reviewers"]} == {"rev-a", "rev-b"}
+
+    # invalid decision rejected; viewer can read (parity with the other read endpoints)
+    assert client.get(f"/api/v1/sales-intelligence/{agent}/decision-history?decision=maybe",
+                      cookies=cookies_a).status_code == 422
+    assert client.get(f"/api/v1/sales-intelligence/{agent}/decision-history",
+                      cookies=auth_cookies(tenant="acme", role="viewer")).status_code == 200
+
+
+def test_sales_intelligence_decision_history_is_tenant_isolated(client):
+    agent = "agent-si-dh-iso"
+    cookies_a = auth_cookies(tenant="acme")
+    created = client.post(f"/api/v1/sales-intelligence/{agent}/opportunities", cookies=cookies_a,
+                          json={"title": "Tenant A opp", "run_qualification": False})
+    opp_id = created.json()["opportunity"]["id"]
+    client.post(f"/api/v1/sales-intelligence/{agent}/opportunities/{opp_id}/review", cookies=cookies_a,
+                json={"decision": "approved"})
+
+    other = client.get(f"/api/v1/sales-intelligence/{agent}/decision-history",
+                       cookies=auth_cookies(tenant="beta")).json()
+    assert other["decisionHistory"] == []
+    assert other["summary"] == {"approved": 0, "rejected": 0, "overrides": 0, "total": 0}
+
+
 def test_sales_intelligence_manual_create_and_review_via_api(client):
     cookies = auth_cookies(tenant="acme")
     created = client.post("/api/v1/sales-intelligence/agent-si-2/opportunities", cookies=cookies, json={

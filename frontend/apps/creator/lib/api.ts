@@ -610,9 +610,15 @@ const siQuery = (params: Record<string, string | number | boolean | undefined>) 
 
 export const listSalesSources = (agentId: string) =>
   request<{ sources: SalesIntelSource[] }>(`/sales-intelligence/${agentId}/sources`);
-export const updateSalesSource = (agentId: string, sourceKey: "ted" | "ungm", status: string) =>
+// Per-source scheduled scan cadence (mirrors the backend SCAN_CADENCES enum). "manual" turns off
+// auto-scanning; the operator runs the source on demand via the scan endpoints.
+export type SalesScanCadence = "minutely" | "hourly" | "daily" | "weekly" | "manual";
+// PATCH accepts either the on/off status or the scan cadence (or both) -- at least one is required.
+export const updateSalesSource = (
+  agentId: string, sourceKey: "ted" | "ungm", body: { status?: string; scan_cadence?: SalesScanCadence },
+) =>
   request<{ source: SalesIntelSource }>(`/sales-intelligence/${agentId}/sources/${sourceKey}`, {
-    method: "PATCH", body: JSON.stringify({ source_key: sourceKey, status }),
+    method: "PATCH", body: JSON.stringify(body),
   });
 export const scanTedSource = (agentId: string, body: Record<string, unknown> = {}) =>
   request<{ scanned: boolean; found: number }>(`/sales-intelligence/${agentId}/scan/ted`, {
@@ -720,6 +726,22 @@ export const getSalesOpportunityDecisions = (agentId: string, opportunityId: num
   request<{ opportunityId: string; decisions: SalesDecision[] }>(
     `/sales-intelligence/${agentId}/opportunities/${opportunityId}/decisions`,
   );
+
+// Agent-level Decision History -- the approve/reject/override audit trail aggregated across ALL
+// opportunities for the agent (GET /decision-history), with decision + reviewer filters.
+export type SalesDecisionReviewer = { id: string; userName: string | null; email: string | null };
+export type SalesDecisionHistoryEntry = SalesDecision & {
+  opportunityTitle: string | null; opportunityStage: string | null; reviewer: SalesDecisionReviewer | null;
+};
+export type SalesDecisionHistorySummary = { approved: number; rejected: number; overrides: number; total: number };
+export type SalesDecisionHistoryResponse = {
+  decisionHistory: SalesDecisionHistoryEntry[]; reviewers: SalesDecisionReviewer[]; summary: SalesDecisionHistorySummary;
+};
+export type SalesDecisionFilter = "approved" | "rejected" | "needs_review" | "override" | "all";
+export const getSalesDecisionHistory = (
+  agentId: string, params: { decision?: SalesDecisionFilter; reviewer_user_id?: string } = {},
+) =>
+  request<SalesDecisionHistoryResponse>(`/sales-intelligence/${agentId}/decision-history${siQuery(params)}`);
 
 // Generic in-app notifications (app.modules.notifications) -- tenant-scoped inbox, reusable across
 // verticals. Sales Intelligence wires its triggers server-side (review-required, Salesforce sync

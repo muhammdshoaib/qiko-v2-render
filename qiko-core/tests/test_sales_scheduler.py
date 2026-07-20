@@ -107,6 +107,45 @@ async def test_scan_due_sources_no_active_sources_is_clean():
     assert summary == {"active_sources": 0, "scanned": 0, "skipped": 0, "failed": 0}
 
 
+async def test_scan_due_sources_honours_per_source_cadence(monkeypatch):
+    """Due-ness is derived from each source's own cadence, not the global interval: an hourly
+    source scanned 30 min ago is not yet due, but is once its 60-minute interval elapses."""
+    svc, _ = _build()  # global interval = 1 minute
+    now = _now()
+    await svc.update_source_status("acme", "agent-1", "ted", "active")
+    await svc.update_source_cadence("acme", "agent-1", "ted", "hourly")
+    ted = await svc.sources.get("acme", "agent-1", "ted")
+    ted.last_scan_at = now - timedelta(minutes=30)
+    await svc.sources.update(ted)
+    monkeypatch.setattr(svc.ted, "search", lambda filters=None: _ted_notice())
+
+    early = await scheduler.scan_due_sources(svc, now=now)
+    assert early == {"active_sources": 1, "scanned": 0, "skipped": 1, "failed": 0}
+
+    later = await scheduler.scan_due_sources(svc, now=now + timedelta(minutes=61))
+    assert later["scanned"] == 1
+
+
+async def test_scan_due_sources_manual_cadence_is_never_due(monkeypatch):
+    """A 'manual' cadence source is never auto-scanned, even if it has never been scanned."""
+    svc, _ = _build()
+    await svc.update_source_status("acme", "agent-1", "ted", "active")
+    await svc.update_source_cadence("acme", "agent-1", "ted", "manual")
+
+    called = False
+
+    def _search(filters=None):
+        nonlocal called
+        called = True
+        return _ted_notice()
+
+    monkeypatch.setattr(svc.ted, "search", _search)
+    summary = await scheduler.scan_due_sources(svc, now=_now() + timedelta(days=7))
+
+    assert summary == {"active_sources": 1, "scanned": 0, "skipped": 1, "failed": 0}
+    assert called is False
+
+
 # --- send_deadline_reminders ---
 async def _add_opp(svc: OpportunityService, *, deadline_days: int, stage: str = "awaiting_review",
                    opp_id: str = "opp-1") -> Opportunity:

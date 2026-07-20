@@ -25,6 +25,7 @@ from app.modules.sales_intelligence.models import (
     MANUAL_TRANSITION_STAGES,
     Opportunity,
     OpportunityStore,
+    SCAN_CADENCES,
     SOURCE_KEYS,
     SOURCE_STATUSES,
 )
@@ -56,8 +57,14 @@ class InvalidStageTransitionError(SalesIntelligenceError):
     pass
 
 
+# Map a global scan interval onto one of the per-source cadence values (SCAN_CADENCES) where it
+# lines up exactly, so a freshly-provisioned source has a cadence the UI select can render. Any
+# other interval keeps the legacy "every_N_minutes" label, which cadence_to_minutes falls back to.
+_INTERVAL_TO_CADENCE = {1: "minutely", 60: "hourly", 1440: "daily", 10080: "weekly"}
+
+
 def _default_source_cadence(scan_interval_minutes: int) -> str:
-    return "every_1_minute" if scan_interval_minutes == 1 else f"every_{scan_interval_minutes}_minutes"
+    return _INTERVAL_TO_CADENCE.get(scan_interval_minutes, f"every_{scan_interval_minutes}_minutes")
 
 
 @dataclass
@@ -127,6 +134,28 @@ class OpportunityService:
                         f"{source_key.upper()} set to {status} for this agent.",
                         tone="success" if status == "active" else "info", actor_user_id=actor_user_id,
                         metadata={"source_key": source_key, "previous_status": previous, "status": status})
+        return source
+
+    async def update_source_cadence(self, tenant: str, agent_id: str, source_key: str, cadence: str,
+                                    actor_user_id: str | None = None) -> IngestionSource:
+        """Set a portal source's scheduled scan cadence (minutely/hourly/daily/weekly/manual). The
+        scheduler derives each source's due interval from this, so "manual" turns off auto-scans."""
+        if source_key not in SOURCE_KEYS:
+            raise SalesIntelligenceError(f"invalid source_key: {source_key}")
+        if cadence not in SCAN_CADENCES:
+            raise SalesIntelligenceError(f"invalid scan_cadence: {cadence}")
+        await self.ensure_sources(tenant, agent_id)
+        source = await self.sources.get(tenant, agent_id, source_key)
+        if source is None:
+            raise OpportunityNotFoundError(f"source not found: {source_key}")
+        previous = source.scan_cadence
+        source.scan_cadence = cadence
+        source.updated_at = _now()
+        source = await self.sources.update(source)
+        await self._log(tenant, agent_id, "source_cadence_changed",
+                        f"{source_key.upper()} scan cadence set to {cadence} for this agent.",
+                        tone="info", actor_user_id=actor_user_id,
+                        metadata={"source_key": source_key, "previous_cadence": previous, "scan_cadence": cadence})
         return source
 
     def assert_source_active(self, source: IngestionSource) -> None:

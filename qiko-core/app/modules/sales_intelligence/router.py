@@ -19,6 +19,7 @@ from app.modules.sales_intelligence.models import (
     MANUAL_TRANSITION_STAGES,
     RECOMMENDATIONS,
     REVIEW_DECISIONS,
+    SCAN_CADENCES,
     SOURCE_KEYS,
     SOURCE_STATUSES,
     STAGES,
@@ -147,16 +148,30 @@ async def sources(agent_id: str, tenant: str = Depends(authed_tenant), svc=Depen
 
 
 class UpdateSourceBody(BaseModel):
-    status: str
+    # Both optional so the FE can patch either the on/off status or the scheduled scan cadence
+    # independently (mirrors Ali's UpdateIdgSalesSourcePayload). At least one must be supplied.
+    status: str | None = None
+    scan_cadence: str | None = None
 
 
 @router.patch("/{agent_id}/sources/{source_key}")
 async def update_source(agent_id: str, source_key: str, body: UpdateSourceBody,
                         tenant: str = Depends(authed_tenant), claims: dict = Depends(require_role(Role.editor)),
                         svc=Depends(get_sales_intel)) -> dict:
-    if source_key not in SOURCE_KEYS or body.status not in SOURCE_STATUSES:
-        raise HTTPException(status_code=422, detail="invalid source_key or status")
-    source = await svc.update_source_status(tenant, agent_id, source_key, body.status, _actor_user_id(claims))
+    if source_key not in SOURCE_KEYS:
+        raise HTTPException(status_code=422, detail="invalid source_key")
+    if body.status is None and body.scan_cadence is None:
+        raise HTTPException(status_code=422, detail="status or scan_cadence is required")
+    if body.status is not None and body.status not in SOURCE_STATUSES:
+        raise HTTPException(status_code=422, detail="invalid status")
+    if body.scan_cadence is not None and body.scan_cadence not in SCAN_CADENCES:
+        raise HTTPException(status_code=422, detail="invalid scan_cadence")
+    actor = _actor_user_id(claims)
+    source = None
+    if body.status is not None:
+        source = await svc.update_source_status(tenant, agent_id, source_key, body.status, actor)
+    if body.scan_cadence is not None:
+        source = await svc.update_source_cadence(tenant, agent_id, source_key, body.scan_cadence, actor)
     return {"source": _source_out(source, scan_interval_minutes=svc.scan_interval_minutes)}
 
 
@@ -481,6 +496,74 @@ async def opportunity_decisions(agent_id: str, opportunity_id: str, limit: int =
     logs = await svc.activity_logs.list_for_agent(tenant, agent_id, opportunity_id=opportunity_id,
                                                   action="human_review_recorded", limit=max(1, min(200, limit)))
     return {"opportunityId": opportunity_id, "decisions": [_decision_out(log) for log in logs]}
+
+
+# UI decision filter -> the stored decision value. "override" is the label for a needs_review
+# decision; "all" (or an omitted param) applies no decision filter.
+_DECISION_FILTERS = {"approved", "rejected", "needs_review", "override", "all"}
+_DECISION_FILTER_ALIASES = {"override": "needs_review"}
+
+
+@router.get("/{agent_id}/decision-history")
+async def decision_history(agent_id: str, decision: str | None = None, reviewer_user_id: str | None = None,
+                           limit: int = 200, tenant: str = Depends(authed_tenant),
+                           svc=Depends(get_sales_intel)) -> dict:
+    """Agent-level Decision History -- the approve/reject/override audit trail aggregated across ALL
+    opportunities for this agent/tenant (mirrors Ali's IdgSalesController agent decision-history).
+    Viewer-readable like the other read endpoints. Optional filters: `decision`
+    (approved|rejected|needs_review|override|all) and `reviewer_user_id`."""
+    if decision is not None and decision not in _DECISION_FILTERS:
+        raise HTTPException(status_code=422, detail="invalid decision")
+    decision_key = _DECISION_FILTER_ALIASES.get(decision or "all", decision or "all")
+
+    logs = await svc.activity_logs.list_for_agent(tenant, agent_id, action="human_review_recorded",
+                                                  limit=max(1, min(MAX_OPPORTUNITY_LIMIT, limit)))
+
+    # Enrich each decision with its opportunity's title/stage and a best-effort reviewer name
+    # (resolved from any opportunity where this user is the assigned reviewer -- V2 has no
+    # tenant-wide user directory to look names up in).
+    opportunities = await svc.opportunities.list_for_agent(tenant, agent_id, include_archived=True)
+    opp_by_id = {o.id: o for o in opportunities}
+    names_by_user: dict[str, str] = {}
+    for o in opportunities:
+        if o.assigned_reviewer_user_id and o.assigned_reviewer_name:
+            names_by_user.setdefault(o.assigned_reviewer_user_id, o.assigned_reviewer_name)
+
+    def _reviewer(user_id: str | None) -> dict | None:
+        if user_id is None:
+            return None
+        return {"id": user_id, "userName": names_by_user.get(user_id), "email": None}
+
+    # The reviewers dropdown is the full distinct set (independent of the current filters) so it
+    # stays stable as the user filters. Preserve newest-first encounter order.
+    reviewers: list[dict] = []
+    seen: set[str] = set()
+    for log in logs:
+        uid = log.actor_user_id
+        if uid is not None and uid not in seen:
+            seen.add(uid)
+            reviewers.append(_reviewer(uid))  # type: ignore[arg-type]
+
+    entries: list[dict] = []
+    for log in logs:
+        record = _decision_out(log)
+        if decision_key != "all" and record["decision"] != decision_key:
+            continue
+        if reviewer_user_id and record["reviewerUserId"] != reviewer_user_id:
+            continue
+        opp = opp_by_id.get(log.opportunity_id)
+        record["opportunityTitle"] = opp.title if opp is not None else None
+        record["opportunityStage"] = opp.stage if opp is not None else None
+        record["reviewer"] = _reviewer(log.actor_user_id)
+        entries.append(record)
+
+    summary = {
+        "approved": sum(1 for e in entries if e["decision"] == "approved"),
+        "rejected": sum(1 for e in entries if e["decision"] == "rejected"),
+        "overrides": sum(1 for e in entries if e["decision"] == "needs_review"),
+        "total": len(entries),
+    }
+    return {"decisionHistory": entries, "reviewers": reviewers, "summary": summary}
 
 
 class NotesBody(BaseModel):
