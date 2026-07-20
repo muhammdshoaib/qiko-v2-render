@@ -14,7 +14,7 @@ import { cn } from "@qiko/ui";
 import { NotificationBell } from "@/components/cockpit/notification-bell";
 import { CockpitChatPanel } from "@/components/cockpit/chat-panel";
 import { Select } from "@/components/cockpit/controls";
-import { askBidContext, type RfpPack } from "@/lib/api";
+import { askTenderChat, type RfpPack } from "@/lib/api";
 import { formatShortDate } from "@/lib/stringUtils";
 
 export type PreSalesTab = "tenders" | "overview" | "sources" | "brief" | "sections" | "compliance" | "export";
@@ -175,15 +175,15 @@ export function PreSalesCockpitShell({
             ready={!!activePackId}
             onAsk={(q) => {
               if (!activePackId) return Promise.reject(new Error("no tender selected"));
-              return askBidContext(activePackId, q).then((r) => r.answer);
+              return askTenderChat(activePackId, q).then((r) => r.answer);
             }}
-            emptyPrompt="Scope, submission format, deadlines and qualification rules for this tender -- answered only from the tender document."
+            emptyPrompt="Ask about this tender or your knowledge base. I can help develop and expand answers, grounded in your company documents (for example capabilities, systems, certifications and past performance)."
             notReadyTitle="No tender selected"
-            notReadyPrompt="Pick or upload a tender to ask grounded questions about its scope, rules and deadlines."
-            placeholder={"Ask about this tender\u2026"}
+            notReadyPrompt="Pick or upload a tender, then ask grounded questions to develop your answers from the tender and your knowledge base."
+            placeholder={"Ask to develop an answer\u2026"}
             notReadyPlaceholder={"Select a tender first\u2026"}
-            inputHint="Enter to send &middot; answers cite the tender document"
-            errorText={"Sorry, I couldn't answer that. Make sure a tender document has been uploaded, then try again."}
+            inputHint="Enter to send &middot; grounded in your knowledge base and the tender"
+            errorText={"Sorry, I couldn't answer that. Please try again in a moment."}
           />
         )}
       </div>

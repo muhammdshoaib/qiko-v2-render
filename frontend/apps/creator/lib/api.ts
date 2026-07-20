@@ -184,6 +184,12 @@ export const askBidContext = (packId: string, question: string) =>
   request<{ question: string; answer: string }>(`/rfp/packs/${packId}/ask`, {
     method: "POST", body: JSON.stringify({ question }),
   });
+// Answer-development chat: grounded in the company knowledge base AND the tender context, so it can
+// expand draft answers from company documents, not only answer questions about the tender document.
+export const askTenderChat = (packId: string, question: string) =>
+  request<{ question: string; answer: string; sources: string[] }>(`/rfp/packs/${packId}/chat`, {
+    method: "POST", body: JSON.stringify({ question }),
+  });
 
 export type ComplianceItem = { requirement: string; category: string; mandatory: boolean; owner: "AI" | "Human"; note: string };
 export type TenderBrief = {

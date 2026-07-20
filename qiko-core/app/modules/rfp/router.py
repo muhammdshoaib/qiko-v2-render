@@ -35,6 +35,7 @@ from app.modules.rfp.generation import (
 from app.modules.rfp.scoring import ScoringError, score_opportunity
 from app.modules.rfp.service import PackRequirement, RfpPack, RfpPackNotFound
 from app.modules.rfp.tree import PackQuestionNotFound, PackSection, PackSectionNotFound
+from app.modules.workers.worker import source_labels
 from app.tasks.queue import EagerTaskQueue
 
 router = APIRouter(prefix="/rfp/packs", tags=["rfp"])
@@ -312,6 +313,50 @@ async def ask_bid_context(pack_id: str, body: AskBody, tenant: str = Depends(aut
     response = await asyncio.to_thread(get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT).generate,
                                        prompt, system=system, temperature=0.0)
     return {"question": body.question, "answer": response.text}
+
+
+@router.post("/{pack_id}/chat")
+async def tender_chat(pack_id: str, body: AskBody, request: Request,
+                      tenant: str = Depends(authed_tenant),
+                      _role: dict = Depends(require_role(Role.editor)),
+                      packs=Depends(get_rfp_packs)) -> dict:
+    """Answer-development chat for a tender. Unlike /ask (tender document only), this grounds in the
+    tenant's KNOWLEDGE BASE so the user can develop and expand draft answers from company documents
+    (for example 'when was our HR system developed and how secure is it'), while also seeing the
+    tender context (title + brief) so it can answer bid questions too. Cited from the KB; says so
+    plainly when the knowledge base does not cover the question, and never invents facts."""
+    try:
+        pack = await packs.get(tenant, pack_id)
+    except RfpPackNotFound as e:
+        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+
+    worker = await build_tenant_worker(request, tenant, agent_id=pack.agent_id)
+    passages = await worker.knowledge.retrieve(tenant, body.question, k=worker.config.retrieval_k)
+    kb_block = "\n\n".join(f"[{i + 1}] {p.text}" for i, p in enumerate(passages)) or "(no matching company documents)"
+
+    brief = pack.brief or {}
+    ctx = [f"Tender: {pack.title}"]
+    if brief.get("summary"):
+        ctx.append(f"Summary: {brief['summary']}")
+    if brief.get("scope"):
+        ctx.append(f"Scope: {brief['scope']}")
+    if len(ctx) == 1 and pack.document_text:
+        ctx.append("Tender document (excerpt):\n" + pack.document_text[:8_000])
+    tender_ctx = "\n".join(ctx)
+
+    system = ("You are a bid-writing assistant helping develop a tender response. Answer using the "
+              "COMPANY KNOWLEDGE BASE passages and the tender context provided. Use the knowledge "
+              "base to develop and expand answers (capabilities, systems, certifications, past "
+              "performance, security posture). Be specific and cite what you rely on. If the "
+              "knowledge base does not contain the answer, say so plainly and do not guess.")
+    prompt = (f"TENDER CONTEXT:\n{tender_ctx}\n\nCOMPANY KNOWLEDGE BASE:\n{kb_block}\n\n"
+              f"QUESTION: {body.question}\n\nAnswer, grounded in the above.")
+    response = await asyncio.to_thread(get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT).generate,
+                                       prompt, system=system, temperature=0.2)
+    # Fail closed: never surface StubProvider echo text as a real answer during a provider outage.
+    if response.stub:
+        raise StubProviderUnavailable()
+    return {"question": body.question, "answer": response.text, "sources": source_labels(passages)}
 
 
 @router.get("/{pack_id}/requirements")
