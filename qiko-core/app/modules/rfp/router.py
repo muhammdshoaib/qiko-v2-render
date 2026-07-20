@@ -13,6 +13,7 @@ from app.core.deps import (
     authed_tenant,
     build_tenant_worker,
     current_claims,
+    get_chat,
     get_pack_answers,
     get_pack_tree,
     get_requirements,
@@ -315,16 +316,32 @@ async def ask_bid_context(pack_id: str, body: AskBody, tenant: str = Depends(aut
     return {"question": body.question, "answer": response.text}
 
 
+def _tender_conversation_id(pack_id: str) -> str:
+    """Deterministic, per-pack conversation id so a tender's cockpit chat maps to exactly one stored
+    conversation (tenant-scoped in the chat store). Reused by both the POST /chat write path and the
+    GET /chat/history read path so reopening/refreshing the cockpit shows the prior exchange."""
+    return f"tender:{pack_id}"
+
+
+# The per-tender cockpit chat can accumulate many turns over a bid's lifecycle; return a generous
+# window (well beyond the general chat's HISTORY_WINDOW) so reopening shows the full conversation.
+_TENDER_HISTORY_LIMIT = 500
+
+
 @router.post("/{pack_id}/chat")
 async def tender_chat(pack_id: str, body: AskBody, request: Request,
                       tenant: str = Depends(authed_tenant),
                       _role: dict = Depends(require_role(Role.editor)),
-                      packs=Depends(get_rfp_packs)) -> dict:
+                      packs=Depends(get_rfp_packs), chat=Depends(get_chat)) -> dict:
     """Answer-development chat for a tender. Unlike /ask (tender document only), this grounds in the
     tenant's KNOWLEDGE BASE so the user can develop and expand draft answers from company documents
     (for example 'when was our HR system developed and how secure is it'), while also seeing the
     tender context (title + brief) so it can answer bid questions too. Cited from the KB; says so
-    plainly when the knowledge base does not cover the question, and never invents facts."""
+    plainly when the knowledge base does not cover the question, and never invents facts.
+
+    Each exchange is persisted to a per-pack conversation (reusing the general ChatService store, so
+    it is Postgres-backed under USE_DB_STORES and survives close/refresh/logout), which GET
+    /rfp/packs/{id}/chat/history reads back in order."""
     try:
         pack = await packs.get(tenant, pack_id)
     except RfpPackNotFound as e:
@@ -356,7 +373,30 @@ async def tender_chat(pack_id: str, body: AskBody, request: Request,
     # Fail closed: never surface StubProvider echo text as a real answer during a provider outage.
     if response.stub:
         raise StubProviderUnavailable()
+
+    # Persist both turns so the conversation survives close/refresh/logout. Written only after a
+    # real answer (the stub-outage path above short-circuits first), user turn before assistant so
+    # they read back in order. The store is the SAME one the general chat uses, so under
+    # USE_DB_STORES this is Postgres-backed rather than in-memory.
+    cid = _tender_conversation_id(pack_id)
+    await chat.store.ensure(tenant, cid, agent_id=pack.agent_id)
+    await chat.post(tenant, cid, "user", body.question)
+    await chat.post(tenant, cid, "assistant", response.text)
     return {"question": body.question, "answer": response.text, "sources": source_labels(passages)}
+
+
+@router.get("/{pack_id}/chat/history")
+async def tender_chat_history(pack_id: str, tenant: str = Depends(authed_tenant),
+                              packs=Depends(get_rfp_packs), chat=Depends(get_chat)) -> list[dict]:
+    """Stored per-tender cockpit chat, in order, so reopening/refreshing the cockpit restores the
+    conversation. Tenant-scoped and 404 for an unknown or cross-tenant pack (the pack lookup is
+    itself tenant-scoped). Viewer-readable, matching the general GET /chat/history read path."""
+    try:
+        await packs.get(tenant, pack_id)
+    except RfpPackNotFound as e:
+        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    msgs = await chat.history(tenant, _tender_conversation_id(pack_id), limit=_TENDER_HISTORY_LIMIT)
+    return [{"role": m.role, "text": m.text} for m in msgs]
 
 
 @router.get("/{pack_id}/requirements")

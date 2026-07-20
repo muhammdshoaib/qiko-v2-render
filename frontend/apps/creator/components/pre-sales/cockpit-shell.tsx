@@ -14,7 +14,7 @@ import { cn } from "@qiko/ui";
 import { NotificationBell } from "@/components/cockpit/notification-bell";
 import { CockpitChatPanel } from "@/components/cockpit/chat-panel";
 import { Select } from "@/components/cockpit/controls";
-import { askTenderChat, type RfpPack } from "@/lib/api";
+import { askTenderChat, getTenderChatHistory, type RfpPack } from "@/lib/api";
 import { formatShortDate } from "@/lib/stringUtils";
 
 export type PreSalesTab = "tenders" | "overview" | "sources" | "brief" | "sections" | "compliance" | "export";
@@ -173,6 +173,11 @@ export function PreSalesCockpitShell({
             workerName={workerName}
             onClose={() => setChatOpen(false)}
             ready={!!activePackId}
+            // Per-tender persistence: the transcript is keyed to the active tender and loaded from
+            // the server, so closing/refreshing/logging back in restores that tender's history, and
+            // switching tenders loads the other tender's conversation (never shared across tenders).
+            historyKey={activePackId}
+            loadHistory={activePackId ? () => getTenderChatHistory(activePackId) : undefined}
             onAsk={(q) => {
               if (!activePackId) return Promise.reject(new Error("no tender selected"));
               return askTenderChat(activePackId, q).then((r) => r.answer);

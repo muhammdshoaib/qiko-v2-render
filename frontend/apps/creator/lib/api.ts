@@ -190,6 +190,10 @@ export const askTenderChat = (packId: string, question: string) =>
   request<{ question: string; answer: string; sources: string[] }>(`/rfp/packs/${packId}/chat`, {
     method: "POST", body: JSON.stringify({ question }),
   });
+// Persisted per-tender cockpit chat: reload the stored conversation (in order) so closing,
+// refreshing, or logging back in restores the prior exchange for this tender.
+export const getTenderChatHistory = (packId: string) =>
+  request<{ role: string; text: string }[]>(`/rfp/packs/${packId}/chat/history`);
 
 export type ComplianceItem = { requirement: string; category: string; mandatory: boolean; owner: "AI" | "Human"; note: string };
 export type TenderBrief = {

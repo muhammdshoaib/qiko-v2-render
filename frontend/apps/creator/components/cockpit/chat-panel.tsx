@@ -29,6 +29,7 @@ export function CockpitChatPanel({
   workerName, onClose, onAsk, ready = true,
   emptyPrompt, notReadyTitle, notReadyPrompt,
   placeholder, notReadyPlaceholder, inputHint, errorText,
+  loadHistory, historyKey,
 }: {
   workerName: string;
   onClose: () => void;
@@ -43,9 +44,34 @@ export function CockpitChatPanel({
   notReadyPlaceholder?: string;
   inputHint: string;
   errorText: string;
+  /**
+   * Optional: fetch the persisted conversation to seed the transcript on mount and whenever
+   * `historyKey` changes (e.g. switching to a different tender). Off by default, so cockpits that
+   * don't persist chat behave exactly as before (in-memory only).
+   */
+  loadHistory?: () => Promise<ChatMessage[]>;
+  /** Identifies the conversation being shown; changing it reloads history for the new context. */
+  historyKey?: string | null;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
+
+  // Seed/reload the transcript from persisted history when the active conversation changes, so
+  // reopening the chat or refreshing (or switching tenders) restores the prior exchange. Guarded
+  // by a per-run flag so a slow fetch for a previous key can't overwrite a newer one.
+  useEffect(() => {
+    if (!loadHistory || !historyKey) {
+      setMessages([]);
+      return;
+    }
+    let cancelled = false;
+    setMessages([]);
+    loadHistory()
+      .then((prior) => { if (!cancelled) setMessages(prior); })
+      .catch(() => { if (!cancelled) setMessages([]); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyKey]);
   const send = useMutation({
     mutationFn: (question: string) => onAsk(question),
     onMutate: (question: string) => setMessages((m) => [...m, { role: "user", text: question }]),
