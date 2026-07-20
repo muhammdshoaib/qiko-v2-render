@@ -23,8 +23,11 @@ def set_auth_cookies(response: Response, access: str, refresh: str, csrf: str) -
                         httponly=True, secure=secure, samesite="lax", path="/", domain=domain)
     response.set_cookie(REFRESH_COOKIE, refresh, max_age=s.refresh_token_ttl_seconds,
                         httponly=True, secure=secure, samesite="lax", path="/", domain=domain)
-    # CSRF cookie is readable by JS (double-submit), so not httpOnly.
-    response.set_cookie(CSRF_COOKIE, csrf, max_age=s.access_token_ttl_seconds,
+    # CSRF cookie is readable by JS (double-submit), so not httpOnly. It must live as long as the
+    # REFRESH token, not the (short) access token: /auth/refresh requires a valid CSRF header, so if
+    # the CSRF cookie expired with the 15-minute access token the silent refresh would fail and the
+    # user would be kicked to login after 15 minutes even with a valid 14-day refresh token.
+    response.set_cookie(CSRF_COOKIE, csrf, max_age=s.refresh_token_ttl_seconds,
                         httponly=False, secure=secure, samesite="lax", path="/", domain=domain)
 
 

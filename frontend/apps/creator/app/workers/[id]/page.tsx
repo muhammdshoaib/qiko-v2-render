@@ -149,7 +149,6 @@ export default function WorkerDetailPage() {
 
 function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
   const [overviewOpen, setOverviewOpen] = useState(true);
-  const [shareOpen, setShareOpen] = useState(true);
   const typeLabel = workerTypeLabel(worker?.atype);
   const capabilities = [
     "Answers questions using your trained knowledge base",
@@ -158,15 +157,6 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
     "Never forgets important details or context",
     "Available around the clock without breaks",
   ];
-  // Computed from window.location, so it must only ever render post-mount -- computing it
-  // during the initial render would make the server-rendered markup (empty origin) mismatch
-  // the client's first paint and trigger a hydration error (React #418).
-  const [origin, setOrigin] = useState("");
-  useEffect(() => setOrigin(window.location.origin), []);
-  const chatLink = origin ? `${origin}/embed/${worker?.tenant ?? ""}/${id}` : "";
-  // widget.js reads data-tenant + data-worker (+ optional data-base) -- NOT data-worker-id.
-  const widgetSnippet = `<script src="${origin}/widget.js" data-tenant="${worker?.tenant ?? ""}" data-worker="${id}" data-base="${origin}"></script>`;
-
   return (
     <div className="space-y-6">
       <div>
@@ -213,66 +203,6 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
                   </div>
                 ))}
               </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.015]">
-        <button onClick={() => setShareOpen((o) => !o)}
-          className="flex w-full items-center justify-between px-4 py-3 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">
-          <div className="flex items-center gap-2 text-base font-semibold">
-            <Share2 className="size-4 text-cyan-400" /> Share &amp; Embed
-          </div>
-          <ChevronUp className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !shareOpen && "rotate-180")} />
-        </button>
-        {shareOpen && (
-          <div className="grid grid-cols-1 gap-4 px-4 pb-4 lg:grid-cols-2">
-            <div className="min-w-0 overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-              <div className="mb-3 flex items-center gap-2">
-                <span className="shrink-0 rounded-lg bg-emerald-500/20 p-1.5">
-                  <Globe className="size-4 text-emerald-400" />
-                </span>
-                <div className="min-w-0">
-                  <h4 className="text-sm font-semibold text-white">Public Chat Link</h4>
-                  <p className="text-xs text-slate-400">Share this link to let anyone chat with your AI</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-white/10 bg-black/30 px-3 py-2">
-                  <p className="truncate font-mono text-sm text-cyan-300">{chatLink}</p>
-                </div>
-                <Button variant="outline" size="sm" aria-label="Copy chat link" className="h-8 shrink-0" onClick={() => navigator.clipboard.writeText(chatLink)}>
-                  <Copy className="size-4" />
-                </Button>
-                <a href={chatLink} target="_blank" rel="noreferrer">
-                  <Button variant="outline" size="sm" aria-label="Open chat link" className="h-8 shrink-0">
-                    <ExternalLink className="size-4" />
-                  </Button>
-                </a>
-              </div>
-            </div>
-            <div className="min-w-0 overflow-hidden rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
-              <div className="mb-3 flex items-center gap-2">
-                <span className="shrink-0 rounded-lg bg-violet-500/20 p-1.5">
-                  <Code className="size-4 text-violet-400" />
-                </span>
-                <div className="min-w-0">
-                  <h4 className="text-sm font-semibold text-white">Website Widget</h4>
-                  <p className="text-xs text-slate-400">Add this code to embed the chat on your website</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className="min-w-0 flex-1 overflow-hidden rounded-lg border border-white/10 bg-black/30 px-3 py-2">
-                  <p className="truncate font-mono text-xs text-violet-300">{widgetSnippet}</p>
-                </div>
-                <Button variant="outline" size="sm" aria-label="Copy widget snippet" className="h-8 shrink-0" onClick={() => navigator.clipboard.writeText(widgetSnippet)}>
-                  <Copy className="size-4" />
-                </Button>
-              </div>
-              <p className="mt-2 flex items-center gap-1 text-xs text-slate-500">
-                <Sparkles className="size-3" /> Paste before the closing &lt;/body&gt; tag
-              </p>
             </div>
           </div>
         )}

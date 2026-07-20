@@ -15,9 +15,31 @@ function csrfToken(): string | undefined {
   return document.cookie.match(/(?:^|; )qiko_csrf=([^;]+)/)?.[1];
 }
 
-async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
+// A single shared in-flight refresh so a burst of concurrent 401s triggers one /auth/refresh, not N.
+let refreshInFlight: Promise<boolean> | null = null;
+function refreshSession(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const csrf = csrfToken();
+        const r = await fetch(`${BASE}/auth/refresh`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", ...(csrf ? { "x-csrf-token": csrf } : {}) },
+        });
+        return r.ok;
+      } catch {
+        return false;
+      }
+    })();
+    void refreshInFlight.finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+
+async function doFetch(path: string, opts: RequestInit): Promise<Response> {
   const csrf = csrfToken();
-  const res = await fetch(`${BASE}${path}`, {
+  return fetch(`${BASE}${path}`, {
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
@@ -26,6 +48,16 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
     },
     ...opts,
   });
+}
+
+async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  let res = await doFetch(path, opts);
+  // The access token is short-lived (15 min). On a 401, silently refresh once (using the long-lived
+  // refresh cookie) and retry, so an active user is never kicked to login mid-session. Do not try to
+  // refresh the auth calls themselves, to avoid loops.
+  if (res.status === 401 && !path.startsWith("/auth/")) {
+    if (await refreshSession()) res = await doFetch(path, opts);
+  }
   if (!res.ok) throw new ApiError(res.status, await res.text());
   return res.status === 204 ? (null as T) : ((await res.json()) as T);
 }
