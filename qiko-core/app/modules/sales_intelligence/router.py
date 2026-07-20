@@ -269,7 +269,9 @@ async def opportunities(agent_id: str, stage: str | None = None, recommendation:
 
 async def _get_opportunity_or_404(svc, tenant: str, agent_id: str, opportunity_id: str):
     o = await svc.opportunities.get(tenant, agent_id, opportunity_id)
-    if o is None:
+    # Soft-deleted opportunities are gone as far as the API is concerned (parity with the list
+    # endpoint, which already hides them), so a fetch/edit/delete after deletion 404s.
+    if o is None or o.is_deleted():
         raise HTTPException(status_code=404, detail="opportunity not found")
     return o
 
@@ -292,7 +294,22 @@ async def opportunity_history(agent_id: str, opportunity_id: str, limit: int = 1
     return {"opportunityId": opportunity_id, "history": [_log_out(log) for log in logs]}
 
 
+class OpportunityContactBody(BaseModel):
+    name: str | None = None
+    email: str | None = None
+    phone: str | None = None
+
+
+class OpportunityLinkBody(BaseModel):
+    url: str | None = None
+    description: str | None = None
+
+
 class CreateOpportunityBody(BaseModel):
+    """Body for the manual "add an opportunity" flow (Ali's OpportunityCreateView). Everything is
+    optional except `title`. Core fields map onto Opportunity columns; the richer descriptive fields
+    (reference/notice_type/summaries/requirements/...) are persisted in raw_payload["manual"] and
+    surfaced through the detail service, so no schema migration is needed."""
     title: str = Field(min_length=1, max_length=1024)
     buyer: str | None = None
     country: str | None = None
@@ -307,6 +324,27 @@ class CreateOpportunityBody(BaseModel):
     source_name: str | None = None
     stage: str | None = None
     run_qualification: bool = True
+    # Enriched manual fields (Overview / Summary / Qualification / Notes tabs).
+    reference: str | None = None
+    notice_type: str | None = None
+    security_clearance: str | None = None
+    extraction_confidence: float | None = None
+    framework: str | None = None
+    contract_duration: str | None = None
+    technology: str | None = None
+    contacts: list[OpportunityContactBody] | None = None
+    links: list[OpportunityLinkBody] | None = None
+    executive_summary: str | None = None
+    risk_summary: str | None = None
+    opportunity_summary: str | None = None
+    requirements: list[str] | None = None
+    deliverables: list[str] | None = None
+    qualification_score: int | None = None
+    recommendation: str | None = None
+    confidence: int | None = None
+    ai_reasoning: str | None = None
+    recommendations: list[str] | None = None
+    notes: str | None = None
 
 
 @router.post("/{agent_id}/opportunities", status_code=201)
@@ -328,6 +366,9 @@ async def create_opportunity(agent_id: str, body: CreateOpportunityBody, request
 
 
 class UpdateOpportunityBody(BaseModel):
+    """Body for editing a manual (or scanned) opportunity (Ali's OpportunityDetailView edit form).
+    Every field is optional -- only the supplied ones are patched. Mirrors CreateOpportunityBody's
+    enriched field set."""
     title: str | None = None
     buyer: str | None = None
     country: str | None = None
@@ -339,6 +380,27 @@ class UpdateOpportunityBody(BaseModel):
     deadline_at: str | None = None
     source_url: str | None = None
     requalify: bool = False
+    # Enriched manual fields (Overview / Summary / Qualification / Notes tabs).
+    reference: str | None = None
+    notice_type: str | None = None
+    security_clearance: str | None = None
+    extraction_confidence: float | None = None
+    framework: str | None = None
+    contract_duration: str | None = None
+    technology: str | None = None
+    contacts: list[OpportunityContactBody] | None = None
+    links: list[OpportunityLinkBody] | None = None
+    executive_summary: str | None = None
+    risk_summary: str | None = None
+    opportunity_summary: str | None = None
+    requirements: list[str] | None = None
+    deliverables: list[str] | None = None
+    qualification_score: int | None = None
+    recommendation: str | None = None
+    confidence: int | None = None
+    ai_reasoning: str | None = None
+    recommendations: list[str] | None = None
+    notes: str | None = None
 
 
 @router.patch("/{agent_id}/opportunities/{opportunity_id}")
@@ -414,7 +476,7 @@ async def restore_opportunity(agent_id: str, opportunity_id: str, tenant: str = 
 
 @router.delete("/{agent_id}/opportunities/{opportunity_id}")
 async def delete_opportunity(agent_id: str, opportunity_id: str, tenant: str = Depends(authed_tenant),
-                             claims: dict = Depends(require_role(Role.owner)), svc=Depends(get_sales_intel),
+                             claims: dict = Depends(require_role(Role.editor)), svc=Depends(get_sales_intel),
                              mutation=Depends(get_sales_intel_mutation)) -> dict:
     o = await _get_opportunity_or_404(svc, tenant, agent_id, opportunity_id)
     o = await mutation.soft_delete(o, _actor_user_id(claims))

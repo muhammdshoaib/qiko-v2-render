@@ -812,3 +812,178 @@ def test_sales_intelligence_salesforce_status_reports_not_configured(client):
     body = resp.json()["salesforce"]
     assert body["connected"] is False
     assert body["configured"] is False
+
+
+# --- Manual "add an opportunity" flow (enriched create/edit/delete/archive) ---
+
+_ENRICHED_CREATE_BODY = {
+    "title": "Static security guarding services",
+    "buyer": "UN Agency",
+    "country": "Kenya",
+    "category": "Security services",
+    "estimated_value": 250000,
+    "currency": "USD",
+    "deadline_at": "2099-01-31",
+    "source_url": "https://example.test/notice/42",
+    "reference": "REF-42",
+    "notice_type": "Request for Proposal",
+    "security_clearance": "SC",
+    "framework": "G-Cloud",
+    "contract_duration": "24 months",
+    "technology": "CCTV",
+    "extraction_confidence": 88,
+    "contacts": [{"name": "Jane Doe", "email": "jane@example.test", "phone": "+254700000000"}],
+    "links": [{"url": "https://example.test/tender", "description": "Tender portal"}],
+    "executive_summary": "High-value static guarding tender in a target market.",
+    "risk_summary": "Tight mobilisation window.",
+    "opportunity_summary": "Strong fit for IDG security services.",
+    "requirements": ["ISO 18788", "Local licensing"],
+    "deliverables": ["Guarding roster", "Control room"],
+    "qualification_score": 82,
+    "recommendation": "Bid",
+    "confidence": 90,
+    "ai_reasoning": "Manually assessed as a strong fit.",
+    "recommendations": ["Engage local partner", "Confirm licensing"],
+    "notes": "Flagged by BD team.",
+    "run_qualification": False,
+}
+
+
+def test_sales_intelligence_manual_create_persists_enriched_fields(client):
+    """The manual create flow captures Ali's richer field set and surfaces it back through the
+    opportunity detail tabs (overview / summary / qualification / notes)."""
+    cookies = auth_cookies(tenant="acme")
+    agent = "agent-si-enriched"
+    created = client.post(f"/api/v1/sales-intelligence/{agent}/opportunities", cookies=cookies,
+                          json=_ENRICHED_CREATE_BODY)
+    assert created.status_code == 201
+    opp = created.json()["opportunity"]
+    opp_id = opp["id"]
+    assert opp["isManual"] is True
+    assert opp["stage"] == "awaiting_review"
+    # Column fields set from the payload (qualification skipped, so manual values stick).
+    assert opp["recommendation"] == "Bid"
+    assert opp["qualificationScore"] == 82
+    assert opp["confidence"] == 90
+
+    detail = client.get(f"/api/v1/sales-intelligence/{agent}/opportunities/{opp_id}", cookies=cookies).json()
+    d = detail["opportunity"]["detail"]
+    assert d["overview"]["reference"] == "REF-42"
+    assert d["overview"]["noticeType"] == "Request for Proposal"
+    assert d["overview"]["securityClearance"] == "SC"
+    assert d["overview"]["framework"] == "G-Cloud"
+    assert d["overview"]["contractDuration"] == "24 months"
+    assert d["overview"]["technology"] == "CCTV"
+    assert d["overview"]["extractionConfidence"] == 88
+    assert d["overview"]["contacts"][0]["email"] == "jane@example.test"
+    assert d["overview"]["links"][0]["url"] == "https://example.test/tender"
+    assert d["summary"]["executiveSummary"] == "High-value static guarding tender in a target market."
+    assert d["summary"]["riskSummary"] == "Tight mobilisation window."
+    assert d["summary"]["requirements"] == ["ISO 18788", "Local licensing"]
+    assert d["summary"]["deliverables"] == ["Guarding roster", "Control room"]
+    assert d["qualification"]["aiReasoning"] == "Manually assessed as a strong fit."
+    assert d["qualification"]["recommendations"] == ["Engage local partner", "Confirm licensing"]
+    assert d["notes"]["humanReviewNotes"] == "Flagged by BD team."
+
+
+def test_sales_intelligence_manual_update_edits_enriched_fields(client):
+    cookies = auth_cookies(tenant="acme")
+    agent = "agent-si-enriched-edit"
+    created = client.post(f"/api/v1/sales-intelligence/{agent}/opportunities", cookies=cookies,
+                          json=_ENRICHED_CREATE_BODY)
+    opp_id = created.json()["opportunity"]["id"]
+
+    patched = client.patch(f"/api/v1/sales-intelligence/{agent}/opportunities/{opp_id}", cookies=cookies, json={
+        "title": "Static security guarding services (revised)",
+        "reference": "REF-99",
+        "requirements": ["ISO 18788"],
+        "recommendation": "Review",
+        "notes": "Updated after review.",
+    })
+    assert patched.status_code == 200
+    assert patched.json()["opportunity"]["title"].endswith("(revised)")
+    assert patched.json()["opportunity"]["recommendation"] == "Review"
+
+    d = client.get(f"/api/v1/sales-intelligence/{agent}/opportunities/{opp_id}",
+                   cookies=cookies).json()["opportunity"]["detail"]
+    assert d["overview"]["reference"] == "REF-99"
+    assert d["summary"]["requirements"] == ["ISO 18788"]
+    assert d["notes"]["humanReviewNotes"] == "Updated after review."
+    # Untouched enriched fields survive the partial patch.
+    assert d["overview"]["noticeType"] == "Request for Proposal"
+
+
+def test_sales_intelligence_manual_delete_removes_opportunity(client):
+    cookies = auth_cookies(tenant="acme")
+    agent = "agent-si-delete"
+    created = client.post(f"/api/v1/sales-intelligence/{agent}/opportunities", cookies=cookies,
+                          json={"title": "Delete me", "run_qualification": False})
+    opp_id = created.json()["opportunity"]["id"]
+
+    deleted = client.delete(f"/api/v1/sales-intelligence/{agent}/opportunities/{opp_id}", cookies=cookies)
+    assert deleted.status_code == 200
+
+    assert client.get(f"/api/v1/sales-intelligence/{agent}/opportunities/{opp_id}",
+                      cookies=cookies).status_code == 404
+    listed = client.get(f"/api/v1/sales-intelligence/{agent}/opportunities?limit=all",
+                        cookies=cookies).json()["opportunities"]
+    assert all(o["id"] != opp_id for o in listed)
+
+
+def test_sales_intelligence_manual_delete_requires_editor_role(client):
+    agent = "agent-si-delete-rbac"
+    owner_cookies = auth_cookies(tenant="acme")
+    created = client.post(f"/api/v1/sales-intelligence/{agent}/opportunities", cookies=owner_cookies,
+                          json={"title": "Guard me", "run_qualification": False})
+    opp_id = created.json()["opportunity"]["id"]
+
+    viewer = client.delete(f"/api/v1/sales-intelligence/{agent}/opportunities/{opp_id}",
+                           cookies=auth_cookies(tenant="acme", role="viewer"))
+    assert viewer.status_code == 403
+    editor = client.delete(f"/api/v1/sales-intelligence/{agent}/opportunities/{opp_id}",
+                           cookies=auth_cookies(tenant="acme", role="editor"))
+    assert editor.status_code == 200
+
+
+def test_sales_intelligence_archive_restore_roundtrip_via_api(client):
+    cookies = auth_cookies(tenant="acme")
+    agent = "agent-si-archive"
+    created = client.post(f"/api/v1/sales-intelligence/{agent}/opportunities", cookies=cookies,
+                          json={"title": "Archive me", "run_qualification": False})
+    opp_id = created.json()["opportunity"]["id"]
+
+    archived = client.post(f"/api/v1/sales-intelligence/{agent}/opportunities/{opp_id}/archive", cookies=cookies)
+    assert archived.status_code == 200
+    assert archived.json()["opportunity"]["isArchived"] is True
+
+    # Hidden from the default list, visible via archived_only.
+    default_list = client.get(f"/api/v1/sales-intelligence/{agent}/opportunities?limit=all",
+                              cookies=cookies).json()["opportunities"]
+    assert all(o["id"] != opp_id for o in default_list)
+    archived_list = client.get(f"/api/v1/sales-intelligence/{agent}/opportunities?limit=all&archived_only=true",
+                               cookies=cookies).json()["opportunities"]
+    assert any(o["id"] == opp_id for o in archived_list)
+
+    restored = client.post(f"/api/v1/sales-intelligence/{agent}/opportunities/{opp_id}/restore", cookies=cookies)
+    assert restored.status_code == 200
+    assert restored.json()["opportunity"]["isArchived"] is False
+    back = client.get(f"/api/v1/sales-intelligence/{agent}/opportunities?limit=all",
+                      cookies=cookies).json()["opportunities"]
+    assert any(o["id"] == opp_id for o in back)
+
+
+def test_sales_intelligence_manual_mutations_are_tenant_scoped(client):
+    """A tenant B user can neither edit, archive nor delete tenant A's opportunity (BOLA-safe 404)."""
+    agent = "agent-si-tenant"
+    created = client.post(f"/api/v1/sales-intelligence/{agent}/opportunities",
+                          cookies=auth_cookies(tenant="acme"),
+                          json={"title": "Tenant A only", "run_qualification": False})
+    opp_id = created.json()["opportunity"]["id"]
+    beta = auth_cookies(tenant="beta")
+
+    assert client.patch(f"/api/v1/sales-intelligence/{agent}/opportunities/{opp_id}",
+                        cookies=beta, json={"title": "hijack"}).status_code == 404
+    assert client.post(f"/api/v1/sales-intelligence/{agent}/opportunities/{opp_id}/archive",
+                       cookies=beta).status_code == 404
+    assert client.delete(f"/api/v1/sales-intelligence/{agent}/opportunities/{opp_id}",
+                        cookies=beta).status_code == 404

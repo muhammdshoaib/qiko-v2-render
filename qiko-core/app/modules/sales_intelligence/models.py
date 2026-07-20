@@ -54,7 +54,24 @@ ACTIVITY_TYPES = ("opportunity", "source_status", "source_scan")
 EDITABLE_OPPORTUNITY_FIELDS = (
     "title", "buyer", "country", "region", "category", "estimated_value", "currency",
     "published_at", "deadline_at", "source_url",
+    # Qualification columns a manual editor may set/correct by hand (Ali's Qualification tab). When
+    # `requalify` is requested these get overwritten by the scorer; otherwise the manual values stick.
+    "recommendation", "qualification_score", "confidence",
 )
+
+# Extra manually-captured opportunity fields that don't have their own DB column. They are persisted
+# inside Opportunity.raw_payload["manual"] (a JSON blob) so the manual "add/edit an opportunity" flow
+# can round-trip Ali's richer form (OpportunityCreateView / OpportunityDetailView) WITHOUT a schema
+# migration, and are surfaced back through OpportunityDetailService.build (overview/summary/
+# qualification tabs). All optional; only `title` is required on create.
+MANUAL_TEXT_FIELDS = (
+    "reference", "notice_type", "security_clearance", "framework", "contract_duration",
+    "technology", "executive_summary", "risk_summary", "opportunity_summary", "ai_reasoning",
+)
+MANUAL_LIST_FIELDS = ("requirements", "deliverables", "recommendations")
+MANUAL_STRUCT_FIELDS = ("contacts", "links")
+MANUAL_NUMERIC_FIELDS = ("extraction_confidence",)
+MANUAL_DETAIL_FIELDS = MANUAL_TEXT_FIELDS + MANUAL_LIST_FIELDS + MANUAL_STRUCT_FIELDS + MANUAL_NUMERIC_FIELDS
 
 
 def _now() -> datetime:

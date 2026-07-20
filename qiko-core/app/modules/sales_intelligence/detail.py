@@ -62,10 +62,13 @@ class OpportunityDetailService:
     def build(self, opportunity: Opportunity) -> dict:
         dimensions = opportunity.qualification_dimensions or {}
         raw = self._resolve_raw_payload(opportunity)
+        # Manually-entered opportunities carry their richer fields in raw_payload["manual"]; overlay
+        # them on top of the source-derived sections so the detail tabs show what the operator typed.
+        manual = raw.get("manual") if isinstance(raw.get("manual"), dict) else {}
         return {
-            "overview": self._overview(opportunity, raw),
-            "summary": self._summary(opportunity, raw),
-            "qualification": self._qualification(opportunity, dimensions),
+            "overview": self._overview(opportunity, raw, manual),
+            "summary": self._summary(opportunity, raw, manual),
+            "qualification": self._qualification(opportunity, dimensions, manual),
             "completed": self._completed(opportunity),
             "notes": self._notes(opportunity),
         }
@@ -84,7 +87,7 @@ class OpportunityDetailService:
             return raw
         return {"search": self._ungm_search(raw), "detail": detail}
 
-    def _overview(self, opportunity: Opportunity, raw: dict) -> dict:
+    def _overview(self, opportunity: Opportunity, raw: dict, manual: dict | None = None) -> dict:
         if opportunity.source_key == "ungm":
             source_fields = self._extract_ungm_overview_fields(raw)
         elif opportunity.source_key == "ted":
@@ -106,13 +109,28 @@ class OpportunityDetailService:
         }
         base.update(source_fields)
         base["technology"] = source_fields.get("technology") or opportunity.category
+        self._apply_manual_overview(base, manual or {})
         return base
 
-    def _summary(self, opportunity: Opportunity, raw: dict) -> dict:
+    def _apply_manual_overview(self, base: dict, manual: dict) -> None:
+        """Overlay operator-entered overview fields (Ali's Overview tab) onto the source-derived base."""
+        for camel, key in (("reference", "reference"), ("noticeType", "notice_type"),
+                           ("securityClearance", "security_clearance"), ("framework", "framework"),
+                           ("contractDuration", "contract_duration"), ("technology", "technology")):
+            if manual.get(key) not in (None, ""):
+                base[camel] = manual[key]
+        if manual.get("contacts"):
+            base["contacts"] = manual["contacts"]
+        if manual.get("links"):
+            base["links"] = manual["links"]
+        if manual.get("extraction_confidence") is not None:
+            base["extractionConfidence"] = manual["extraction_confidence"]
+
+    def _summary(self, opportunity: Opportunity, raw: dict, manual: dict | None = None) -> dict:
         risks = opportunity.risks or []
         reasons = opportunity.qualification_reasons or []
         description = self._notice_description(raw)
-        return {
+        result = {
             "executiveSummary": self._executive_summary(opportunity, description, self._resolve_country(opportunity, raw)),
             "riskSummary": " ".join(risks) if risks else "No major risks flagged during initial qualification.",
             "opportunitySummary": self._opportunity_summary(opportunity),
@@ -120,15 +138,26 @@ class OpportunityDetailService:
                                         ["Review the source notice for full scope and compliance requirements."]),
             "deliverables": self._deliverables(opportunity, raw),
         }
+        manual = manual or {}
+        for camel, key in (("executiveSummary", "executive_summary"), ("riskSummary", "risk_summary"),
+                           ("opportunitySummary", "opportunity_summary")):
+            if manual.get(key) not in (None, ""):
+                result[camel] = manual[key]
+        if manual.get("requirements"):
+            result["requirements"] = manual["requirements"]
+        if manual.get("deliverables"):
+            result["deliverables"] = manual["deliverables"]
+        return result
 
-    def _qualification(self, opportunity: Opportunity, dimensions: dict) -> dict:
+    def _qualification(self, opportunity: Opportunity, dimensions: dict, manual: dict | None = None) -> dict:
+        manual = manual or {}
         return {
             "overallScore": opportunity.qualification_score,
             "recommendation": opportunity.recommendation,
             "confidence": opportunity.confidence,
             "dimensions": dimensions,
-            "aiReasoning": opportunity.qualification_summary,
-            "recommendations": opportunity.qualification_recommendations or [],
+            "aiReasoning": manual.get("ai_reasoning") or opportunity.qualification_summary,
+            "recommendations": manual.get("recommendations") or opportunity.qualification_recommendations or [],
             "reasons": opportunity.qualification_reasons or [],
             "risks": opportunity.risks or [],
             "rejectionReasons": opportunity.rejection_reasons or [],

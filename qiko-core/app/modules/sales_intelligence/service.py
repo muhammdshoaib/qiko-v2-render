@@ -22,6 +22,7 @@ from app.modules.sales_intelligence.models import (
     InMemoryActivityLogStore,
     InMemoryIngestionSourceStore,
     InMemoryOpportunityStore,
+    MANUAL_DETAIL_FIELDS,
     MANUAL_TRANSITION_STAGES,
     Opportunity,
     OpportunityStore,
@@ -39,6 +40,31 @@ def _now() -> datetime:
 
 def _new_id() -> str:
     return uuid.uuid4().hex[:12]
+
+
+_EMPTY_VALUES = (None, "", [], {})
+
+
+def _extract_manual_fields(payload: dict) -> dict:
+    """Pull the enriched, column-less manual fields (MANUAL_DETAIL_FIELDS) out of a create/update
+    payload, dropping empty values and pruning blank contact/link rows. The result is stored under
+    Opportunity.raw_payload["manual"] and surfaced by OpportunityDetailService."""
+    manual: dict = {}
+    for key in MANUAL_DETAIL_FIELDS:
+        if key not in payload:
+            continue
+        value = payload[key]
+        if value in _EMPTY_VALUES:
+            continue
+        if key in ("contacts", "links") and isinstance(value, list):
+            cleaned = [v for v in value
+                       if isinstance(v, dict) and any(x not in (None, "") for x in v.values())]
+            if not cleaned:
+                continue
+            manual[key] = cleaned
+        else:
+            manual[key] = value
+    return manual
 
 
 class SalesIntelligenceError(Exception):
@@ -404,6 +430,23 @@ class OpportunityMutationService:
             updated_by=actor_user_id, raw_payload={"origin": "manual", "created_by_user_id": actor_user_id},
         )
 
+        # Enriched, column-less manual fields (reference/summaries/requirements/...) are kept in the
+        # raw_payload JSON blob so they persist + round-trip without a schema migration.
+        manual = _extract_manual_fields(payload)
+        if manual:
+            opportunity.raw_payload["manual"] = manual
+        # Qualification columns the operator set by hand. When run_qualification is on these get
+        # overwritten by the scorer below; otherwise the manual values are kept.
+        if payload.get("recommendation") is not None:
+            opportunity.recommendation = payload["recommendation"]
+        if payload.get("qualification_score") is not None:
+            opportunity.qualification_score = payload["qualification_score"]
+        if payload.get("confidence") is not None:
+            opportunity.confidence = payload["confidence"]
+        # Ali collects free-text notes on the create form; V2 stores them as the human-review notes.
+        if payload.get("notes"):
+            opportunity.human_review_notes = payload["notes"]
+
         if run_qualification:
             scorer = await self._resolve_scorer(tenant, agent_id, agent_config)
             qualification = scorer.qualify({
@@ -510,6 +553,36 @@ class OpportunityMutationService:
                 continue
             changes[field_name] = {"from": self._serialize(old_value), "to": self._serialize(new_value)}
             setattr(opportunity, field_name, new_value)
+
+        # Enriched, column-less manual fields live in raw_payload["manual"]; merge in the supplied
+        # ones (empty values clear the field) and track them in the same change set as columns.
+        current_manual = dict((opportunity.raw_payload or {}).get("manual") or {})
+        incoming_manual = {k: payload[k] for k in MANUAL_DETAIL_FIELDS if k in payload}
+        if incoming_manual:
+            cleaned = _extract_manual_fields(payload)
+            for key in incoming_manual:
+                old_value = current_manual.get(key)
+                new_value = cleaned.get(key)  # absent -> cleared
+                if old_value == new_value:
+                    continue
+                changes[key] = {"from": self._serialize(old_value), "to": self._serialize(new_value)}
+                if new_value is None:
+                    current_manual.pop(key, None)
+                else:
+                    current_manual[key] = new_value
+            raw = dict(opportunity.raw_payload or {})
+            if current_manual:
+                raw["manual"] = current_manual
+            else:
+                raw.pop("manual", None)
+            opportunity.raw_payload = raw
+
+        # Ali's edit form keeps free-text notes; V2 maps them onto the human-review notes column.
+        if "notes" in payload:
+            new_notes = payload["notes"] or None
+            if new_notes != opportunity.human_review_notes:
+                changes["notes"] = {"from": opportunity.human_review_notes, "to": new_notes}
+                opportunity.human_review_notes = new_notes
 
         if not changes and not requalify:
             return opportunity

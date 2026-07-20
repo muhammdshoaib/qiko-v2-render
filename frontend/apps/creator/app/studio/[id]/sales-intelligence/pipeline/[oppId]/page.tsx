@@ -4,16 +4,22 @@ import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowLeft, Check, ExternalLink, HelpCircle, Loader2, Rocket, Sparkles, X,
+  AlertTriangle, Archive, ArrowLeft, Check, ExternalLink, HelpCircle, Loader2, Pencil, Rocket,
+  RotateCcw, Sparkles, Trash2, X,
 } from "lucide-react";
 import { cn } from "@qiko/ui";
 import {
-  getSalesOpportunity, listAgents, pushOpportunityToSalesforce, reviewSalesOpportunity,
-  saveSalesOpportunityNotes, transitionSalesOpportunity, type OpportunityDetail, type ReviewDecision,
+  archiveSalesOpportunity, deleteSalesOpportunity, getSalesOpportunity, listAgents,
+  pushOpportunityToSalesforce, restoreSalesOpportunity, reviewSalesOpportunity,
+  saveSalesOpportunityNotes, transitionSalesOpportunity, updateSalesOpportunity,
+  type OpportunityDetail, type ReviewDecision,
 } from "@/lib/api";
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
 import { AssignReviewerControl } from "@/components/sales-intelligence/assign-reviewer-control";
 import { DecisionHistoryView } from "@/components/sales-intelligence/decision-history-view";
+import {
+  OpportunityForm, opportunityToForm, toUpdatePayload, type OpportunityFormValues,
+} from "@/components/sales-intelligence/opportunity-form";
 import { Textarea } from "@/components/cockpit/controls";
 import {
   formatDate, formatMoney, humanize, recommendationBadgeClass, scoreColor, sourceLabel,
@@ -27,6 +33,8 @@ export default function OpportunityDetailPage() {
   const router = useRouter();
   const qc = useQueryClient();
   const [tab, setTab] = useState<(typeof TABS)[number]>("Overview");
+  const [editing, setEditing] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const worker = agents.data?.find((a) => a.id === agentId);
@@ -38,6 +46,7 @@ export default function OpportunityDetailPage() {
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["sales-opportunity", agentId, oppId] });
     qc.invalidateQueries({ queryKey: ["sales-opportunities", agentId] });
+    qc.invalidateQueries({ queryKey: ["sales-opportunities-archived", agentId] });
   };
   const review = useMutation({
     mutationFn: (decision: ReviewDecision) => reviewSalesOpportunity(agentId, oppId, decision),
@@ -50,6 +59,31 @@ export default function OpportunityDetailPage() {
     mutationFn: () => transitionSalesOpportunity(agentId, oppId, "qualifying"),
     onSuccess: invalidate,
   });
+
+  // Manual edit / delete / archive / restore (editor role, tenant-scoped server-side).
+  const save = useMutation({
+    mutationFn: (values: OpportunityFormValues) => updateSalesOpportunity(agentId, oppId, toUpdatePayload(values)),
+    onSuccess: () => { setEditing(false); setEditError(null); invalidate(); },
+    onError: () => setEditError("Couldn't save those changes. Check the fields and try again."),
+  });
+  const del = useMutation({
+    mutationFn: () => deleteSalesOpportunity(agentId, oppId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sales-opportunities", agentId] });
+      router.push(`/studio/${agentId}/sales-intelligence/pipeline`);
+    },
+  });
+  const archive = useMutation({ mutationFn: () => archiveSalesOpportunity(agentId, oppId), onSuccess: invalidate });
+  const restore = useMutation({ mutationFn: () => restoreSalesOpportunity(agentId, oppId), onSuccess: invalidate });
+
+  const isArchived = opp?.isArchived ?? false;
+  const isPushed = opp?.stage === "pushed" || Boolean(opp?.salesforceOpportunityId);
+  const canEdit = !isArchived && !isPushed;
+
+  function confirmDelete() {
+    if (typeof window !== "undefined" && !window.confirm("Delete this opportunity? This cannot be undone.")) return;
+    del.mutate();
+  }
 
   if (oppQ.isLoading || !opp) {
     return (
@@ -124,8 +158,44 @@ export default function OpportunityDetailPage() {
                 <Rocket className="size-3.5" /> {push.isPending ? "Pushing…" : "Push to Salesforce"}
               </button>
             )}
+            {canEdit && !editing && (
+              <button onClick={() => { setEditError(null); setEditing(true); }}
+                aria-label="Edit opportunity"
+                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
+                <Pencil className="size-3.5" /> Edit
+              </button>
+            )}
+            {isArchived ? (
+              <button onClick={() => restore.mutate()} disabled={restore.isPending}
+                aria-label="Restore opportunity"
+                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+                <RotateCcw className={cn("size-3.5", restore.isPending && "animate-spin")} /> {restore.isPending ? "Restoring…" : "Restore"}
+              </button>
+            ) : (
+              <button onClick={() => archive.mutate()} disabled={archive.isPending}
+                aria-label="Archive opportunity"
+                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+                <Archive className={cn("size-3.5", archive.isPending && "animate-spin")} /> {archive.isPending ? "Archiving…" : "Archive"}
+              </button>
+            )}
+            <button onClick={confirmDelete} disabled={del.isPending}
+              aria-label="Delete opportunity"
+              className="flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[13px] font-medium text-red-400 hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 disabled:opacity-50">
+              <Trash2 className={cn("size-3.5", del.isPending && "animate-spin")} /> {del.isPending ? "Deleting…" : "Delete"}
+            </button>
           </div>
         </div>
+
+        {isArchived && (
+          <p className="flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/[0.06] px-3 py-2 text-[12px] text-amber-300">
+            <Archive className="size-3.5 shrink-0" /> This opportunity is archived. Restore it to edit or move it again.
+          </p>
+        )}
+        {(del.isError || archive.isError || restore.isError) && (
+          <p role="alert" className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-[12px] text-red-300">
+            <AlertTriangle className="size-3.5 shrink-0" /> That action didn&apos;t go through. Please try again in a moment.
+          </p>
+        )}
 
         {(review.isError || push.isError || runQualification.isError) && (
           <p className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/[0.06] px-3 py-2 text-[12px] text-red-300">
@@ -136,27 +206,43 @@ export default function OpportunityDetailPage() {
           </p>
         )}
 
-        <div role="tablist" aria-label="Opportunity detail sections" className="flex gap-1 overflow-x-auto border-b border-white/[0.06]">
-          {TABS.map((t) => (
-            <button key={t} onClick={() => setTab(t)} role="tab" aria-selected={tab === t}
-              className={cn("shrink-0 rounded-t-md px-3 py-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                tab === t ? "border-b-2 border-indigo-400 text-white" : "text-slate-400 hover:text-white")}>
-              {t}
-            </button>
-          ))}
-        </div>
-
-        {tab === "Overview" && <OverviewTab opp={opp} detail={detail} />}
-        {tab === "Summary" && <SummaryTab detail={detail} />}
-        {tab === "Qualification" && <QualificationTab opp={opp} detail={detail} />}
-        {tab === "Reviewer" && (
-          <div className="space-y-4">
-            <AssignReviewerControl agentId={agentId} opp={opp} onSaved={invalidate} />
-            <DecisionHistoryView agentId={agentId} opportunityId={oppId} />
+        {editing ? (
+          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+            <h2 className="mb-4 text-[15px] font-semibold text-white">Edit opportunity</h2>
+            <OpportunityForm
+              mode="edit"
+              initialValues={opportunityToForm(opp)}
+              submitting={save.isPending}
+              error={editError}
+              onSubmit={(values) => { setEditError(null); save.mutate(values); }}
+              onCancel={() => { setEditing(false); setEditError(null); }}
+            />
           </div>
+        ) : (
+          <>
+            <div role="tablist" aria-label="Opportunity detail sections" className="flex gap-1 overflow-x-auto border-b border-white/[0.06]">
+              {TABS.map((t) => (
+                <button key={t} onClick={() => setTab(t)} role="tab" aria-selected={tab === t}
+                  className={cn("shrink-0 rounded-t-md px-3 py-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
+                    tab === t ? "border-b-2 border-indigo-400 text-white" : "text-slate-400 hover:text-white")}>
+                  {t}
+                </button>
+              ))}
+            </div>
+
+            {tab === "Overview" && <OverviewTab opp={opp} detail={detail} />}
+            {tab === "Summary" && <SummaryTab detail={detail} />}
+            {tab === "Qualification" && <QualificationTab opp={opp} detail={detail} />}
+            {tab === "Reviewer" && (
+              <div className="space-y-4">
+                <AssignReviewerControl agentId={agentId} opp={opp} onSaved={invalidate} />
+                <DecisionHistoryView agentId={agentId} opportunityId={oppId} />
+              </div>
+            )}
+            {tab === "Notes" && <NotesTab agentId={agentId} oppId={oppId} detail={detail} onSaved={invalidate} />}
+            {tab === "Status" && <StatusTab opp={opp} detail={detail} />}
+          </>
         )}
-        {tab === "Notes" && <NotesTab agentId={agentId} oppId={oppId} detail={detail} onSaved={invalidate} />}
-        {tab === "Status" && <StatusTab opp={opp} detail={detail} />}
       </div>
     </CockpitShell>
   );

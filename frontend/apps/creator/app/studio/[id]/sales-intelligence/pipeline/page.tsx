@@ -3,11 +3,11 @@
 import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, GripVertical } from "lucide-react";
+import { Archive, CalendarClock, GripVertical, Plus, RotateCcw } from "lucide-react";
 import { cn } from "@qiko/ui";
 import {
-  listAgents, listSalesOpportunities, pushOpportunityToSalesforce, transitionSalesOpportunity,
-  type OpportunityStage, type SalesOpportunity,
+  listAgents, listSalesOpportunities, pushOpportunityToSalesforce, restoreSalesOpportunity,
+  transitionSalesOpportunity, type OpportunityStage, type SalesOpportunity,
 } from "@/lib/api";
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
 import { OutcomesStrip } from "@/components/sales-intelligence/outcomes-strip";
@@ -29,7 +29,7 @@ export default function SalesIntelligencePipelinePage() {
   const { id: agentId } = useParams<{ id: string }>();
   const router = useRouter();
   const qc = useQueryClient();
-  const [view, setView] = useState<"pipeline" | "list">("pipeline");
+  const [view, setView] = useState<"pipeline" | "list" | "archived">("pipeline");
   const [draggingId, setDraggingId] = useState<number | null>(null);
 
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
@@ -37,6 +37,22 @@ export default function SalesIntelligencePipelinePage() {
 
   const oppsQ = useQuery({ queryKey: ["sales-opportunities", agentId], queryFn: () => listSalesOpportunities(agentId, { limit: "all" }), retry: false });
   const opps: SalesOpportunity[] = oppsQ.data?.opportunities ?? [];
+
+  // Archived view: fetched on demand via the existing archived_only filter (limit=all).
+  const archivedQ = useQuery({
+    queryKey: ["sales-opportunities-archived", agentId],
+    queryFn: () => listSalesOpportunities(agentId, { limit: "all", archived_only: true }),
+    enabled: view === "archived", retry: false,
+  });
+  const archivedOpps: SalesOpportunity[] = archivedQ.data?.opportunities ?? [];
+
+  const restore = useMutation({
+    mutationFn: (id: number) => restoreSalesOpportunity(agentId, id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["sales-opportunities-archived", agentId] });
+      qc.invalidateQueries({ queryKey: ["sales-opportunities", agentId] });
+    },
+  });
 
   // Moving to `pushed` goes through the real Salesforce push; every other target is a manual
   // stage transition. Both invalidate the same list query.
@@ -92,21 +108,30 @@ export default function SalesIntelligencePipelinePage() {
           { value: formatDate(metrics.lastScan, true), label: "Last Portal Scan", caption: metrics.sources.join(" \u00b7 ") || "-", trend: "up" },
         ]} />
 
-        <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.02] p-0.5">
-          {(["pipeline", "list"] as const).map((v) => (
-            <button key={v} onClick={() => setView(v)}
-              aria-pressed={view === v}
-              className={cn("rounded-md px-3.5 py-1.5 text-[13px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                view === v ? "bg-indigo-500/20 text-white" : "text-slate-400 hover:text-white")}>
-              {v}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.02] p-0.5">
+            {(["pipeline", "list", "archived"] as const).map((v) => (
+              <button key={v} onClick={() => setView(v)}
+                aria-pressed={view === v}
+                className={cn("rounded-md px-3.5 py-1.5 text-[13px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
+                  view === v ? "bg-indigo-500/20 text-white" : "text-slate-400 hover:text-white")}>
+                {v}
+              </button>
+            ))}
+          </div>
+          <button onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline/new`)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
+            <Plus className="size-3.5" /> Add opportunity
+          </button>
         </div>
 
-        {oppsQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
-        {oppsQ.isError && <p className="text-sm text-red-400">Couldn&apos;t load the pipeline. Try refreshing.</p>}
+        {view !== "archived" && oppsQ.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
+        {view !== "archived" && oppsQ.isError && <p className="text-sm text-red-400">Couldn&apos;t load the pipeline. Try refreshing.</p>}
 
-        {view === "pipeline" ? (
+        {view === "archived" ? (
+          <ArchivedTable opps={archivedOpps} agentId={agentId} loading={archivedQ.isLoading} error={archivedQ.isError}
+            onRestore={(id) => restore.mutate(id)} restoringId={restore.isPending ? (restore.variables ?? null) : null} />
+        ) : view === "pipeline" ? (
           <div className="space-y-6">
             <div className="flex gap-4 overflow-x-auto pb-2">
               {KANBAN_COLUMNS.map((stage) => (
@@ -247,6 +272,66 @@ function OpportunityCard({ opp, onDragStart, onClick, onMove, moving }: {
           ))}
         </Select>
       </div>
+    </div>
+  );
+}
+
+function ArchivedTable({ opps, agentId, loading, error, onRestore, restoringId }: {
+  opps: SalesOpportunity[]; agentId: string; loading: boolean; error: boolean;
+  onRestore: (id: number) => void; restoringId: number | null;
+}) {
+  const router = useRouter();
+  if (loading) return <p className="text-sm text-slate-500">Loading archived opportunities…</p>;
+  if (error) return <p className="text-sm text-red-400">Couldn&apos;t load the archive. Try refreshing.</p>;
+  if (opps.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-2 rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-12 text-center">
+        <Archive className="size-6 text-slate-600" aria-hidden="true" />
+        <p className="text-sm text-slate-400">No archived opportunities.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
+      <table className="w-full text-left text-[13px]">
+        <thead>
+          <tr className="border-b border-white/[0.06] text-[11px] uppercase tracking-wider text-slate-500">
+            <th className="px-4 py-3">Title</th>
+            <th className="px-4 py-3">Source</th>
+            <th className="px-4 py-3">Buyer</th>
+            <th className="px-4 py-3">Stage</th>
+            <th className="px-4 py-3">Archived</th>
+            <th className="px-4 py-3 text-right">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {opps.map((o) => (
+            <tr key={o.id} className="border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02]">
+              <td className="max-w-[320px] truncate px-4 py-3">
+                <button onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline/${o.id}`)}
+                  className="truncate text-left text-white hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
+                  {o.title}
+                </button>
+              </td>
+              <td className="px-4 py-3 text-slate-400">{sourceLabel(o.sourceKey)}</td>
+              <td className="px-4 py-3 text-slate-400">{o.buyer ?? "-"}</td>
+              <td className="px-4 py-3">
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase ${stageBadgeClass(o.stage)}`}>
+                  {STAGE_LABELS[o.stage] ?? humanize(o.stage)}
+                </span>
+              </td>
+              <td className="px-4 py-3 text-slate-400">{formatDate(o.archivedAt)}</td>
+              <td className="px-4 py-3 text-right">
+                <button onClick={() => onRestore(o.id)} disabled={restoringId === o.id}
+                  aria-label={`Restore ${o.title}`}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[12px] font-semibold text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+                  <RotateCcw className={cn("size-3.5", restoringId === o.id && "animate-spin")} /> {restoringId === o.id ? "Restoring…" : "Restore"}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

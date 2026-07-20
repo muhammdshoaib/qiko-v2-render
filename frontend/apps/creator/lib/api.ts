@@ -544,7 +544,7 @@ export type OpportunityDetail = {
     sourceUrl: string | null; publishedAt: string | null; extractionConfidence: number | null;
     securityClearance: string | null; contacts: OpportunityContact[]; framework: string | null;
     contractDuration: string | null; technology: string | null; reference: string | null;
-    noticeType: string | null;
+    noticeType: string | null; links?: { url: string; description?: string | null }[];
   };
   summary: {
     executiveSummary: string | null; riskSummary: string | null; opportunitySummary: string | null;
@@ -640,11 +640,59 @@ export const listSalesOpportunities = (agentId: string, filters: SalesOpportunit
   );
 export const getSalesOpportunity = (agentId: string, opportunityId: number | string) =>
   request<{ opportunity: SalesOpportunity }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}`);
-export const createSalesOpportunity = (agentId: string, payload: Record<string, unknown>) =>
+
+// Manual "add an opportunity" flow (mirrors the backend CreateOpportunityBody / UpdateOpportunityBody).
+// Only `title` is required on create; everything else is optional. The richer descriptive fields are
+// persisted server-side in the opportunity's raw payload and surfaced back via `detail`.
+export type SalesOpportunityContactInput = { name?: string | null; email?: string | null; phone?: string | null };
+export type SalesOpportunityLinkInput = { url?: string | null; description?: string | null };
+export type CreateSalesOpportunityInput = {
+  title: string;
+  buyer?: string | null;
+  country?: string | null;
+  region?: string | null;
+  category?: string | null;
+  estimated_value?: number | null;
+  currency?: string | null;
+  published_at?: string | null;
+  deadline_at?: string | null;
+  source_url?: string | null;
+  source_key?: string | null;
+  source_name?: string | null;
+  stage?: OpportunityStage;
+  run_qualification?: boolean;
+  reference?: string | null;
+  notice_type?: string | null;
+  security_clearance?: string | null;
+  extraction_confidence?: number | null;
+  framework?: string | null;
+  contract_duration?: string | null;
+  technology?: string | null;
+  contacts?: SalesOpportunityContactInput[];
+  links?: SalesOpportunityLinkInput[];
+  executive_summary?: string | null;
+  risk_summary?: string | null;
+  opportunity_summary?: string | null;
+  requirements?: string[];
+  deliverables?: string[];
+  qualification_score?: number | null;
+  recommendation?: string | null;
+  confidence?: number | null;
+  ai_reasoning?: string | null;
+  recommendations?: string[];
+  notes?: string | null;
+};
+// The edit form patches the same fields (all optional) plus an opt-in `requalify` re-score.
+export type UpdateSalesOpportunityInput = Partial<Omit<CreateSalesOpportunityInput, "title">> & {
+  title?: string;
+  requalify?: boolean;
+};
+
+export const createSalesOpportunity = (agentId: string, payload: CreateSalesOpportunityInput) =>
   request<{ opportunity: SalesOpportunity }>(`/sales-intelligence/${agentId}/opportunities`, {
     method: "POST", body: JSON.stringify(payload),
   });
-export const updateSalesOpportunity = (agentId: string, opportunityId: number | string, payload: Record<string, unknown>) =>
+export const updateSalesOpportunity = (agentId: string, opportunityId: number | string, payload: UpdateSalesOpportunityInput) =>
   request<{ opportunity: SalesOpportunity }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}`, {
     method: "PATCH", body: JSON.stringify(payload),
   });
