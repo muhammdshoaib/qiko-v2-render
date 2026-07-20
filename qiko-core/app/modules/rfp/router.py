@@ -333,11 +333,11 @@ async def tender_chat(pack_id: str, body: AskBody, request: Request,
                       tenant: str = Depends(authed_tenant),
                       _role: dict = Depends(require_role(Role.editor)),
                       packs=Depends(get_rfp_packs), chat=Depends(get_chat)) -> dict:
-    """Answer-development chat for a tender. Unlike /ask (tender document only), this grounds in the
-    tenant's KNOWLEDGE BASE so the user can develop and expand draft answers from company documents
-    (for example 'when was our HR system developed and how secure is it'), while also seeing the
-    tender context (title + brief) so it can answer bid questions too. Cited from the KB; says so
-    plainly when the knowledge base does not cover the question, and never invents facts.
+    """Answer-development chat for a tender. Grounds in BOTH this tender (brief, key dates and an
+    extract of the tender document, so it answers deadline/scope/rules questions) AND the tenant's
+    KNOWLEDGE BASE (so it can develop and expand answers from company documents, for example 'when
+    was our HR system developed and how secure is it'). Cited; says so plainly only when the answer
+    is in neither the tender nor the knowledge base, and never invents facts.
 
     Each exchange is persisted to a per-pack conversation (reusing the general ChatService store, so
     it is Postgres-backed under USE_DB_STORES and survives close/refresh/logout), which GET
@@ -351,21 +351,35 @@ async def tender_chat(pack_id: str, body: AskBody, request: Request,
     passages = await worker.knowledge.retrieve(tenant, body.question, k=worker.config.retrieval_k)
     kb_block = "\n\n".join(f"[{i + 1}] {p.text}" for i, p in enumerate(passages)) or "(no matching company documents)"
 
+    # Tender context must answer TENDER questions (deadline, scope, submission rules, key dates), so
+    # include the whole brief (summary/scope/format/key_dates/etc.) AND a generous slice of the
+    # tender document itself -- the closing date lives on page 1 of the RFP, not in the brief summary.
     brief = pack.brief or {}
     ctx = [f"Tender: {pack.title}"]
-    if brief.get("summary"):
-        ctx.append(f"Summary: {brief['summary']}")
-    if brief.get("scope"):
-        ctx.append(f"Scope: {brief['scope']}")
-    if len(ctx) == 1 and pack.document_text:
-        ctx.append("Tender document (excerpt):\n" + pack.document_text[:8_000])
+    if pack.deadline:
+        ctx.append(f"Submission deadline (from the tender record): {pack.deadline}")
+    for key, label in (("summary", "Summary"), ("scope", "Scope"),
+                       ("submission_format", "Submission format"), ("success_criteria", "Success criteria"),
+                       ("gaps_and_risks", "Gaps and risks")):
+        val = brief.get(key)
+        if val:
+            ctx.append(f"{label}: {val}")
+    if brief.get("key_dates"):
+        dates = brief["key_dates"]
+        dates_txt = "\n".join(f"- {d}" for d in dates) if isinstance(dates, list) else str(dates)
+        ctx.append(f"Key dates:\n{dates_txt}")
+    if pack.document_text:
+        ctx.append("Tender document (extract):\n" + pack.document_text[:24_000])
     tender_ctx = "\n".join(ctx)
 
-    system = ("You are a bid-writing assistant helping develop a tender response. Answer using the "
-              "COMPANY KNOWLEDGE BASE passages and the tender context provided. Use the knowledge "
-              "base to develop and expand answers (capabilities, systems, certifications, past "
-              "performance, security posture). Be specific and cite what you rely on. If the "
-              "knowledge base does not contain the answer, say so plainly and do not guess.")
+    system = ("You are a bid-writing assistant helping develop a tender response. You are given the "
+              "TENDER CONTEXT (this tender's brief, key dates and an extract of the tender document) "
+              "and the COMPANY KNOWLEDGE BASE. Answer questions about THIS TENDER (deadlines, scope, "
+              "submission rules, key dates, requirements) from the TENDER CONTEXT, and questions "
+              "about the company (capabilities, systems, certifications, past performance, security "
+              "posture) from the KNOWLEDGE BASE, using both together to develop and expand answers. "
+              "Be specific and cite what you rely on. Only say you cannot find something if it is "
+              "genuinely in neither the tender context nor the knowledge base, and never invent facts.")
     prompt = (f"TENDER CONTEXT:\n{tender_ctx}\n\nCOMPANY KNOWLEDGE BASE:\n{kb_block}\n\n"
               f"QUESTION: {body.question}\n\nAnswer, grounded in the above.")
     response = await asyncio.to_thread(get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT).generate,
