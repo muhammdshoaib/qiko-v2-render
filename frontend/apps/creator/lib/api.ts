@@ -625,7 +625,8 @@ export const scanUngmSource = (agentId: string, body: Record<string, unknown> = 
 
 export type SalesOpportunityFilters = {
   stage?: OpportunityStage; recommendation?: Recommendation; source_key?: string; title?: string;
-  search?: string; limit?: number; include_archived?: boolean; archived_only?: boolean;
+  search?: string; limit?: number | "all"; assigned_reviewer_user_id?: string;
+  include_archived?: boolean; archived_only?: boolean;
 };
 export const listSalesOpportunities = (agentId: string, filters: SalesOpportunityFilters = {}) =>
   request<{ opportunities: SalesOpportunity[]; summary: Record<string, unknown> }>(
@@ -641,6 +642,12 @@ export const updateSalesOpportunity = (agentId: string, opportunityId: number | 
   request<{ opportunity: SalesOpportunity }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}`, {
     method: "PATCH", body: JSON.stringify(payload),
   });
+// Stage transition (kanban drag / "Move to..." / "Run Qualification"). The backend validates the
+// target against the manual pipeline stages; `pushed` is reached via pushOpportunityToSalesforce.
+export const transitionSalesOpportunity = (agentId: string, opportunityId: number | string, stage: OpportunityStage) =>
+  request<{ opportunity: SalesOpportunity }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}/transition`, {
+    method: "POST", body: JSON.stringify({ stage }),
+  });
 export const getSalesOpportunityHistory = (agentId: string, opportunityId: number | string) =>
   request<{ history: SalesActivityLog[] }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}/history`);
 export const archiveSalesOpportunity = (agentId: string, opportunityId: number | string) =>
@@ -650,12 +657,33 @@ export const restoreSalesOpportunity = (agentId: string, opportunityId: number |
 export const deleteSalesOpportunity = (agentId: string, opportunityId: number | string) =>
   request<{ deleted: boolean }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}`, { method: "DELETE" });
 
-export const getSalesActivityLogs = (agentId: string, params: { opportunity_id?: number; page?: number; per_page?: number } = {}) =>
-  request<{ logs: SalesActivityLog[]; total: number }>(`/sales-intelligence/${agentId}/activity-logs${siQuery(params)}`);
+// Salesforce activity action names logged by the backend (connect/disconnect + push lifecycle).
+// The salesforce-log page passes these so the table is scoped to Salesforce events only.
+export const SALESFORCE_LOG_ACTIONS = [
+  "salesforce_connected", "salesforce_disconnected",
+  "salesforce_push_started", "salesforce_push_succeeded", "salesforce_push_failed",
+] as const;
+export const getSalesActivityLogs = (
+  agentId: string,
+  params: { opportunity_id?: number; page?: number; per_page?: number; actions?: readonly string[] } = {},
+) => {
+  const { actions, ...rest } = params;
+  const q = siQuery(rest);
+  const actionsQuery = actions?.length
+    ? actions.map((a) => `actions=${encodeURIComponent(a)}`).join("&")
+    : "";
+  const query = [q.replace(/^\?/, ""), actionsQuery].filter(Boolean).join("&");
+  return request<{ logs: SalesActivityLog[]; total: number }>(
+    `/sales-intelligence/${agentId}/activity-logs${query ? `?${query}` : ""}`,
+  );
+};
 export const getSalesScanHistory = (agentId: string, params: { source_key?: string; per_page?: number } = {}) =>
   request<{ history: SalesScanHistoryEntry[] }>(`/sales-intelligence/${agentId}/scan-history${siQuery(params)}`);
 
-export const reviewSalesOpportunity = (agentId: string, opportunityId: number | string, decision: "approve" | "reject", notes = "") =>
+// Canonical review decisions match the backend REVIEW_DECISIONS enum (approved/rejected/
+// needs_review); sending "approve"/"reject" here previously 422'd every review.
+export type ReviewDecision = "approved" | "rejected" | "needs_review";
+export const reviewSalesOpportunity = (agentId: string, opportunityId: number | string, decision: ReviewDecision, notes = "") =>
   request<{ opportunity: SalesOpportunity }>(`/sales-intelligence/${agentId}/opportunities/${opportunityId}/review`, {
     method: "POST", body: JSON.stringify({ decision, notes }),
   });

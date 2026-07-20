@@ -1042,6 +1042,8 @@ class SqlActivityLogStore:
                 q = q.where(SalesIntelActivityLogRow.activity_type == filters["activity_type"])
             if filters.get("action"):
                 q = q.where(SalesIntelActivityLogRow.action == filters["action"])
+            if filters.get("actions"):
+                q = q.where(SalesIntelActivityLogRow.action.in_(list(filters["actions"])))
             q = q.order_by(SalesIntelActivityLogRow.created_at.desc())
             limit = filters.get("limit")
             if limit:

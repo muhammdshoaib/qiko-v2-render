@@ -22,6 +22,7 @@ from app.modules.sales_intelligence.models import (
     InMemoryActivityLogStore,
     InMemoryIngestionSourceStore,
     InMemoryOpportunityStore,
+    MANUAL_TRANSITION_STAGES,
     Opportunity,
     OpportunityStore,
     SOURCE_KEYS,
@@ -48,6 +49,10 @@ class SourceInactiveError(SalesIntelligenceError):
 
 
 class OpportunityNotFoundError(SalesIntelligenceError):
+    pass
+
+
+class InvalidStageTransitionError(SalesIntelligenceError):
     pass
 
 
@@ -275,6 +280,28 @@ class OpportunityService:
         await self._log(opportunity.tenant, opportunity.agent_id, "human_review_recorded",
                         f"Human review decision recorded: {decision}", tone=tone, opportunity_id=opportunity.id,
                         actor_user_id=actor_user_id, metadata={"decision": decision})
+        return opportunity
+
+    async def transition_stage(self, opportunity: Opportunity, stage: str,
+                               actor_user_id: str | None = None) -> Opportunity:
+        """Move an opportunity to a manual/pipeline stage (kanban drag, keyboard "Move to...",
+        or the "Run Qualification" action which sets `qualifying`). Only the manual stages are
+        allowed here -- the Salesforce-driven stages (pushed etc.) must go through their own
+        action endpoints, so this refuses them rather than silently corrupting the pipeline."""
+        if stage not in MANUAL_TRANSITION_STAGES:
+            raise InvalidStageTransitionError(
+                f"stage '{stage}' cannot be set manually; use the relevant action instead.")
+        previous = opportunity.stage
+        if previous == stage:
+            return opportunity
+        opportunity.stage = stage
+        opportunity.updated_by = actor_user_id
+        opportunity.updated_at = _now()
+        opportunity = await self.opportunities.update(opportunity)
+        await self._log(opportunity.tenant, opportunity.agent_id, "opportunity_stage_changed",
+                        f"Stage changed from {previous} to {stage}.", tone="info",
+                        opportunity_id=opportunity.id, actor_user_id=actor_user_id,
+                        metadata={"from": previous, "to": stage})
         return opportunity
 
     async def update_notes(self, opportunity: Opportunity, notes: str | None, actor_user_id: str | None) -> Opportunity:

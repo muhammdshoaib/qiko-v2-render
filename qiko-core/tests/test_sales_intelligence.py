@@ -610,6 +610,98 @@ def test_sales_intelligence_pipeline_is_tenant_isolated(client):
     assert other.json()["opportunities"] == []
 
 
+def test_sales_intelligence_review_accepts_canonical_decisions(client):
+    """Regression for the approve/reject 422 bug: the endpoint accepts the canonical
+    approved/rejected values and rejects the old non-canonical approve/reject aliases."""
+    cookies = auth_cookies(tenant="acme")
+    created = client.post("/api/v1/sales-intelligence/agent-si-review/opportunities", cookies=cookies,
+                          json={"title": "Static security guarding services", "country": "Kenya", "buyer": "UN"})
+    opp_id = created.json()["opportunity"]["id"]
+
+    rejected = client.post(f"/api/v1/sales-intelligence/agent-si-review/opportunities/{opp_id}/review",
+                           cookies=cookies, json={"decision": "rejected", "notes": "Out of scope"})
+    assert rejected.status_code == 200
+    assert rejected.json()["opportunity"]["stage"] == "rejected"
+
+    approved = client.post(f"/api/v1/sales-intelligence/agent-si-review/opportunities/{opp_id}/review",
+                           cookies=cookies, json={"decision": "approved"})
+    assert approved.status_code == 200
+    assert approved.json()["opportunity"]["stage"] == "validated"
+
+    # The non-canonical alias the FE used to send is still refused (422, never accepted).
+    legacy = client.post(f"/api/v1/sales-intelligence/agent-si-review/opportunities/{opp_id}/review",
+                         cookies=cookies, json={"decision": "approve"})
+    assert legacy.status_code == 422
+
+
+def test_sales_intelligence_stage_transition_via_api(client):
+    cookies = auth_cookies(tenant="acme")
+    created = client.post("/api/v1/sales-intelligence/agent-si-trans/opportunities", cookies=cookies,
+                          json={"title": "Move me", "run_qualification": False})
+    opp_id = created.json()["opportunity"]["id"]
+
+    moved = client.post(f"/api/v1/sales-intelligence/agent-si-trans/opportunities/{opp_id}/transition",
+                        cookies=cookies, json={"stage": "qualifying"})
+    assert moved.status_code == 200
+    assert moved.json()["opportunity"]["stage"] == "qualifying"
+
+    # Salesforce-driven stages are not manually settable (must go through push-to-salesforce).
+    pushed = client.post(f"/api/v1/sales-intelligence/agent-si-trans/opportunities/{opp_id}/transition",
+                         cookies=cookies, json={"stage": "pushed"})
+    assert pushed.status_code == 422
+
+    # Unknown stage is rejected too.
+    bogus = client.post(f"/api/v1/sales-intelligence/agent-si-trans/opportunities/{opp_id}/transition",
+                        cookies=cookies, json={"stage": "not_a_stage"})
+    assert bogus.status_code == 422
+
+
+def test_sales_intelligence_activity_logs_actions_or_filter(client):
+    cookies = auth_cookies(tenant="acme")
+    agent = "agent-si-actions"
+    created = client.post(f"/api/v1/sales-intelligence/{agent}/opportunities", cookies=cookies,
+                          json={"title": "Filter me", "run_qualification": False})
+    opp_id = created.json()["opportunity"]["id"]
+    client.post(f"/api/v1/sales-intelligence/{agent}/opportunities/{opp_id}/transition",
+                cookies=cookies, json={"stage": "qualifying"})
+
+    all_actions = {log["action"] for log in
+                   client.get(f"/api/v1/sales-intelligence/{agent}/activity-logs", cookies=cookies).json()["logs"]}
+    assert {"opportunity_created_manual", "opportunity_stage_changed"} <= all_actions
+
+    # Single-value OR filter.
+    single = client.get(f"/api/v1/sales-intelligence/{agent}/activity-logs?actions=opportunity_stage_changed",
+                        cookies=cookies).json()["logs"]
+    assert single and all(log["action"] == "opportunity_stage_changed" for log in single)
+
+    # Repeated params act as an OR set.
+    both = client.get(f"/api/v1/sales-intelligence/{agent}/activity-logs"
+                      "?actions=opportunity_stage_changed&actions=opportunity_created_manual",
+                      cookies=cookies).json()["logs"]
+    assert {log["action"] for log in both} == {"opportunity_stage_changed", "opportunity_created_manual"}
+
+
+def test_sales_intelligence_opportunities_limit_all_and_reviewer_filter(client):
+    cookies = auth_cookies(tenant="acme")
+    agent = "agent-si-limit"
+    for i in range(3):
+        client.post(f"/api/v1/sales-intelligence/{agent}/opportunities", cookies=cookies,
+                    json={"title": f"Opportunity {i}", "run_qualification": False})
+
+    listed = client.get(f"/api/v1/sales-intelligence/{agent}/opportunities?limit=all",
+                        cookies=cookies).json()["opportunities"]
+    assert len(listed) == 3
+
+    target_id = listed[0]["id"]
+    client.patch(f"/api/v1/sales-intelligence/{agent}/opportunities/{target_id}/assign-reviewer",
+                 cookies=cookies, json={"user_id": "rev-1", "name": "Reviewer One"})
+
+    filtered = client.get(f"/api/v1/sales-intelligence/{agent}/opportunities"
+                          "?limit=all&assigned_reviewer_user_id=rev-1", cookies=cookies).json()["opportunities"]
+    assert len(filtered) == 1
+    assert filtered[0]["assignedReviewerUserId"] == "rev-1"
+
+
 def test_sales_intelligence_salesforce_status_reports_not_configured(client):
     cookies = auth_cookies(tenant="acme")
     resp = client.get("/api/v1/sales-intelligence/agent-si-5/salesforce/status", cookies=cookies)

@@ -5,17 +5,20 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Info, RefreshCw, Unlink, XCircle } from "lucide-react";
 import { cn } from "@qiko/ui";
 import {
-  disconnectSalesIntelSalesforce, getSalesActivityLogs, getSalesforceStatus, listAgents, type SalesActivityLog,
+  disconnectSalesIntelSalesforce, getSalesActivityLogs, getSalesforceStatus, listAgents,
+  SALESFORCE_LOG_ACTIONS, type SalesActivityLog,
 } from "@/lib/api";
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
 import { OutcomesStrip } from "@/components/sales-intelligence/outcomes-strip";
 import { formatDate } from "@/components/sales-intelligence/utils";
 
-function actionLabel(activityType: string): string {
-  return activityType
+function actionLabel(value: string | null | undefined): string {
+  const label = (value ?? "")
     .split("_")
+    .filter(Boolean)
     .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
     .join(" ");
+  return label || "-";
 }
 
 function ToneIcon({ tone }: { tone: string }) {
@@ -33,7 +36,13 @@ export default function SalesforcePushLogPage() {
   const worker = agents.data?.find((a) => a.id === agentId);
 
   const sfQ = useQuery({ queryKey: ["salesforce-status", agentId], queryFn: () => getSalesforceStatus(agentId), retry: false });
-  const logsQ = useQuery({ queryKey: ["sales-activity-logs", agentId], queryFn: () => getSalesActivityLogs(agentId, { per_page: 50 }), retry: false });
+  // Scope the log to Salesforce events only (connect/disconnect + push lifecycle) via the
+  // activity-logs `actions` OR-filter, rather than every activity type.
+  const logsQ = useQuery({
+    queryKey: ["sales-activity-logs", agentId, "salesforce"],
+    queryFn: () => getSalesActivityLogs(agentId, { per_page: 50, actions: SALESFORCE_LOG_ACTIONS }),
+    retry: false,
+  });
   const logs: SalesActivityLog[] = logsQ.data?.logs ?? [];
 
   const disconnect = useMutation({
@@ -41,7 +50,7 @@ export default function SalesforcePushLogPage() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["salesforce-status", agentId] }),
   });
 
-  const successful = logs.filter((l) => l.tone === "success" && l.activityType.includes("push")).length;
+  const successful = logs.filter((l) => l.tone === "success" && l.action.includes("push")).length;
   const failed = logs.filter((l) => l.tone === "error").length;
   const connected = sfQ.data?.salesforce?.connected ?? false;
 
@@ -96,7 +105,7 @@ export default function SalesforcePushLogPage() {
               {logs.map((log) => (
                 <tr key={log.id} className="border-b border-white/[0.04] last:border-0">
                   <td className="whitespace-nowrap px-4 py-3"><ToneIcon tone={log.tone} /></td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-300">{actionLabel(log.activityType)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-300">{actionLabel(log.action)}</td>
                   <td className={cn("max-w-[280px] truncate px-4 py-3", log.tone === "error" ? "text-red-300" : "text-slate-300")}>{log.action}</td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[12px] text-slate-400">
                     {(log.metadata?.salesforce_opportunity_id as string) ?? "-"}

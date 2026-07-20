@@ -8,7 +8,7 @@ Route shape follows qiko-core's existing per-agent module convention (see app.mo
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
@@ -16,6 +16,7 @@ from app.core.deps import authed_tenant, require_role
 from app.modules.identity.rbac import Role
 from app.modules.sales_intelligence.models import (
     ACTIVITY_TYPES,
+    MANUAL_TRANSITION_STAGES,
     RECOMMENDATIONS,
     REVIEW_DECISIONS,
     SOURCE_KEYS,
@@ -23,7 +24,11 @@ from app.modules.sales_intelligence.models import (
     STAGES,
 )
 from app.modules.sales_intelligence.salesforce import SalesforceError, SalesforceNotConfiguredError
-from app.modules.sales_intelligence.service import SourceInactiveError
+from app.modules.sales_intelligence.service import InvalidStageTransitionError, SourceInactiveError
+
+# Upper bound on an opportunities-list page. `limit=all` (or any oversized value) is clamped to
+# this so the "show all" views work without an unbounded query that could be abused.
+MAX_OPPORTUNITY_LIMIT = 1000
 
 router = APIRouter(prefix="/sales-intelligence", tags=["sales-intelligence"])
 
@@ -202,19 +207,48 @@ async def scan_ted(agent_id: str, body: ScanBody, request: Request, tenant: str 
     }
 
 
+def _parse_actions(actions: list[str] | None) -> list[str] | None:
+    """Normalise the `actions` OR-filter query param. Supports both repeated `actions=` params and
+    a single comma-separated value, trimming blanks. Returns None when nothing usable was given."""
+    if not actions:
+        return None
+    parsed: list[str] = []
+    for raw in actions:
+        parsed.extend(part.strip() for part in (raw or "").split(",") if part.strip())
+    return parsed or None
+
+
+def _resolve_opportunity_limit(limit: str) -> int:
+    """Turn the `limit` query param into a bounded row cap. Accepts `all` (or `0`/empty) for the
+    unbounded "show everything" views, clamped to MAX_OPPORTUNITY_LIMIT to avoid abuse."""
+    value = (limit or "").strip().lower()
+    if value in ("", "all"):
+        return MAX_OPPORTUNITY_LIMIT
+    try:
+        parsed = int(value)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail="invalid limit") from e
+    if parsed <= 0:
+        return MAX_OPPORTUNITY_LIMIT
+    return max(1, min(MAX_OPPORTUNITY_LIMIT, parsed))
+
+
 @router.get("/{agent_id}/opportunities")
 async def opportunities(agent_id: str, stage: str | None = None, recommendation: str | None = None,
                         source_key: str | None = None, title: str | None = None, search: str | None = None,
-                        limit: int = 50, include_archived: bool = False, archived_only: bool = False,
+                        limit: str = "50", assigned_reviewer_user_id: str | None = None,
+                        include_archived: bool = False, archived_only: bool = False,
                         tenant: str = Depends(authed_tenant), svc=Depends(get_sales_intel)) -> dict:
     if stage and stage not in STAGES:
         raise HTTPException(status_code=422, detail="invalid stage")
     if recommendation and recommendation not in RECOMMENDATIONS:
         raise HTTPException(status_code=422, detail="invalid recommendation")
+    resolved_limit = _resolve_opportunity_limit(limit)
     items = await svc.opportunities.list_for_agent(
         tenant, agent_id, stage=stage, recommendation=recommendation, source_key=source_key, title=title,
-        search=search, include_archived=include_archived, archived_only=archived_only)
-    items = items[: max(1, min(100, limit))]
+        search=search, assigned_reviewer_user_id=assigned_reviewer_user_id,
+        include_archived=include_archived, archived_only=archived_only)
+    items = items[:resolved_limit]
     return {"opportunities": [_opportunity_out(o) for o in items], "summary": await svc.dashboard_summary(tenant, agent_id)}
 
 
@@ -316,6 +350,35 @@ async def update_opportunity(agent_id: str, opportunity_id: str, body: UpdateOpp
     return {"opportunity": _opportunity_out(o)}
 
 
+class TransitionBody(BaseModel):
+    stage: str
+
+
+@router.post("/{agent_id}/opportunities/{opportunity_id}/transition")
+async def transition_opportunity(agent_id: str, opportunity_id: str, body: TransitionBody,
+                                 tenant: str = Depends(authed_tenant),
+                                 claims: dict = Depends(require_role(Role.editor)),
+                                 svc=Depends(get_sales_intel)) -> dict:
+    """Move an opportunity to a manual/pipeline stage (kanban drag, keyboard "Move to...", or the
+    "Run Qualification" action which targets `qualifying`). The Salesforce-driven stages are not
+    settable here: reaching `pushed` must go through the push-to-salesforce action."""
+    if body.stage not in STAGES:
+        raise HTTPException(status_code=422, detail="invalid stage")
+    if body.stage not in MANUAL_TRANSITION_STAGES:
+        raise HTTPException(status_code=422,
+                            detail=f"stage '{body.stage}' cannot be set manually; use the relevant action instead.")
+    o = await _get_opportunity_or_404(svc, tenant, agent_id, opportunity_id)
+    if o.is_archived():
+        raise HTTPException(status_code=422, detail="Archived opportunities cannot be moved. Restore first.")
+    if o.stage == "pushed" or o.salesforce_opportunity_id:
+        raise HTTPException(status_code=422, detail="Pushed opportunities cannot be moved.")
+    try:
+        o = await svc.transition_stage(o, body.stage, _actor_user_id(claims))
+    except InvalidStageTransitionError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return {"opportunity": _opportunity_out(o)}
+
+
 @router.post("/{agent_id}/opportunities/{opportunity_id}/archive")
 async def archive_opportunity(agent_id: str, opportunity_id: str, tenant: str = Depends(authed_tenant),
                               claims: dict = Depends(require_role(Role.editor)), svc=Depends(get_sales_intel),
@@ -345,12 +408,18 @@ async def delete_opportunity(agent_id: str, opportunity_id: str, tenant: str = D
 
 @router.get("/{agent_id}/activity-logs")
 async def activity_logs(agent_id: str, activity_type: str | None = None, action: str | None = None,
+                        actions: list[str] | None = Query(default=None),
                         opportunity_id: str | None = None, limit: int = 50,
                         tenant: str = Depends(authed_tenant), svc=Depends(get_sales_intel)) -> dict:
     if activity_type and activity_type not in ACTIVITY_TYPES:
         raise HTTPException(status_code=422, detail="invalid activity_type")
+    # `actions` is an OR filter (repeated `actions=` params or a single comma-separated value) so
+    # the Salesforce log can scope itself to just the Salesforce action set. `action` (singular)
+    # stays for exact single-action lookups.
+    action_list = _parse_actions(actions)
     logs = await svc.activity_logs.list_for_agent(tenant, agent_id, activity_type=activity_type, action=action,
-                                                  opportunity_id=opportunity_id, limit=max(1, min(100, limit)))
+                                                  actions=action_list, opportunity_id=opportunity_id,
+                                                  limit=max(1, min(100, limit)))
     out = [_log_out(log) for log in logs]
     # FE (creator/lib/api.ts getSalesActivityLogs) reads `.logs`/`.total`; keep this response shape
     # aligned with that contract -- the salesforce-log page renders an empty table otherwise.

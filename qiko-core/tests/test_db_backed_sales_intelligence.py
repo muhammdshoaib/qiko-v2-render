@@ -113,6 +113,13 @@ async def test_opportunity_update_and_list_filters_exclude_archived_and_deleted(
     assert {o.id for o in await store2.list_for_agent("acme", "ag1", include_archived=True)} == {"op1", "op2", "op3"}
     assert await store2.list_for_agent("beta", "ag1") == []  # tenant scoped
 
+    # assigned_reviewer_user_id filter
+    op2 = await store2.get("acme", "ag1", "op2")
+    op2.assigned_reviewer_user_id = "rev-1"
+    await store2.update(op2)
+    assert [o.id for o in await store2.list_for_agent("acme", "ag1", assigned_reviewer_user_id="rev-1")] == ["op2"]
+    assert await store2.list_for_agent("acme", "ag1", assigned_reviewer_user_id="nobody") == []
+
     op1 = await store2.get("acme", "ag1", "op1")
     op1.stage = "validated"
     op1.human_review_notes = "looks good"
@@ -157,6 +164,10 @@ async def test_activity_log_add_list_filters_order_and_scope(db_path):
     assert [log.id for log in await store.list_for_agent("acme", "ag1", activity_type="source_scan")] == ["l2"]
     assert [log.id for log in await store.list_for_agent("acme", "ag1", opportunity_id="op1")] == ["l1"]
     assert [log.id for log in await store.list_for_agent("acme", "ag1", action="ungm_scan_completed")] == ["l2"]
+    # actions OR filter (repeated / csv param on the API maps to this list)
+    assert {log.id for log in await store.list_for_agent(
+        "acme", "ag1", actions=["opportunity_ingested", "ungm_scan_completed"])} == {"l1", "l2"}
+    assert [log.id for log in await store.list_for_agent("acme", "ag1", actions=["ungm_scan_completed"])] == ["l2"]
     assert len(await store.list_for_agent("acme", "ag1", limit=1)) == 1
     assert (await store.list_for_agent("acme", "ag1"))[0].metadata == {"source_key": "ungm"}
 

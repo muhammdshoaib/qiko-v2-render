@@ -21,6 +21,13 @@ STAGES = (
     "ingested", "qualifying", "qualified", "awaiting_review", "validated",
     "ready_salesforce", "push_pending", "pushed", "rejected", "push_failed",
 )
+# Stages a user may move an opportunity to directly (kanban drag / "Move to..." / "Run
+# Qualification"). The Salesforce-driven stages (ready_salesforce, push_pending, pushed,
+# push_failed) are deliberately excluded: reaching "pushed" must go through the real push action
+# (push-to-salesforce), so they are never settable by a plain stage transition.
+MANUAL_TRANSITION_STAGES = (
+    "ingested", "qualifying", "qualified", "awaiting_review", "validated", "rejected",
+)
 RECOMMENDATIONS = ("Bid", "Review", "No Bid")
 REVIEW_DECISIONS = ("approved", "rejected", "needs_review")
 SALESFORCE_CONNECTION_STATUSES = ("connected", "expired", "error", "disconnected")
@@ -280,6 +287,7 @@ def _apply_opportunity_filters(items: list[Opportunity], filters: dict) -> list[
     stage = filters.get("stage")
     recommendation = filters.get("recommendation")
     source_key = filters.get("source_key")
+    assigned_reviewer_user_id = filters.get("assigned_reviewer_user_id")
     title = (filters.get("title") or "").lower()
     search = (filters.get("search") or "").lower()
     include_archived = filters.get("include_archived", False)
@@ -293,6 +301,8 @@ def _apply_opportunity_filters(items: list[Opportunity], filters: dict) -> list[
         if recommendation and o.recommendation != recommendation:
             return False
         if source_key and o.source_key != source_key:
+            return False
+        if assigned_reviewer_user_id and o.assigned_reviewer_user_id != assigned_reviewer_user_id:
             return False
         if title and title not in (o.title or "").lower():
             return False
@@ -327,6 +337,9 @@ class InMemoryActivityLogStore:
             items = [log for log in items if log.activity_type == filters["activity_type"]]
         if filters.get("action"):
             items = [log for log in items if log.action == filters["action"]]
+        if filters.get("actions"):
+            allowed = set(filters["actions"])
+            items = [log for log in items if log.action in allowed]
         items.sort(key=lambda log: log.created_at, reverse=True)
         limit = filters.get("limit")
         return items[:limit] if limit else items

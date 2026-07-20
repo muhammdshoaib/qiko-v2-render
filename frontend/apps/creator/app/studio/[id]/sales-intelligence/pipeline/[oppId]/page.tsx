@@ -9,7 +9,7 @@ import {
 import { cn } from "@qiko/ui";
 import {
   getSalesOpportunity, listAgents, pushOpportunityToSalesforce, reviewSalesOpportunity,
-  saveSalesOpportunityNotes, updateSalesOpportunity, type OpportunityDetail,
+  saveSalesOpportunityNotes, transitionSalesOpportunity, type OpportunityDetail, type ReviewDecision,
 } from "@/lib/api";
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
 import { AssignReviewerControl } from "@/components/sales-intelligence/assign-reviewer-control";
@@ -40,15 +40,14 @@ export default function OpportunityDetailPage() {
     qc.invalidateQueries({ queryKey: ["sales-opportunities", agentId] });
   };
   const review = useMutation({
-    mutationFn: (decision: "approve" | "reject") => reviewSalesOpportunity(agentId, oppId, decision),
+    mutationFn: (decision: ReviewDecision) => reviewSalesOpportunity(agentId, oppId, decision),
     onSuccess: invalidate,
   });
   const push = useMutation({ mutationFn: () => pushOpportunityToSalesforce(agentId, oppId), onSuccess: invalidate });
-  // No dedicated "run qualification" endpoint is documented yet on the Laravel controller list --
-  // this bumps the stage as a stand-in until the real backend exposes a qualification-trigger
-  // endpoint (the qualification scorer itself lives server-side, e.g. IdgSalesOpportunityService).
+  // Moves the opportunity into the `qualifying` stage via the stage-transition endpoint (the
+  // qualification scorer itself lives server-side, e.g. IdgSalesOpportunityService).
   const runQualification = useMutation({
-    mutationFn: () => updateSalesOpportunity(agentId, oppId, { stage: "qualifying" }),
+    mutationFn: () => transitionSalesOpportunity(agentId, oppId, "qualifying"),
     onSuccess: invalidate,
   });
 
@@ -109,13 +108,13 @@ export default function OpportunityDetailPage() {
             )}
             {opp.stage === "awaiting_review" && (
               <>
-                <button onClick={() => review.mutate("approve")} disabled={review.isPending}
+                <button onClick={() => review.mutate("approved")} disabled={review.isPending}
                   className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-2 text-[13px] font-semibold text-white hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:opacity-50">
-                  <Check className="size-3.5" /> {review.isPending && review.variables === "approve" ? "Approving…" : "Approve"}
+                  <Check className="size-3.5" /> {review.isPending && review.variables === "approved" ? "Approving…" : "Approve"}
                 </button>
-                <button onClick={() => review.mutate("reject")} disabled={review.isPending}
+                <button onClick={() => review.mutate("rejected")} disabled={review.isPending}
                   className="flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[13px] font-semibold text-red-400 hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 disabled:opacity-50">
-                  <X className="size-3.5" /> {review.isPending && review.variables === "reject" ? "Rejecting…" : "Reject"}
+                  <X className="size-3.5" /> {review.isPending && review.variables === "rejected" ? "Rejecting…" : "Reject"}
                 </button>
               </>
             )}

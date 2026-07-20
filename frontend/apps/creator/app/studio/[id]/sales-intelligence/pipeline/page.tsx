@@ -6,7 +6,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarClock, GripVertical } from "lucide-react";
 import { cn } from "@qiko/ui";
 import {
-  listAgents, listSalesOpportunities, updateSalesOpportunity, type OpportunityStage, type SalesOpportunity,
+  listAgents, listSalesOpportunities, pushOpportunityToSalesforce, transitionSalesOpportunity,
+  type OpportunityStage, type SalesOpportunity,
 } from "@/lib/api";
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
 import { OutcomesStrip } from "@/components/sales-intelligence/outcomes-strip";
@@ -19,8 +20,10 @@ import {
 const KANBAN_COLUMNS: OpportunityStage[] = ["ingested", "qualifying", "qualified", "validated", "pushed"];
 const TERMINAL_STAGES: OpportunityStage[] = ["rejected", "push_failed"];
 // Stages a card can be moved to via the keyboard-accessible "Move to…" control (mirrors the
-// drag-and-drop board columns so keyboard/screen-reader users have the same reach).
-const MOVE_TARGETS: OpportunityStage[] = [...KANBAN_COLUMNS, ...TERMINAL_STAGES];
+// drag-and-drop board columns so keyboard/screen-reader users have the same reach). `push_failed`
+// is a Salesforce-driven system state, not a manual target, so it is excluded. Moving to `pushed`
+// routes through the real push-to-salesforce action; the rest use the stage-transition endpoint.
+const MOVE_TARGETS: OpportunityStage[] = [...KANBAN_COLUMNS, "rejected"];
 
 export default function SalesIntelligencePipelinePage() {
   const { id: agentId } = useParams<{ id: string }>();
@@ -32,11 +35,16 @@ export default function SalesIntelligencePipelinePage() {
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const worker = agents.data?.find((a) => a.id === agentId);
 
-  const oppsQ = useQuery({ queryKey: ["sales-opportunities", agentId], queryFn: () => listSalesOpportunities(agentId), retry: false });
+  const oppsQ = useQuery({ queryKey: ["sales-opportunities", agentId], queryFn: () => listSalesOpportunities(agentId, { limit: "all" }), retry: false });
   const opps: SalesOpportunity[] = oppsQ.data?.opportunities ?? [];
 
+  // Moving to `pushed` goes through the real Salesforce push; every other target is a manual
+  // stage transition. Both invalidate the same list query.
   const moveStage = useMutation({
-    mutationFn: (vars: { id: number; stage: OpportunityStage }) => updateSalesOpportunity(agentId, vars.id, { stage: vars.stage }),
+    mutationFn: (vars: { id: number; stage: OpportunityStage }) =>
+      vars.stage === "pushed"
+        ? pushOpportunityToSalesforce(agentId, vars.id)
+        : transitionSalesOpportunity(agentId, vars.id, vars.stage),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["sales-opportunities", agentId] }),
   });
 

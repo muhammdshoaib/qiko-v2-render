@@ -29,7 +29,7 @@ export default function SalesIntelligenceOverviewPage() {
 
   const oppsQ = useQuery({
     queryKey: ["sales-opportunities", agentId],
-    queryFn: () => listSalesOpportunities(agentId),
+    queryFn: () => listSalesOpportunities(agentId, { limit: "all" }),
     retry: false,
   });
   const opps: SalesOpportunity[] = oppsQ.data?.opportunities ?? [];

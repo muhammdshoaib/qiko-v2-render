@@ -36,7 +36,7 @@ export default function SalesIntelligenceIngestionPage() {
   const sourcesQ = useQuery({ queryKey: ["sales-sources", agentId], queryFn: () => listSalesSources(agentId), retry: false });
   const sources: SalesIntelSource[] = sourcesQ.data?.sources ?? [];
 
-  const oppsQ = useQuery({ queryKey: ["sales-opportunities", agentId], queryFn: () => listSalesOpportunities(agentId), retry: false });
+  const oppsQ = useQuery({ queryKey: ["sales-opportunities", agentId], queryFn: () => listSalesOpportunities(agentId, { limit: "all" }), retry: false });
   const opps = oppsQ.data?.opportunities ?? [];
 
   // Scan payload: the keyword (when enabled) plus the two allowlist-bypass toggles, so the
