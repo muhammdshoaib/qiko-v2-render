@@ -301,6 +301,91 @@ def test_rfp_extract_endpoint_round_trip(client, monkeypatch):
     assert status["requirements"] == "ready" and status["sections"] == "ready"
 
 
+def test_rfp_extract_records_single_source_document(client, monkeypatch):
+    """A single-file upload still works AND now records one source_documents entry, returned on the
+    pack serialization so the cockpit can show what was parsed."""
+    _patch_generation(monkeypatch, _CannedProvider(SAMPLE_JSON))
+    c = auth_cookies("srcdoc1", "owner")
+    pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Single"}, cookies=c).json()
+
+    upload = client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
+                         files={"file": ("tender.txt", io.BytesIO(b"tender document text"), "text/plain")})
+    assert upload.status_code == 202
+
+    fetched = client.get(f"/api/v1/rfp/packs/{pack['id']}", cookies=c).json()
+    docs = fetched["source_documents"]
+    assert len(docs) == 1
+    assert docs[0]["name"] == "tender.txt"
+    assert docs[0]["chars"] == len("tender document text")
+    assert docs[0]["uploaded_at"]
+    assert "===== DOCUMENT: tender.txt =====" in fetched["document_text"]
+
+
+def test_rfp_extract_accepts_many_files_and_combines_with_headers(client, monkeypatch):
+    """Uploading several files under the `files` field records ONE source_documents entry per file
+    and combines their text into one document, each under a clear per-document header so downstream
+    extraction/brief/compliance/chat see every document."""
+    _patch_generation(monkeypatch, _CannedProvider(SAMPLE_JSON))
+    c = auth_cookies("srcdoc2", "owner")
+    pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Multi"}, cookies=c).json()
+
+    upload = client.post(
+        f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
+        files=[
+            ("files", ("main.txt", io.BytesIO(b"main tender body"), "text/plain")),
+            ("files", ("annex.txt", io.BytesIO(b"annex requirements"), "text/plain")),
+        ])
+    assert upload.status_code == 202
+
+    fetched = client.get(f"/api/v1/rfp/packs/{pack['id']}", cookies=c).json()
+    docs = fetched["source_documents"]
+    assert [d["name"] for d in docs] == ["main.txt", "annex.txt"]
+    assert docs[0]["chars"] == len("main tender body")
+    assert docs[1]["chars"] == len("annex requirements")
+    text = fetched["document_text"]
+    assert "===== DOCUMENT: main.txt =====" in text
+    assert "===== DOCUMENT: annex.txt =====" in text
+    assert "main tender body" in text and "annex requirements" in text
+
+
+def test_rfp_extract_skips_unsupported_when_at_least_one_readable(client, monkeypatch):
+    """A mixed batch keeps the readable files and skips unsupported ones -- the request only fails
+    if EVERY file is unsupported."""
+    _patch_generation(monkeypatch, _CannedProvider(SAMPLE_JSON))
+    c = auth_cookies("srcdoc3", "owner")
+    pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Mixed"}, cookies=c).json()
+
+    upload = client.post(
+        f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
+        files=[
+            ("files", ("good.txt", io.BytesIO(b"readable body"), "text/plain")),
+            ("files", ("bad.exe", io.BytesIO(b"binary"), "application/octet-stream")),
+        ])
+    assert upload.status_code == 202
+    docs = client.get(f"/api/v1/rfp/packs/{pack['id']}", cookies=c).json()["source_documents"]
+    assert [d["name"] for d in docs] == ["good.txt"]
+
+
+def test_rfp_extract_source_documents_survive_gen_status_update():
+    """source_documents is a dedicated field, so resetting/updating gen_status (as every re-extract
+    and the background job do) must NOT wipe the recorded source set."""
+    import asyncio
+
+    from app.modules.rfp.service import RfpPackService
+
+    async def _run():
+        svc = RfpPackService()
+        pack = await svc.create("t", "w1", "T")
+        docs = [{"name": "a.txt", "chars": 10, "uploaded_at": "2026-07-30T00:00:00+00:00"}]
+        await svc.set_source_documents("t", pack.id, docs)
+        await svc.set_gen_status("t", pack.id, {"requirements": "running"})
+        refetched = await svc.get("t", pack.id)
+        assert refetched.source_documents == docs
+        assert refetched.gen_status == {"requirements": "running"}
+
+    asyncio.run(_run())
+
+
 def test_rfp_extract_rejects_unsupported_file_type(client, monkeypatch):
     monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _CannedProvider(SAMPLE_JSON))
     c = auth_cookies("extractco2", "owner")

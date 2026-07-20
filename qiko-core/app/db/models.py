@@ -91,6 +91,9 @@ class RfpPack(Base):
     stage: Mapped[str] = mapped_column(String(16), default="parsed")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     document_text: Mapped[str] = mapped_column(String, default="")
+    # Source document(s) the tender was parsed from -- one entry per successfully-read uploaded
+    # file ({"name", "chars", "uploaded_at"}). Nullable JSON; read back as [] when unset.
+    source_documents: Mapped[list | None] = mapped_column(JSON, nullable=True)
     # Win/Loss Analysis (app.modules.rfp.service.OUTCOMES/LOSS_REASONS)
     outcome: Mapped[str | None] = mapped_column(String(16), nullable=True)
     outcome_reason: Mapped[str] = mapped_column(String(32), default="")

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
@@ -163,31 +164,60 @@ async def _start_generation(request: Request, tenant: str, pack_id: str, text: s
 
 
 @router.post("/{pack_id}/extract", status_code=202)
-async def extract(pack_id: str, request: Request, file: UploadFile = File(...),
+async def extract(pack_id: str, request: Request,
+                  files: list[UploadFile] | None = File(default=None),
+                  file: UploadFile | None = File(default=None),
                   tenant: str = Depends(authed_tenant),
                   _role: dict = Depends(require_role(Role.editor)), packs=Depends(get_rfp_packs),
                   reqs=Depends(get_requirements), answers=Depends(get_pack_answers),
                   tree=Depends(get_pack_tree)) -> dict:
-    """Upload any RFP/tender document and kick off BACKGROUND generation of every artifact
-    (requirements, sections, brief, compliance, per-section drafts). Returns immediately with
-    {"status": "processing"}; poll GET /rfp/packs/{id}/status for per-artifact progress."""
+    """Upload one OR MANY RFP/tender documents and kick off BACKGROUND generation of every artifact
+    (requirements, sections, brief, compliance, per-section drafts). Every readable file's text is
+    combined into one document (each under a `===== DOCUMENT: <name> =====` header) so downstream
+    extraction/brief/compliance/chat see the whole document set, and one source_documents entry is
+    recorded per file so the cockpit can show what went in. Returns immediately with
+    {"status": "processing"}; poll GET /rfp/packs/{id}/status for per-artifact progress.
+
+    Backward compatible: accepts many files under the `files` field, and also a single legacy
+    `file` field, so an older single-file client still works."""
     try:
         pack = await packs.get(tenant, pack_id)
     except RfpPackNotFound as e:
         raise HTTPException(status_code=404, detail="RFP pack not found") from e
 
-    # Read with a hard cap so a huge upload can't exhaust memory (defence beyond the global
-    # request-size middleware), mirroring finance.router.upload.
-    data = await file.read(MAX_UPLOAD_BYTES + 1)
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="file exceeds the 10MB limit")
-    try:
-        text = extract_text(file.filename or "document.txt", data)
-    except UnsupportedDocumentError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
+    uploads: list[UploadFile] = list(files or [])
+    if file is not None:
+        uploads.append(file)
+    if not uploads:
+        raise HTTPException(status_code=422, detail="no files uploaded")
 
-    return await _start_generation(request, tenant, pack_id, text, packs, reqs, answers, tree,
-                                   agent_id=pack.agent_id)
+    uploaded_at = datetime.now(timezone.utc).isoformat()
+    parts: list[str] = []
+    source_documents: list[dict] = []
+    last_error: str | None = None
+    for f in uploads:
+        # Read with a hard cap PER FILE so a huge upload can't exhaust memory (defence beyond the
+        # global request-size middleware), mirroring finance.router.upload.
+        data = await f.read(MAX_UPLOAD_BYTES + 1)
+        if len(data) > MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="file exceeds the 10MB limit")
+        name = f.filename or "document.txt"
+        try:
+            text = extract_text(name, data)
+        except UnsupportedDocumentError as e:
+            last_error = str(e)  # skip this one; only fail the request if EVERY file fails
+            continue
+        parts.append(f"===== DOCUMENT: {name} =====\n{text}")
+        source_documents.append({"name": name, "chars": len(text), "uploaded_at": uploaded_at})
+
+    if not source_documents:
+        raise HTTPException(status_code=422, detail=last_error or "no readable documents uploaded")
+
+    # Record the source set on a dedicated field (survives the gen_status reset in
+    # _start_generation) before kicking off generation over the combined text.
+    await packs.set_source_documents(tenant, pack_id, source_documents)
+    return await _start_generation(request, tenant, pack_id, "\n\n".join(parts), packs, reqs,
+                                   answers, tree, agent_id=pack.agent_id)
 
 
 class ExtractUrlBody(BaseModel):

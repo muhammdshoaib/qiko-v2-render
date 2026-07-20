@@ -35,6 +35,10 @@ class RfpPack:
     stage: str = "parsed"
     created_at: datetime = field(default_factory=_now)
     document_text: str = ""
+    # The source document(s) the tender was parsed from -- one entry per successfully-read file
+    # ({"name", "chars", "uploaded_at"}). Persisted separately from document_text/gen_status so the
+    # cockpit can always show WHICH files went in, even after gen_status is reset by a re-extract.
+    source_documents: list = field(default_factory=list)
     # Win/Loss Analysis -- see OUTCOMES/LOSS_REASONS above.
     outcome: str | None = None
     outcome_reason: str = ""
@@ -57,6 +61,7 @@ class RfpPackStore(Protocol):
     async def get(self, tenant: str, pack_id: str) -> RfpPack | None: ...
     async def set_stage(self, tenant: str, pack_id: str, stage: str) -> RfpPack: ...
     async def set_document_text(self, tenant: str, pack_id: str, text: str) -> RfpPack: ...
+    async def set_source_documents(self, tenant: str, pack_id: str, docs: list) -> RfpPack: ...
     async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,
                           reason: str, value: float | None) -> RfpPack: ...
     async def set_brief(self, tenant: str, pack_id: str, brief: dict | None) -> RfpPack: ...
@@ -94,6 +99,13 @@ class InMemoryRfpPackStore:
         if pack is None:
             raise RfpPackNotFound(pack_id)
         pack.document_text = text
+        return pack
+
+    async def set_source_documents(self, tenant: str, pack_id: str, docs: list) -> RfpPack:
+        pack = await self.get(tenant, pack_id)
+        if pack is None:
+            raise RfpPackNotFound(pack_id)
+        pack.source_documents = list(docs or [])
         return pack
 
     async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,
@@ -161,6 +173,9 @@ class RfpPackService:
 
     async def set_document_text(self, tenant: str, pack_id: str, text: str) -> RfpPack:
         return await self.store.set_document_text(tenant, pack_id, text)
+
+    async def set_source_documents(self, tenant: str, pack_id: str, docs: list) -> RfpPack:
+        return await self.store.set_source_documents(tenant, pack_id, docs)
 
     async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,
                           reason: str = "", value: float | None = None) -> RfpPack:

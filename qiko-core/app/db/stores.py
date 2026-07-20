@@ -238,6 +238,7 @@ class SqlRfpPackStore:
         return RfpPack(id=r.id, tenant=r.tenant_id, agent_id=r.agent_id, title=r.title,
                        client_name=r.client_name, deadline=r.deadline, stage=r.stage,
                        created_at=r.created_at, document_text=r.document_text or "",
+                       source_documents=list(r.source_documents or []),
                        outcome=r.outcome, outcome_reason=r.outcome_reason or "",
                        outcome_value=r.outcome_value, outcome_at=r.outcome_at,
                        brief=r.brief, compliance=r.compliance, gen_status=r.gen_status)
@@ -279,6 +280,14 @@ class SqlRfpPackStore:
             if row is None or row.tenant_id != tenant:
                 raise RfpPackNotFound(pack_id)
             row.document_text = text
+            return self._to_domain(row)
+
+    async def set_source_documents(self, tenant: str, pack_id: str, docs: list) -> RfpPack:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(RfpPackRow, pack_id)
+            if row is None or row.tenant_id != tenant:
+                raise RfpPackNotFound(pack_id)
+            row.source_documents = list(docs or [])
             return self._to_domain(row)
 
     async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,

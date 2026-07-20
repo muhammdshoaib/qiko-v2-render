@@ -16,13 +16,13 @@ export function NewTenderPanel({ agentId, onCreated, onCancel }: {
   const [title, setTitle] = useState("");
   const [buyer, setBuyer] = useState("");
   const [deadline, setDeadline] = useState("");
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const create = useMutation({
     mutationFn: async () => {
       const pack = await createRfpPack(agentId, title.trim(), buyer.trim(), deadline || null);
-      if (file) await extractPack(pack.id, file);
+      if (files.length > 0) await extractPack(pack.id, files);
       return pack;
     },
     onSuccess: (pack) => {
@@ -33,7 +33,7 @@ export function NewTenderPanel({ agentId, onCreated, onCancel }: {
     onError: (e) => setError(e instanceof Error ? e.message : "Couldn't create the tender"),
   });
 
-  const canSubmit = title.trim().length > 0 && !!file && !create.isPending;
+  const canSubmit = title.trim().length > 0 && files.length > 0 && !create.isPending;
 
   return (
     <div className="mx-auto max-w-xl">
@@ -85,18 +85,34 @@ export function NewTenderPanel({ agentId, onCreated, onCancel }: {
           </div>
 
           <div>
-            <span className="mb-1 block text-[12px] font-medium text-slate-300">RFP document</span>
+            <span className="mb-1 block text-[12px] font-medium text-slate-300">RFP documents</span>
             <input
-              ref={fileRef} type="file" className="hidden" aria-label="RFP document"
-              onChange={(e) => { setFile(e.target.files?.[0] ?? null); }}
+              ref={fileRef} type="file" multiple className="hidden" aria-label="RFP documents"
+              onChange={(e) => { setFiles(e.target.files ? Array.from(e.target.files) : []); }}
             />
             <button
               type="button" onClick={() => fileRef.current?.click()}
               className="flex w-full items-center gap-2 rounded-lg border border-dashed border-white/15 bg-white/[0.02] px-3 py-3 text-left text-[13px] text-slate-300 hover:border-indigo-500/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
             >
-              <FileUp className="size-4 text-slate-500" />
-              <span className="min-w-0 flex-1 truncate">{file ? file.name : "Choose a PDF, DOCX or text file\u2026"}</span>
+              <FileUp className="size-4 shrink-0 text-slate-500" />
+              <span className="min-w-0 flex-1 truncate">
+                {files.length === 0
+                  ? "Choose PDF, DOCX or text files\u2026"
+                  : files.length === 1
+                    ? files[0].name
+                    : `${files.length} files selected`}
+              </span>
             </button>
+            {files.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {files.map((f, i) => (
+                  <li key={`${f.name}-${i}`} className="flex items-center gap-1.5 text-[12px] text-slate-400">
+                    <FileUp className="size-3 shrink-0 text-slate-600" />
+                    <span className="min-w-0 flex-1 truncate">{f.name}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
 
           {error && (

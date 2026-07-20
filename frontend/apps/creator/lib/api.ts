@@ -155,9 +155,12 @@ export const cancelInvite = (email: string) =>
   request<{ removed: string }>(`/identity/users/pending/${encodeURIComponent(email)}`, { method: "DELETE" });
 
 // RFP packs (tenders a worker is answering) + section assignments
+/** One source document a tender was parsed from (rfp.service.RfpPack.source_documents). */
+export type SourceDocument = { name: string; chars: number; uploaded_at: string };
 export type RfpPack = {
   id: string; tenant: string; agent_id: string; title: string; client_name: string; deadline: string | null;
   stage: string; created_at: string;
+  source_documents?: SourceDocument[];
   outcome: "won" | "lost" | "withdrawn" | null; outcome_reason: string; outcome_value: number | null; outcome_at: string | null;
   gen_status?: TenderGenStatus | null;
 };
@@ -358,11 +361,12 @@ export const generatePackSection = (packId: string, sectionId: string) =>
 export const generatePack = (packId: string) =>
   request<PackQuestion[]>(`/rfp/packs/${packId}/generate`, { method: "POST" });
 
-/** Upload an RFP/tender document to a pack: extracts requirements and (re)builds the section tree. */
-export async function extractPack(packId: string, file: File): Promise<PackRequirement[]> {
+/** Upload one OR MANY RFP/tender documents to a pack: extracts requirements and (re)builds the
+ * section tree. Every file is sent under the `files` field, so a single file works too. */
+export async function extractPack(packId: string, files: File | File[]): Promise<PackRequirement[]> {
   const csrf = csrfToken();
   const form = new FormData();
-  form.append("file", file);
+  for (const f of Array.isArray(files) ? files : [files]) form.append("files", f);
   const res = await fetch(`${BASE}/rfp/packs/${packId}/extract`, {
     method: "POST", credentials: "include", body: form,
     headers: csrf ? { "x-csrf-token": csrf } : undefined,

@@ -2,12 +2,21 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowRight, Building2, CalendarClock, CheckCircle2, FileText, Sparkles,
+  AlertTriangle, ArrowRight, Building2, CalendarClock, CheckCircle2, FileText, Files, Sparkles,
 } from "lucide-react";
 import { getPackOverview, getRfpPack, getTenderStatus } from "@/lib/api";
 import { formatShortDate } from "@/lib/stringUtils";
 import { OutcomesStrip, type OutcomeTile } from "@/components/cockpit/outcomes-strip";
 import { truncate } from "@/components/pre-sales/utils";
+
+// A parsed document's character count is a good enough proxy for its size, shown human-readably so
+// reviewers can sanity-check that the right (non-empty) files went into the tender.
+function formatCharSize(chars: number): string {
+  if (!chars || chars < 0) return "0 chars";
+  if (chars < 1000) return `${chars} chars`;
+  if (chars < 1_000_000) return `${(chars / 1000).toFixed(1)}k chars`;
+  return `${(chars / 1_000_000).toFixed(1)}M chars`;
+}
 
 export function OverviewTab({ packId, onOpenSections, onOpenBrief }: {
   packId: string; onOpenSections: () => void; onOpenBrief: () => void;
@@ -129,6 +138,36 @@ export function OverviewTab({ packId, onOpenSections, onOpenBrief }: {
             </p>
           )}
         </div>
+      </div>
+
+      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-indigo-400">
+          <Files className="size-3.5" /> Source documents
+        </div>
+        <p className="mt-1 text-[12px] text-slate-500">Documents used to parse and answer this tender.</p>
+
+        {packQ.isLoading ? (
+          <div className="mt-4 space-y-2">
+            <div className="h-9 w-full animate-pulse rounded-lg bg-white/[0.04]" />
+            <div className="h-9 w-2/3 animate-pulse rounded-lg bg-white/[0.04]" />
+          </div>
+        ) : pack?.source_documents && pack.source_documents.length > 0 ? (
+          <ul className="mt-4 space-y-2">
+            {pack.source_documents.map((doc, i) => (
+              <li key={`${doc.name}-${i}`}
+                className="flex items-center gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+                <FileText className="size-4 shrink-0 text-slate-500" />
+                <span className="min-w-0 flex-1 truncate text-[13px] font-medium text-slate-200">{doc.name}</span>
+                <span className="shrink-0 text-[11px] text-slate-500">{formatCharSize(doc.chars)}</span>
+                <span className="shrink-0 text-[11px] text-slate-500">{formatShortDate(doc.uploaded_at)}</span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="mt-4 flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-3 text-[12px] text-slate-400">
+            <AlertTriangle className="size-3.5 shrink-0" /> No source documents recorded for this tender yet.
+          </p>
+        )}
       </div>
     </div>
   );
