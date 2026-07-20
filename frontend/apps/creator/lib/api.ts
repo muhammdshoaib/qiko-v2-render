@@ -41,21 +41,26 @@ async function doFetch(path: string, opts: RequestInit): Promise<Response> {
   const csrf = csrfToken();
   return fetch(`${BASE}${path}`, {
     credentials: "include",
+    ...opts,
+    // Spread opts FIRST so our merged headers (Content-Type + CSRF + any caller headers) are the
+    // final `headers` and cannot be clobbered by opts.headers.
     headers: {
       "Content-Type": "application/json",
       ...(csrf ? { "x-csrf-token": csrf } : {}),
       ...(opts.headers ?? {}),
     },
-    ...opts,
   });
 }
+
+// Only the token endpoints must NOT trigger a refresh-retry (that would loop). Everything else,
+// including /auth/me, should refresh on a 401 so an expired access token does not surface an error.
+const NO_REFRESH_PATHS = ["/auth/login", "/auth/refresh", "/auth/logout"];
 
 async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   let res = await doFetch(path, opts);
   // The access token is short-lived (15 min). On a 401, silently refresh once (using the long-lived
-  // refresh cookie) and retry, so an active user is never kicked to login mid-session. Do not try to
-  // refresh the auth calls themselves, to avoid loops.
-  if (res.status === 401 && !path.startsWith("/auth/")) {
+  // refresh cookie) and retry, so an active user is never kicked to login mid-session.
+  if (res.status === 401 && !NO_REFRESH_PATHS.some((p) => path.startsWith(p))) {
     if (await refreshSession()) res = await doFetch(path, opts);
   }
   if (!res.ok) throw new ApiError(res.status, await res.text());

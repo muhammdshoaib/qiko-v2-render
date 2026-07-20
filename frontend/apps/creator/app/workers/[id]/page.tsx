@@ -5,8 +5,8 @@ import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowLeft, Bot, BrainCircuit, Calendar, ChevronDown, ChevronUp, CircleCheck, Code, Copy,
-  Database, ExternalLink, FileText, GraduationCap, Globe, HelpCircle, Library, Link2, Loader2, Lock, MessageCircle,
+  AlertTriangle, ArrowLeft, Bot, BrainCircuit, Calendar, ChevronDown, ChevronUp, CircleCheck,
+  Database, ExternalLink, FileText, GraduationCap, HelpCircle, Library, Link2, Loader2, Lock, MessageCircle,
   MessageSquare, Phone, Plus, Search, SendHorizonal, Settings, Share2, Sparkles, Trash2, Upload, Users, Zap,
   type LucideIcon,
 } from "lucide-react";
