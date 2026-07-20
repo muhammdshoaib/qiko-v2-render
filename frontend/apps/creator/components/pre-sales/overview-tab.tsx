@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   AlertTriangle, ArrowRight, Building2, CalendarClock, CheckCircle2, FileText, Files, Sparkles,
 } from "lucide-react";
-import { getPackOverview, getRfpPack, getTenderStatus } from "@/lib/api";
+import { getBrief, getPackOverview, getRfpPack, getTenderStatus } from "@/lib/api";
 import { formatShortDate } from "@/lib/stringUtils";
 import { OutcomesStrip, type OutcomeTile } from "@/components/cockpit/outcomes-strip";
 import { truncate } from "@/components/pre-sales/utils";
@@ -24,9 +24,15 @@ export function OverviewTab({ packId, onOpenSections, onOpenBrief }: {
   const overviewQ = useQuery({ queryKey: ["pack-overview", packId], queryFn: () => getPackOverview(packId) });
   const packQ = useQuery({ queryKey: ["rfp-pack", packId], queryFn: () => getRfpPack(packId) });
   const statusQ = useQuery({ queryKey: ["tender-status", packId], queryFn: () => getTenderStatus(packId) });
+  const briefQ = useQuery({ queryKey: ["pack-brief", packId], queryFn: () => getBrief(packId) });
 
   const o = overviewQ.data;
   const pack = packQ.data;
+
+  // Prefer the clean AI brief summary. Fall back to the raw tender text with the multi-document
+  // "===== DOCUMENT: name =====" headers stripped, so the summary card never shows those markers.
+  const summaryText = briefQ.data?.summary?.trim()
+    || (pack?.document_text ? pack.document_text.replace(/=====\s*DOCUMENT:.*?=====/g, " ").replace(/\s+/g, " ").trim() : "");
 
   // KB gaps are only KNOWN once answers are drafted (a gap = a question that couldn't be grounded in
   // the KB), so hold the neutral message until drafting is done to avoid a "no gaps" claim flipping to
@@ -86,8 +92,8 @@ export function OverviewTab({ packId, onOpenSections, onOpenBrief }: {
                   <CalendarClock className="size-3.5 text-slate-500" /> Due {formatShortDate(pack.deadline)}
                 </span>
               </div>
-              {pack.document_text?.trim() && (
-                <p className="mt-3 text-[13px] leading-relaxed text-slate-400">{truncate(pack.document_text, 320)}</p>
+              {summaryText && (
+                <p className="mt-3 text-[13px] leading-relaxed text-slate-400">{truncate(summaryText, 320)}</p>
               )}
               <div className="mt-4 flex flex-wrap gap-2">
                 <button onClick={onOpenSections}
