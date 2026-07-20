@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, FileText, Layers, LayoutGrid, ListChecks, MessageSquare, Plus, ShieldCheck,
+  ArrowLeft, ChevronLeft, FileText, LayoutGrid, ListChecks, MessageSquare, Plus, ShieldCheck,
   Upload, Download,
 } from "lucide-react";
 import { cn } from "@qiko/ui";
@@ -17,10 +17,9 @@ import { Select } from "@/components/cockpit/controls";
 import { askTenderChat, getTenderChatHistory, type RfpPack } from "@/lib/api";
 import { formatShortDate } from "@/lib/stringUtils";
 
-export type PreSalesTab = "tenders" | "overview" | "sources" | "brief" | "sections" | "compliance" | "export";
+export type PreSalesTab = "overview" | "sources" | "brief" | "sections" | "compliance" | "export";
 
 const NAV_ITEMS: { tab: PreSalesTab; label: string; sub: string; icon: typeof LayoutGrid; group: "OVERVIEW" | "TENDER" }[] = [
-  { tab: "tenders", label: "Tenders", sub: "ALL TENDERS", icon: Layers, group: "OVERVIEW" },
   { tab: "overview", label: "Overview", sub: "DASHBOARD", icon: LayoutGrid, group: "OVERVIEW" },
   { tab: "sources", label: "Sources", sub: "KNOWLEDGE", icon: Upload, group: "OVERVIEW" },
   { tab: "brief", label: "Tender Brief", sub: "SUMMARY", icon: FileText, group: "TENDER" },
@@ -30,7 +29,7 @@ const NAV_ITEMS: { tab: PreSalesTab; label: string; sub: string; icon: typeof La
 ];
 
 export function PreSalesCockpitShell({
-  workerName, active, onSelect, packs, activePackId, onSelectPack, activePack, onNewTender, children,
+  workerName, active, onSelect, packs, activePackId, onSelectPack, activePack, onNewTender, onBack, children,
 }: {
   workerName: string;
   active: PreSalesTab;
@@ -40,6 +39,8 @@ export function PreSalesCockpitShell({
   onSelectPack: (packId: string) => void;
   activePack: RfpPack | null;
   onNewTender: () => void;
+  /** When set, shows a "Back" control that returns to the worker landing (clears the ?pack= param). */
+  onBack?: () => void;
   children: React.ReactNode;
 }) {
   const router = useRouter();
@@ -58,6 +59,11 @@ export function PreSalesCockpitShell({
           <button onClick={() => router.push("/studio")} className="flex shrink-0 items-center gap-1.5 rounded-md px-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
             <ArrowLeft className="size-4" /> <span className="hidden sm:inline">Studio</span>
           </button>
+          {onBack && (
+            <button onClick={onBack} aria-label="Back to all RFPs" className="flex shrink-0 items-center gap-1 rounded-md px-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
+              <ChevronLeft className="size-4" /> <span className="hidden sm:inline">Back</span>
+            </button>
+          )}
           <span className="hidden h-4 w-px bg-white/10 sm:block" />
           <span className="hidden size-6 shrink-0 items-center justify-center rounded-md bg-indigo-500/15 text-indigo-400 sm:flex">
             <FileText className="size-3.5" />

@@ -5,9 +5,9 @@ import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowLeft, Bot, BrainCircuit, Calendar, Check, ChevronDown, ChevronUp, CircleCheck, Code, Copy,
+  AlertTriangle, ArrowLeft, Bot, BrainCircuit, Calendar, ChevronDown, ChevronUp, CircleCheck, Code, Copy,
   Database, ExternalLink, FileText, GraduationCap, Globe, HelpCircle, Library, Link2, Loader2, Lock, MessageCircle,
-  MessageSquare, Phone, Plus, Search, SendHorizonal, Settings, Share2, Sparkles, Trash2, Upload, Users, X, Zap,
+  MessageSquare, Phone, Plus, Search, SendHorizonal, Settings, Share2, Sparkles, Trash2, Upload, Users, Zap,
   type LucideIcon,
 } from "lucide-react";
 import { Badge, Button, Card, CardContent, Input, Label, Skeleton, cn } from "@qiko/ui";
@@ -18,11 +18,11 @@ import { CrmPipeline } from "@/components/crm-pipeline";
 import {
   addFaq, addPolicy, addWebsite, ask, connectTeamsWebhook,
   deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, getSalesforceCredentials,
-  getTeamsWebhookStatus, getVapiCredentials, ingest, ingestFile, listAgents, listDocuments, listRfpPacks, markReady,
-  saveSalesforceCredentials, saveVapiCredentials, setPackOutcome, testSalesforceConnection, testTeamsWebhook,
-  updateAgentConfig, updateCalendlyEventType, type Agent, type Doc, type RfpPack,
+  getTeamsWebhookStatus, getVapiCredentials, ingest, ingestFile, listAgents, listDocuments, markReady,
+  saveSalesforceCredentials, saveVapiCredentials, testSalesforceConnection, testTeamsWebhook,
+  updateAgentConfig, updateCalendlyEventType, type Agent, type Doc,
 } from "@/lib/api";
-import { formatShortDate, workerTypeLabel } from "@/lib/stringUtils";
+import { workerTypeLabel } from "@/lib/stringUtils";
 
 type Tab = "Overview" | "Chat" | "Train" | "CRM" | "Connections" | "Settings";
 const TABS: { id: Tab; icon: LucideIcon; locked?: boolean }[] = [
@@ -148,7 +148,6 @@ export default function WorkerDetailPage() {
 }
 
 function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
-  const packs = useQuery({ queryKey: ["rfp-packs", id], queryFn: () => listRfpPacks(id) });
   const [overviewOpen, setOverviewOpen] = useState(true);
   const [shareOpen, setShareOpen] = useState(true);
   const typeLabel = workerTypeLabel(worker?.atype);
@@ -278,95 +277,7 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
           </div>
         )}
       </div>
-
-      <TendersCard agentId={id} packs={packs.data} onChange={() => packs.refetch()} />
     </div>
-  );
-}
-
-// Live tender status from the generation pipeline (the stepper's source of truth), NOT the legacy
-// pack.stage, which the stepper flow no longer advances so it would read "parsed" forever.
-function tenderStatusLabel(p: RfpPack): string {
-  const g = p.gen_status;
-  const drafts = g?.drafts?.state;
-  if (drafts === "ready") return "Ready for review";
-  if (drafts === "partial") return "Drafting (partial)";
-  if (drafts === "running" || drafts === "pending") return "Drafting";
-  if (g?.sections === "error" || g?.requirements === "error") return "Parse error";
-  if (g?.sections === "running" || g?.sections === "pending" || g?.requirements === "running" || g?.requirements === "pending") return "Parsing";
-  return p.stage || "parsed";
-}
-
-// Status pill colour keyed to the live state so the tenders list reads at a glance.
-function tenderStatusClass(p: RfpPack): string {
-  const drafts = p.gen_status?.drafts?.state;
-  if (drafts === "ready") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
-  if (drafts === "partial") return "border-amber-500/30 bg-amber-500/10 text-amber-400";
-  if (drafts === "running" || drafts === "pending") return "border-indigo-500/30 bg-indigo-500/10 text-indigo-300";
-  if (p.gen_status?.sections === "error" || p.gen_status?.requirements === "error") return "border-red-500/30 bg-red-500/10 text-red-400";
-  return "border-white/10 bg-white/[0.04] text-slate-400";
-}
-
-function TendersCard({ agentId, packs, onChange }: { agentId: string; packs?: RfpPack[]; onChange: () => void }) {
-  const setOutcome = useMutation({
-    mutationFn: ({ packId, outcome, reason }: { packId: string; outcome: "won" | "lost"; reason?: string }) =>
-      setPackOutcome(packId, outcome, reason),
-    onSuccess: onChange,
-  });
-
-  return (
-    <Card className="rounded-2xl">
-      <CardContent className="pt-6 space-y-3">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-semibold">Tenders</p>
-          <Badge variant="muted">{packs?.length ?? 0}</Badge>
-        </div>
-
-        {(packs?.length ?? 0) === 0 && (
-          <div className="flex flex-col items-center justify-center py-8 text-center">
-            <FileText className="mb-2 size-8 text-slate-600" />
-            <p className="text-sm font-medium text-slate-300">No tenders yet</p>
-            <p className="mt-0.5 max-w-xs text-xs text-slate-500">Tenders drafted in the Studio pre-sales cockpit for this worker appear here.</p>
-          </div>
-        )}
-
-        {packs?.map((p) => (
-          <div key={p.id} className="flex items-center justify-between rounded-lg border border-border/60 p-3 text-sm transition-colors hover:bg-muted/50">
-            <Link href={`/studio/${agentId}/pre-sales?pack=${p.id}`} className="min-w-0 flex-1">
-              <p className="font-medium">{p.title}</p>
-              <p className="text-xs text-muted-foreground">{p.client_name || "No client set"} {p.deadline ? `· Due ${formatShortDate(p.deadline)}` : ""}</p>
-            </Link>
-            <div className="flex items-center gap-2 shrink-0">
-              {p.outcome ? (
-                <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize",
-                  p.outcome === "won" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                    : p.outcome === "lost" ? "border-red-500/30 bg-red-500/10 text-red-400"
-                      : "border-white/10 bg-white/[0.04] text-slate-400")}>
-                  {p.outcome === "won" ? <Check className="size-3" /> : p.outcome === "lost" ? <X className="size-3" /> : null}
-                  {p.outcome}
-                </span>
-              ) : (
-                <div className="flex items-center gap-1" title="Record the bid outcome">
-                  <button type="button" aria-label={`Mark ${p.title} as won`} disabled={setOutcome.isPending}
-                    onClick={() => setOutcome.mutate({ packId: p.id, outcome: "won" })}
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-emerald-500/25 bg-emerald-500/5 px-2 py-0.5 text-[11px] font-medium text-emerald-400 transition-colors hover:bg-emerald-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 disabled:opacity-50">
-                    <Check className="size-3" /> Won
-                  </button>
-                  <button type="button" aria-label={`Mark ${p.title} as lost`} disabled={setOutcome.isPending}
-                    onClick={() => setOutcome.mutate({ packId: p.id, outcome: "lost" })}
-                    className="inline-flex cursor-pointer items-center gap-1 rounded-full border border-red-500/25 bg-red-500/5 px-2 py-0.5 text-[11px] font-medium text-red-400 transition-colors hover:bg-red-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-50">
-                    <X className="size-3" /> Lost
-                  </button>
-                </div>
-              )}
-              <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium", tenderStatusClass(p))}>
-                {tenderStatusLabel(p)}
-              </span>
-            </div>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
   );
 }
 

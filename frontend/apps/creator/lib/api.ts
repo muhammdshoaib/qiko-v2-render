@@ -334,6 +334,70 @@ export const setSectionReviewer = (packId: string, sectionId: string, reviewer: 
 export const confirmAssignments = (packId: string) =>
   request<TenderGenStatus>(`/rfp/packs/${packId}/confirm-assignments`, { method: "POST" });
 
+// ── Section assignments (collaboration) ──────────────────────────────────────
+// Assign RFP pack sections (or standalone questions) to tenant members, track completion, and roll
+// it up into a per-member dashboard. Backed by qiko-core app.modules.assignments (prefix
+// /assignments). Mutations (bulk/reassign/delete/reminder) require Admin+; a status toggle is
+// allowed for the assignee or an owner/admin.
+export type AssignmentStatus = "pending" | "completed";
+export type Assignment = {
+  id: string; pack_id: string; agent_id: string; assignee_user_id: string;
+  assigned_by_user_id: string; question: string; section_id: string | null;
+  section_title: string | null; rfp_title: string | null; status: AssignmentStatus;
+  due_at: string | null; completed_at: string | null; created_at?: string | null;
+};
+
+/** One member's rollup for a pack (GET /assignments/dashboard). */
+export type AssignmentDashboardRow = {
+  user_id: string; assigned: number; completed: number; pending: number;
+  progress: number; status: "overdue" | "pending" | "completed";
+  sections: { section_id: string; section_title: string | null; rfp_title: string | null; due_at: string | null }[];
+};
+
+/** A section to assign in bulk: every listed question becomes one Assignment for the assignee. */
+export type SectionAssignInput = {
+  section_id: string; assignee_user_id: string; questions: string[];
+  title?: string | null; due_at?: string | null;
+};
+/** A standalone question to assign in bulk (not tied to a section). */
+export type QuestionAssignInput = { assignee_user_id: string; question: string; due_at?: string | null };
+
+export const bulkAssign = (body: {
+  pack_id: string; agent_id: string; rfp_title?: string | null;
+  sections?: SectionAssignInput[]; questions?: QuestionAssignInput[];
+}) => request<Assignment[]>("/assignments/bulk", { method: "POST", body: JSON.stringify(body) });
+
+export const listAssignments = (params: { pack_id?: string; assignee_user_id?: string; status?: AssignmentStatus } = {}) => {
+  const q = new URLSearchParams();
+  if (params.pack_id) q.set("pack_id", params.pack_id);
+  if (params.assignee_user_id) q.set("assignee_user_id", params.assignee_user_id);
+  if (params.status) q.set("status", params.status);
+  const qs = q.toString();
+  return request<Assignment[]>(`/assignments${qs ? `?${qs}` : ""}`);
+};
+
+export const assignmentsDashboard = (packId: string, memberUserIds: string[]) =>
+  request<AssignmentDashboardRow[]>(
+    `/assignments/dashboard?pack_id=${encodeURIComponent(packId)}&member_user_ids=${encodeURIComponent(memberUserIds.join(","))}`,
+  );
+
+export const updateAssignmentStatus = (assignmentId: string, status: AssignmentStatus) =>
+  request<Assignment>(`/assignments/${assignmentId}/status`, { method: "PUT", body: JSON.stringify({ status }) });
+
+export const reassignAssignment = (assignmentId: string, patch: { assignee_user_id?: string; question?: string; due_at?: string | null }) =>
+  request<Assignment>(`/assignments/${assignmentId}`, { method: "PUT", body: JSON.stringify(patch) });
+
+export const deleteSectionAssignments = (packId: string, sectionId: string) =>
+  request<{ section_id: string; deleted_count: number }>(`/assignments/section/${packId}/${sectionId}`, { method: "DELETE" });
+
+export const deletePackAssignments = (packId: string) =>
+  request<{ pack_id: string; deleted_count: number }>(`/assignments/pack/${packId}`, { method: "DELETE" });
+
+export const sendAssignmentReminder = (body: { pack_id: string; assignee_user_id?: string; assignee_email?: string }) =>
+  request<{ reminders_sent: number; reminders_failed: number; reason?: string }>(
+    "/assignments/send-reminder", { method: "POST", body: JSON.stringify(body) },
+  );
+
 export const listPackSections = (packId: string) =>
   request<PackSectionNode[]>(`/rfp/packs/${packId}/sections`);
 
