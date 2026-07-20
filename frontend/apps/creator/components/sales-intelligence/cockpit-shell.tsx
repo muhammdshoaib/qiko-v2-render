@@ -46,7 +46,7 @@ export function CockpitShell({ agentId, workerName, active, children }: {
   }, []);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#05070d] text-slate-200">
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-[#05070d] text-slate-200">
       <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-white/[0.06] px-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <button onClick={() => router.push("/studio")} className="flex shrink-0 items-center gap-1.5 rounded-md px-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">

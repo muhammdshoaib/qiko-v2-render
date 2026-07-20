@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft, FileText, LayoutGrid, ListChecks, MessageSquare, Plus, ShieldCheck,
+  ArrowLeft, FileText, Layers, LayoutGrid, ListChecks, MessageSquare, Plus, ShieldCheck,
   Upload, Download,
 } from "lucide-react";
 import { cn } from "@qiko/ui";
@@ -17,9 +17,10 @@ import { Select } from "@/components/cockpit/controls";
 import { askBidContext, type RfpPack } from "@/lib/api";
 import { formatShortDate } from "@/lib/stringUtils";
 
-export type PreSalesTab = "overview" | "sources" | "brief" | "sections" | "compliance" | "export";
+export type PreSalesTab = "tenders" | "overview" | "sources" | "brief" | "sections" | "compliance" | "export";
 
 const NAV_ITEMS: { tab: PreSalesTab; label: string; sub: string; icon: typeof LayoutGrid; group: "OVERVIEW" | "TENDER" }[] = [
+  { tab: "tenders", label: "Tenders", sub: "ALL TENDERS", icon: Layers, group: "OVERVIEW" },
   { tab: "overview", label: "Overview", sub: "DASHBOARD", icon: LayoutGrid, group: "OVERVIEW" },
   { tab: "sources", label: "Sources", sub: "KNOWLEDGE", icon: Upload, group: "OVERVIEW" },
   { tab: "brief", label: "Tender Brief", sub: "SUMMARY", icon: FileText, group: "TENDER" },
@@ -51,7 +52,7 @@ export function PreSalesCockpitShell({
   }, []);
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-[#05070d] text-slate-200">
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-[#05070d] text-slate-200">
       <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-white/[0.06] px-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <button onClick={() => router.push("/studio")} className="flex shrink-0 items-center gap-1.5 rounded-md px-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">

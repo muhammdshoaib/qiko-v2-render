@@ -16,6 +16,7 @@ import { BriefTab } from "@/components/pre-sales/brief-tab";
 import { SectionsTab } from "@/components/pre-sales/sections-tab";
 import { ComplianceTab } from "@/components/pre-sales/compliance-tab";
 import { ExportTab } from "@/components/pre-sales/export-tab";
+import { TendersListView } from "@/components/pre-sales/tenders-list";
 import { NewTenderPanel } from "@/components/pre-sales/new-tender-panel";
 
 export default function PreSalesCockpitPage() {
@@ -25,7 +26,9 @@ export default function PreSalesCockpitPage() {
   // Deep-link support: /studio/[id]/pre-sales?pack=<packId> (e.g. from the Worker Overview
   // "Tenders" list) opens the cockpit with that tender preselected.
   const requestedPackId = searchParams.get("pack");
-  const [tab, setTab] = useState<PreSalesTab>("overview");
+  // With no ?pack= deep-link, land on the "Tenders" overview list (all tenders for this worker) so
+  // the user picks one to drill into; a deep-link jumps straight into that tender's Overview.
+  const [tab, setTab] = useState<PreSalesTab>(requestedPackId ? "overview" : "tenders");
   const [activePackId, setActivePackId] = useState<string | null>(requestedPackId);
   const [showNew, setShowNew] = useState(false);
 
@@ -120,6 +123,12 @@ export default function PreSalesCockpitPage() {
           agentId={agentId}
           onCreated={(packId) => { setActivePackId(packId); setShowNew(false); setTab("overview"); }}
           onCancel={() => setShowNew(false)}
+        />
+      ) : tab === "tenders" ? (
+        <TendersListView
+          packs={packs}
+          onOpen={(id) => { setActivePackId(id); setShowNew(false); setTab("overview"); }}
+          onNewTender={() => setShowNew(true)}
         />
       ) : !activePackId ? (
         <p className="text-sm text-slate-500">Select a tender to begin.</p>

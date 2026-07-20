@@ -5,9 +5,9 @@
 // indicator, input styling and error handling. Only the per-worker context wording (empty-state
 // prompt, input hint, placeholder, error copy) and the async ask() call are passed in as props, so
 // the structure/spacing/typography can never drift between cockpits.
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { MessageSquare, Sparkles, X } from "lucide-react";
+import { MessageSquare, SendHorizonal, Sparkles, X } from "lucide-react";
 import { cn } from "@qiko/ui";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 
@@ -53,20 +53,29 @@ export function CockpitChatPanel({
     onError: () => setMessages((m) => [...m, { role: "assistant", text: errorText }]),
   });
 
+  // Keep the newest message (and the typing indicator) in view so the latest reply and the composer
+  // are both visible after each send/receive.
+  const bottomRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [messages.length, send.isPending]);
+
+  const canSend = ready && !send.isPending && text.trim().length > 0;
+
   return (
     <>
       {/* Dim backdrop on mobile/tablet where the chat is an overlay drawer, not a fixed column. */}
       <div onClick={onClose} className="fixed inset-0 top-14 z-30 bg-black/50 lg:hidden" aria-hidden="true" />
       <aside
         className={cn(
-          "z-40 flex w-[300px] shrink-0 flex-col border-l border-white/[0.06] bg-[#05070d]",
+          "z-40 flex min-h-0 w-[300px] shrink-0 flex-col border-l border-white/[0.06] bg-[#05070d]",
           // < lg: overlay drawer anchored under the header on the right.
           "fixed bottom-0 right-0 top-14 max-w-[86vw]",
           // lg+: revert to the inline side column.
           "lg:static lg:max-w-none",
         )}
       >
-        <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3.5">
+        <div className="flex shrink-0 items-center justify-between border-b border-white/[0.06] px-4 py-3.5">
           <div className="flex items-center gap-2.5">
             <span className="flex size-8 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-400">
               <MessageSquare className="size-4" />
@@ -83,7 +92,7 @@ export function CockpitChatPanel({
           </button>
         </div>
 
-        <div className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-4">
           {!ready ? (
             <ChatEmptyState title={notReadyTitle ?? "Start a conversation"} prompt={notReadyPrompt ?? emptyPrompt} />
           ) : messages.length === 0 ? (
@@ -96,23 +105,34 @@ export function CockpitChatPanel({
             ))
           )}
           {send.isPending && <div className="flex justify-start"><TypingIndicator /></div>}
+          {/* Scroll anchor: the effect scrolls this into view on every send/receive. */}
+          <div ref={bottomRef} />
         </div>
 
         <form
           onSubmit={(e) => { e.preventDefault(); const q = text.trim(); if (q && ready && !send.isPending) { send.mutate(q); setText(""); } }}
-          className="border-t border-white/[0.06] p-3"
+          className="shrink-0 border-t border-white/[0.06] p-3"
         >
-          <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 transition-colors focus-within:border-indigo-500/60 focus-within:ring-2 focus-within:ring-indigo-500">
+          {/* Claude-style composer: a rounded input row with a visible send button on the right. */}
+          <div className="flex items-end gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 transition-colors focus-within:border-indigo-500/60 focus-within:ring-2 focus-within:ring-indigo-500">
             <input
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder={ready ? placeholder : (notReadyPlaceholder ?? placeholder)}
               aria-label="Chat message"
               disabled={!ready || send.isPending}
-              className="w-full bg-transparent text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none disabled:opacity-50"
+              className="min-w-0 flex-1 bg-transparent py-1 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none disabled:opacity-50"
             />
-            <p className="mt-2 text-[10px] text-slate-600">{inputHint}</p>
+            <button
+              type="submit"
+              disabled={!canSend}
+              aria-label="Send message"
+              className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-indigo-500 text-white transition-colors hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-slate-500"
+            >
+              <SendHorizonal className="size-4" />
+            </button>
           </div>
+          <p className="mt-2 px-1 text-[10px] text-slate-600">{inputHint}</p>
         </form>
       </aside>
     </>
