@@ -8,6 +8,7 @@ from app.modules.identity.rbac import Role
 from app.modules.identity.router import get_store
 from app.modules.identity.security import hash_password
 from app.modules.identity.store import InMemoryUserStore, User
+from app.modules.identity.users_router import _display_name
 from tests.helpers import auth_cookies
 
 TENANT = "idg"
@@ -107,6 +108,17 @@ def test_cross_tenant_target_is_404(client):
     assert client.put("/api/v1/identity/users/u-other/role",
                       json={"role": "viewer"}, cookies=OWNER).status_code == 404
     assert client.delete("/api/v1/identity/users/u-other", cookies=OWNER).status_code == 404
+
+
+def test_display_name_humanises_email_local_part():
+    u = User(id="u-x", email="ronan.bolger@x.com", password_hash="h", tenant=TENANT, role=Role.viewer)
+    assert _display_name(u) == "Ronan Bolger"
+    # underscores and hyphens are treated as separators too
+    assert _display_name(User(id="u-y", email="mary-jane_watson@x.com", password_hash="h",
+                             tenant=TENANT, role=Role.viewer)) == "Mary Jane Watson"
+    # falls back to id when there is no email
+    assert _display_name(User(id="u-z", email="", password_hash="h",
+                             tenant=TENANT, role=Role.viewer)) == "u-z"
 
 
 def test_rbac_viewer_cannot_mutate(client):

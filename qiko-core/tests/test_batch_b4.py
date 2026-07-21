@@ -32,7 +32,9 @@ def test_chat_files_conversations_clear(client):
 def test_signup_and_password_reset(client):
     su = client.post("/api/v1/auth/signup", json={"tenant": "newco", "email": "founder@x.com", "password": "pw12345678"}).json()
     assert su["user_id"] and su["team_id"]
-    otp = client.post("/api/v1/auth/forgot-password", json={"email": "founder@x.com"}).json()["otp"]
+    forgot = client.post("/api/v1/auth/forgot-password", json={"email": "founder@x.com"}).json()
+    assert forgot["sent"] is True
+    otp = forgot["otp"]
     assert client.post("/api/v1/auth/reset-password", json={"email": "founder@x.com", "otp": otp, "new_password": "newpw12345"}).json()["reset"] is True
 
 

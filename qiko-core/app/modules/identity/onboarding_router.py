@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -9,6 +10,7 @@ from pydantic import BaseModel, Field
 from app.core.config import get_settings
 from app.core.deps import get_otp_store, get_teams
 from app.modules.email.sender import get_email_sender
+from app.modules.email.templates import password_reset_code_email
 from app.modules.identity.onboarding import signup as bootstrap_signup
 from app.modules.identity.rbac import Role
 from app.modules.identity.router import get_store
@@ -37,15 +39,21 @@ class ForgotBody(BaseModel):
     email: str = Field(min_length=3)
 
 
+OTP_TTL_SECONDS = 600  # matches OtpStore.issue default (10 minutes)
+
+
 @router.post("/forgot-password")
 def forgot_password(body: ForgotBody, otp=Depends(get_otp_store)) -> dict:
+    settings = get_settings()
     code = otp.issue(body.email)
-    get_email_sender().send(to=body.email, subject="Your Qiko reset code", body=f"Your code: {code}")
+    reset_url = f"{settings.frontend_url.rstrip('/')}/reset-password?email={quote(body.email)}"
+    subject, text_body, html_body = password_reset_code_email(
+        code, reset_url=reset_url, minutes=OTP_TTL_SECONDS // 60)
+    get_email_sender().send(to=body.email, subject=subject, body=text_body, html=html_body)
     resp = {"sent": True}
     # Dev convenience only. Gated on the environment, not just the email backend: if ops ever
     # leaves EMAIL_BACKEND=console in preprod/live (e.g. SMTP misconfigured), the OTP must never
     # leak into the HTTP response for a real, non-dev environment.
-    settings = get_settings()
     if settings.debug and settings.email_backend == "console":
         resp["otp"] = code
     return resp

@@ -33,7 +33,15 @@ _admin = Depends(require_role(Role.admin))
 
 
 def _display_name(u: User) -> str:
-    return u.email.split("@")[0] if u.email else u.id
+    """A human-readable name derived from the email local part: split on '.', '_' and '-',
+    title-case each token and join with spaces (e.g. "ronan.bolger" -> "Ronan Bolger").
+    Falls back to the id when there is no email."""
+    if not u.email:
+        return u.id
+    local = u.email.split("@")[0]
+    tokens = [t for t in local.replace("_", ".").replace("-", ".").split(".") if t]
+    name = " ".join(t[:1].upper() + t[1:] for t in tokens)
+    return name or local
 
 
 def _user_dict(u: User) -> dict:

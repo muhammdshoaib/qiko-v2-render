@@ -9,15 +9,15 @@ from app.core.config import get_settings
 
 
 class EmailSender(Protocol):
-    def send(self, *, to: str, subject: str, body: str) -> bool: ...
+    def send(self, *, to: str, subject: str, body: str, html: str | None = None) -> bool: ...
 
 
 @dataclass
 class ConsoleEmailSender:
     sent: list[dict] = field(default_factory=list)
 
-    def send(self, *, to: str, subject: str, body: str) -> bool:
-        self.sent.append({"to": to, "subject": subject, "body": body})
+    def send(self, *, to: str, subject: str, body: str, html: str | None = None) -> bool:
+        self.sent.append({"to": to, "subject": subject, "body": body, "html": html})
         return True
 
 
@@ -38,13 +38,15 @@ class SmtpEmailSender:  # pragma: no cover - requires an SMTP server
         self.user = self.user or s.smtp_user
         self.password = self.password or s.smtp_password
 
-    def send(self, *, to: str, subject: str, body: str) -> bool:
+    def send(self, *, to: str, subject: str, body: str, html: str | None = None) -> bool:
         import smtplib
         from email.message import EmailMessage
 
         msg = EmailMessage()
         msg["From"], msg["To"], msg["Subject"] = self.sender, to, subject
-        msg.set_content(body)
+        msg.set_content(body)  # plaintext fallback
+        if html is not None:
+            msg.add_alternative(html, subtype="html")  # branded HTML for capable clients
         with smtplib.SMTP(self.host, self.port) as smtp:
             if self.use_tls:
                 smtp.starttls()

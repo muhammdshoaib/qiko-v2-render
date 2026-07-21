@@ -22,11 +22,11 @@ async def ingest_document(*, tenant: str, doc_id: str, text: str, knowledge: Kno
 
 
 @registry.register("send_email")
-async def send_email(*, to: str, subject: str, body: str, sender=None) -> bool:
+async def send_email(*, to: str, subject: str, body: str, html: str | None = None, sender=None) -> bool:
     """Send a transactional email (delegated to the email sender; SCRUM-25)."""
     from app.modules.email.sender import get_email_sender
 
-    return (sender or get_email_sender()).send(to=to, subject=subject, body=body)
+    return (sender or get_email_sender()).send(to=to, subject=subject, body=body, html=html)
 
 
 def _build_rfp_deps(sessionmaker):
