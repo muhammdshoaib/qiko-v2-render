@@ -46,7 +46,10 @@ OTP_TTL_SECONDS = 600  # matches OtpStore.issue default (10 minutes)
 def forgot_password(body: ForgotBody, otp=Depends(get_otp_store)) -> dict:
     settings = get_settings()
     code = otp.issue(body.email)
-    reset_url = f"{settings.frontend_url.rstrip('/')}/reset-password?email={quote(body.email)}"
+    # Use the public app URL (set per-environment, e.g. https://preprod.qiko.ai) so the emailed link
+    # points at the deployed app, not the local dev frontend default.
+    base = (settings.public_base_url or settings.frontend_url).rstrip("/")
+    reset_url = f"{base}/reset-password?email={quote(body.email)}"
     subject, text_body, html_body = password_reset_code_email(
         code, reset_url=reset_url, minutes=OTP_TTL_SECONDS // 60)
     get_email_sender().send(to=body.email, subject=subject, body=text_body, html=html_body)
