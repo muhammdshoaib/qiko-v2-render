@@ -17,7 +17,7 @@ Create Date: 2026-07-28
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0024_billing_durability_and_admin_customers"
+revision = "0024_billing_durability"
 down_revision = "0023_otp_and_pending_invites"
 branch_labels = None
 depends_on = None

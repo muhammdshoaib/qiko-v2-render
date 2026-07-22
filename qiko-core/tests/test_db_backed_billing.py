@@ -130,7 +130,7 @@ def test_migration_0024_imports_and_chains():
     spec = importlib.util.spec_from_file_location("mig_0024", path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
-    assert mod.revision == "0024_billing_durability_and_admin_customers"
+    assert mod.revision == "0024_billing_durability"
     assert mod.down_revision == "0023_otp_and_pending_invites"
     assert callable(mod.upgrade) and callable(mod.downgrade)
 
