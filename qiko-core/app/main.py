@@ -129,9 +129,11 @@ async def lifespan(app: FastAPI):
             SqlLeadStore,
             SqlNotificationStore,
             SqlOpportunityStore,
+            SqlOtpStore,
             SqlPackAnswerStore,
             SqlPackQuestionStore,
             SqlPackSectionStore,
+            SqlPendingInviteStore,
             SqlRequirementStore,
             SqlRfpPackStore,
             SqlSalesforceConnectionStore,
@@ -185,6 +187,10 @@ async def lifespan(app: FastAPI):
         app.state.teams = TeamService(store=SqlTeamStore(sm))  # teams/membership survive a redeploy
         app.state.leads = LeadService(get_email_sender(), store=SqlLeadStore(sm))  # leads survive a redeploy
         app.state.teams_notifier = TeamsNotifier(store=SqlTeamsIntegrationStore(sm))  # webhook survives a redeploy
+        # Password-reset codes + pending team invites survive a redeploy and are shared across
+        # processes (previously in-memory, so a code/invite could silently stop working).
+        app.state.otp_store = SqlOtpStore(sm)
+        app.state.pending_invites = SqlPendingInviteStore(sm)
         set_user_store(SqlUserStore(sm))  # users/sessions/2FA persist to Postgres
     try:
         yield

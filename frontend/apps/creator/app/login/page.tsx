@@ -155,6 +155,14 @@ export default function Login() {
                 </Link>
               </p>
             </div>
+
+            <p className="mt-4 text-xs text-slate-500 text-center">
+              <a href="/terms" className="hover:text-slate-300">Terms</a>
+              {" · "}
+              <a href="/privacy" className="hover:text-slate-300">Privacy</a>
+              {" · "}
+              <a href="/cookies" className="hover:text-slate-300">Cookies</a>
+            </p>
           </CardContent>
         </Card>
       </div>

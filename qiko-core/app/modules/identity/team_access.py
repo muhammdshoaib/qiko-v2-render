@@ -44,22 +44,24 @@ class PendingInvite:
 
 @dataclass
 class PendingInviteStore:
-    """In-memory pending invites, keyed by tenant. Fully tenant-scoped: a tenant can only ever
-    read/write its own invites. Cleared on process restart (the durable record is the user row
-    created when the invite is accepted via the existing team-invite flow)."""
+    """In-memory pending invites, keyed by tenant, for dev/tests. Fully tenant-scoped: a tenant
+    can only ever read/write its own invites. Cleared on process restart. The Postgres-backed
+    SqlPendingInviteStore (swapped in under USE_DB_STORES) is the durable, cross-process
+    implementation with the same async interface (the durable record once an invite is accepted
+    is the user row created by the existing team-invite flow)."""
 
     _by_tenant: dict[str, dict[str, PendingInvite]] = field(default_factory=dict)
 
-    def list(self, tenant: str) -> list[PendingInvite]:
+    async def list(self, tenant: str) -> list[PendingInvite]:
         return sorted(self._by_tenant.get(tenant, {}).values(), key=lambda i: i.invited_at)
 
-    def get(self, tenant: str, email: str) -> PendingInvite | None:
+    async def get(self, tenant: str, email: str) -> PendingInvite | None:
         return self._by_tenant.get(tenant, {}).get(email.lower())
 
-    def add(self, tenant: str, email: str, role: Role) -> PendingInvite:
+    async def add(self, tenant: str, email: str, role: Role) -> PendingInvite:
         invite = PendingInvite(email=email.lower(), role=role, invited_at=time.time())
         self._by_tenant.setdefault(tenant, {})[invite.email] = invite
         return invite
 
-    def remove(self, tenant: str, email: str) -> bool:
+    async def remove(self, tenant: str, email: str) -> bool:
         return self._by_tenant.get(tenant, {}).pop(email.lower(), None) is not None

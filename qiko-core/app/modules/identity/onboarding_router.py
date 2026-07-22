@@ -43,9 +43,9 @@ OTP_TTL_SECONDS = 600  # matches OtpStore.issue default (10 minutes)
 
 
 @router.post("/forgot-password")
-def forgot_password(body: ForgotBody, otp=Depends(get_otp_store)) -> dict:
+async def forgot_password(body: ForgotBody, otp=Depends(get_otp_store)) -> dict:
     settings = get_settings()
-    code = otp.issue(body.email)
+    code = await otp.issue(body.email)
     # Use the public app URL (set per-environment, e.g. https://preprod.qiko.ai) so the emailed link
     # points at the deployed app, not the local dev frontend default.
     base = (settings.public_base_url or settings.frontend_url).rstrip("/")
@@ -70,7 +70,7 @@ class ResetBody(BaseModel):
 
 @router.post("/reset-password")
 async def reset_password(body: ResetBody, otp=Depends(get_otp_store), store: UserStore = Depends(get_store)) -> dict:
-    if not otp.verify(body.email, body.otp):
+    if not await otp.verify(body.email, body.otp):
         raise HTTPException(status_code=400, detail="invalid or expired code")
     user = await store.get_by_email(body.email)
     if user:

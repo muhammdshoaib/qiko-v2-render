@@ -81,7 +81,7 @@ async def list_users(tenant: str = Depends(authed_tenant), store: UserStore = De
     invites = [{"email": i.email, "role": i.role.value,
                 "role_label": ROLE_LABELS.get(i.role, i.role.value),
                 "status": "pending", "invited_at": i.invited_at}
-               for i in pending.list(tenant)]
+               for i in await pending.list(tenant)]
     return {"users": users, "pending": invites}
 
 
@@ -96,7 +96,7 @@ async def invite_user(body: InviteBody, tenant: str = Depends(authed_tenant), _r
     existing = await store.get_by_email(email)
     if existing is not None and existing.tenant == tenant:
         raise HTTPException(status_code=409, detail="a user with that email already exists")
-    invite = pending.add(tenant, email, body.role)
+    invite = await pending.add(tenant, email, body.role)
     return {"email": invite.email, "role": invite.role.value,
             "role_label": ROLE_LABELS.get(invite.role, invite.role.value),
             "status": "pending", "invited_at": invite.invited_at}
@@ -132,6 +132,6 @@ async def remove_user(user_id: str, tenant: str = Depends(authed_tenant), _r: di
 async def cancel_invite(email: str, tenant: str = Depends(authed_tenant), _r: dict = _admin,
                         pending: PendingInviteStore = Depends(get_pending_invites)) -> dict:
     """Cancel a still-pending invite. owner/admin only."""
-    if not pending.remove(tenant, email):
+    if not await pending.remove(tenant, email):
         raise HTTPException(status_code=404, detail="invite not found")
     return {"removed": email.lower()}

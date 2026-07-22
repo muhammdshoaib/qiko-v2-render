@@ -33,14 +33,14 @@ def test_temp_token_bridge():
         exchange_temp_token("garbage", secret, pyotp.TOTP(secret).now())  # bad token
 
 
-def test_password_reset_otp():
+async def test_password_reset_otp():
     store = OtpStore()
-    otp = store.issue("u@x.com")
+    otp = await store.issue("u@x.com")
     wrong = "000001" if otp != "000001" else "000002"
-    assert store.verify("u@x.com", wrong) is False   # wrong code
-    assert store.verify("u@x.com", otp) is True      # correct
-    assert store.verify("u@x.com", otp) is False    # single-use consumed
-    assert store.verify("u@x.com", store.issue("u@x.com", ttl=-1)) is False  # expired
+    assert await store.verify("u@x.com", wrong) is False   # wrong code
+    assert await store.verify("u@x.com", otp) is True      # correct
+    assert await store.verify("u@x.com", otp) is False    # single-use consumed
+    assert await store.verify("u@x.com", await store.issue("u@x.com", ttl=-1)) is False  # expired
 
 
 async def test_signup_bootstraps_team_owner_and_welcome_email():

@@ -5,6 +5,8 @@ password -> temp-token -> 2FA -> JWT bridge, and OTP-based password reset.
 """
 from __future__ import annotations
 
+import hashlib
+import hmac
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -53,16 +55,29 @@ def exchange_temp_token(token: str, secret: str, code: str) -> str:
 
 
 # --- password reset OTP ---
+def new_otp_code() -> str:
+    """A fresh six-digit password-reset code."""
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def hash_otp(code: str) -> str:
+    """Keyed HMAC-SHA256 of an OTP code, used by the DB-backed store so the plaintext code is
+    never stored at rest and the stored digest is not brute-forceable without the session secret."""
+    return hmac.new(get_settings().session_secret.encode(), code.encode(), hashlib.sha256).hexdigest()
+
+
 @dataclass
 class OtpStore:
+    """In-memory OTP store for dev/tests. The Postgres-backed SqlOtpStore (swapped in under
+    USE_DB_STORES) is the durable, cross-process implementation with the same async interface."""
     _otps: dict[str, tuple[str, float]] = field(default_factory=dict)
 
-    def issue(self, email: str, *, ttl: int = 600) -> str:
-        otp = f"{secrets.randbelow(1_000_000):06d}"
+    async def issue(self, email: str, *, ttl: int = 600) -> str:
+        otp = new_otp_code()
         self._otps[email.lower()] = (otp, time.monotonic() + ttl)
         return otp
 
-    def verify(self, email: str, otp: str) -> bool:
+    async def verify(self, email: str, otp: str) -> bool:
         rec = self._otps.get(email.lower())
         if not rec or rec[1] < time.monotonic():
             return False

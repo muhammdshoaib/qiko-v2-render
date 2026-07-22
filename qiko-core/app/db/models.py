@@ -457,3 +457,31 @@ class FinanceChatMessage(Base):
     content: Mapped[str] = mapped_column(String)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     __table_args__ = (Index("ix_finance_chat_agent_created", "tenant_id", "agent_id", "created_at"),)
+
+
+class PasswordResetOtp(Base):
+    """One outstanding password-reset code per email (app.modules.identity.onboarding).
+
+    Previously in-memory only, so a reset code went dead on a redeploy and was never shared
+    across processes. Only a keyed HASH of the six-digit code is stored (never the plaintext),
+    the row carries its own expiry (10 minutes) and is deleted on a successful verify so a code
+    is strictly single-use. Keyed by email, which is unique across the platform (users.email)."""
+    __tablename__ = "password_reset_otps"
+    email: Mapped[str] = mapped_column(String(320), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(128))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PendingTeamInvite(Base):
+    """A person invited into a tenant who has not yet accepted (app.modules.identity.team_access).
+
+    Previously in-memory only, so an outstanding invite silently vanished on a redeploy. Fully
+    tenant-scoped (composite key tenant_id + email); the durable record once accepted is the
+    user row created by the existing team-invite flow."""
+    __tablename__ = "pending_team_invites"
+    tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    email: Mapped[str] = mapped_column(String(320), primary_key=True)
+    role: Mapped[str] = mapped_column(String(16), default="viewer")
+    invited_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    __table_args__ = (Index("ix_pending_team_invites_tenant", "tenant_id"),)

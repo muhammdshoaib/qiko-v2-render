@@ -17,4 +17,5 @@ def test_alembic_upgrade_head_creates_schema(tmp_path):
     con = sqlite3.connect(db)
     tables = {r[0] for r in con.execute("select name from sqlite_master where type='table'")}
     con.close()
-    assert {"tenants", "users", "verified_answers", "passages"} <= tables
+    assert {"tenants", "users", "verified_answers", "passages",
+            "password_reset_otps", "pending_team_invites"} <= tables

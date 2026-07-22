@@ -6,9 +6,10 @@ redeploy), which the in-memory stubs did not.
 """
 from __future__ import annotations
 
+import secrets
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -28,6 +29,8 @@ from app.db.models import PackQuestion as PackQuestionRow
 from app.db.models import PackRequirement as PackRequirementRow
 from app.db.models import PackSection as PackSectionRow
 from app.db.models import Passage as PassageRow
+from app.db.models import PasswordResetOtp as PasswordResetOtpRow
+from app.db.models import PendingTeamInvite as PendingTeamInviteRow
 from app.db.models import PlatformAdmin as PlatformAdminRow
 from app.db.models import RfpPack as RfpPackRow
 from app.db.models import SalesIntelActivityLog as SalesIntelActivityLogRow
@@ -47,8 +50,10 @@ from app.modules.chat.service import ConversationSummary, Message
 from app.modules.crm.service import Contact, CrmAction
 from app.modules.finance.models import FinanceChatMessage, FinanceFile
 from app.modules.identity.admin_rbac import AdminRole
+from app.modules.identity.onboarding import hash_otp, new_otp_code
 from app.modules.identity.rbac import Role
 from app.modules.identity.store import User
+from app.modules.identity.team_access import PendingInvite
 from app.modules.knowledge.models import Passage
 from app.modules.leads.service import Lead
 from app.modules.notifications.models import Notification
@@ -1254,3 +1259,86 @@ class SqlNotificationStore:
 
     async def unread_count(self, tenant: str, user_id: str | None, *, category: str | None = None) -> int:
         return len(await self.list_for_user(tenant, user_id, category=category, unread_only=True))
+
+
+def _aware(dt: datetime) -> datetime:
+    """Coerce a datetime read back from the DB to timezone-aware UTC (SQLite drops tzinfo)."""
+    return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+
+
+@dataclass
+class SqlOtpStore:
+    """Persists the password-reset OTP -- previously in-memory only, so a reset code stopped
+    working on a redeploy and was never shared across processes. Only a keyed HMAC-SHA256 hash of
+    the code is stored (never the plaintext), the row carries its own 10-minute expiry, and it is
+    deleted on a successful verify so a code is strictly single-use."""
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def issue(self, email: str, *, ttl: int = 600) -> str:
+        code = new_otp_code()
+        expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl)
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(PasswordResetOtpRow, email.lower())
+            if row is None:
+                s.add(PasswordResetOtpRow(email=email.lower(), code_hash=hash_otp(code), expires_at=expires_at))
+            else:
+                # Re-issuing replaces any outstanding code for this email (only one is ever valid).
+                row.code_hash = hash_otp(code)
+                row.expires_at = expires_at
+                row.created_at = datetime.now(timezone.utc)
+        return code
+
+    async def verify(self, email: str, otp: str) -> bool:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(PasswordResetOtpRow, email.lower())
+            if row is None:
+                return False
+            if _aware(row.expires_at) < datetime.now(timezone.utc):
+                await s.delete(row)  # prune the expired code
+                return False
+            if not secrets.compare_digest(row.code_hash, hash_otp(otp)):
+                return False
+            await s.delete(row)  # single-use: consume on success
+            return True
+
+
+@dataclass
+class SqlPendingInviteStore:
+    """Persists pending team invites (Creator Settings > Team tab) -- previously in-memory only,
+    so an outstanding invite silently vanished on a redeploy. Fully tenant-scoped: every query is
+    filtered by tenant_id, so a tenant can only ever read/write its own invites."""
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    @staticmethod
+    def _to_invite(row: PendingTeamInviteRow) -> PendingInvite:
+        return PendingInvite(email=row.email, role=Role(row.role), invited_at=_aware(row.invited_at).timestamp())
+
+    async def list(self, tenant: str) -> list[PendingInvite]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(PendingTeamInviteRow).where(PendingTeamInviteRow.tenant_id == tenant)
+                .order_by(PendingTeamInviteRow.invited_at))).scalars().all()
+            return [self._to_invite(r) for r in rows]
+
+    async def get(self, tenant: str, email: str) -> PendingInvite | None:
+        async with self.sessionmaker() as s:
+            row = await s.get(PendingTeamInviteRow, (tenant, email.lower()))
+            return self._to_invite(row) if row is not None else None
+
+    async def add(self, tenant: str, email: str, role: Role) -> PendingInvite:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(PendingTeamInviteRow, (tenant, email.lower()))
+            if row is None:
+                row = PendingTeamInviteRow(tenant_id=tenant, email=email.lower(), role=role.value)
+                s.add(row)
+            else:
+                row.role = role.value  # re-inviting updates the offered role, keeps invited_at
+        return await self.get(tenant, email)
+
+    async def remove(self, tenant: str, email: str) -> bool:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(PendingTeamInviteRow, (tenant, email.lower()))
+            if row is None:
+                return False
+            await s.delete(row)
+            return True
