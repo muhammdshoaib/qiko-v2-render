@@ -485,3 +485,71 @@ class PendingTeamInvite(Base):
     role: Mapped[str] = mapped_column(String(16), default="viewer")
     invited_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     __table_args__ = (Index("ix_pending_team_invites_tenant", "tenant_id"),)
+
+
+class BillingSubscription(Base):
+    """One subscription record (app.modules.billing.subscriptions.SubscriptionService).
+
+    Previously in-memory only, so a tenant's plan/status was wiped on every restart. The primary
+    key `subject` is the subscription subject exactly as the service keys it: the authenticated
+    tenant for the tenant-scoped billing endpoints, or a team member's user id for the
+    team-billing resolver. The Stripe subscription id + period are persisted for when a live
+    Stripe key is wired (they stay NULL under the current stub gateway)."""
+    __tablename__ = "billing_subscriptions"
+    subject: Mapped[str] = mapped_column(String(64), primary_key=True)
+    plan: Mapped[str] = mapped_column(String(32), default="free")
+    status: Mapped[str] = mapped_column(String(16), default="active")  # active | canceled
+    cancel_at_period_end: Mapped[bool] = mapped_column(default=False)
+    stripe_subscription_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    current_period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class BillingStripeCustomer(Base):
+    """The real Stripe customer id ("cus_...") linked to a tenant, set from the checkout webhook
+    (app.modules.billing.subscriptions.SubscriptionService.link_customer). Previously in-memory
+    only, so the tenant<->Stripe-customer mapping was lost on restart."""
+    __tablename__ = "billing_stripe_customers"
+    tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    stripe_customer_id: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class BillingInvoice(Base):
+    """A Stripe invoice synced by the webhook (app.modules.billing.webhook.InvoiceStore).
+
+    Previously in-memory only, so synced invoices vanished on a restart and /billing/invoices
+    came back empty after every redeploy. Idempotent by stripe_invoice_id (the webhook upserts)."""
+    __tablename__ = "billing_invoices"
+    stripe_invoice_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    customer_id: Mapped[str] = mapped_column(String(255), index=True, default="")
+    amount_cents: Mapped[int] = mapped_column(default=0)
+    status: Mapped[str] = mapped_column(String(32), default="open")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class BillingPaymentLink(Base):
+    """An admin-created Stripe payment link and its logged lifecycle
+    (app.modules.billing.payment_links.PaymentLinkService). Previously in-memory only, so the
+    link log (and its paid/void status) was lost on a restart."""
+    __tablename__ = "billing_payment_links"
+    session_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    customer_email: Mapped[str] = mapped_column(String(320), index=True)
+    amount_cents: Mapped[int] = mapped_column(default=0)
+    url: Mapped[str] = mapped_column(String(1024), default="")
+    status: Mapped[str] = mapped_column(String(16), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AdminCustomerFlag(Base):
+    """Per-tenant admin overrides for the Customers console (app.modules.admin): the Studio-access
+    toggle and the soft-delete flag. The customer directory itself is DERIVED from the real
+    tenants/users/agents/subscriptions (SqlCustomerDirectory), so only these two admin-set flags
+    need their own durable row -- everything else is computed from the source tables."""
+    __tablename__ = "admin_customer_flags"
+    tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    is_studio: Mapped[bool] = mapped_column(default=False)
+    deleted: Mapped[bool] = mapped_column(default=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)

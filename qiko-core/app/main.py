@@ -10,7 +10,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
-from app.core.db import build_engine, build_sessionmaker
+from app.core.db import build_engine, build_sessionmaker, build_sync_engine, build_sync_sessionmaker
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 from app.core.middleware import (
@@ -113,6 +113,7 @@ async def lifespan(app: FastAPI):
     engine = build_engine()
     app.state.engine = engine
     app.state.sessionmaker = build_sessionmaker(engine)
+    app.state.sync_engine = None
     if get_settings().use_db_stores:
         # Flip the live app from in-memory to the Postgres-backed stores (async end-to-end).
         from app.db.stores import (
@@ -192,10 +193,38 @@ async def lifespan(app: FastAPI):
         app.state.otp_store = SqlOtpStore(sm)
         app.state.pending_invites = SqlPendingInviteStore(sm)
         set_user_store(SqlUserStore(sm))  # users/sessions/2FA persist to Postgres
+
+        # Billing state + the admin Customers console are reached through SYNCHRONOUS route
+        # handlers (FastAPI runs those in a threadpool), so they use a synchronous engine (see
+        # app.db.sync_stores). Swapping these in makes subscriptions/invoices/payment-links
+        # durable and derives the admin customer list from the real tenants -- previously all of
+        # these lived only in process memory and were wiped on every restart.
+        from app.db.sync_stores import (
+            SqlCustomerDirectory,
+            SqlInvoiceStore,
+            SqlPaymentLinkStore,
+            SqlSubscriptionStore,
+        )
+
+        sync_engine = build_sync_engine()
+        app.state.sync_engine = sync_engine
+        sync_sm = build_sync_sessionmaker(sync_engine)
+        # Keep the already-selected Stripe gateway + email sender (stub until real keys are set);
+        # only the STATE backend changes from in-memory to Postgres.
+        stripe_gateway = app.state.subscriptions.gateway
+        app.state.subscriptions = SubscriptionService(stripe_gateway, store=SqlSubscriptionStore(sync_sm))
+        app.state.stripe_webhook = StripeWebhookHandler(
+            invoices=SqlInvoiceStore(sync_sm), subscriptions=app.state.subscriptions)
+        app.state.payment_links = PaymentLinkService(
+            gateway=app.state.payment_links.gateway, email=app.state.payment_links.email,
+            store=SqlPaymentLinkStore(sync_sm))
+        app.state.customers = SqlCustomerDirectory(sync_sm)
     try:
         yield
     finally:
         await engine.dispose()
+        if app.state.sync_engine is not None:
+            app.state.sync_engine.dispose()
 
 
 def create_app() -> FastAPI:
