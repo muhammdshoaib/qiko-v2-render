@@ -1,14 +1,65 @@
-# Live (production). Secrets from AWS SSM, no host DB/redis port exposure.
-# Run: COMPOSE_PROJECT_NAME=qiko-live docker compose -f docker-compose.yml -f docker-compose.live.yml up -d
+# Live (production) overlay. Secrets from AWS SSM under the live prefix (/qiko/live/ENV);
+# no host DB/redis port exposure. db and redis stay on the private app-net only (declared in the
+# base compose) and are never attached to proxy-net, so they are never reachable from the proxy
+# tier or the public internet. Only Caddy binds host ports 80/443.
+#
+# Project name is qiko-live (set via COMPOSE_PROJECT_NAME) so containers, networks and volumes
+# never collide with dev/preprod on the same host.
+#
+# Run: COMPOSE_PROJECT_NAME=qiko-live docker compose -f docker-compose.yml -f docker-compose.live.yml up -d --build
+#
+# This overlay differs from docker-compose.preprod.yml only by environment, log level, domain
+# (via Caddyfile.live) and the resource limits below; the stack is otherwise identical.
 services:
   qiko-core:
     environment:
       - ENVIRONMENT=live
       - LOG_LEVEL=WARNING
+      - USE_DB_STORES=true          # persist to Postgres (never in-memory in production)
+      - TASK_BACKEND=arq            # offload heavy work to the worker tier
     deploy:
       resources:
         limits: {memory: 512M, cpus: "1.0"}
+
+  # Async task tier (arq). Inherits ENVIRONMENT/USE_DB_STORES/TASK_BACKEND from .env + the base
+  # compose; capped here so a runaway job cannot starve the API/db of resources.
+  worker:
+    deploy:
+      resources:
+        limits: {memory: 512M, cpus: "1.0"}
+
+  creator:
+    deploy:
+      resources:
+        limits: {memory: 256M, cpus: "0.5"}
+
+  admin:
+    deploy:
+      resources:
+        limits: {memory: 256M, cpus: "0.5"}
+
   db:
     deploy:
       resources:
         limits: {memory: 1G, cpus: "1.0"}
+
+  redis:
+    deploy:
+      resources:
+        limits: {memory: 256M, cpus: "0.5"}
+
+  # Public edge: reverse proxy + automatic HTTPS for qiko.ai + admin.qiko.ai (see Caddyfile.live).
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./Caddyfile.live:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [creator, admin, qiko-core]
+    networks: [proxy-net]
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -25,6 +25,7 @@ frontend/e2e/playwright-report/
 .env
 .env.*
 !.env.example
+!.env.live.example
 
 # OS / editor
 .DS_Store

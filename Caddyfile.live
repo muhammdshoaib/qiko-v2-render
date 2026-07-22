@@ -1,0 +1,16 @@
+# Live (production) reverse proxy + automatic TLS (Let's Encrypt).
+# Creator + API share one origin (cookies stay first-party); admin on its own subdomain.
+# Mounted into the caddy service by docker-compose.live.yml. Mirrors the preprod Caddyfile,
+# differing only by the public domains (qiko.ai / admin.qiko.ai instead of *.preprod.qiko.ai).
+qiko.ai {
+	handle /api/* {
+		reverse_proxy qiko-core:8000
+	}
+	handle {
+		reverse_proxy creator:3000
+	}
+}
+
+admin.qiko.ai {
+	reverse_proxy admin:3001
+}
