@@ -477,8 +477,8 @@ class PendingTeamInvite(Base):
     """A person invited into a tenant who has not yet accepted (app.modules.identity.team_access).
 
     Previously in-memory only, so an outstanding invite silently vanished on a redeploy. Fully
-    tenant-scoped (composite key tenant_id + email); the durable record once accepted is the
-    user row created by the existing team-invite flow."""
+    tenant-scoped (composite key tenant_id + email). Signed signup tokens are valid only while their
+    exact pending role offer (including invitation version) remains current."""
     __tablename__ = "pending_team_invites"
     tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     email: Mapped[str] = mapped_column(String(320), primary_key=True)

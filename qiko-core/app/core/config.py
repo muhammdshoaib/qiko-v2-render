@@ -86,6 +86,9 @@ class Settings(BaseSettings):
     # IDG Sales Intelligence (app.modules.sales_intelligence)
     idg_sales_scan_interval_minutes: int = 1
     public_base_url: str = "http://localhost:3000"
+    # Public/embed chat is disabled by default for enterprise deployments. Dev keeps it available for
+    # local tests; non-dev must opt in explicitly.
+    public_chat_enabled: bool = False
     # Share the auth/CSRF cookies across subdomains (e.g. ".preprod.qiko.ai" so both
     # preprod.qiko.ai and admin.preprod.qiko.ai see the same session). Empty = host-only
     # cookie (dev default; fine when creator/admin/API are all on the same host).
@@ -97,6 +100,7 @@ class Settings(BaseSettings):
     smtp_port: int = 587
     smtp_user: str = ""
     smtp_password: str = ""
+    smtp_timeout_seconds: int = 10
     email_from: str = "no-reply@qiko.ai"
     labs_contact_email: str = "support@qiko.ai"
 

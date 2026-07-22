@@ -1,0 +1,27 @@
+{
+  "tenant": {
+    "slug": "example-tenant",
+    "display_name": "Example Tenant"
+  },
+  "users": [
+    {
+      "email": "owner@example.com",
+      "role": "owner"
+    },
+    {
+      "email": "editor@example.com",
+      "role": "editor"
+    }
+  ],
+  "agents": [
+    {
+      "id": "example-sales-worker",
+      "name": "Example Sales Worker",
+      "atype": "sales_intelligence",
+      "status": "ready",
+      "config": {
+        "archived": true
+      }
+    }
+  ]
+}

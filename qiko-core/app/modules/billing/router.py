@@ -5,7 +5,7 @@ from dataclasses import asdict
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import get_settings
 from app.core.deps import (
@@ -14,6 +14,8 @@ from app.core.deps import (
     get_stripe_webhook,
     get_subscriptions,
     get_teams,
+    require_platform_admin,
+    require_platform_super_admin,
     require_role,
 )
 from app.modules.billing.team_billing import team_plan
@@ -47,7 +49,9 @@ class ActivateBody(BaseModel):
 # tenant's subscription. The `customer_id` echoed back in responses is the tenant, kept only for
 # client-shape continuity.
 @router.get("/subscription")
-def subscription_status(tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
+def subscription_status(tenant: str = Depends(authed_tenant),
+                        _role: dict = Depends(require_role(Role.admin)),
+                        subs=Depends(get_subscriptions)) -> dict:
     sub = subs.status(tenant)
     if not sub:
         return {"customer_id": tenant, "status": "none"}
@@ -58,6 +62,10 @@ def subscription_status(tenant: str = Depends(authed_tenant), subs=Depends(get_s
 @router.post("/subscription/activate")
 def activate(body: ActivateBody, tenant: str = Depends(authed_tenant),
              _role: dict = Depends(require_role(Role.admin)), subs=Depends(get_subscriptions)) -> dict:
+    # Development helper only. Production subscription activation comes from a verified Stripe
+    # webhook, never a customer-selected plan in an authenticated request.
+    if not get_settings().debug:
+        raise HTTPException(status_code=404, detail="not found")
     sub = subs.activate(tenant, body.plan)
     return {"customer_id": tenant, "plan": sub.plan, "status": sub.status}
 
@@ -90,6 +98,10 @@ def plans() -> list[dict]:
 
 @router.post("/checkout")
 def checkout(body: CheckoutBody, tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
+    # Price IDs and Stripe customer mapping are not production-wired yet. Keep the API fail-closed
+    # outside dev even if a caller bypasses the locked Pricing UI.
+    if not get_settings().debug:
+        raise HTTPException(status_code=404, detail="not found")
     try:
         return {"url": subs.start_checkout(tenant, body.plan, price_id=body.price_id, promo=body.promo)}
     except httpx.HTTPError as e:
@@ -97,7 +109,9 @@ def checkout(body: CheckoutBody, tenant: str = Depends(authed_tenant), subs=Depe
 
 
 @router.get("/portal")
-def portal(tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
+def portal(tenant: str = Depends(authed_tenant),
+           _role: dict = Depends(require_role(Role.admin)),
+           subs=Depends(get_subscriptions)) -> dict:
     try:
         return {"url": subs.portal_url(tenant)}
     except httpx.HTTPError as e:
@@ -105,7 +119,9 @@ def portal(tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)
 
 
 @router.post("/subscription/cancel")
-def cancel(tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
+def cancel(tenant: str = Depends(authed_tenant),
+           _role: dict = Depends(require_role(Role.admin)),
+           subs=Depends(get_subscriptions)) -> dict:
     try:
         sub = subs.cancel(tenant)
     except KeyError as e:
@@ -114,7 +130,9 @@ def cancel(tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)
 
 
 @router.post("/subscription/resume")
-def resume(tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
+def resume(tenant: str = Depends(authed_tenant),
+           _role: dict = Depends(require_role(Role.admin)),
+           subs=Depends(get_subscriptions)) -> dict:
     try:
         sub = subs.resume(tenant)
     except (KeyError, ValueError) as e:
@@ -123,14 +141,31 @@ def resume(tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)
 
 
 class PaymentLinkBody(BaseModel):
-    customer_email: str
-    amount_cents: int
+    customer_email: str = Field(min_length=3, max_length=320)
+    amount_cents: int = Field(gt=0, le=100_000_000)
     recurring: bool = False
+
+    @field_validator("recurring")
+    @classmethod
+    def reject_unwired_recurring_links(cls, value: bool) -> bool:
+        if value:
+            raise ValueError("recurring payment links are not enabled")
+        return value
+
+    @field_validator("customer_email")
+    @classmethod
+    def validate_customer_email(cls, value: str) -> str:
+        value = value.strip().lower()
+        local, separator, domain = value.partition("@")
+        if (not separator or not local or "." not in domain
+                or domain.startswith(".") or domain.endswith(".")):
+            raise ValueError("customer_email must be a valid address")
+        return value
 
 
 @router.post("/payment-links")
 def create_payment_link(body: PaymentLinkBody, _tenant: str = Depends(authed_tenant),
-                        _role: dict = Depends(require_role(Role.admin)), links=Depends(get_payment_links)) -> dict:
+                        _role=Depends(require_platform_super_admin()), links=Depends(get_payment_links)) -> dict:
     try:
         log = links.create(body.customer_email, body.amount_cents, recurring=body.recurring)
     except httpx.HTTPError as e:
@@ -144,14 +179,14 @@ class MarkPaidBody(BaseModel):
 
 @router.post("/payment-links/mark-paid")
 def mark_paid(body: MarkPaidBody, _tenant: str = Depends(authed_tenant),
-              _role: dict = Depends(require_role(Role.admin)), links=Depends(get_payment_links)) -> dict:
+              _role=Depends(require_platform_super_admin()), links=Depends(get_payment_links)) -> dict:
     # Validated body (was a raw dict -> a missing customer_email 500'd instead of a clean 422).
     return {"marked": links.mark_as_paid_for_user(body.customer_email)}
 
 
 @router.get("/payment-links")
 def list_payment_links(email: str, _tenant: str = Depends(authed_tenant),
-                       _role: dict = Depends(require_role(Role.admin)), links=Depends(get_payment_links)) -> list[dict]:
+                       _role=Depends(require_platform_admin()), links=Depends(get_payment_links)) -> list[dict]:
     return [asdict(x) for x in links.logs_for(email)]
 
 
@@ -168,6 +203,6 @@ async def team_billing_plan(team_id: str, tenant: str = Depends(authed_tenant),
 
 
 @router.get("/invoices")
-def invoices(_tenant: str = Depends(authed_tenant), _role: dict = Depends(require_role(Role.admin)),
+def invoices(_tenant: str = Depends(authed_tenant), _role=Depends(require_platform_admin()),
              handler=Depends(get_stripe_webhook), customer_id: str | None = None) -> list[dict]:
     return [asdict(i) for i in handler.invoices.list(customer_id)]

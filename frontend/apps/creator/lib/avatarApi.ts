@@ -54,9 +54,11 @@ export async function loginAvatar(body: { email: string; password: string }) {
   return { data: { token: "cookie", user: r.user } };
 }
 
-export async function signupAvatar(body: { user_name: string; email: string; password: string }) {
-  const tenant = body.email.split("@")[0].toLowerCase();
-  await req("/auth/signup", { method: "POST", body: JSON.stringify({ tenant, email: body.email, password: body.password }) });
+export async function signupAvatar(body: { user_name: string; email: string; password: string; invite_token?: string }) {
+  await req("/auth/signup", {
+    method: "POST",
+    body: JSON.stringify({ email: body.email, password: body.password, invite_token: body.invite_token }),
+  });
   // establish the session cookie so the subsequent authed create calls work
   return req("/auth/login", { method: "POST", body: JSON.stringify({ email: body.email, password: body.password }) });
 }

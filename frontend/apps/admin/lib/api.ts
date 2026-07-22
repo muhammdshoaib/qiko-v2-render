@@ -14,19 +14,53 @@ function csrfToken(): string | undefined {
   return document.cookie.match(/(?:^|; )qiko_csrf=([^;]+)/)?.[1];
 }
 
-async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
+let refreshInFlight: Promise<boolean> | null = null;
+function refreshSession(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const csrf = csrfToken();
+        const response = await fetch(`${BASE}/auth/refresh`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", ...(csrf ? { "x-csrf-token": csrf } : {}) },
+        });
+        return response.ok;
+      } catch {
+        return false;
+      }
+    })();
+    void refreshInFlight.finally(() => { refreshInFlight = null; });
+  }
+  return refreshInFlight;
+}
+
+async function doFetch(path: string, opts: RequestInit): Promise<Response> {
   const csrf = csrfToken();
-  const res = await fetch(`${BASE}${path}`, {
+  return fetch(`${BASE}${path}`, {
     credentials: "include",
+    ...opts,
     headers: {
       "Content-Type": "application/json",
       ...(csrf ? { "x-csrf-token": csrf } : {}),
       ...(opts.headers ?? {}),
     },
-    ...opts,
   });
-  if (!res.ok) throw new ApiError(res.status, await res.text());
-  return res.status === 204 ? (null as T) : ((await res.json()) as T);
+}
+
+const NO_REFRESH_PATHS = ["/auth/login", "/auth/refresh", "/auth/logout"];
+
+async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  let response = await doFetch(path, opts);
+  if (response.status === 401 && !NO_REFRESH_PATHS.some((candidate) => path.startsWith(candidate))) {
+    if (await refreshSession()) {
+      response = await doFetch(path, opts);
+    } else if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+      window.location.assign("/login");
+    }
+  }
+  if (!response.ok) throw new ApiError(response.status, await response.text());
+  return response.status === 204 ? (null as T) : ((await response.json()) as T);
 }
 
 export const login = (email: string, password: string) =>

@@ -4,8 +4,8 @@ The Creator Settings > Team tab surfaces the tenant's identity users as the memb
 (so real tenant users show up immediately) and separates them into two views:
 
 - Accepted: users that exist in the identity store (they can log in).
-- Pending: people who have been invited but have not yet accepted / set a password. These
-  live only in this in-memory registry until they complete the existing team-invite flow.
+- Pending: email and role offers created by Settings > Team. The invitation email carries a signed,
+  expiring token; signup consumes the exact pending record and applies its tenant and role.
 
 Role label mapping (backend Role enum <-> stage "Team Access" labels):
     viewer -> "User"
@@ -47,8 +47,7 @@ class PendingInviteStore:
     """In-memory pending invites, keyed by tenant, for dev/tests. Fully tenant-scoped: a tenant
     can only ever read/write its own invites. Cleared on process restart. The Postgres-backed
     SqlPendingInviteStore (swapped in under USE_DB_STORES) is the durable, cross-process
-    implementation with the same async interface (the durable record once an invite is accepted
-    is the user row created by the existing team-invite flow)."""
+    implementation with the same async interface."""
 
     _by_tenant: dict[str, dict[str, PendingInvite]] = field(default_factory=dict)
 

@@ -6,6 +6,7 @@ from app.modules.identity.admin_rbac import (
     AdminRole,
     can_invite_admins,
 )
+from app.modules.identity.tokens import create_team_invite_token
 
 
 def test_capabilities():
@@ -34,3 +35,14 @@ async def test_invalid_invite_rejected():
     org = AdminOrg()
     with pytest.raises(AdminAuthzError):
         await org.accept("not-a-token")
+
+
+async def test_team_invite_token_cannot_be_accepted_as_platform_admin():
+    org = AdminOrg()
+    token = create_team_invite_token(
+        tenant="tenant-a", email="person@example.com", role="viewer", invite_version=1)
+
+    with pytest.raises(AdminAuthzError):
+        await org.accept(token)
+
+    assert await org.role_of("person@example.com") is None

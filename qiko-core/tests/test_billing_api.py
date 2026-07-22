@@ -1,12 +1,50 @@
-from tests.helpers import auth_cookies
+import asyncio
+
+from app.core.config import Environment, get_settings
+from app.modules.identity.admin_rbac import AdminRole
+from tests.helpers import auth_cookies, bootstrap_admin
 
 C = auth_cookies("bill", "owner")
+ADMIN_EMAIL = "billing-admin@example.com"
+
+
+def _admin_cookies(client):
+    bootstrap_admin(client, ADMIN_EMAIL)
+    return auth_cookies("platform", "viewer", email=ADMIN_EMAIL)
+
+
+def _platform_viewer_cookies(client):
+    async def create_viewer():
+        await client.app.state.admin_org.bootstrap_super_admin(ADMIN_EMAIL)
+        token = await client.app.state.admin_org.invite(
+            ADMIN_EMAIL, "billing-viewer@example.com", AdminRole.viewer)
+        await client.app.state.admin_org.accept(token)
+
+    asyncio.run(create_viewer())
+    return auth_cookies("platform", "viewer", email="billing-viewer@example.com")
 
 
 def test_checkout_and_portal(client):
     # Tenant-scoped: no client-supplied customer id -- the subject is the authed tenant.
     assert "url" in client.post("/api/v1/billing/checkout", json={"plan": "pro"}, cookies=C).json()
     assert "url" in client.get("/api/v1/billing/portal", cookies=C).json()
+
+
+def test_paid_activation_and_checkout_are_disabled_outside_dev(client, monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "environment", Environment.preprod)
+
+    assert client.post("/api/v1/billing/subscription/activate", json={"plan": "pro"}, cookies=C).status_code == 404
+    assert client.post("/api/v1/billing/checkout", json={"plan": "pro"}, cookies=C).status_code == 404
+
+
+def test_billing_lifecycle_requires_tenant_admin_or_owner(client):
+    for role in ("viewer", "editor"):
+        cookies = auth_cookies("bill", role)
+        assert client.get("/api/v1/billing/subscription", cookies=cookies).status_code == 403
+        assert client.get("/api/v1/billing/portal", cookies=cookies).status_code == 403
+        assert client.post("/api/v1/billing/subscription/cancel", cookies=cookies).status_code == 403
+        assert client.post("/api/v1/billing/subscription/resume", cookies=cookies).status_code == 403
 
 
 def test_plans_match_the_real_product(client):
@@ -67,26 +105,57 @@ def test_subscription_is_tenant_scoped_no_cross_tenant_bola(client):
     assert a_view["status"] == "active" and a_view["cancel_at_period_end"] is False
 
 
-def test_payment_links_admin_only(client):
-    body = {"customer_email": "buyer@x.com", "amount_cents": 5000}
-    assert client.post("/api/v1/billing/payment-links", json=body, cookies=auth_cookies("bill", "editor")).status_code == 403
-    created = client.post("/api/v1/billing/payment-links", json=body, cookies=C).json()
+def test_payment_links_require_platform_admin(client):
+    body = {"customer_email": "buyer@example.com", "amount_cents": 5000}
+    assert client.post("/api/v1/billing/payment-links", json=body, cookies=C).status_code == 403
+    admin = _admin_cookies(client)
+    created = client.post("/api/v1/billing/payment-links", json=body, cookies=admin).json()
     assert created["url"] and created["status"]
-    assert client.get("/api/v1/billing/payment-links", params={"email": "buyer@x.com"}, cookies=C).json()
-    assert client.post("/api/v1/billing/payment-links/mark-paid", json={"customer_email": "buyer@x.com"}, cookies=C).json()["marked"] >= 1
+    assert client.get("/api/v1/billing/payment-links", params={"email": "buyer@example.com"}, cookies=admin).json()
+    assert client.post("/api/v1/billing/payment-links/mark-paid",
+                       json={"customer_email": "buyer@example.com"}, cookies=admin).json()["marked"] >= 1
+
+
+def test_platform_viewer_cannot_mutate_payment_links(client):
+    viewer = _platform_viewer_cookies(client)
+    body = {"customer_email": "buyer@example.com", "amount_cents": 5000}
+    assert client.post("/api/v1/billing/payment-links", json=body, cookies=viewer).status_code == 403
+    assert client.post("/api/v1/billing/payment-links/mark-paid",
+                       json={"customer_email": "buyer@example.com"}, cookies=viewer).status_code == 403
+
+
+def test_recurring_payment_link_is_rejected_until_stripe_support_is_wired(client):
+    response = client.post(
+        "/api/v1/billing/payment-links",
+        json={"customer_email": "buyer@example.com", "amount_cents": 5000, "recurring": True},
+        cookies=_admin_cookies(client),
+    )
+    assert response.status_code == 422
+
+
+def test_payment_link_amount_is_positive_and_bounded(client):
+    admin = _admin_cookies(client)
+    for amount in (0, -1, 100_000_001):
+        response = client.post(
+            "/api/v1/billing/payment-links",
+            json={"customer_email": "buyer@example.com", "amount_cents": amount},
+            cookies=admin,
+        )
+        assert response.status_code == 422
 
 
 def test_mark_paid_missing_email_is_422_not_500(client):
     # Regression: mark-paid took a raw dict and did body["customer_email"], so a missing field
     # 500'd (unhandled KeyError) instead of returning a clean 422 validation error.
-    r = client.post("/api/v1/billing/payment-links/mark-paid", json={}, cookies=C)
+    r = client.post("/api/v1/billing/payment-links/mark-paid", json={}, cookies=_admin_cookies(client))
     assert r.status_code == 422
 
 
 def test_team_plan_and_invoices(client):
     team = client.post("/api/v1/teams", json={"owner_id": "o"}, cookies=C).json()
     assert client.get(f"/api/v1/billing/team/{team['team_id']}/plan", cookies=C).json()["plan"] == "free"
-    assert client.get("/api/v1/billing/invoices", cookies=C).json() == []
+    assert client.get("/api/v1/billing/invoices", cookies=C).status_code == 403
+    assert client.get("/api/v1/billing/invoices", cookies=_admin_cookies(client)).json() == []
 
 
 def test_team_plan_blocks_cross_tenant_access(client):

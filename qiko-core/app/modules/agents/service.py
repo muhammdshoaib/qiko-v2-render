@@ -15,6 +15,10 @@ from typing import Protocol
 from app.modules.billing.plans import Plan, can_create_worker
 
 
+AGENT_TYPES = {"worker", "pre_sales_writer", "sales_intelligence", "finance"}
+AGENT_STATUSES = {"training", "ready"}
+
+
 class PlanLimitError(Exception):
     pass
 

@@ -47,7 +47,7 @@ class SmtpEmailSender:  # pragma: no cover - requires an SMTP server
         msg.set_content(body)  # plaintext fallback
         if html is not None:
             msg.add_alternative(html, subtype="html")  # branded HTML for capable clients
-        with smtplib.SMTP(self.host, self.port) as smtp:
+        with smtplib.SMTP(self.host, self.port, timeout=get_settings().smtp_timeout_seconds) as smtp:
             if self.use_tls:
                 smtp.starttls()
             if self.user:

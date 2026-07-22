@@ -1,6 +1,7 @@
 import pyotp
 
 from app.modules.identity.onboarding import issue_temp_token, new_totp_secret
+from app.core.config import Environment, get_settings
 from tests.helpers import auth_cookies
 
 C = auth_cookies("b4", "owner")
@@ -44,6 +45,17 @@ def test_2fa_exchange_bridge(client):
     r = client.post("/api/v1/auth/2fa/exchange", json={"temp_token": token, "secret": secret, "code": pyotp.TOTP(secret).now()})
     assert r.json()["user_id"] == "u-1"
     assert client.post("/api/v1/auth/2fa/exchange", json={"temp_token": token, "secret": secret, "code": "000000"}).status_code == 400
+
+
+def test_admin_bootstrap_is_disabled_outside_dev(client, monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "environment", Environment.preprod)
+    caller = auth_cookies("public", "owner", email="public-owner@example.com")
+
+    assert client.post("/api/v1/admin/org/bootstrap", cookies=caller).status_code == 404
+    assert client.post("/api/v1/admin/org/invite",
+                       json={"email": "admin@example.com", "role": "viewer"}, cookies=caller).status_code == 404
+    assert client.post("/api/v1/admin/org/accept", json={"token": "anything"}).status_code == 404
 
 
 def test_admin_org_rbac(client):

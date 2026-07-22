@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.core.config import get_settings
 from app.core.deps import current_claims, get_admin_org, require_platform_admin
 from app.modules.identity.admin_rbac import AdminAuthzError, AdminRole
 
@@ -19,10 +20,10 @@ def _actor_email(claims: dict) -> str:
 
 @router.post("/bootstrap")
 async def bootstrap(claims: dict = Depends(current_claims), org=Depends(get_admin_org)) -> dict:
-    """First-run only: the very first authenticated caller becomes super_admin. Once any admin
-    exists, this is a no-op (use /invite, super_admin-only, to add more) -- so this can never be
-    used to self-escalate after initial setup, and it's keyed by email like everything else here
-    (never the tenant role, which every signed-up user satisfies as "owner" of their own tenant)."""
+    """Development-only bootstrap. Non-dev platform admins are provisioned by an operator, never by
+    the first public tenant user to reach an endpoint."""
+    if not get_settings().debug:
+        raise HTTPException(status_code=404, detail="not found")
     if not await org.is_empty():
         raise HTTPException(status_code=409, detail="already bootstrapped")
     email = _actor_email(claims)
@@ -37,6 +38,8 @@ class InviteBody(BaseModel):
 
 @router.post("/invite")
 async def invite(body: InviteBody, claims: dict = Depends(current_claims), org=Depends(get_admin_org)) -> dict:
+    if not get_settings().debug:
+        raise HTTPException(status_code=404, detail="not found")
     try:
         return {"token": await org.invite(_actor_email(claims), body.email, body.role)}
     except AdminAuthzError as e:
@@ -49,6 +52,8 @@ class AcceptBody(BaseModel):
 
 @router.post("/accept")
 async def accept(body: AcceptBody, org=Depends(get_admin_org)) -> dict:
+    if not get_settings().debug:
+        raise HTTPException(status_code=404, detail="not found")
     try:
         return {"role": (await org.accept(body.token)).value}
     except AdminAuthzError as e:

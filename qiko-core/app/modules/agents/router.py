@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.core.crypto import encrypt
 from app.core.deps import authed_tenant, get_agents, get_subscriptions, require_role
-from app.modules.agents.service import Agent, PlanLimitError
+from app.modules.agents.service import AGENT_TYPES, Agent, PlanLimitError
 from app.modules.billing.plans import get_plan
 from app.modules.identity.rbac import Role
 
@@ -30,12 +30,6 @@ def _redact(agent: Agent) -> Agent:
         return agent
     cfg = {k: v for k, v in agent.config.items() if k not in _REDACTED_CONFIG_KEYS}
     return replace(agent, config=cfg)
-
-
-# Known worker verticals. "worker" is the generic default; the others unlock a bespoke Studio
-# cockpit (e.g. "sales_intelligence" -> tender ingestion + qualification + Salesforce push).
-# Server-validated allowlist -- a client can't invent an arbitrary atype.
-AGENT_TYPES = {"worker", "pre_sales_writer", "sales_intelligence", "finance"}
 
 
 class CreateAgentBody(BaseModel):

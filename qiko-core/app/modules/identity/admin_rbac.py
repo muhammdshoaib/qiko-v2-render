@@ -81,16 +81,20 @@ class AdminOrg:
     async def invite(self, actor: str, email: str, role: AdminRole) -> str:
         if await self.store.get(actor) is not AdminRole.super_admin:
             raise AdminAuthzError("only a super_admin can invite admins")
-        return jwt.encode({"email": email.lower(), "role": role.value, "exp": int(time.time()) + 604800},
+        return jwt.encode({"type": "platform_admin_invite", "email": email.lower(),
+                           "role": role.value, "exp": int(time.time()) + 604800},
                           get_settings().session_secret, algorithm=_ALGO)
 
     async def accept(self, token: str) -> AdminRole:
         try:
             data = jwt.decode(token, get_settings().session_secret, algorithms=[_ALGO])
-        except jwt.PyJWTError as e:
+            if data.get("type") != "platform_admin_invite":
+                raise AdminAuthzError("invalid or expired invite")
+            email = str(data["email"]).lower()
+            role = AdminRole(data["role"])
+        except (KeyError, TypeError, ValueError, jwt.PyJWTError) as e:
             raise AdminAuthzError("invalid or expired invite") from e
-        role = AdminRole(data["role"])
-        await self.store.set(data["email"], role)
+        await self.store.set(email, role)
         return role
 
     async def remove(self, actor: str, email: str) -> None:

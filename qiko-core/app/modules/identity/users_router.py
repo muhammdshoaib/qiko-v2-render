@@ -2,8 +2,10 @@
 remove them. Backs the Creator Settings > Team tab.
 
 Wiring choice: the member list is the identity UserStore's tenant users (list_by_tenant), so the
-tenant's real, login-capable users (Accepted) show up immediately, plus an in-memory registry of
-Pending invites. Mutations are RBAC-guarded to owner/admin (require_role(Role.admin) -- an owner
+tenant's real, login-capable users (Accepted) show up immediately, plus a registry of pending role
+offers. Invitation emails carry a short-lived signed token; public signup consumes the matching
+server-side pending record and applies its tenant and role. Mutations are RBAC-guarded to owner/admin
+(require_role(Role.admin) -- an owner
 outranks an admin within their own tenant). Every lookup is tenant-scoped (a user_id belonging to
 another tenant returns 404, not 403, so an outsider can't probe ids -- OWASP API1/BOLA).
 
@@ -15,10 +17,17 @@ admin=Admin, owner=Owner) and the pending-invite store.
 """
 from __future__ import annotations
 
+import logging
+from urllib.parse import urlencode
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
+from app.core.config import Settings, get_settings
 from app.core.deps import authed_tenant, get_pending_invites, require_role
+from app.modules.email.sender import EmailSender, get_email_sender
+from app.modules.email.templates import team_invite_email
 from app.modules.identity.rbac import Role
 from app.modules.identity.router import get_store
 from app.modules.identity.store import User, UserStore
@@ -27,8 +36,10 @@ from app.modules.identity.team_access import (
     ROLE_LABELS,
     PendingInviteStore,
 )
+from app.modules.identity.tokens import create_team_invite_token
 
 router = APIRouter(prefix="/identity", tags=["identity"])
+logger = logging.getLogger(__name__)
 _admin = Depends(require_role(Role.admin))
 
 
@@ -86,17 +97,58 @@ async def list_users(tenant: str = Depends(authed_tenant), store: UserStore = De
 
 
 @router.post("/users/invite")
-async def invite_user(body: InviteBody, tenant: str = Depends(authed_tenant), _r: dict = _admin,
-                      store: UserStore = Depends(get_store),
-                      pending: PendingInviteStore = Depends(get_pending_invites)) -> dict:
-    """Invite someone into the tenant. They land in Pending until they accept and set a password
-    (via the existing team-invite flow). owner/admin only."""
+async def invite_user(
+    body: InviteBody,
+    tenant: str = Depends(authed_tenant),
+    claims: dict = _admin,
+    store: UserStore = Depends(get_store),
+    pending: PendingInviteStore = Depends(get_pending_invites),
+    email_sender: EmailSender = Depends(get_email_sender),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    """Record a pending role and email signup guidance. Owner/admin only."""
     _assert_assignable(body.role)
     email = body.email.strip().lower()
     existing = await store.get_by_email(email)
-    if existing is not None and existing.tenant == tenant:
+    if existing is not None:
         raise HTTPException(status_code=409, detail="a user with that email already exists")
+    if await pending.get(tenant, email) is not None:
+        raise HTTPException(status_code=409, detail="an invitation for that email is already pending")
+
     invite = await pending.add(tenant, email, body.role)
+    invite_token = create_team_invite_token(
+        tenant=tenant, email=invite.email, role=invite.role.value,
+        invite_version=int(invite.invited_at * 1_000_000))
+    signup_url = f"{settings.public_base_url.rstrip('/')}/signup?{urlencode({'invite': invite_token})}"
+    subject, text_body, html_body = team_invite_email(
+        signup_url=signup_url,
+        invited_email=invite.email,
+        role_label=ROLE_LABELS.get(invite.role, invite.role.value),
+        workspace=tenant,
+        inviter_email=claims.get("email"),
+    )
+    try:
+        sent = await run_in_threadpool(
+            email_sender.send,
+            to=invite.email,
+            subject=subject,
+            body=text_body,
+            html=html_body,
+        )
+    except Exception as exc:
+        await pending.remove(tenant, email)
+        logger.warning("transactional_email_failed", extra={"flow": "team_invite", "tenant": tenant})
+        raise HTTPException(
+            status_code=503,
+            detail="invitation email could not be sent; please try again",
+        ) from exc
+    if not sent:
+        await pending.remove(tenant, email)
+        logger.warning("transactional_email_failed", extra={"flow": "team_invite", "tenant": tenant})
+        raise HTTPException(
+            status_code=503,
+            detail="invitation email could not be sent; please try again",
+        )
     return {"email": invite.email, "role": invite.role.value,
             "role_label": ROLE_LABELS.get(invite.role, invite.role.value),
             "status": "pending", "invited_at": invite.invited_at}

@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.core.config import get_settings
 from app.core.deps import build_tenant_worker
 from app.modules.chat.public import AgentNotReadyError, public_ask
 
@@ -21,6 +22,9 @@ class PublicChatBody(BaseModel):
 
 @router.post("/chat")
 async def public_chat(body: PublicChatBody, request: Request) -> dict:
+    settings = get_settings()
+    if not settings.debug and not settings.public_chat_enabled:
+        raise HTTPException(status_code=404, detail="not found")
     agent = await request.app.state.agents.get(body.tenant, body.worker_id)
     if agent is None:
         raise HTTPException(status_code=404, detail="worker not found")

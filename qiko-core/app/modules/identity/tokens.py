@@ -43,6 +43,15 @@ def create_refresh_token(user_id: str, *, sid: str, secret: str | None = None,
                    ttl_seconds or s.refresh_token_ttl_seconds, secret or s.session_secret)
 
 
+def create_team_invite_token(*, tenant: str, email: str, role: str, invite_version: int,
+                             secret: str | None = None,
+                             ttl_seconds: int = 7 * 24 * 60 * 60) -> str:
+    s = get_settings()
+    return _encode({"type": "team_invite", "tenant": tenant, "email": email.lower(), "role": role,
+                    "invite_version": invite_version},
+                   ttl_seconds, secret or s.session_secret)
+
+
 def decode_token(token: str, *, expected_type: str | None = None, secret: str | None = None) -> dict:
     s = get_settings()
     try:

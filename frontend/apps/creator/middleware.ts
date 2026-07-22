@@ -1,18 +1,18 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// Route guard: the httpOnly access cookie is readable server-side here (never in client JS).
-// Treat a valid refresh cookie as authed too: the access token is short-lived (15 min), so a user
-// who has been idle drops qiko_access but still holds the 14-day qiko_refresh. Redirecting them to
-// login on the next navigation is the kick-out we must avoid; the client silently refreshes the
-// access token on its first API call, so let the navigation through when a refresh cookie exists.
+// Route guard: httpOnly auth cookies are readable server-side here (never in client JS).
+// Let refresh-only visitors reach protected pages so the client can renew an expired 15-minute
+// access token. Cookie presence does not prove validity, so only a real access cookie redirects the
+// login page; a failed client refresh returns the visitor to login without a redirect loop.
 export function middleware(req: NextRequest) {
-  const authed = req.cookies.has("qiko_access") || req.cookies.has("qiko_refresh");
+  const hasAccess = req.cookies.has("qiko_access");
+  const hasSession = hasAccess || req.cookies.has("qiko_refresh");
   const { pathname } = req.nextUrl;
   const isPublic = pathname === "/" || pathname.startsWith("/labs") || pathname.startsWith("/login") || pathname.startsWith("/signup") || pathname.startsWith("/onboarding") || pathname.startsWith("/forgot-password") || pathname.startsWith("/reset-password") || pathname.startsWith("/terms") || pathname.startsWith("/privacy") || pathname.startsWith("/cookies");
-  const isLogin = pathname.startsWith("/login");
-  if (!authed && !isPublic) return NextResponse.redirect(new URL("/login", req.url));
-  if (authed && isLogin) return NextResponse.redirect(new URL("/dashboard", req.url));
+  if (!hasSession && !isPublic) return NextResponse.redirect(new URL("/login", req.url));
+  // Always allow the login page. Cookie presence does not prove validity, and redirecting based on
+  // a stale cookie can trap the browser in a login/dashboard loop when refresh is revoked.
   return NextResponse.next();
 }
 

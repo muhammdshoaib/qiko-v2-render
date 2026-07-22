@@ -40,10 +40,13 @@ export default function SignUp() {
 
     try {
       const normalizedEmail = email.trim().toLowerCase();
-      const response = await signupAvatar({
+      await signupAvatar({
         user_name: name,
         email: normalizedEmail,
         password,
+        invite_token: typeof window === "undefined"
+          ? undefined
+          : new URLSearchParams(window.location.search).get("invite") ?? undefined,
       });
 
       toast.success("Account created successfully!");

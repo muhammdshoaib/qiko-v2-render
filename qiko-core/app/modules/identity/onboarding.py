@@ -15,8 +15,6 @@ import jwt
 import pyotp
 
 from app.core.config import get_settings
-from app.modules.email.sender import EmailSender
-from app.modules.email.templates import verification_email
 from app.modules.identity.rbac import Role
 from app.modules.identity.security import hash_password
 from app.modules.teams.service import TeamService
@@ -88,10 +86,8 @@ class OtpStore:
 
 
 # --- signup bootstrap ---
-async def signup(teams: TeamService, tenant: str, email: str, password: str, email_sender: EmailSender) -> dict:
-    """Atomically create the user + their team (owner) + send the welcome/verification email."""
+async def signup(teams: TeamService, tenant: str, email: str, password: str) -> dict:
+    """Create the signup's team-owner record before the router persists the login-capable user."""
     team = await teams.create_team(tenant, email.lower())
-    subject, body = verification_email(f"https://qiko.ai/verify?email={email.lower()}")
-    email_sender.send(to=email.lower(), subject=subject, body=body)
     return {"email": email.lower(), "team_id": team.id, "role": Role.owner.value,
             "password_hash": hash_password(password)}

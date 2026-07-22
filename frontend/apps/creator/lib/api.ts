@@ -61,7 +61,14 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   // The access token is short-lived (15 min). On a 401, silently refresh once (using the long-lived
   // refresh cookie) and retry, so an active user is never kicked to login mid-session.
   if (res.status === 401 && !NO_REFRESH_PATHS.some((p) => path.startsWith(p))) {
-    if (await refreshSession()) res = await doFetch(path, opts);
+    if (await refreshSession()) {
+      res = await doFetch(path, opts);
+    } else if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+      // The refresh cookie is missing, expired or revoked. Stop rendering a broken authenticated
+      // screen and let the user establish a new session. The login middleware allows refresh-only
+      // visitors through precisely so a stale refresh cookie cannot create a redirect loop.
+      window.location.assign("/login");
+    }
   }
   if (!res.ok) throw new ApiError(res.status, await res.text());
   return res.status === 204 ? (null as T) : ((await res.json()) as T);

@@ -1,4 +1,5 @@
 """Public (no-auth) chat API: agentic-first, only serves a ready worker."""
+from app.core.config import Environment, get_settings
 from tests.helpers import auth_cookies
 
 ISO = "IDG holds a current ISO 9001 certification valid through 2027."
@@ -10,6 +11,17 @@ def _make_ready_worker(client) -> str:
     agent = client.post("/api/v1/agents", json={"name": "IDG", "plan": "free"}, cookies=c).json()
     client.post(f"/api/v1/agents/{agent['id']}/ready", cookies=c)
     return agent["id"]
+
+
+def test_public_chat_is_disabled_by_default_outside_dev(client, monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "environment", Environment.preprod)
+    monkeypatch.setattr(settings, "public_chat_enabled", False)
+
+    response = client.post("/api/v1/public/chat", json={
+        "tenant": "pubco", "worker_id": "worker-1", "question": "hello"})
+
+    assert response.status_code == 404 and response.json() == {"detail": "not found"}
 
 
 def test_public_chat_answers_when_ready_no_auth(client):

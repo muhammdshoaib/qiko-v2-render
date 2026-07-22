@@ -1290,7 +1290,11 @@ class SqlOtpStore:
 
     async def verify(self, email: str, otp: str) -> bool:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(PasswordResetOtpRow, email.lower())
+            row = (await s.execute(
+                select(PasswordResetOtpRow)
+                .where(PasswordResetOtpRow.email == email.lower())
+                .with_for_update()
+            )).scalar_one_or_none()
             if row is None:
                 return False
             if _aware(row.expires_at) < datetime.now(timezone.utc):
