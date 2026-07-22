@@ -3,6 +3,20 @@
 # Mounted into the caddy service by docker-compose.live.yml. Mirrors the preprod Caddyfile,
 # differing only by the public domains (qiko.ai / admin.qiko.ai instead of *.preprod.qiko.ai).
 qiko.ai {
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), geolocation=(), microphone=(self)"
+	}
+	handle /embed/* {
+		respond 404
+	}
+	handle /widget.js {
+		respond 404
+	}
 	handle /api/* {
 		reverse_proxy qiko-core:8000
 	}
@@ -12,5 +26,13 @@ qiko.ai {
 }
 
 admin.qiko.ai {
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), geolocation=(), microphone=()"
+	}
 	reverse_proxy admin:3001
 }

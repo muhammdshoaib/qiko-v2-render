@@ -1,6 +1,20 @@
 # Preprod reverse proxy + automatic TLS (Let's Encrypt).
 # Creator + API share one origin (cookies stay first-party); admin on its own subdomain.
 preprod.qiko.ai {
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), geolocation=(), microphone=(self)"
+	}
+	handle /embed/* {
+		respond 404
+	}
+	handle /widget.js {
+		respond 404
+	}
 	handle /api/* {
 		reverse_proxy qiko-core:8000
 	}
@@ -10,5 +24,13 @@ preprod.qiko.ai {
 }
 
 admin.preprod.qiko.ai {
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), geolocation=(), microphone=()"
+	}
 	reverse_proxy admin:3001
 }

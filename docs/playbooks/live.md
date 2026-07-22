@@ -58,6 +58,7 @@ Store as `/qiko/live/ENV` and/or place as `.env` on the box. Real values via SSM
   tokens / Vapi / Salesforce secrets; rotating `SESSION_SECRET` must not brick these).
 - `PUBLIC_API_BASE=https://qiko.ai/api/v1` - baked into the frontend build (creator + admin).
 - `PUBLIC_BASE_URL=https://qiko.ai`
+- `PUBLIC_CHAT_ENABLED=false` (enterprise launch; `/embed/*`, `/widget.js` and the public chat API are disabled)
 - `COOKIE_DOMAIN=.qiko.ai` - so qiko.ai and admin.qiko.ai share the auth/CSRF cookies.
 - `CORS_ALLOW_ORIGINS=["https://qiko.ai","https://admin.qiko.ai"]` - MUST be a JSON array (a bare
   or comma-separated string fails to parse and the app will not start).
@@ -96,9 +97,8 @@ Do steps 1-4 with Cloudflare still NOT pointing at the box, so you validate befo
    gh workflow run deploy-live.yml -f confirm=deploy-live
    # then approve the `live` environment gate in the GitHub UI when prompted
    ```
-   The workflow's own health check hits `https://qiko.ai/api/v1/health` and will only pass once
-   Cloudflare points at the box; on the very first cutover, expect that step to go green only after
-   step 3. To validate the box before DNS, run the on-box health check in step 2 instead.
+   The on-box deploy script validates the new qiko-core container directly before reporting success.
+   It does not query public `qiko.ai`, which still points at the old origin before step 3.
 
    Equivalent manual on-box path (if not using the pipeline):
    ```bash
@@ -108,11 +108,22 @@ Do steps 1-4 with Cloudflare still NOT pointing at the box, so you validate befo
    # ensure .env is present (bootstrap from SSM on a fresh host)
    aws ssm get-parameter --region eu-central-1 --name /qiko/live/ENV --with-decryption \
      --query Parameter.Value --output text > .env
-   $C exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB"' 2>/dev/null \
-     | gzip > ~/qiko-live-$(date +%F-%H%M).sql.gz || echo "no db yet (first deploy)"
+   DB_VOLUME="${COMPOSE_PROJECT_NAME}_postgres_data"
+   EXISTING_DB=0
+   docker volume inspect "$DB_VOLUME" >/dev/null 2>&1 && EXISTING_DB=1
+   $C up -d db redis
+   # wait until both are healthy, then build while the current application still serves traffic
    $C build
-   $C up -d --force-recreate
-   $C exec -T qiko-core alembic upgrade head
+   if [ "$EXISTING_DB" -eq 1 ]; then
+     # enter a short maintenance window so no writes occur after the backup
+     $C stop caddy worker qiko-core creator admin
+     BACKUP=~/qiko-live-$(date +%F-%H%M).dump
+     $C exec -T db sh -c 'pg_dump -Fc -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$BACKUP"
+     test -s "$BACKUP" && $C exec -T db pg_restore -l < "$BACKUP" >/dev/null \
+       || { echo "backup failed" >&2; exit 1; }
+   fi
+   $C run --rm --no-deps qiko-core alembic upgrade head
+   $C up -d --force-recreate qiko-core worker creator admin caddy
    ```
 
 2. **Validate on the box before DNS** (bypass Cloudflare by resolving the domains to the box IP):
@@ -140,10 +151,48 @@ Do steps 1-4 with Cloudflare still NOT pointing at the box, so you validate befo
    expected, not a fault. Watch logs and Sentry for 10 minutes; confirm a real login, a chat answer
    and a webhook.
 
+## Provision a tenant
+
+Tenant provisioning uses an operator-owned JSON manifest and the configured `DATABASE_URL`. The CLI
+is a dry-run unless `--apply` is supplied, validates the full plan before writing, and does not send
+email. It creates or aligns the tenant, users, roles and agents in one database transaction.
+
+The real manifest contains customer email addresses, so keep it in an access-controlled path outside
+the repository. Never commit the real manifest, customer details, passwords or secrets. The
+checked-in `qiko-core/scripts/provision_tenant.example.json` uses fake `example.com` data only.
+New users receive unique unrecoverable bootstrap credentials and establish their own password through
+the reset flow; no shared initial password exists.
+
+```bash
+cp qiko-core/scripts/provision_tenant.example.json /secure/operator/path/tenant.json
+chmod 600 /secure/operator/path/tenant.json
+
+# Review first. No writes.
+cd qiko-core
+uv run python scripts/provision_tenant.py \
+  --manifest /secure/operator/path/tenant.json
+
+# Apply the reviewed manifest. Live requires the exact tenant slug as confirmation.
+uv run python scripts/provision_tenant.py \
+  --manifest /secure/operator/path/tenant.json \
+  --apply \
+  --confirm-tenant example-tenant
+
+# Repeat the dry-run. It should report zero planned changes.
+uv run python scripts/provision_tenant.py \
+  --manifest /secure/operator/path/tenant.json
+```
+
+Existing passwords are unchanged by default. `--reset-existing-passwords` replaces them with unique,
+unrecoverable values and forces each user through password reset; it is a separate reviewed
+operation. Agent config is merged, so omitted keys are preserved; set `"archived": true` to keep a
+worker hidden. Never pass a database URL, password, email address or secret on the command line.
+
 ## Rollback plan
-- **Automated (pipeline):** if the workflow health check fails it restores
-  `s3://<bucket>/live/deploy-previous.tar.gz` to `deploy-latest.tar.gz` and redeploys.
-- **Manual artifact rollback:**
+- **Controlled, manual only:** the workflow never starts a second deploy automatically after failure.
+  First wait for the original SSM command to become terminal, inspect logs and `alembic current`, and
+  confirm the previous artifact understands the current schema.
+- **Reviewed artifact rollback:**
   ```bash
   aws s3 cp s3://qiko-v2-live-deploy-064247010239/live/deploy-previous.tar.gz \
             s3://qiko-v2-live-deploy-064247010239/live/deploy-latest.tar.gz
@@ -154,9 +203,9 @@ Do steps 1-4 with Cloudflare still NOT pointing at the box, so you validate befo
   the pre-deploy dump (the redeploy script writes one to `/opt/docker/qiko/backups/`, or you took
   one manually):
   ```bash
-  gunzip -c /opt/docker/qiko/backups/qiko-live-<ts>.sql.gz | \
-    docker compose -f docker-compose.yml -f docker-compose.live.yml \
-    exec -T db sh -c 'psql -U "$POSTGRES_USER" "$POSTGRES_DB"'
+  docker compose -f docker-compose.yml -f docker-compose.live.yml \
+    exec -T db sh -c 'pg_restore --clean --if-exists -U "$POSTGRES_USER" -d "$POSTGRES_DB"' \
+    < /opt/docker/qiko/backups/qiko-live-<ts>.dump
   ```
   If the down-revision is known safe, `alembic downgrade -1` is an alternative.
 - **DNS rollback:** if the box is unhealthy and cannot be fixed quickly, revert the Cloudflare

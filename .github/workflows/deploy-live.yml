@@ -8,8 +8,8 @@ name: Deploy Live (production)
 #
 # Delivery model is identical to preprod: a clean `git archive` tarball is shipped to the live box
 # via S3, then swapped in on the host via AWS SSM Run Command (the org disables deploy keys and
-# port 22 is closed, so there is no host-side git pull). Health-check + automatic rollback to the
-# previous artifact on failure.
+# port 22 is closed, so there is no host-side git pull). The on-box script validates all required
+# services. Rollback is manual and migration-aware, never raced automatically after a failure.
 #
 # The production box is NOT hardcoded: its SSM instance id comes from the secret
 # LIVE_SSM_INSTANCE_ID (documented in docs/playbooks/live.md). Set it before the first run.
@@ -39,8 +39,10 @@ jobs:
     environment: live
     steps:
       - name: Guard - require explicit confirmation
+        env:
+          DEPLOY_CONFIRM: ${{ inputs.confirm }}
         run: |
-          if [[ "${{ github.event.inputs.confirm }}" != "deploy-live" ]]; then
+          if [[ "$DEPLOY_CONFIRM" != "deploy-live" ]]; then
             echo "::error::Refusing to deploy: type 'deploy-live' in the confirm input to proceed."
             exit 1
           fi
@@ -76,39 +78,30 @@ jobs:
             --timeout-seconds 900 --query "Command.CommandId" --output text)
           echo "Command: $CMD_ID"
           STATUS=Pending
-          for i in $(seq 1 50); do
+          # SSM allows 900 seconds. Poll beyond that timeout so a still-running command is never
+          # mistaken for failure while it is mutating the release directory or database.
+          for i in $(seq 1 70); do
             STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "${{ secrets.LIVE_SSM_INSTANCE_ID }}" --query Status --output text 2>/dev/null || echo Pending)
             echo "status=$STATUS"
             [[ "$STATUS" =~ ^(Success|Failed|Cancelled|TimedOut)$ ]] && break
             sleep 15
           done
+          if [[ ! "$STATUS" =~ ^(Success|Failed|Cancelled|TimedOut)$ ]]; then
+            echo "command is still non-terminal after the SSM timeout; cancelling before exit"
+            aws ssm cancel-command --command-id "$CMD_ID"
+            for i in $(seq 1 20); do
+              STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "${{ secrets.LIVE_SSM_INSTANCE_ID }}" --query Status --output text 2>/dev/null || echo Cancelling)
+              echo "cancel-status=$STATUS"
+              [[ "$STATUS" =~ ^(Success|Failed|Cancelled|TimedOut)$ ]] && break
+              sleep 10
+            done
+          fi
           [[ "$STATUS" == "Success" ]] || { echo "::error::deploy command ended with $STATUS"; exit 1; }
 
-      - name: Health check
-        run: |
-          ok=false
-          for i in $(seq 1 12); do
-            CODE=$(curl -s -o /dev/null -w "%{http_code}" https://qiko.ai/api/v1/health || echo 000)
-            echo "health=$CODE"
-            if [[ "$CODE" == "200" ]]; then ok=true; break; fi
-            sleep 10
-          done
-          [[ "$ok" == "true" ]] || exit 1
-
-      - name: Rollback to previous artifact on failure
+      # Production rollback is deliberately manual. An older artifact may not understand a newer
+      # Alembic revision, so an automatic second deploy can race or compound a schema failure.
+      - name: Report controlled failure
         if: failure()
         run: |
-          set -e
-          if aws s3 ls "s3://$DEPLOY_BUCKET/live/deploy-previous.tar.gz"; then
-            echo "Restoring previous artifact and redeploying..."
-            aws s3 cp "s3://$DEPLOY_BUCKET/live/deploy-previous.tar.gz" \
-              "s3://$DEPLOY_BUCKET/live/deploy-latest.tar.gz"
-            jq -Rs '{commands: [.]}' < .github/deploy/redeploy-live.sh > /tmp/redeploy.json
-            CMD_ID=$(aws ssm send-command --instance-ids "${{ secrets.LIVE_SSM_INSTANCE_ID }}" \
-              --document-name AWS-RunShellScript \
-              --parameters file:///tmp/redeploy.json \
-              --timeout-seconds 900 --query "Command.CommandId" --output text)
-            echo "Rollback command sent: $CMD_ID"
-          else
-            echo "No previous artifact to roll back to."
-          fi
+          echo "::error::Live deploy failed. Do not start another deploy until the SSM command is terminal."
+          echo "Follow docs/playbooks/live.md: inspect logs and schema, then run the reviewed rollback."
