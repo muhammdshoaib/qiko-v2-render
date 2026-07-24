@@ -32,7 +32,14 @@ export default function LoginPage() {
   return (
     <div className="flex min-h-screen items-center justify-center px-4 bg-background">
       <Card className="w-full max-w-md bg-card/90 border-border/50">
-        <CardHeader>
+        <CardHeader className="text-center">
+          <img
+            src="https://qiko.ai/qiko-logo-email.png"
+            alt="Qiko"
+            width={120}
+            height={48}
+            className="mx-auto mb-3 h-12 w-[120px] object-contain"
+          />
           <CardTitle>Admin Sign In</CardTitle>
           <CardDescription>Use your admin credentials to continue.</CardDescription>
         </CardHeader>

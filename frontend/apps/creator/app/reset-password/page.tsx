@@ -144,11 +144,13 @@ export default function ResetPassword() {
 
         <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
           <CardHeader className="text-center">
-            <div className="mx-auto mb-4">
-              <span className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent">
-                Qiko
-              </span>
-            </div>
+            <img
+              src="/qiko-logo-email.png"
+              alt="Qiko"
+              width={120}
+              height={48}
+              className="mx-auto mb-4 h-12 w-[120px] object-contain"
+            />
             <CardTitle className="text-2xl text-white">Reset your password</CardTitle>
             {!success && (
               <CardDescription className="text-slate-400">

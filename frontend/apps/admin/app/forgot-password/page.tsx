@@ -15,8 +15,10 @@ export default function ForgotPasswordPage() {
     setLoading(true);
     setMessage(null);
     try {
-      await forgotPassword(email);
-      setMessage("If that email exists, a reset code has been sent.");
+      const normalisedEmail = email.trim().toLowerCase();
+      await forgotPassword(normalisedEmail);
+      const creatorOrigin = window.location.origin.replace("://admin.", "://");
+      window.location.assign(`${creatorOrigin}/reset-password?email=${encodeURIComponent(normalisedEmail)}`);
     } catch {
       setMessage("Something went wrong. Please try again.");
     } finally {
@@ -27,9 +29,16 @@ export default function ForgotPasswordPage() {
   return (
     <div className="flex min-h-screen items-center justify-center px-4 bg-background">
       <Card className="w-full max-w-md bg-card/90 border-border/50">
-        <CardHeader>
+        <CardHeader className="text-center">
+          <img
+            src="https://qiko.ai/qiko-logo-email.png"
+            alt="Qiko"
+            width={120}
+            height={48}
+            className="mx-auto mb-3 h-12 w-[120px] object-contain"
+          />
           <CardTitle>Forgot Password</CardTitle>
-          <CardDescription>Enter your admin email to receive a reset link.</CardDescription>
+          <CardDescription>Enter your admin email to receive a one-time code.</CardDescription>
         </CardHeader>
         <CardContent>
           <form className="space-y-4" onSubmit={onSubmit}>
@@ -39,7 +48,7 @@ export default function ForgotPasswordPage() {
                 placeholder="you@company.com" required />
             </div>
             {message && <p className="text-sm text-muted-foreground">{message}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>{loading ? "Sending..." : "Send reset link"}</Button>
+            <Button type="submit" className="w-full" disabled={loading}>{loading ? "Sending..." : "Send one-time code"}</Button>
           </form>
           <p className="mt-4 text-xs text-muted-foreground">
             Back to <Link href="/login" className="text-primary hover:underline">sign in</Link>

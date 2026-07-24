@@ -51,7 +51,7 @@ export default function ForgotPassword() {
       await forgotPasswordAvatar(normalisedEmail);
       const storage = getPasswordResetSessionStorage(window);
       storePasswordResetEmail(storage, normalisedEmail);
-      toast.success("Reset email sent. Check your email, copy the code, and follow the reset link.");
+      toast.success("One-time code sent. Check your email and enter the code below.");
       setLocation(`/reset-password?email=${encodeURIComponent(normalisedEmail)}`);
     } catch (error: any) {
       console.error("Forgot password error:", error);
@@ -78,18 +78,20 @@ export default function ForgotPassword() {
 
         <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
           <CardHeader className="text-center">
-            <div className="mx-auto mb-4">
-              <span className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-transparent">
-                Qiko
-              </span>
-            </div>
+            <img
+              src="/qiko-logo-email.png"
+              alt="Qiko"
+              width={120}
+              height={48}
+              className="mx-auto mb-4 h-12 w-[120px] object-contain"
+            />
             <CardTitle className="text-2xl text-white">
               {isAuthenticated ? "Change password?" : "Forgot password?"}
             </CardTitle>
             <CardDescription className="text-slate-400">
               {isAuthenticated
-                ? `We'll send a reset link and verification code to ${user?.email}.`
-                : "Enter your email and we'll send you a reset link and verification code."}
+                ? `We'll send a one-time code to ${user?.email}.`
+                : "Enter your email and we'll send you a one-time code."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -126,7 +128,7 @@ export default function ForgotPassword() {
                       Sending...
                     </>
                   ) : (
-                    "Send reset link"
+                    "Send one-time code"
                   )}
                 </Button>
               </form>
