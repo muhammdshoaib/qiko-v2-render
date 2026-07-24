@@ -145,11 +145,14 @@ Do steps 1-4 with Cloudflare still NOT pointing at the box, so you validate befo
    ```bash
    curl -sf https://qiko.ai/api/v1/health           # 200
    curl -sfI https://admin.qiko.ai/                  # 200/redirect to login
+   curl -sSf -o /dev/null -w '%{http_code} %{content_type}\n' \
+     https://qiko.ai/qiko-logo-email.png             # exactly: 200 image/png
    BASE_URL=https://qiko.ai k6 run loadtest/smoke.js # smoke + SLOs
    ```
-   The arq `worker` container reports "unhealthy" by design (no HTTP server on :8000); that is
-   expected, not a fault. Watch logs and Sentry for 10 minutes; confirm a real login, a chat answer
-   and a webhook.
+   The email wordmark uses the stable live URL above. Deploy and verify the live PNG asset before
+   sending any preprod test email, because preprod email deliberately loads that live asset. The arq
+   `worker` container reports "unhealthy" by design (no HTTP server on :8000); that is expected, not
+   a fault. Watch logs and Sentry for 10 minutes; confirm a real login, a chat answer and a webhook.
 
 ## Provision a tenant
 

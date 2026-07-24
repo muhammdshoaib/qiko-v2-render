@@ -7,7 +7,15 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core.deps import authed_tenant, current_claims, get_assignments, require_role
+from app.core.deps import (
+    authed_tenant,
+    current_claims,
+    get_assignments,
+    get_pack_tree,
+    get_rfp_packs,
+    get_user_store,
+    require_role,
+)
 from app.modules.assignments.service import (
     Assignment,
     AssignmentError,
@@ -17,6 +25,7 @@ from app.modules.assignments.service import (
 )
 from app.modules.email.sender import get_email_sender
 from app.modules.identity.rbac import Role
+from app.modules.rfp.service import RfpPackNotFound
 
 router = APIRouter(prefix="/assignments", tags=["assignments"])
 _admin = Depends(require_role(Role.admin))
@@ -34,7 +43,7 @@ def _serialize(a: Assignment) -> dict:
 class SectionAssignIn(BaseModel):
     section_id: str = Field(min_length=1)
     assignee_user_id: str = Field(min_length=1)
-    questions: list[str] = Field(min_length=1)
+    questions: list[str] = Field(default_factory=list)
     title: str | None = None
     due_at: datetime | None = None
 
@@ -56,13 +65,49 @@ class BulkAssignBody(BaseModel):
 @router.post("/bulk")
 async def bulk_assign(body: BulkAssignBody, tenant: str = Depends(authed_tenant),
                       claims: dict = Depends(current_claims), _role: dict = _admin,
-                      svc=Depends(get_assignments)) -> list[dict]:
+                      svc=Depends(get_assignments), packs=Depends(get_rfp_packs),
+                      tree=Depends(get_pack_tree), users=Depends(get_user_store)) -> list[dict]:
+    try:
+        pack = await packs.get(tenant, body.pack_id)
+    except RfpPackNotFound as e:
+        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    if body.agent_id != pack.agent_id:
+        raise HTTPException(status_code=422, detail="agent does not match RFP pack")
+
+    assignee_ids = {row.assignee_user_id for row in (*body.sections, *body.questions)}
+    for assignee_id in assignee_ids:
+        assignee = await users.get_by_id(assignee_id)
+        if assignee is None or assignee.tenant != tenant:
+            raise HTTPException(status_code=404, detail="assignee not found")
+
+    trusted_sections: list[SectionAssignBody] = []
+    trusted_agent_id = pack.agent_id
+    trusted_rfp_title = pack.title
+    if body.sections:
+        persisted_sections = await tree.list_tree(tenant, body.pack_id)
+        sections_by_id = {section["id"]: section for section in persisted_sections}
+        parent_ids = {section["parent_id"] for section in persisted_sections if section["parent_id"]}
+        for row in body.sections:
+            section = sections_by_id.get(row.section_id)
+            if section is None:
+                raise HTTPException(status_code=404, detail="section not found in RFP pack")
+            if row.section_id in parent_ids:
+                raise HTTPException(status_code=422, detail="section must be a leaf")
+            questions = [question["text"] for question in section["questions"]]
+            if not questions:
+                raise HTTPException(status_code=422, detail="leaf section has no questions")
+            trusted_sections.append(SectionAssignBody(
+                section_id=row.section_id,
+                assignee_user_id=row.assignee_user_id,
+                questions=questions,
+                title=section["name"],
+                due_at=row.due_at,
+            ))
+
     try:
         saved = await svc.bulk_assign(
-            tenant, claims["sub"], pack_id=body.pack_id, agent_id=body.agent_id, rfp_title=body.rfp_title,
-            sections=[SectionAssignBody(section_id=s.section_id, assignee_user_id=s.assignee_user_id,
-                                        questions=s.questions, title=s.title, due_at=s.due_at)
-                     for s in body.sections],
+            tenant, claims["sub"], pack_id=body.pack_id, agent_id=trusted_agent_id,
+            rfp_title=trusted_rfp_title, sections=trusted_sections,
             questions=[QuestionAssignBody(assignee_user_id=q.assignee_user_id, question=q.question,
                                           due_at=q.due_at) for q in body.questions])
     except AssignmentError as e:
@@ -116,7 +161,18 @@ class ReassignBody(BaseModel):
 
 @router.put("/{assignment_id}")
 async def reassign(assignment_id: str, body: ReassignBody, tenant: str = Depends(authed_tenant),
-                   _role: dict = _admin, svc=Depends(get_assignments)) -> dict:
+                   _role: dict = _admin, svc=Depends(get_assignments),
+                   users=Depends(get_user_store)) -> dict:
+    existing = next((item for item in await svc.list(tenant) if item.id == assignment_id), None)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="assignment not found")
+    if body.assignee_user_id is not None:
+        assignee = await users.get_by_id(body.assignee_user_id)
+        if assignee is None or assignee.tenant != tenant:
+            raise HTTPException(status_code=404, detail="assignee not found")
+    if body.question is not None and existing.section_id is not None:
+        raise HTTPException(status_code=422, detail="section assignment questions are read-only")
+
     try:
         updated = await svc.reassign(tenant, assignment_id, assignee_user_id=body.assignee_user_id,
                                      question=body.question, due_at=body.due_at)

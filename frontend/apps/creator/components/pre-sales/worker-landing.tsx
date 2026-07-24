@@ -18,6 +18,7 @@ import { OutcomesStrip, type OutcomeTile } from "@/components/cockpit/outcomes-s
 import { SourcesTab } from "@/components/pre-sales/sources-tab";
 import { SectionAssignment } from "@/components/pre-sales/section-assignment";
 import { NewTenderPanel } from "@/components/pre-sales/new-tender-panel";
+import { AI_DRAFTING_DESCRIPTION, aiDraftingPercent } from "@/components/pre-sales/metrics";
 
 type LandingView = "ai_response" | "knowledge" | "section_assignment";
 
@@ -89,15 +90,7 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
     [overviewQs],
   );
 
-  // Avg readiness = average per-pack drafting progress from gen_status.drafts (done/total).
-  const readiness = useMemo(() => {
-    const ratios = packs
-      .map((p) => p.gen_status?.drafts)
-      .filter((d): d is NonNullable<typeof d> => !!d && (d.total ?? 0) > 0)
-      .map((d) => (d.done / d.total) * 100);
-    if (ratios.length === 0) return null;
-    return Math.round(ratios.reduce((a, b) => a + b, 0) / ratios.length);
-  }, [packs]);
+  const aiDrafting = aiDraftingPercent(packs);
 
   // Next bid = nearest future deadline.
   const nextDeadline = useMemo(() => {
@@ -122,9 +115,13 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
     { value: String(packs.length), label: "Active bids", caption: "in progress" },
   ];
 
-  const stats: { label: string; value: string }[] = [
+  const stats: { label: string; value: string; description?: string }[] = [
     { label: "Active Bids", value: String(packs.length) },
-    { label: "Avg Readiness", value: readiness === null ? "-" : `${readiness}%` },
+    {
+      label: "AI Drafting",
+      value: aiDrafting === null ? "-" : `${aiDrafting}%`,
+      description: AI_DRAFTING_DESCRIPTION,
+    },
     { label: "Data volume", value: "-" },
     { label: "Next Bid", value: formatShortDate(nextDeadline) },
   ];
@@ -197,9 +194,15 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
           {/* Bottom stats block */}
           <div className="mt-auto grid grid-cols-2 gap-2">
             {stats.map((s) => (
-              <div key={s.label} className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+              <div
+                key={s.label}
+                className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5"
+                title={s.description}
+                aria-label={s.description ? `${s.label}: ${s.value}. ${s.description}` : undefined}
+              >
                 <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-500">{s.label}</p>
                 <p className="mt-1 truncate text-[15px] font-bold text-white">{s.value}</p>
+                {s.description && <p className="mt-1 text-[9px] leading-3 text-slate-500">{s.description}</p>}
               </div>
             ))}
           </div>

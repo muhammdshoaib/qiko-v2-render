@@ -18,7 +18,7 @@ export const options = {
 const BASE = __ENV.BASE_URL || "http://localhost:8000";
 
 export default function () {
-  const res = http.get(`${BASE}/health`);
+  const res = http.get(`${BASE}/api/v1/health`);
   check(res, { "status is 200": (r) => r.status === 200 });
   sleep(1);
 }

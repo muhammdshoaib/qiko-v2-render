@@ -11,6 +11,7 @@ import {
   type Agent, type FinanceAnalytics, type RfpPack, type SalesOpportunity,
 } from "@/lib/api";
 import { normalizeFinanceSummary } from "@/components/finance/utils";
+import { AI_DRAFTING_DESCRIPTION, aiDraftingPercent } from "@/components/pre-sales/metrics";
 import { formatShortDate, toTitleFromSlug } from "@/lib/stringUtils";
 
 function workerCategory(a: Agent): string {
@@ -121,7 +122,7 @@ export default function StudioPage() {
                     const finance = isFinanceWorker(a);
                     const preSales = a.atype === "pre_sales_writer";
 
-                    let metrics: { label: string; value: string }[];
+                    let metrics: { label: string; value: string; description?: string }[];
                     let useCaseCount: number;
                     let href: string;
                     if (finance) {
@@ -160,23 +161,15 @@ export default function StudioPage() {
                     } else if (preSales) {
                       const packs: RfpPack[] = packsQ[idx]?.data ?? [];
                       const activeBids = packs.length;
-                      // Readiness = how far each bid's answers are drafted (from the live gen_status
-                      // drafts progress), averaged. The legacy pack.stage is no longer advanced by the
-                      // stepper flow, so counting stage==="review"/"final" always read 0%.
-                      const readinessOf = (p: RfpPack) => {
-                        const d = p.gen_status?.drafts;
-                        if (d && typeof d.total === "number" && d.total > 0) {
-                          return Math.round(((d.done ?? 0) / d.total) * 100);
-                        }
-                        return p.stage === "review" || p.stage === "final" ? 100 : 0;
-                      };
-                      const avgReadiness = activeBids > 0
-                        ? Math.round(packs.reduce((sum, p) => sum + readinessOf(p), 0) / activeBids)
-                        : 0;
+                      const aiDrafting = aiDraftingPercent(packs);
                       const nextDeadline = packs.map((p) => p.deadline).filter(Boolean).sort()[0] ?? null;
                       metrics = [
                         { label: "Active Bids", value: String(activeBids) },
-                        { label: "Avg Readiness", value: activeBids > 0 ? `${avgReadiness}%` : "-" },
+                        {
+                          label: "AI Drafting",
+                          value: aiDrafting === null ? "-" : `${aiDrafting}%`,
+                          description: AI_DRAFTING_DESCRIPTION,
+                        },
                         { label: "Data volume", value: `${dataVolume} chunks` },
                         { label: "Next Bid", value: nextDeadline ? formatShortDate(nextDeadline) : "-" },
                       ];
@@ -232,9 +225,15 @@ export default function StudioPage() {
                           </div>
                           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
                             {metrics.map((m) => (
-                              <div key={m.label} className="rounded-lg border border-white/[0.04] bg-white/[0.02] px-3 py-2.5">
+                              <div
+                                key={m.label}
+                                className="rounded-lg border border-white/[0.04] bg-white/[0.02] px-3 py-2.5"
+                                title={m.description}
+                                aria-label={m.description ? `${m.label}: ${m.value}. ${m.description}` : undefined}
+                              >
                                 <p className="text-[17px] font-bold text-white" style={{ fontFamily: "var(--font-display)" }}>{m.value}</p>
                                 <p className="mt-0.5 text-[9px] text-slate-500">{m.label}</p>
+                                {m.description && <p className="mt-1 text-[9px] leading-3 text-slate-500">{m.description}</p>}
                               </div>
                             ))}
                           </div>

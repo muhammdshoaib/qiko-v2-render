@@ -90,6 +90,8 @@ Named volumes keep the data. If a migration is bad, `alembic downgrade -1` (only
 down-revision is safe), else restore from the latest backup (see the live playbook).
 
 ## Gate before promoting to live
+- Do not send a preprod test email until the live `https://qiko.ai/qiko-logo-email.png` asset has
+  been deployed and verified as HTTP 200 with `Content-Type: image/png` using the live playbook.
 - All CI green (ruff + pytest coverage, frontend lint + build), k6 SLOs met (error rate < 1%,
   p95 < 800 ms).
 - OWASP checklist reviewed (`loadtest/SLOs-and-hardening-checklist.md`).

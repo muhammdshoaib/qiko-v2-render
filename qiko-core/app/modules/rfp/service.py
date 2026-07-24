@@ -1,8 +1,8 @@
 """RFP pack lifecycle: each pack is one tender a worker is answering, scoped to a tenant + agent.
 
 A pack goes through the same 5-stage pipeline shown in the IDG cockpit prototype:
-parsed -> assigned -> drafting -> review -> final. Coverage % (used by Studio's "Avg Readiness"
-metric) is answered-requirements / total-requirements for the pack.
+parsed -> assigned -> drafting -> review -> final. Pack coverage is answered requirements divided by
+total requirements; Studio's AI Drafting metric instead uses persisted draft generation totals.
 """
 from __future__ import annotations
 

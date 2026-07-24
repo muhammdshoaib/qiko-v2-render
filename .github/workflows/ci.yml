@@ -7,6 +7,10 @@ on:
     branches: [main, dev]
   pull_request:
 
+permissions:
+  contents: read
+  pull-requests: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -60,4 +64,5 @@ jobs:
         with: {node-version: "20", cache: pnpm, cache-dependency-path: frontend/pnpm-lock.yaml}
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r lint
+      - run: pnpm --filter creator test
       - run: pnpm -r build   # typecheck + Next production build for creator + admin

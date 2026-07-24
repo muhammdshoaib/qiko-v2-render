@@ -10,6 +10,11 @@ import { Loader2, ArrowLeft, AlertCircle } from "lucide-react";
 import { Link } from "@/lib/wouter";
 import { toast } from "sonner";
 import { forgotPasswordAvatar } from "@/lib/avatarApi";
+import {
+  getPasswordResetSessionStorage,
+  normalisePasswordResetEmail,
+  storePasswordResetEmail,
+} from "@/lib/password-reset-session";
 
 export default function ForgotPassword() {
   const [, setLocation] = useLocation();
@@ -42,9 +47,12 @@ export default function ForgotPassword() {
     setIsLoading(true);
 
     try {
-      await forgotPasswordAvatar(email);
-      toast.success("Check your email for the verification code.");
-      setLocation(`/reset-password?email=${encodeURIComponent(email)}`);
+      const normalisedEmail = normalisePasswordResetEmail(email);
+      await forgotPasswordAvatar(normalisedEmail);
+      const storage = getPasswordResetSessionStorage(window);
+      storePasswordResetEmail(storage, normalisedEmail);
+      toast.success("Reset email sent. Check your email, copy the code, and follow the reset link.");
+      setLocation(`/reset-password?email=${encodeURIComponent(normalisedEmail)}`);
     } catch (error: any) {
       console.error("Forgot password error:", error);
       const errorMsg = error.message || "Failed to send reset email. Please try again.";
@@ -79,8 +87,9 @@ export default function ForgotPassword() {
               {isAuthenticated ? "Change password?" : "Forgot password?"}
             </CardTitle>
             <CardDescription className="text-slate-400">
-              { isAuthenticated ? `We’ll send a verification code to ${user?.email}
- to reset your password.` : "Enter your email and we'll send you a verification code to reset your password"}
+              {isAuthenticated
+                ? `We'll send a reset link and verification code to ${user?.email}.`
+                : "Enter your email and we'll send you a reset link and verification code."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -117,7 +126,7 @@ export default function ForgotPassword() {
                       Sending...
                     </>
                   ) : (
-                    "Send verification code"
+                    "Send reset link"
                   )}
                 </Button>
               </form>

@@ -15,6 +15,7 @@ node_modules/
 .next/
 .turbo/
 dist/
+.node-test-build/
 *.tsbuildinfo
 
 # Playwright
