@@ -14,6 +14,7 @@ import {
   type Assignee, type Assignment, type AssignmentDashboardRow, type PackSectionNode, type RfpPack,
 } from "@/lib/api";
 import { Input, Select } from "@/components/cockpit/controls";
+import { assignableSections } from "@/components/pre-sales/section-assignment-utils";
 import { formatShortDate } from "@/lib/stringUtils";
 
 export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentId: string }) {
@@ -89,6 +90,7 @@ export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentI
   });
 
   const assignments = assignmentsQ.data ?? [];
+  const sections = assignableSections(sectionsQ.data ?? []);
 
   return (
     <div className="space-y-6">
@@ -152,11 +154,11 @@ export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentI
               <div className="mt-4 space-y-2">
                 {[0, 1, 2].map((i) => <div key={i} className="h-12 animate-pulse rounded-lg bg-white/[0.04]" />)}
               </div>
-            ) : (sectionsQ.data?.length ?? 0) === 0 ? (
+            ) : sections.length === 0 ? (
               <p className="mt-4 text-[13px] text-slate-500">No sections parsed for this RFP yet.</p>
             ) : (
               <ul className="mt-4 space-y-2">
-                {sectionsQ.data?.map((s) => (
+                {sections.map((s) => (
                   <SectionAssignRow
                     key={s.id}
                     section={s}

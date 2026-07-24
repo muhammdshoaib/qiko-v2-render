@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
-import { useRoute, useLocation, Link } from "@/lib/wouter";
+import { useRouter } from "next/navigation";
+import { useRoute, Link } from "@/lib/wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,19 +14,25 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useAppDispatch } from "@/store/hooks";
 import { setAuth, type UserInfo } from "@/store/slices/authSlice";
 import { arePasswordRequirementsMet, getPasswordRequirements } from "@/lib/passwordRequirements";
+import {
+  clearPasswordResetEmail,
+  getPasswordResetSessionStorage,
+  resolvePasswordResetEmail,
+} from "@/lib/password-reset-session";
 
 export default function ResetPassword() {
-  const [, setLocation] = useLocation();
+  const router = useRouter();
   const dispatch = useAppDispatch();
   const [, pathParams] = useRoute("/reset-password/:otp");
   const { isAuthenticated, loading } = useAuth();
   const pathOtp = pathParams?.otp ?? "";
   const queryParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const queryOtp = queryParams?.get("otp") ?? queryParams?.get("token") ?? "";
-  const queryEmail = queryParams?.get("email") ?? "";
+  const queryEmail = queryParams?.get("email") ?? null;
   const initialOtp = pathOtp || queryOtp;
 
-  const [email, setEmail] = useState(queryEmail);
+  const [email, setEmail] = useState("");
+  const [emailResolved, setEmailResolved] = useState(false);
   const [otp, setOtp] = useState(initialOtp);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -38,10 +45,18 @@ export default function ResetPassword() {
     if (initialOtp) setOtp(initialOtp);
   }, [initialOtp]);
   useEffect(() => {
-    if (queryEmail) setEmail(queryEmail);
-  }, [queryEmail]);
+    if (typeof window === "undefined") return;
+    const storage = getPasswordResetSessionStorage(window);
+    const resolvedEmail = resolvePasswordResetEmail(queryEmail, storage);
+    if (resolvedEmail) {
+      setEmail(resolvedEmail);
+    } else {
+      router.replace("/forgot-password");
+    }
+    setEmailResolved(true);
+  }, [queryEmail, router]);
 
-  if (loading) {
+  if (loading || !emailResolved || !email) {
     return (
       <div className="min-h-screen bg-[#050810] flex items-center justify-center">
         <div className="text-slate-400">Loading...</div>
@@ -96,8 +111,14 @@ export default function ResetPassword() {
           dispatch(setAuth({ token, userInfo }));
         }
       }
+      const storage = getPasswordResetSessionStorage(window);
+      clearPasswordResetEmail(storage);
       setSuccess(true);
-      toast.success("Password reset successfully!");
+      toast.success(
+        isAuthenticated
+          ? "Password reset successfully."
+          : "Password reset successfully. You can now sign in with your new password.",
+      );
     } catch (error: any) {
       console.error("Reset password error:", error);
       const errorMsg = error.message || "Failed to reset password. Please try again.";
@@ -129,9 +150,11 @@ export default function ResetPassword() {
               </span>
             </div>
             <CardTitle className="text-2xl text-white">Reset your password</CardTitle>
-            { !success && <CardDescription className="text-slate-400">
-              Enter your new password below
-            </CardDescription> }
+            {!success && (
+              <CardDescription className="text-slate-400">
+                We have sent a reset link to your email. Please check your email, copy the code, and click &quot;Reset Password.&quot;
+              </CardDescription>
+            )}
           </CardHeader>
           <CardContent>
             {success ? (
@@ -152,20 +175,6 @@ export default function ResetPassword() {
                     Sign in
                   </Button>
                 </Link>}
-              </div>
-            ) : !queryEmail ? (
-              <div className="space-y-4">
-                <div className="flex items-start gap-3 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-                  <AlertCircle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-amber-400 text-sm">
-                    Please request a password reset first. We'll send a verification code to your email.
-                  </p>
-                </div>
-                <Link href="/forgot-password">
-                  <Button variant="outline" className="w-full border-slate-600 text-slate-300 hover:bg-slate-800">
-                    Go to forgot password
-                  </Button>
-                </Link>
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4 w-full">
@@ -274,7 +283,7 @@ export default function ResetPassword() {
                       Resetting...
                     </>
                   ) : (
-                    "Reset password"
+                    "Reset Password"
                   )}
                 </Button>
               </form>

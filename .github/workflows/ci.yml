@@ -60,4 +60,5 @@ jobs:
         with: {node-version: "20", cache: pnpm, cache-dependency-path: frontend/pnpm-lock.yaml}
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r lint
+      - run: pnpm --filter creator test
       - run: pnpm -r build   # typecheck + Next production build for creator + admin

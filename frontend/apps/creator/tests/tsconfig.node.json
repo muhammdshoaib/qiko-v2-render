@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "esModuleInterop": true,
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "outDir": "../.node-test-build",
+    "resolveJsonModule": true,
+    "rootDir": "..",
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ES2020"
+  },
+  "include": [
+    "jake-fixes.test.ts",
+    "fixtures/proc-sections.json",
+    "../components/pre-sales/metrics.ts",
+    "../components/pre-sales/section-assignment-utils.ts",
+    "../lib/password-reset-session.ts"
+  ]
+}

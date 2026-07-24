@@ -40,7 +40,7 @@ test.describe("IDG worker - grounded answering critical path", () => {
 
     // Overview is the default tab: metric tiles + use-case grid (Studio dashboard, SCRUM-70).
     await expect(page.getByText("Active Bids")).toBeVisible();
-    await expect(page.getByText("Avg Readiness")).toBeVisible();
+    await expect(page.getByText("AI Drafting")).toBeVisible();
     await expect(page.getByText("AI Response Generation")).toBeVisible();
     await expect(page.getByText("Compliance Checker")).toBeVisible();
     await expect(page.getByText("Coming soon").first()).toBeVisible();

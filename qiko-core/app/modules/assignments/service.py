@@ -176,8 +176,7 @@ class AssignmentService:
 
     async def dashboard(self, tenant: str, pack_id: str, member_user_ids: list[str]) -> list[dict]:
         """Per-member rollup for a pack: assigned/completed/pending counts, progress %, overdue
-        flag, and the list of sections they own -- this is what feeds the Studio 'Avg Readiness'
-        metric once wired up client-side."""
+        flag, and the list of sections they own."""
         now = _now()
         rows = []
         for uid in member_user_ids:

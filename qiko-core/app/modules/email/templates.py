@@ -10,6 +10,11 @@ import html as _html
 
 BRAND = "Qiko"
 BRAND_COLOUR = "#4f46e5"  # indigo/violet wordmark + button
+BRAND_LOGO_URL = "https://qiko.ai/qiko-logo-email.png"
+BRAND_LOGO_HTML = (
+    f'<img src="{BRAND_LOGO_URL}" alt="{BRAND}" width="200" height="80" '
+    'style="display:block; width:200px; height:80px; border:0; outline:none; text-decoration:none;">'
+)
 INK = "#1f2937"  # dark-on-light body text
 MUTED = "#6b7280"  # secondary/footer text
 
@@ -82,8 +87,7 @@ border:1px solid #e5e7eb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI
 Helvetica,Arial,sans-serif;">
 <tr>
 <td style="padding:32px 32px 8px 32px;">
-<span style="font-size:24px; font-weight:700; letter-spacing:-0.5px; \
-color:{BRAND_COLOUR};">{BRAND}</span>
+{BRAND_LOGO_HTML}
 </td>
 </tr>
 <tr>
@@ -240,7 +244,7 @@ def password_reset_code_email(code: str, *, reset_url: str, minutes: int = 10) -
     text_body = (
         "Hello,\n\n"
         f"We received a request to reset your {BRAND} password. "
-        "Use this code to continue:\n\n"
+        "Please copy this code and follow the link below to continue.\n\n"
         f"    {code}\n\n"
         f"This code expires in {minutes} minutes.\n\n"
         f"You can also reset your password here:\n{reset_url}\n\n"
@@ -250,6 +254,7 @@ def password_reset_code_email(code: str, *, reset_url: str, minutes: int = 10) -
 
     code_e = _html.escape(code)
     url_e = _html.escape(reset_url, quote=True)
+    minutes_e = _html.escape(str(minutes))
     html_body = f"""\
 <!DOCTYPE html>
 <html lang="en">
@@ -271,8 +276,7 @@ border:1px solid #e5e7eb; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI
 Helvetica,Arial,sans-serif;">
 <tr>
 <td style="padding:32px 32px 8px 32px;">
-<span style="font-size:24px; font-weight:700; letter-spacing:-0.5px; \
-color:{BRAND_COLOUR};">{BRAND}</span>
+{BRAND_LOGO_HTML}
 </td>
 </tr>
 <tr>
@@ -280,7 +284,7 @@ color:{BRAND_COLOUR};">{BRAND}</span>
 <h1 style="margin:0; font-size:20px; line-height:28px; color:{INK}; \
 font-weight:700;">Reset your password</h1>
 <p style="margin:12px 0 0 0; font-size:15px; line-height:22px; color:{INK};">
-We received a request to reset your {BRAND} password. Enter the code below to continue.
+We received a request to reset your {BRAND} password. Please copy this code and follow the link below to continue.
 </p>
 </td>
 </tr>
@@ -296,7 +300,7 @@ font-weight:700; letter-spacing:8px; color:{INK};">{code_e}</span>
 </tr>
 </table>
 <p style="margin:12px 0 0 0; font-size:13px; line-height:20px; color:{MUTED}; \
-text-align:center;">This code expires in {minutes} minutes.</p>
+text-align:center;">This code expires in {minutes_e} minutes.</p>
 </td>
 </tr>
 <tr>
