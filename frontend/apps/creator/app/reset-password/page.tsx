@@ -152,7 +152,7 @@ export default function ResetPassword() {
             <CardTitle className="text-2xl text-white">Reset your password</CardTitle>
             {!success && (
               <CardDescription className="text-slate-400">
-                We have sent a reset link to your email. Please check your email, copy the code, and click &quot;Reset Password.&quot;
+                We have sent a one-time code to the provided email address. Please check your email and enter the code below.
               </CardDescription>
             )}
           </CardHeader>

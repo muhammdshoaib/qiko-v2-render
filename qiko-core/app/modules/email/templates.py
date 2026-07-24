@@ -240,20 +240,22 @@ def password_reset_code_email(code: str, *, reset_url: str, minutes: int = 10) -
     fallback for clients that do not render HTML.
     """
     subject = f"Your {BRAND} password reset code"
+    instruction = (
+        f"We received a request to reset your {BRAND} password. Please enter the code below into "
+        "the platform to reset your password."
+    )
 
     text_body = (
         "Hello,\n\n"
-        f"We received a request to reset your {BRAND} password. "
-        "Please copy this code and follow the link below to continue.\n\n"
+        f"{instruction}\n\n"
         f"    {code}\n\n"
         f"This code expires in {minutes} minutes.\n\n"
-        f"You can also reset your password here:\n{reset_url}\n\n"
         "If you did not request this, you can ignore this email; your password will not change.\n\n"
         f"Thanks,\nThe {BRAND} team"
     )
 
+    instruction_e = _html.escape(instruction)
     code_e = _html.escape(code)
-    url_e = _html.escape(reset_url, quote=True)
     minutes_e = _html.escape(str(minutes))
     html_body = f"""\
 <!DOCTYPE html>
@@ -284,7 +286,7 @@ Helvetica,Arial,sans-serif;">
 <h1 style="margin:0; font-size:20px; line-height:28px; color:{INK}; \
 font-weight:700;">Reset your password</h1>
 <p style="margin:12px 0 0 0; font-size:15px; line-height:22px; color:{INK};">
-We received a request to reset your {BRAND} password. Please copy this code and follow the link below to continue.
+{instruction_e}
 </p>
 </td>
 </tr>
@@ -301,19 +303,6 @@ font-weight:700; letter-spacing:8px; color:{INK};">{code_e}</span>
 </table>
 <p style="margin:12px 0 0 0; font-size:13px; line-height:20px; color:{MUTED}; \
 text-align:center;">This code expires in {minutes_e} minutes.</p>
-</td>
-</tr>
-<tr>
-<td align="center" style="padding:24px 32px 0 32px;">
-<table role="presentation" cellpadding="0" cellspacing="0" border="0">
-<tr>
-<td align="center" style="border-radius:8px; background-color:{BRAND_COLOUR};">
-<a href="{url_e}" target="_blank" style="display:inline-block; padding:12px 28px; \
-font-size:15px; font-weight:600; color:#ffffff; text-decoration:none; border-radius:8px;">\
-Reset password</a>
-</td>
-</tr>
-</table>
 </td>
 </tr>
 <tr>

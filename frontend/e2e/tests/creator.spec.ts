@@ -38,7 +38,7 @@ test.describe("Creator app - critical path", () => {
 
     await expect(page).toHaveURL(/\/reset-password\?email=storage\.blocked%40example\.test$/);
     await expect(page.getByText(
-      'We have sent a reset link to your email. Please check your email, copy the code, and click "Reset Password."',
+      "We have sent a one-time code to the provided email address. Please check your email and enter the code below.",
     )).toBeVisible();
     await expect(page.locator("#email")).toHaveValue("storage.blocked@example.test");
   });
