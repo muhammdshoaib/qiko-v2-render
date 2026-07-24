@@ -146,8 +146,13 @@ export function QikoFooter({ onSignal, onLabs, onAbout, onSignIn, onGetStarted }
           <a onClick={onGetStarted} style={linkStyle}>Get started</a>
         </div>
       </div>
-      <div style={{ maxWidth: 1200, margin: "0 auto", padding: "20px 24px 34px", borderTop: "1px solid #11192b", fontFamily: "'Geist Mono',monospace", fontSize: 11.5, color: "#4f5a6d" }}>
-        &copy; {new Date().getFullYear()} Qiko
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between" style={{ maxWidth: 1200, margin: "0 auto", padding: "20px 24px 34px", borderTop: "1px solid #11192b", fontFamily: "'Geist Mono',monospace", fontSize: 11.5, color: "#4f5a6d" }}>
+        <span>&copy; {new Date().getFullYear()} Qiko</span>
+        <nav aria-label="Legal" className="flex flex-wrap gap-4">
+          <a href="/terms" className="transition-colors hover:text-slate-300">Terms</a>
+          <a href="/privacy" className="transition-colors hover:text-slate-300">Privacy</a>
+          <a href="/cookies" className="transition-colors hover:text-slate-300">Cookies</a>
+        </nav>
       </div>
     </footer>
   );

@@ -17,6 +17,10 @@ import { Input, Select } from "@/components/cockpit/controls";
 import { assignableSections } from "@/components/pre-sales/section-assignment-utils";
 import { formatShortDate } from "@/lib/stringUtils";
 
+function isAssignmentOverdue(assignment: Assignment): boolean {
+  return assignment.status === "pending" && !!assignment.due_at && new Date(assignment.due_at).getTime() < Date.now();
+}
+
 export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentId: string }) {
   const qc = useQueryClient();
   const [packId, setPackId] = useState<string>(packs[0]?.id ?? "");
@@ -91,6 +95,8 @@ export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentI
 
   const assignments = assignmentsQ.data ?? [];
   const sections = assignableSections(sectionsQ.data ?? []);
+  const pendingAssignments = assignments.filter((assignment) => assignment.status === "pending");
+  const canSendReminder = pendingAssignments.length > 0;
 
   return (
     <div className="space-y-6">
@@ -111,12 +117,13 @@ export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentI
           <button
             type="button"
             onClick={() => remind.mutate({})}
-            disabled={!packId || remind.isPending}
-            aria-label="Send reminders for this RFP"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50"
+            disabled={!packId || assignmentsQ.isLoading || remind.isPending || !canSendReminder}
+            aria-label={canSendReminder ? `Send reminders for ${pendingAssignments.length} pending assignments` : "No pending assignments to remind"}
+            title={canSendReminder ? undefined : "No pending assignments to remind"}
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {remind.isPending ? <Loader2 className="size-4 animate-spin" /> : <Bell className="size-4" />}
-            Send reminder
+            {canSendReminder ? `Send reminder (${pendingAssignments.length})` : "No pending reminders"}
           </button>
         </div>
       </div>
@@ -197,43 +204,48 @@ export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentI
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/[0.04]">
-                    {assignments.map((a) => (
-                      <tr key={a.id} className="hover:bg-white/[0.02]">
-                        <td className="px-4 py-2.5 text-[12px] text-slate-200">{a.section_title || "-"}</td>
-                        <td className="max-w-[280px] px-4 py-2.5 text-[12px] text-slate-400">
-                          <span className="line-clamp-2">{a.question}</span>
-                        </td>
-                        <td className="px-4 py-2.5 text-[12px] text-slate-300">{assigneeName(a.assignee_user_id)}</td>
-                        <td className="px-4 py-2.5 text-[12px] text-slate-400">{formatShortDate(a.due_at)}</td>
-                        <td className="px-4 py-2.5">
-                          <button
-                            type="button"
-                            onClick={() => toggleStatus.mutate(a)}
-                            disabled={toggleStatus.isPending}
-                            aria-label={`Mark ${a.status === "completed" ? "pending" : "completed"}`}
-                            className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold capitalize transition-colors disabled:opacity-50",
-                              a.status === "completed"
-                                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
-                                : "border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20")}
-                          >
-                            {a.status}
-                          </button>
-                        </td>
-                        <td className="px-4 py-2.5 text-right">
-                          {a.section_id && (
+                    {assignments.map((a) => {
+                      const overdue = isAssignmentOverdue(a);
+                      return (
+                        <tr key={a.id} className="hover:bg-white/[0.02]">
+                          <td className="px-4 py-2.5 text-[12px] text-slate-200">{a.section_title || "-"}</td>
+                          <td className="max-w-[280px] px-4 py-2.5 text-[12px] text-slate-400">
+                            <span className="line-clamp-2">{a.question}</span>
+                          </td>
+                          <td className="px-4 py-2.5 text-[12px] text-slate-300">{assigneeName(a.assignee_user_id)}</td>
+                          <td className={cn("px-4 py-2.5 text-[12px]", overdue ? "text-red-400" : "text-slate-400")}>{formatShortDate(a.due_at)}</td>
+                          <td className="px-4 py-2.5">
                             <button
                               type="button"
-                              onClick={() => { if (window.confirm("Remove all assignments for this section?")) removeSection.mutate(a.section_id as string); }}
-                              disabled={removeSection.isPending}
-                              aria-label={`Delete assignments for ${a.section_title || "section"}`}
-                              className="rounded-md p-1.5 text-slate-500 hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-50"
+                              onClick={() => toggleStatus.mutate(a)}
+                              disabled={toggleStatus.isPending}
+                              aria-label={`Mark ${a.status === "completed" ? "pending" : "completed"}`}
+                              className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold capitalize transition-colors disabled:opacity-50",
+                                a.status === "completed"
+                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                                  : overdue
+                                    ? "border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                                    : "border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20")}
                             >
-                              <Trash2 className="size-4" />
+                              {overdue ? "overdue" : a.status}
                             </button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-4 py-2.5 text-right">
+                            {a.section_id && (
+                              <button
+                                type="button"
+                                onClick={() => { if (window.confirm("Remove all assignments for this section?")) removeSection.mutate(a.section_id as string); }}
+                                disabled={removeSection.isPending}
+                                aria-label={`Delete assignments for ${a.section_title || "section"}`}
+                                className="rounded-md p-1.5 text-slate-500 hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-50"
+                              >
+                                <Trash2 className="size-4" />
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>

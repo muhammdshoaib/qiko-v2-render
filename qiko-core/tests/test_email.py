@@ -117,7 +117,7 @@ def test_branded_email_html_uses_the_remote_png_logo_and_keeps_plaintext_complet
     for subject, text_body, html_body in emails:
         assert '<img src="https://qiko.ai/qiko-logo-email.png"' in html_body
         assert 'alt="Qiko"' in html_body
-        assert 'width="200"' in html_body
+        assert 'width="140"' in html_body
         assert "display:block" in html_body
         assert "data:image" not in html_body.lower()
         assert "cid:" not in html_body.lower()

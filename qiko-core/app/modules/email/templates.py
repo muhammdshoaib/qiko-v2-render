@@ -12,8 +12,8 @@ BRAND = "Qiko"
 BRAND_COLOUR = "#4f46e5"  # indigo/violet wordmark + button
 BRAND_LOGO_URL = "https://qiko.ai/qiko-logo-email.png"
 BRAND_LOGO_HTML = (
-    f'<img src="{BRAND_LOGO_URL}" alt="{BRAND}" width="200" height="80" '
-    'style="display:block; width:200px; height:80px; border:0; outline:none; text-decoration:none;">'
+    f'<img src="{BRAND_LOGO_URL}" alt="{BRAND}" width="140" height="56" '
+    'style="display:block; width:140px; height:56px; border:0; outline:none; text-decoration:none;">'
 )
 INK = "#1f2937"  # dark-on-light body text
 MUTED = "#6b7280"  # secondary/footer text
