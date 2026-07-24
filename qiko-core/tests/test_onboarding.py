@@ -149,8 +149,8 @@ def test_forgot_password_sends_branded_multipart_email_from_public_url():
     assert response.status_code == 200 and response.json()["sent"] is True
     assert len(mail.sent) == 1
     sent = mail.sent[0]
-    assert "https://preprod.qiko.ai/reset-password?email=person%40example.com" in sent["body"]
-    assert "https://preprod.qiko.ai/reset-password?email=person%40example.com" in sent["html"]
+    assert "https://preprod.qiko.ai/reset-password?email=person%40example.com" not in sent["body"]
+    assert "https://preprod.qiko.ai/reset-password?email=person%40example.com" not in sent["html"]
 
 
 def test_forgot_password_unknown_address_returns_same_response_without_sending():

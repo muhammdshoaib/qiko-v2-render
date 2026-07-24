@@ -38,15 +38,19 @@ def test_password_reset_code_email_is_branded_complete_and_escapes_dynamic_conte
     assert subject == "Your Qiko password reset code"
     assert text_body
     assert code in text_body
-    assert reset_url in text_body
-    expected_instruction = "Please copy this code and follow the link below to continue."
+    assert reset_url not in text_body
+    expected_instruction = (
+        "We received a request to reset your Qiko password. Please enter the code below into the "
+        "platform to reset your password."
+    )
     assert expected_instruction in text_body
     assert f"{minutes} minutes" in text_body
     assert html_body
     assert expected_instruction in html_body
     assert "12&lt;34&amp;56" in html_body
     assert code not in html_body
-    assert 'next=&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;' in html_body
+    assert reset_url not in html_body
+    assert "<a " not in html_body
     assert "10&lt;script&gt; minutes" in html_body
     assert "<script>" not in html_body
     assert "\u2014" not in subject + text_body + html_body
@@ -120,7 +124,11 @@ def test_branded_email_html_uses_the_remote_png_logo_and_keeps_plaintext_complet
         assert "https://qiko.ai/qiko-logo-email.png?" not in html_body
         assert text_body.strip()
         assert "Qiko" in text_body
-        assert "https://app.qiko.ai/" in text_body
+        if subject == "Your Qiko password reset code":
+            assert "https://app.qiko.ai/" not in text_body
+            assert "<a " not in html_body
+        else:
+            assert "https://app.qiko.ai/" in text_body
         assert "\u2014" not in subject + text_body + html_body
 
 

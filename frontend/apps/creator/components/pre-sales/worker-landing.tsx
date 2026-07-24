@@ -6,19 +6,25 @@
 // teased below. Matches the cockpit-shell dark theme (bg-[#05070d], indigo/violet accents).
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft, BarChart3, Building2, Check, FileText, LayoutList, Lock, Monitor, Plus, ShieldCheck,
   Users, X,
 } from "lucide-react";
 import { cn } from "@qiko/ui";
-import { getPackOverview, type PackOverview, type RfpPack } from "@/lib/api";
+import { getPackOverview, listDocuments, type PackOverview, type RfpPack } from "@/lib/api";
 import { formatShortDate } from "@/lib/stringUtils";
 import { OutcomesStrip, type OutcomeTile } from "@/components/cockpit/outcomes-strip";
 import { SourcesTab } from "@/components/pre-sales/sources-tab";
 import { SectionAssignment } from "@/components/pre-sales/section-assignment";
 import { NewTenderPanel } from "@/components/pre-sales/new-tender-panel";
-import { AI_DRAFTING_DESCRIPTION, aiDraftingPercent } from "@/components/pre-sales/metrics";
+import {
+  AI_DRAFTING_DESCRIPTION,
+  aiDraftingPercent,
+  knowledgeChunkCount,
+  nextBidDeadline,
+} from "@/components/pre-sales/metrics";
+import { MetricInfoTooltip } from "@/components/pre-sales/metric-info-tooltip";
 
 type LandingView = "ai_response" | "knowledge" | "section_assignment";
 
@@ -90,17 +96,9 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
     [overviewQs],
   );
 
+  const docsQ = useQuery({ queryKey: ["documents"], queryFn: listDocuments });
+  const dataVolume = knowledgeChunkCount(docsQ.data ?? []);
   const aiDrafting = aiDraftingPercent(packs);
-
-  // Next bid = nearest future deadline.
-  const nextDeadline = useMemo(() => {
-    const now = Date.now();
-    const future = packs
-      .map((p) => p.deadline)
-      .filter((d): d is string => !!d && new Date(d).getTime() >= now)
-      .sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-    return future[0] ?? null;
-  }, [packs]);
 
   const finalised = packs.filter((p) => p.stage === "final" || !!p.outcome).length;
   const aiDrafted = overviews.reduce((n, o) => n + o.ai_drafted, 0);
@@ -122,8 +120,8 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
       value: aiDrafting === null ? "-" : `${aiDrafting}%`,
       description: AI_DRAFTING_DESCRIPTION,
     },
-    { label: "Data volume", value: "-" },
-    { label: "Next Bid", value: formatShortDate(nextDeadline) },
+    { label: "Data Volume", value: `${dataVolume} chunks` },
+    { label: "Next Bid", value: formatShortDate(nextBidDeadline(packs, Date.now())) },
   ];
 
   return (
@@ -197,12 +195,14 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
               <div
                 key={s.label}
                 className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5"
-                title={s.description}
-                aria-label={s.description ? `${s.label}: ${s.value}. ${s.description}` : undefined}
               >
-                <p className="text-[9px] font-semibold uppercase tracking-wider text-slate-500">{s.label}</p>
+                <p className="flex items-center gap-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-500">
+                  <span>{s.label}</span>
+                  {s.description && (
+                    <MetricInfoTooltip label={s.label} description={s.description} />
+                  )}
+                </p>
                 <p className="mt-1 truncate text-[15px] font-bold text-white">{s.value}</p>
-                {s.description && <p className="mt-1 text-[9px] leading-3 text-slate-500">{s.description}</p>}
               </div>
             ))}
           </div>

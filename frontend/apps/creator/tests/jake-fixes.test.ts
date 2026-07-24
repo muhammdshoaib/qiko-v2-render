@@ -19,6 +19,8 @@ import {
 import {
   AI_DRAFTING_DESCRIPTION,
   aiDraftingPercent,
+  knowledgeChunkCount,
+  nextBidDeadline,
 } from "../components/pre-sales/metrics";
 import procSections from "./fixtures/proc-sections.json";
 
@@ -142,12 +144,37 @@ test("AI drafting aggregates totals, ignores invalid totals and clamps completed
   );
 });
 
-test("UI source pins reset copy and shared helper wiring because no component unit runner exists", () => {
+test("next bid deadline ignores past and invalid dates and keeps a same-day date deadline", () => {
+  const now = new Date(2025, 2, 14, 10, 0, 0);
+  const packs = [
+    { deadline: "2025-03-13" },
+    { deadline: "not-a-date" },
+    { deadline: null },
+    { deadline: "2025-03-15" },
+    { deadline: "2025-03-14" },
+  ];
+
+  assert.equal(nextBidDeadline(packs, now), "2025-03-14");
+  assert.equal(nextBidDeadline([{ deadline: now.toISOString() }], now), null);
+  assert.equal(nextBidDeadline([{ deadline: "invalid" }], now), null);
+});
+
+test("knowledge chunk count sums document chunks and returns zero for no valid chunks", () => {
+  assert.equal(knowledgeChunkCount([{ chunks: 2 }, { chunks: 7 }, { chunks: 0 }]), 9);
+  assert.equal(knowledgeChunkCount([]), 0);
+  assert.equal(knowledgeChunkCount([{ chunks: Number.NaN }, { chunks: -3 }]), 0);
+});
+
+test("UI source pins reset copy, accessible metric tooltips and shared helper wiring", () => {
   const forgotSource = readFileSync(resolve(process.cwd(), "app/forgot-password/page.tsx"), "utf8");
   const resetSource = readFileSync(resolve(process.cwd(), "app/reset-password/page.tsx"), "utf8");
   const studioSource = readFileSync(resolve(process.cwd(), "app/studio/page.tsx"), "utf8");
   const landingSource = readFileSync(
     resolve(process.cwd(), "components/pre-sales/worker-landing.tsx"),
+    "utf8",
+  );
+  const tooltipSource = readFileSync(
+    resolve(process.cwd(), "components/pre-sales/metric-info-tooltip.tsx"),
     "utf8",
   );
 
@@ -158,13 +185,26 @@ test("UI source pins reset copy and shared helper wiring because no component un
   assert.match(resetSource, /resolvePasswordResetEmail\(queryEmail, storage\)/);
   assert.match(resetSource, /clearPasswordResetEmail\(storage\);[\s\S]*setSuccess\(true\)/);
   assert.ok(resetSource.includes(
-    "We have sent a reset link to your email. Please check your email, copy the code, and click &quot;Reset Password.&quot;",
+    "We have sent a one-time code to the provided email address. Please check your email and enter the code below.",
   ));
   for (const source of [studioSource, landingSource]) {
     assert.ok(source.includes("aiDraftingPercent"));
     assert.ok(source.includes("AI_DRAFTING_DESCRIPTION"));
+    assert.ok(source.includes("MetricInfoTooltip"));
     assert.ok(source.includes('label: "AI Drafting"'));
+    assert.ok(source.includes("formatShortDate(nextBidDeadline(packs, Date.now()))"));
+    assert.ok(source.includes("knowledgeChunkCount"));
+    assert.ok(source.includes('label: "Data Volume"'));
+    assert.ok(source.includes("`${dataVolume} chunks`"));
   }
+  assert.ok(studioSource.includes('queryKey: ["documents"], queryFn: listDocuments'));
+  assert.ok(landingSource.includes('queryKey: ["documents"], queryFn: listDocuments'));
+  assert.match(tooltipSource, /Info/);
+  assert.match(tooltipSource, /role="tooltip"/);
+  assert.match(tooltipSource, /aria-describedby=/);
+  assert.match(tooltipSource, /aria-label=/);
+  assert.match(tooltipSource, /focus-visible:/);
+  assert.match(tooltipSource, /stopPropagation/);
 });
 
 test("load smoke and deployment playbooks use the versioned health endpoint", () => {

@@ -11,7 +11,13 @@ import {
   type Agent, type FinanceAnalytics, type RfpPack, type SalesOpportunity,
 } from "@/lib/api";
 import { normalizeFinanceSummary } from "@/components/finance/utils";
-import { AI_DRAFTING_DESCRIPTION, aiDraftingPercent } from "@/components/pre-sales/metrics";
+import {
+  AI_DRAFTING_DESCRIPTION,
+  aiDraftingPercent,
+  knowledgeChunkCount,
+  nextBidDeadline,
+} from "@/components/pre-sales/metrics";
+import { MetricInfoTooltip } from "@/components/pre-sales/metric-info-tooltip";
 import { formatShortDate, toTitleFromSlug } from "@/lib/stringUtils";
 
 function workerCategory(a: Agent): string {
@@ -73,7 +79,7 @@ export default function StudioPage() {
     })),
   });
   const docsQ = useQuery({ queryKey: ["documents"], queryFn: listDocuments });
-  const dataVolume = docsQ.data?.reduce((n, d) => n + d.chunks, 0) ?? 0;
+  const dataVolume = knowledgeChunkCount(docsQ.data ?? []);
 
   const groups = useMemo(() => {
     const byCategory = new Map<string, Agent[]>();
@@ -162,7 +168,6 @@ export default function StudioPage() {
                       const packs: RfpPack[] = packsQ[idx]?.data ?? [];
                       const activeBids = packs.length;
                       const aiDrafting = aiDraftingPercent(packs);
-                      const nextDeadline = packs.map((p) => p.deadline).filter(Boolean).sort()[0] ?? null;
                       metrics = [
                         { label: "Active Bids", value: String(activeBids) },
                         {
@@ -170,8 +175,8 @@ export default function StudioPage() {
                           value: aiDrafting === null ? "-" : `${aiDrafting}%`,
                           description: AI_DRAFTING_DESCRIPTION,
                         },
-                        { label: "Data volume", value: `${dataVolume} chunks` },
-                        { label: "Next Bid", value: nextDeadline ? formatShortDate(nextDeadline) : "-" },
+                        { label: "Data Volume", value: `${dataVolume} chunks` },
+                        { label: "Next Bid", value: formatShortDate(nextBidDeadline(packs, Date.now())) },
                       ];
                       useCaseCount = 6;
                       href = `/studio/${a.id}/pre-sales`;
@@ -188,9 +193,21 @@ export default function StudioPage() {
                     }
 
                     return (
-                      <button key={a.id} onClick={() => router.push(href)}
-                        className="group w-full overflow-hidden rounded-2xl border border-white/[0.06] text-left transition-all duration-300 hover:border-indigo-500/30 hover:shadow-[0_0_60px_-15px_rgba(99,102,241,0.12)]"
-                        style={{ background: "linear-gradient(165deg, rgba(255,255,255,0.024) 0%, rgba(255,255,255,0.004) 100%)" }}>
+                      <div
+                        key={a.id}
+                        role="link"
+                        tabIndex={0}
+                        onClick={() => router.push(href)}
+                        onKeyDown={(event) => {
+                          if (event.target !== event.currentTarget) return;
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            router.push(href);
+                          }
+                        }}
+                        className="group w-full cursor-pointer overflow-hidden rounded-2xl border border-white/[0.06] text-left transition-all duration-300 hover:border-indigo-500/30 hover:shadow-[0_0_60px_-15px_rgba(99,102,241,0.12)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+                        style={{ background: "linear-gradient(165deg, rgba(255,255,255,0.024) 0%, rgba(255,255,255,0.004) 100%)" }}
+                      >
                         <div className="px-6 pt-6 pb-4">
                           <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div className="flex items-center gap-3.5">
@@ -228,12 +245,14 @@ export default function StudioPage() {
                               <div
                                 key={m.label}
                                 className="rounded-lg border border-white/[0.04] bg-white/[0.02] px-3 py-2.5"
-                                title={m.description}
-                                aria-label={m.description ? `${m.label}: ${m.value}. ${m.description}` : undefined}
                               >
                                 <p className="text-[17px] font-bold text-white" style={{ fontFamily: "var(--font-display)" }}>{m.value}</p>
-                                <p className="mt-0.5 text-[9px] text-slate-500">{m.label}</p>
-                                {m.description && <p className="mt-1 text-[9px] leading-3 text-slate-500">{m.description}</p>}
+                                <p className="mt-0.5 flex items-center gap-0.5 text-[9px] text-slate-500">
+                                  <span>{m.label}</span>
+                                  {m.description && (
+                                    <MetricInfoTooltip label={m.label} description={m.description} />
+                                  )}
+                                </p>
                               </div>
                             ))}
                           </div>
@@ -244,7 +263,7 @@ export default function StudioPage() {
                             Open <ArrowRight className="size-3" />
                           </span>
                         </div>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
