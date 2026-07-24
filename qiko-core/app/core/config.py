@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     # preprod.qiko.ai and admin.preprod.qiko.ai see the same session). Empty = host-only
     # cookie (dev default; fine when creator/admin/API are all on the same host).
     cookie_domain: str = ""
+    legacy_cookie_domain: str = ""
 
     # Email
     email_backend: str = "console"  # console | smtp

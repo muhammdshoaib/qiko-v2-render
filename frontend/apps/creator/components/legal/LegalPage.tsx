@@ -49,9 +49,13 @@ export function LegalPage({
             <span aria-hidden>&larr;</span> Back to home
           </a>
           <div className="mb-4">
-            <span className="bg-gradient-to-r from-purple-400 to-cyan-400 bg-clip-text text-2xl font-bold text-transparent">
-              Qiko
-            </span>
+            <img
+              src="/qiko-logo-email.png"
+              alt="Qiko"
+              width={200}
+              height={80}
+              className="h-12 w-auto"
+            />
           </div>
           <h1 className="text-3xl font-bold text-white sm:text-4xl">{title}</h1>
           <p className="mt-2 text-sm text-slate-500">Last updated: {lastUpdated}</p>
