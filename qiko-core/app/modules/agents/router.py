@@ -6,6 +6,7 @@ from dataclasses import replace
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.crypto import encrypt
@@ -45,7 +46,7 @@ async def create_agent(body: CreateAgentBody, tenant: str = Depends(authed_tenan
     # client-supplied plan name here, or any tenant could self-upgrade past the free-tier limit.
     if body.atype not in AGENT_TYPES:
         raise HTTPException(status_code=422, detail="invalid atype")
-    sub = subs.status(tenant)
+    sub = await run_in_threadpool(subs.status, tenant)
     plan = get_plan(sub.plan if sub and sub.status == "active" else "free")
     try:
         return await svc.create(tenant, body.name, plan, atype=body.atype)
@@ -53,12 +54,26 @@ async def create_agent(body: CreateAgentBody, tenant: str = Depends(authed_tenan
         raise HTTPException(status_code=403, detail=str(e)) from e
 
 
+class AgentUsage(BaseModel):
+    used_count: int
+    worker_limit: int
+
+
+@router.get("/usage", response_model=AgentUsage)
+async def agent_usage(tenant: str = Depends(authed_tenant), svc=Depends(get_agents),
+                      subs=Depends(get_subscriptions)) -> AgentUsage:
+    sub = await run_in_threadpool(subs.status, tenant)
+    plan = get_plan(sub.plan if sub and sub.status == "active" else "free")
+    return AgentUsage(used_count=await svc.count(tenant), worker_limit=plan.worker_limit)
+
+
 @router.get("")
 async def list_agents(tenant: str = Depends(authed_tenant), svc=Depends(get_agents)) -> list[Agent]:
     # Hide archived agents (reversible soft-hide): config.archived is set via PUT /{id}/config
     # {"archived": true} and cleared with false. No hard delete -- the row and its data stay put,
     # so flipping the flag back restores the worker exactly as it was.
-    return [_redact(a) for a in await svc.list(tenant) if a.config.get("archived") is not True]
+    return [_redact(a) for a in await svc.list(tenant)
+            if a.enabled and a.config.get("archived") is not True]
 
 
 class UpdateConfigBody(BaseModel):

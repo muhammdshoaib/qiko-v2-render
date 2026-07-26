@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, String
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, String, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -78,6 +78,20 @@ class Agent(Base):
     status: Mapped[str] = mapped_column(String(16), default="training")  # training -> ready
     config: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+
+
+class AgentStateAudit(Base):
+    __tablename__ = "agent_state_audit"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    changed_by_email: Mapped[str] = mapped_column(String(320))
+    previous_enabled: Mapped[bool]
+    enabled: Mapped[bool]
+    reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    __table_args__ = (Index("ix_agent_state_audit_tenant_agent_created", "tenant_id", "agent_id", "created_at"),)
 
 
 class RfpPack(Base):

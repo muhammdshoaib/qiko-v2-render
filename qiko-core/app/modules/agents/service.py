@@ -7,12 +7,13 @@ otherwise (dev/tests).
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
 
-from app.modules.billing.plans import Plan, can_create_worker
+from app.modules.billing.plans import Plan
 
 
 AGENT_TYPES = {"worker", "pre_sales_writer", "sales_intelligence", "finance"}
@@ -32,24 +33,50 @@ class Agent:
     status: str = "training"  # training -> ready
     config: dict = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
+class AgentStateAudit:
+    id: int | None
+    tenant: str
+    agent_id: str
+    changed_by_email: str
+    previous_enabled: bool
+    enabled: bool
+    reason: str | None
+    created_at: datetime
 
 
 class AgentStore(Protocol):
     async def add(self, agent: Agent) -> Agent: ...
+    async def add_with_limit(self, agent: Agent, worker_limit: int) -> Agent: ...
     async def list(self, tenant: str) -> list[Agent]: ...
     async def count(self, tenant: str) -> int: ...
     async def get(self, tenant: str, agent_id: str) -> Agent | None: ...
     async def mark_ready(self, tenant: str, agent_id: str) -> Agent: ...
     async def update_config(self, tenant: str, agent_id: str, patch: dict) -> Agent: ...
+    async def set_enabled(self, tenant: str, agent_id: str, enabled: bool, *,
+                          changed_by_email: str, reason: str | None) -> Agent: ...
+    async def list_state_audit(self, tenant: str, *, limit: int = 50) -> list[AgentStateAudit]: ...
 
 
 @dataclass
 class InMemoryAgentStore:
     _by_tenant: dict[str, list[Agent]] = field(default_factory=dict)
+    _audit: list[AgentStateAudit] = field(default_factory=list)
+    _limit_locks: dict[str, asyncio.Lock] = field(default_factory=dict)
 
     async def add(self, agent: Agent) -> Agent:
         self._by_tenant.setdefault(agent.tenant, []).append(agent)
         return agent
+
+    async def add_with_limit(self, agent: Agent, worker_limit: int) -> Agent:
+        lock = self._limit_locks.setdefault(agent.tenant, asyncio.Lock())
+        async with lock:
+            if worker_limit >= 0 and await self.count(agent.tenant) >= worker_limit:
+                raise PlanLimitError(f"worker limit {worker_limit} reached")
+            return await self.add(agent)
 
     async def list(self, tenant: str) -> list[Agent]:
         return list(self._by_tenant.get(tenant, []))
@@ -74,6 +101,26 @@ class InMemoryAgentStore:
                 return a
         raise KeyError(agent_id)
 
+    async def set_enabled(self, tenant: str, agent_id: str, enabled: bool, *,
+                          changed_by_email: str, reason: str | None) -> Agent:
+        agent = await self.get(tenant, agent_id)
+        if agent is None:
+            raise KeyError(agent_id)
+        if agent.enabled == enabled:
+            return agent
+        previous = agent.enabled
+        agent.enabled = enabled
+        self._audit.append(AgentStateAudit(
+            id=len(self._audit) + 1, tenant=tenant, agent_id=agent_id,
+            changed_by_email=changed_by_email, previous_enabled=previous,
+            enabled=enabled, reason=(reason or "").strip() or None,
+            created_at=datetime.now(timezone.utc)))
+        return agent
+
+    async def list_state_audit(self, tenant: str, *, limit: int = 50) -> list[AgentStateAudit]:
+        rows = [entry for entry in self._audit if entry.tenant == tenant]
+        return list(reversed(rows[-max(1, min(limit, 200)):]))
+
 
 @dataclass
 class AgentService:
@@ -94,10 +141,11 @@ class AgentService:
 
     async def create(self, tenant: str, name: str, plan: Plan, *, atype: str = "worker",
                       config: dict | None = None) -> Agent:
-        if not can_create_worker(await self.count(tenant), plan):
-            raise PlanLimitError(f"plan '{plan.name}' allows {plan.worker_limit} worker(s)")
         agent = Agent(id=uuid.uuid4().hex[:12], tenant=tenant, name=name, atype=atype, config=config or {})
-        return await self.store.add(agent)
+        try:
+            return await self.store.add_with_limit(agent, plan.worker_limit)
+        except PlanLimitError as exc:
+            raise PlanLimitError(f"plan '{plan.name}' allows {plan.worker_limit} worker(s)") from exc
 
     async def mark_ready(self, tenant: str, agent_id: str) -> Agent:
         return await self.store.mark_ready(tenant, agent_id)
@@ -105,3 +153,11 @@ class AgentService:
     async def update_config(self, tenant: str, agent_id: str, patch: dict) -> Agent:
         """Merge-patch the agent's free-form config (e.g. Background/Tone wizard fields)."""
         return await self.store.update_config(tenant, agent_id, patch)
+
+    async def set_enabled(self, tenant: str, agent_id: str, enabled: bool, *,
+                          changed_by_email: str, reason: str | None = None) -> Agent:
+        return await self.store.set_enabled(
+            tenant, agent_id, enabled, changed_by_email=changed_by_email, reason=reason)
+
+    async def list_state_audit(self, tenant: str, *, limit: int = 50) -> list[AgentStateAudit]:
+        return await self.store.list_state_audit(tenant, limit=limit)

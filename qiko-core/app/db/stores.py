@@ -11,10 +11,11 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models import Agent as AgentRow
+from app.db.models import AgentStateAudit as AgentStateAuditRow
 from app.db.models import Assignment as AssignmentRow
 from app.db.models import Contact as ContactRow
 from app.db.models import Conversation as ConversationRow
@@ -43,7 +44,7 @@ from app.db.models import Tenant as TenantRow
 from app.db.models import TeamsWebhook as TeamsWebhookRow
 from app.db.models import User as UserRow
 from app.db.models import VerifiedAnswer
-from app.modules.agents.service import Agent
+from app.modules.agents.service import Agent, AgentStateAudit, PlanLimitError
 from app.modules.assignments.service import Assignment, AssignmentNotFound
 from app.modules.channels.teams_integration import TeamsIntegration
 from app.modules.chat.service import ConversationSummary, Message
@@ -194,13 +195,34 @@ class SqlAgentStore:
 
     def _to_domain(self, r: AgentRow) -> Agent:
         return Agent(id=r.id, tenant=r.tenant_id, name=r.name, atype=r.atype,
-                     status=r.status, config=dict(r.config or {}), created_at=r.created_at)
+                     status=r.status, config=dict(r.config or {}), created_at=r.created_at,
+                     enabled=r.enabled)
+
+    @staticmethod
+    def _row(agent: Agent) -> AgentRow:
+        return AgentRow(id=agent.id, tenant_id=agent.tenant, name=agent.name,
+                        atype=agent.atype, status=agent.status, config=agent.config,
+                        created_at=agent.created_at, enabled=agent.enabled)
 
     async def add(self, agent: Agent) -> Agent:
         async with self.sessionmaker() as s, s.begin():
-            s.add(AgentRow(id=agent.id, tenant_id=agent.tenant, name=agent.name,
-                           atype=agent.atype, status=agent.status, config=agent.config,
-                           created_at=agent.created_at))
+            s.add(self._row(agent))
+        return agent
+
+    async def add_with_limit(self, agent: Agent, worker_limit: int) -> Agent:
+        async with self.sessionmaker() as s, s.begin():
+            tenant = (await s.execute(
+                select(TenantRow).where(TenantRow.id == agent.tenant).with_for_update()
+            )).scalar_one_or_none()
+            if tenant is None:
+                raise KeyError(agent.tenant)
+            count = (await s.execute(
+                select(func.count()).select_from(AgentRow)
+                .where(AgentRow.tenant_id == agent.tenant)
+            )).scalar_one()
+            if worker_limit >= 0 and count >= worker_limit:
+                raise PlanLimitError(f"worker limit {worker_limit} reached")
+            s.add(self._row(agent))
         return agent
 
     async def list(self, tenant: str) -> list[Agent]:
@@ -209,7 +231,10 @@ class SqlAgentStore:
             return [self._to_domain(r) for r in rows]
 
     async def count(self, tenant: str) -> int:
-        return len(await self.list(tenant))
+        async with self.sessionmaker() as s:
+            return (await s.execute(
+                select(func.count()).select_from(AgentRow).where(AgentRow.tenant_id == tenant)
+            )).scalar_one()
 
     async def get(self, tenant: str, agent_id: str) -> Agent | None:
         async with self.sessionmaker() as s:
@@ -233,6 +258,40 @@ class SqlAgentStore:
                 raise KeyError(agent_id)
             row.config = {**(row.config or {}), **patch}
             return self._to_domain(row)
+
+    async def set_enabled(self, tenant: str, agent_id: str, enabled: bool, *,
+                          changed_by_email: str, reason: str | None) -> Agent:
+        async with self.sessionmaker() as s, s.begin():
+            row = (await s.execute(
+                select(AgentRow).where(
+                    AgentRow.tenant_id == tenant, AgentRow.id == agent_id
+                ).with_for_update()
+            )).scalar_one_or_none()
+            if row is None:
+                raise KeyError(agent_id)
+            if row.enabled == enabled:
+                return self._to_domain(row)
+            previous = row.enabled
+            row.enabled = enabled
+            s.add(AgentStateAuditRow(
+                tenant_id=tenant, agent_id=agent_id, changed_by_email=changed_by_email,
+                previous_enabled=previous, enabled=enabled,
+                reason=(reason or "").strip() or None))
+            return self._to_domain(row)
+
+    async def list_state_audit(self, tenant: str, *, limit: int = 50) -> list[AgentStateAudit]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(AgentStateAuditRow)
+                .where(AgentStateAuditRow.tenant_id == tenant)
+                .order_by(AgentStateAuditRow.created_at.desc(), AgentStateAuditRow.id.desc())
+                .limit(max(1, min(limit, 200)))
+            )).scalars().all()
+            return [AgentStateAudit(
+                id=row.id, tenant=row.tenant_id, agent_id=row.agent_id,
+                changed_by_email=row.changed_by_email,
+                previous_enabled=row.previous_enabled, enabled=row.enabled,
+                reason=row.reason, created_at=row.created_at) for row in rows]
 
 
 @dataclass
