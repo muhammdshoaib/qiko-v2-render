@@ -12,7 +12,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 
-from app.core.deps import authed_tenant, require_role
+from app.core.deps import (
+    WorkerUnavailable,
+    authed_tenant,
+    require_available_worker,
+    require_role,
+    resolve_tenant_worker,
+)
 from app.modules.identity.rbac import Role
 from app.modules.sales_intelligence.models import (
     ACTIVITY_TYPES,
@@ -52,6 +58,11 @@ def get_salesforce_push(request: Request):
 
 def _actor_user_id(claims: dict) -> str | None:
     return claims.get("sub") or claims.get("user_id")
+
+
+async def _resolve_worker(request: Request, tenant: str, agent_id: str):
+    _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+    return recheck
 
 
 async def _agent_config(request: Request, tenant: str, agent_id: str) -> dict | None:
@@ -189,13 +200,19 @@ class ScanBody(BaseModel):
 @router.post("/{agent_id}/scan/ungm")
 async def scan_ungm(agent_id: str, body: ScanBody, request: Request, tenant: str = Depends(authed_tenant),
                     claims: dict = Depends(require_role(Role.editor)), svc=Depends(get_sales_intel)) -> dict:
+    recheck = await _resolve_worker(request, tenant, agent_id)
     try:
-        result = await svc.scan_ungm(tenant, agent_id, body.model_dump(exclude_none=True), _actor_user_id(claims),
-                                     agent_config=await _agent_config(request, tenant, agent_id))
+        result = await svc.scan_ungm(
+            tenant, agent_id, body.model_dump(exclude_none=True), _actor_user_id(claims),
+            agent_config=await _agent_config(request, tenant, agent_id),
+            recheck_worker=recheck)
     except SourceInactiveError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    except WorkerUnavailable:
+        raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
+    await recheck()
     return {
         "source": _source_out(result["source"], scan_interval_minutes=svc.scan_interval_minutes),
         "opportunities": [_opportunity_out(o) for o in result["opportunities"]],
@@ -207,13 +224,19 @@ async def scan_ungm(agent_id: str, body: ScanBody, request: Request, tenant: str
 @router.post("/{agent_id}/scan/ted")
 async def scan_ted(agent_id: str, body: ScanBody, request: Request, tenant: str = Depends(authed_tenant),
                    claims: dict = Depends(require_role(Role.editor)), svc=Depends(get_sales_intel)) -> dict:
+    recheck = await _resolve_worker(request, tenant, agent_id)
     try:
-        result = await svc.scan_ted(tenant, agent_id, body.model_dump(exclude_none=True), _actor_user_id(claims),
-                                    agent_config=await _agent_config(request, tenant, agent_id))
+        result = await svc.scan_ted(
+            tenant, agent_id, body.model_dump(exclude_none=True), _actor_user_id(claims),
+            agent_config=await _agent_config(request, tenant, agent_id),
+            recheck_worker=recheck)
     except SourceInactiveError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    except WorkerUnavailable:
+        raise
     except Exception as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
+    await recheck()
     return {
         "source": _source_out(result["source"], scan_interval_minutes=svc.scan_interval_minutes),
         "opportunities": [_opportunity_out(o) for o in result["opportunities"]],
@@ -648,12 +671,15 @@ async def salesforce_status(agent_id: str, tenant: str = Depends(authed_tenant),
 
 
 @router.post("/{agent_id}/salesforce/connect")
-async def salesforce_connect(agent_id: str, tenant: str = Depends(authed_tenant),
+async def salesforce_connect(agent_id: str, request: Request,
+                             tenant: str = Depends(authed_tenant),
                              claims: dict = Depends(require_role(Role.editor)), auth=Depends(get_salesforce_auth)) -> dict:
+    recheck = await _resolve_worker(request, tenant, agent_id)
     try:
         result = auth.build_authorize_url(tenant, agent_id, _actor_user_id(claims))
     except SalesforceNotConfiguredError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    await recheck()
     return {"authorizeUrl": result["authorizeUrl"], "state": result["state"], "oauthCallbackUrl": auth.redirect_uri()}
 
 
@@ -680,29 +706,39 @@ async def salesforce_oauth_callback(request: Request, code: str | None = None, s
         return _redirect(None, error_description or error)
     if not code or not state:
         return _redirect(None, "Missing Salesforce OAuth code or state.")
+    async def recheck(tenant: str, agent_id: str) -> None:
+        await require_available_worker(
+            agents=request.app.state.agents, tenant=tenant, agent_id=agent_id)
+
     try:
-        result = await auth.handle_callback(code, state)
+        result = await auth.handle_callback(code, state, recheck_worker=recheck)
     except Exception as e:
         return _redirect(None, str(e))
     return _redirect(result.get("agent_id"), None)
 
 
 @router.post("/{agent_id}/salesforce/disconnect")
-async def salesforce_disconnect(agent_id: str, tenant: str = Depends(authed_tenant),
+async def salesforce_disconnect(agent_id: str, request: Request,
+                                tenant: str = Depends(authed_tenant),
                                 claims: dict = Depends(require_role(Role.editor)), auth=Depends(get_salesforce_auth)) -> dict:
+    recheck = await _resolve_worker(request, tenant, agent_id)
     connection = await auth.disconnect(tenant, agent_id, _actor_user_id(claims))
+    await recheck()
     return {"salesforce": _salesforce_out(connection, auth)}
 
 
 @router.post("/{agent_id}/opportunities/{opportunity_id}/push-to-salesforce")
-async def push_to_salesforce(agent_id: str, opportunity_id: str, tenant: str = Depends(authed_tenant),
+async def push_to_salesforce(agent_id: str, opportunity_id: str, request: Request,
+                             tenant: str = Depends(authed_tenant),
                              claims: dict = Depends(require_role(Role.editor)), svc=Depends(get_sales_intel),
                              push=Depends(get_salesforce_push)) -> dict:
+    recheck = await _resolve_worker(request, tenant, agent_id)
     o = await _get_opportunity_or_404(svc, tenant, agent_id, opportunity_id)
     try:
-        pushed = await push.push(o, _actor_user_id(claims))
+        pushed = await push.push(o, _actor_user_id(claims), recheck_worker=recheck)
     except SalesforceError as e:
         msg = str(e).lower()
         status_code = 422 if ("not connected" in msg or "validated" in msg) else 502
         raise HTTPException(status_code=status_code, detail=str(e)) from e
+    await recheck()
     return {"opportunity": _opportunity_out(pushed)}

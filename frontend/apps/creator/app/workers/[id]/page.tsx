@@ -236,7 +236,7 @@ function ConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
       </div>
       {sub === "Voice" && <VoiceSubTab id={id} />}
       {sub === "Calendly" && <CalendlySubTab id={id} worker={worker} />}
-      {sub === "Teams" && <TeamsSubTab />}
+      {sub === "Teams" && <TeamsSubTab id={id} />}
       {sub === "Salesforce" && <SalesforceSubTab id={id} />}
     </div>
   );
@@ -319,7 +319,7 @@ function SalesforceSubTab({ id }: { id: string }) {
   );
 }
 
-function TeamsSubTab() {
+function TeamsSubTab({ id }: { id: string }) {
   const qc = useQueryClient();
   const [url, setUrl] = useState("");
   const [testResult, setTestResult] = useState<"idle" | "ok" | "error">("idle");
@@ -333,7 +333,7 @@ function TeamsSubTab() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ["teams-webhook"] }),
   });
   const test = useMutation({
-    mutationFn: testTeamsWebhook,
+    mutationFn: () => testTeamsWebhook(id),
     onSuccess: () => setTestResult("ok"),
     onError: () => setTestResult("error"),
   });

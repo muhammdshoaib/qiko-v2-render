@@ -78,6 +78,7 @@ class ContactStore(Protocol):
 
 
 class ActionStore(Protocol):
+    async def get(self, tenant: str, action_id: str) -> CrmAction | None: ...
     async def add(self, action: CrmAction) -> CrmAction: ...
     async def list_for_contact(self, tenant: str, contact_id: str) -> list[CrmAction]: ...
     async def update_status(self, tenant: str, action_id: str, status: str) -> CrmAction | None: ...
@@ -112,6 +113,10 @@ class InMemoryContactStore:
 @dataclass
 class InMemoryActionStore:
     _by_id: dict[str, CrmAction] = field(default_factory=dict)
+
+    async def get(self, tenant: str, action_id: str) -> CrmAction | None:
+        action = self._by_id.get(action_id)
+        return action if action is not None and action.tenant == tenant else None
 
     async def add(self, action: CrmAction) -> CrmAction:
         self._by_id[action.id] = action
@@ -205,11 +210,18 @@ class CrmService:
         contact.updated_at = _now()
         return await self.contacts.update(contact)
 
-    async def generate_summary(self, tenant: str, contact_id: str, provider: LLMProvider) -> Contact:
+    async def generate_summary(self, tenant: str, contact_id: str, provider: LLMProvider,
+                               recheck_worker=None) -> Contact:
         """Summarize the contact's conversation with an LLM -- intent, sentiment, key topics."""
+        import asyncio
         import json
         import re
 
+        async def recheck() -> None:
+            if recheck_worker is not None:
+                await recheck_worker()
+
+        await recheck()
         contact = await self.contacts.get(tenant, contact_id)
         if not contact:
             raise CrmError("contact not found")
@@ -219,7 +231,13 @@ class CrmService:
         if not messages:
             raise CrmError("no messages to summarize yet")
         transcript = "\n".join(f"{m.role}: {m.text}" for m in messages)
-        response = provider.generate(f"TRANSCRIPT:\n{transcript}", system=_SUMMARY_SYSTEM, temperature=0.0)
+        await recheck()
+        try:
+            response = await asyncio.to_thread(
+                provider.generate, f"TRANSCRIPT:\n{transcript}",
+                system=_SUMMARY_SYSTEM, temperature=0.0)
+        finally:
+            await recheck()
         match = re.search(r"\{.*\}", response.text, re.DOTALL)
         try:
             parsed = json.loads(match.group(0) if match else response.text)
@@ -229,6 +247,7 @@ class CrmService:
         contact.sentiment = parsed.get("sentiment") or contact.sentiment
         contact.key_topics = list(parsed.get("key_topics") or contact.key_topics)
         contact.updated_at = _now()
+        await recheck()
         return await self.contacts.update(contact)
 
     async def add_action(self, tenant: str, contact_id: str, *, title: str, action_type: str = "custom",
@@ -239,6 +258,9 @@ class CrmService:
         action = CrmAction(id=uuid.uuid4().hex[:12], tenant=tenant, contact_id=contact_id,
                            title=title, action_type=action_type, description=description, priority=priority)
         return await self.actions.add(action)
+
+    async def get_action(self, tenant: str, action_id: str) -> CrmAction | None:
+        return await self.actions.get(tenant, action_id)
 
     async def update_action_status(self, tenant: str, action_id: str, status: str) -> CrmAction:
         if status not in _VALID_ACTION_STATUSES:

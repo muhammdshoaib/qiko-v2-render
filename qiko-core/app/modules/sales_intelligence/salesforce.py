@@ -17,6 +17,7 @@ Laravel model's `'access_token' => 'encrypted'` cast.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import secrets
@@ -27,6 +28,7 @@ from urllib.parse import urlencode
 import httpx
 
 from app.core.config import get_settings
+from app.core.deps import WorkerUnavailable
 from app.core.crypto import decrypt, encrypt
 from app.modules.sales_intelligence.models import (
     ActivityLog,
@@ -58,6 +60,7 @@ class _OAuthState:
     agent_id: str
     actor_user_id: str | None
     code_verifier: str
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 @dataclass
@@ -109,13 +112,20 @@ class SalesforceAuthService:
         login_base = s.salesforce_login_base_url.rstrip("/")
         return {"authorizeUrl": f"{login_base}/services/oauth2/authorize?{query}", "state": state}
 
-    async def handle_callback(self, code: str, state: str) -> dict:
+    async def handle_callback(self, code: str, state: str, *, recheck_worker=None) -> dict:
         self.assert_configured()
         pending = self._state_cache.pop(state, None)
-        if pending is None:
+        if pending is None or pending.created_at + timedelta(minutes=10) < _now():
             raise SalesforceError("Invalid or expired Salesforce OAuth state.")
+        if recheck_worker is not None:
+            await recheck_worker(pending.tenant, pending.agent_id)
 
-        token_response = self._exchange_authorization_code(code, pending.code_verifier)
+        try:
+            token_response = await asyncio.to_thread(
+                self._exchange_authorization_code, code, pending.code_verifier)
+        finally:
+            if recheck_worker is not None:
+                await recheck_worker(pending.tenant, pending.agent_id)
         connection = await self.connections.get_or_create(pending.tenant, pending.agent_id)
         connection.status = "connected"
         connection.connected_by_user_id = pending.actor_user_id
@@ -129,8 +139,12 @@ class SalesforceAuthService:
         connection.salesforce_org_id = self._parse_id_from_url(token_response.get("id"), "org")
         connection.last_error = None
         connection.connected_at = _now()
+        if recheck_worker is not None:
+            await recheck_worker(pending.tenant, pending.agent_id)
         connection = await self.connections.update(connection)
 
+        if recheck_worker is not None:
+            await recheck_worker(pending.tenant, pending.agent_id)
         await self.activity_logs.add(ActivityLog(
             id=secrets.token_hex(6), tenant=pending.tenant, agent_id=pending.agent_id,
             actor_user_id=pending.actor_user_id, action="salesforce_connected",
@@ -253,8 +267,14 @@ class SalesforcePushService:
             await self.opportunities.update(opportunity)
         await self.auth.connections.update(connection)
 
-    async def push(self, opportunity, actor_user_id: str | None = None):
+    async def push(self, opportunity, actor_user_id: str | None = None, *, recheck_worker=None):
         import secrets as _secrets
+
+        async def recheck() -> None:
+            if recheck_worker is not None:
+                await recheck_worker()
+
+        await recheck()
 
         if opportunity.stage not in ("validated", "push_failed", "ready_salesforce"):
             raise SalesforceError(f"Only validated opportunities can be pushed to Salesforce. Current stage: {opportunity.stage}")
@@ -275,15 +295,22 @@ class SalesforcePushService:
         ))
 
         try:
-            access_token = self.auth.get_valid_access_token(connection)
+            access_token = await asyncio.to_thread(
+                self.auth.get_valid_access_token, connection)
+            await recheck()
             payload = self._map_opportunity_payload(opportunity)
             try:
-                sf_id = self._create_opportunity(connection, access_token, payload)
+                sf_id = await asyncio.to_thread(
+                    self._create_opportunity, connection, access_token, payload)
             except SalesforceError as e:
                 if "unauthorized" not in str(e).lower() and "401" not in str(e):
                     raise
-                access_token = self.auth.refresh_access_token(connection)
-                sf_id = self._create_opportunity(connection, access_token, payload)
+                access_token = await asyncio.to_thread(
+                    self.auth.refresh_access_token, connection)
+                await recheck()
+                sf_id = await asyncio.to_thread(
+                    self._create_opportunity, connection, access_token, payload)
+            await recheck()
 
             opportunity.stage = "pushed"
             opportunity.salesforce_push_status = "success"
@@ -291,18 +318,25 @@ class SalesforcePushService:
             opportunity.salesforce_pushed_at = _now()
             opportunity.salesforce_push_error = None
 
+            await recheck()
             await self.activity_logs.add(ActivityLog(
                 id=_secrets.token_hex(6), tenant=opportunity.tenant, agent_id=opportunity.agent_id,
                 opportunity_id=opportunity.id, actor_user_id=actor_user_id, action="salesforce_push_succeeded",
                 detail=f"Pushed to Salesforce Opportunity {sf_id}", tone="success",
                 metadata={"salesforceOpportunityId": sf_id, "salesforce_id": sf_id, "instance_url": connection.instance_url},
             ))
+            await recheck()
             await self._persist(opportunity, connection)
             # Notification trigger: Salesforce sync successful.
             if self.notifier is not None:
+                await recheck()
                 await self.notifier.notify_salesforce_sync_success(opportunity, sf_id)
+            await recheck()
             return opportunity
+        except WorkerUnavailable:
+            raise
         except Exception as e:
+            await recheck()
             message = str(e)
             opportunity.stage = "push_failed"
             opportunity.salesforce_push_status = "failed"

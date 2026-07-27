@@ -987,6 +987,7 @@ class SqlContactStore:
 
     async def add(self, contact: Contact) -> Contact:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, contact.tenant, contact.agent_id)
             s.add(ContactRow(id=contact.id, tenant_id=contact.tenant, agent_id=contact.agent_id,
                              conversation_id=contact.conversation_id, name=contact.name, email=contact.email,
                              phone=contact.phone, status=contact.status, estimated_value=contact.estimated_value,
@@ -999,6 +1000,7 @@ class SqlContactStore:
         async with self.sessionmaker() as s, s.begin():
             row = await s.get(ContactRow, contact.id)
             if row is not None:
+                await _lock_enabled_agent(s, contact.tenant, contact.agent_id)
                 row.name, row.email, row.phone = contact.name, contact.email, contact.phone
                 row.status, row.estimated_value = contact.status, contact.estimated_value
                 row.ai_summary, row.sentiment = contact.ai_summary, contact.sentiment
@@ -1017,8 +1019,23 @@ class SqlContactStore:
 class SqlActionStore:
     sessionmaker: async_sessionmaker[AsyncSession]
 
+    def _to_domain(self, row: CrmActionRow) -> CrmAction:
+        return CrmAction(
+            id=row.id, tenant=row.tenant_id, contact_id=row.contact_id, title=row.title,
+            action_type=row.action_type, description=row.description or "",
+            priority=row.priority, status=row.status, created_at=row.created_at)
+
+    async def get(self, tenant: str, action_id: str) -> CrmAction | None:
+        async with self.sessionmaker() as session:
+            row = await session.get(CrmActionRow, action_id)
+            return self._to_domain(row) if row is not None and row.tenant_id == tenant else None
+
     async def add(self, action: CrmAction) -> CrmAction:
         async with self.sessionmaker() as s, s.begin():
+            contact = await s.get(ContactRow, action.contact_id)
+            if contact is None or contact.tenant_id != action.tenant:
+                return action
+            await _lock_enabled_agent(s, action.tenant, contact.agent_id)
             s.add(CrmActionRow(id=action.id, tenant_id=action.tenant, contact_id=action.contact_id,
                                action_type=action.action_type, title=action.title,
                                description=action.description, priority=action.priority,
@@ -1039,6 +1056,10 @@ class SqlActionStore:
             row = await s.get(CrmActionRow, action_id)
             if row is None or row.tenant_id != tenant:
                 return None
+            contact = await s.get(ContactRow, row.contact_id)
+            if contact is None or contact.tenant_id != tenant:
+                return None
+            await _lock_enabled_agent(s, tenant, contact.agent_id)
             row.status = status
             return CrmAction(id=row.id, tenant=row.tenant_id, contact_id=row.contact_id, title=row.title,
                              action_type=row.action_type, description=row.description or "",
@@ -1068,6 +1089,7 @@ class SqlIngestionSourceStore:
 
     async def get_or_create(self, tenant: str, agent_id: str, source_key: str, defaults: dict) -> IngestionSource:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, tenant, agent_id)
             row = (await s.execute(select(SalesIntelIngestionSourceRow).where(
                 SalesIntelIngestionSourceRow.tenant_id == tenant,
                 SalesIntelIngestionSourceRow.agent_id == agent_id,
@@ -1104,6 +1126,7 @@ class SqlIngestionSourceStore:
 
     async def update(self, source: IngestionSource) -> IngestionSource:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, source.tenant, source.agent_id)
             row = await s.get(SalesIntelIngestionSourceRow, source.id)
             if row is not None and row.tenant_id == source.tenant:
                 row.name, row.type, row.status = source.name, source.type, source.status
@@ -1177,6 +1200,7 @@ class SqlOpportunityStore:
 
     async def add(self, opp: Opportunity) -> Opportunity:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, opp.tenant, opp.agent_id)
             row = SalesIntelOpportunityRow(id=opp.id, tenant_id=opp.tenant, agent_id=opp.agent_id,
                                            external_id=opp.external_id, source_key=opp.source_key,
                                            source_name=opp.source_name, created_at=opp.created_at)
@@ -1186,6 +1210,7 @@ class SqlOpportunityStore:
 
     async def update(self, opp: Opportunity) -> Opportunity:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, opp.tenant, opp.agent_id)
             row = await s.get(SalesIntelOpportunityRow, opp.id)
             if row is not None and row.tenant_id == opp.tenant and row.agent_id == opp.agent_id:
                 _apply_opportunity_columns(row, opp)
@@ -1231,6 +1256,7 @@ class SqlActivityLogStore:
 
     async def add(self, log: ActivityLog) -> ActivityLog:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, log.tenant, log.agent_id)
             s.add(SalesIntelActivityLogRow(id=log.id, tenant_id=log.tenant, agent_id=log.agent_id,
                                            opportunity_id=log.opportunity_id, actor_user_id=log.actor_user_id,
                                            activity_type=log.activity_type, action=log.action, detail=log.detail,
@@ -1277,6 +1303,7 @@ class SqlSalesforceConnectionStore:
 
     async def get_or_create(self, tenant: str, agent_id: str) -> SalesforceConnection:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, tenant, agent_id)
             row = await s.get(SalesIntelSalesforceConnectionRow, (tenant, agent_id))
             if row is None:
                 row = SalesIntelSalesforceConnectionRow(tenant_id=tenant, agent_id=agent_id)
@@ -1286,6 +1313,7 @@ class SqlSalesforceConnectionStore:
 
     async def update(self, conn: SalesforceConnection) -> SalesforceConnection:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, conn.tenant, conn.agent_id)
             row = await s.get(SalesIntelSalesforceConnectionRow, (conn.tenant, conn.agent_id))
             if row is None:
                 row = SalesIntelSalesforceConnectionRow(tenant_id=conn.tenant, agent_id=conn.agent_id)
@@ -1320,6 +1348,7 @@ class SqlFinanceFileStore:
 
     async def add(self, file: FinanceFile) -> FinanceFile:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, file.tenant, file.agent_id)
             s.add(FinanceFileRow(
                 id=file.id, tenant_id=file.tenant, agent_id=file.agent_id, file_name=file.file_name,
                 source_name=file.source_name, namespace=file.namespace, size_bytes=file.size_bytes,
@@ -1344,6 +1373,7 @@ class SqlFinanceFileStore:
     async def delete(self, tenant: str, agent_id: str, ids: list[str]) -> list[str]:
         deleted: list[str] = []
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, tenant, agent_id)
             for file_id in ids:
                 row = await s.get(FinanceFileRow, file_id)
                 if row is not None and row.tenant_id == tenant and row.agent_id == agent_id:
@@ -1359,10 +1389,27 @@ class SqlFinanceChatStore:
 
     async def add(self, message: FinanceChatMessage) -> FinanceChatMessage:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, message.tenant, message.agent_id)
             s.add(FinanceChatMessageRow(id=message.id, tenant_id=message.tenant, agent_id=message.agent_id,
                                         role=message.role, content=message.content,
                                         created_at=message.created_at))
         return message
+
+    async def add_exchange(
+        self, tenant: str, agent_id: str, user: FinanceChatMessage,
+        assistant: FinanceChatMessage,
+    ) -> None:
+        async with self.sessionmaker() as session, session.begin():
+            await _lock_enabled_agent(session, tenant, agent_id)
+            session.add_all([
+                FinanceChatMessageRow(
+                    id=user.id, tenant_id=tenant, agent_id=agent_id,
+                    role=user.role, content=user.content, created_at=user.created_at),
+                FinanceChatMessageRow(
+                    id=assistant.id, tenant_id=tenant, agent_id=agent_id,
+                    role=assistant.role, content=assistant.content,
+                    created_at=assistant.created_at),
+            ])
 
     async def list_for_agent(self, tenant: str, agent_id: str,
                              limit: int | None = None) -> list[FinanceChatMessage]:
@@ -1377,6 +1424,7 @@ class SqlFinanceChatStore:
 
     async def clear(self, tenant: str, agent_id: str) -> int:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, tenant, agent_id)
             result = await s.execute(delete(FinanceChatMessageRow).where(
                 FinanceChatMessageRow.tenant_id == tenant, FinanceChatMessageRow.agent_id == agent_id))
             return result.rowcount or 0
@@ -1409,6 +1457,8 @@ class SqlNotificationStore:
 
     async def add(self, notification: Notification) -> Notification:
         async with self.sessionmaker() as s, s.begin():
+            if notification.agent_id:
+                await _lock_enabled_agent(s, notification.tenant, notification.agent_id)
             s.add(NotificationRow(id=notification.id, tenant_id=notification.tenant, user_id=notification.user_id,
                                   category=notification.category, type=notification.type, title=notification.title,
                                   body=notification.body, agent_id=notification.agent_id,

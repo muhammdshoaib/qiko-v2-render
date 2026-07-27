@@ -117,7 +117,11 @@ export const getTeamsWebhookStatus = () => request<TeamsWebhookStatus>("/channel
 export const connectTeamsWebhook = (webhook_url: string) =>
   request<TeamsWebhookStatus>("/channels/teams/webhook", { method: "PUT", body: JSON.stringify({ webhook_url }) });
 export const disconnectTeamsWebhook = () => request<TeamsWebhookStatus>("/channels/teams/webhook", { method: "DELETE" });
-export const testTeamsWebhook = () => request<{ sent: boolean }>("/channels/teams/test", { method: "POST" });
+export const testTeamsWebhook = (workerId: string) =>
+  request<{ sent: boolean }>("/channels/teams/test", {
+    method: "POST",
+    body: JSON.stringify({ worker: workerId }),
+  });
 
 // Knowledge + chat
 export type Doc = { doc_id: string; chunks: number };

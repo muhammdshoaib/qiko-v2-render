@@ -3650,6 +3650,8 @@ export interface components {
             invitee_email: string;
             /** Start */
             start: string;
+            /** Worker Id */
+            worker_id: string;
         };
         /** CalendlyEventTypeBody */
         CalendlyEventTypeBody: {
@@ -3687,6 +3689,8 @@ export interface components {
             list_id: string;
             /** Name */
             name: string;
+            /** Worker Id */
+            worker_id: string;
         };
         /** ConversationBody */
         ConversationBody: {
@@ -3911,6 +3915,8 @@ export interface components {
             subject: string;
             /** To */
             to: string;
+            /** Worker Id */
+            worker_id: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -4161,10 +4167,8 @@ export interface components {
         };
         /** ReminderBody */
         ReminderBody: {
-            /** Assignee Email */
-            assignee_email?: string | null;
             /** Assignee User Id */
-            assignee_user_id?: string | null;
+            assignee_user_id: string;
             /** Pack Id */
             pack_id: string;
         };
@@ -4367,6 +4371,8 @@ export interface components {
             text: string;
             /** To */
             to: string;
+            /** Worker Id */
+            worker_id: string;
         };
         /** SetPasswordBody */
         SetPasswordBody: {
@@ -4399,6 +4405,10 @@ export interface components {
         SlackSend: {
             /** Channel */
             channel: string;
+            /** Slack User Id */
+            slack_user_id: string;
+            /** Team Id */
+            team_id: string;
             /** Text */
             text: string;
         };
@@ -6885,6 +6895,7 @@ export interface operations {
         parameters: {
             query: {
                 event_type: string;
+                worker_id: string;
             };
             header?: never;
             path?: never;
@@ -7058,6 +7069,7 @@ export interface operations {
         parameters: {
             query: {
                 code: string;
+                state: string;
             };
             header?: never;
             path?: never;
@@ -7089,8 +7101,8 @@ export interface operations {
     };
     slack_install_api_v1_channels_slack_install_get: {
         parameters: {
-            query?: {
-                state?: string;
+            query: {
+                worker_id: string;
             };
             header?: never;
             path?: never;
@@ -7197,7 +7209,11 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkerSel"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -7208,6 +7224,15 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
+from app.core.deps import WorkerUnavailable, require_available_worker
 from app.modules.sales_intelligence.models import IngestionSource, Opportunity, cadence_to_minutes
 from app.modules.sales_intelligence.service import OpportunityService, SalesIntelligenceError
 
@@ -89,12 +90,20 @@ async def scan_due_sources(service: OpportunityService, *, now: datetime | None 
             continue
         scan = getattr(service, method_name)
         try:
-            agent_config = None
-            if agents is not None:
-                agent = await agents.get(source.tenant, source.agent_id)
-                agent_config = getattr(agent, "config", None) if agent is not None else None
+            if agents is None:
+                raise WorkerUnavailable
+
+            async def recheck() -> None:
+                await require_available_worker(
+                    agents=agents, tenant=source.tenant, agent_id=source.agent_id)
+
+            agent = await require_available_worker(
+                agents=agents, tenant=source.tenant, agent_id=source.agent_id)
+            agent_config = getattr(agent, "config", None)
             # empty filters == the manual "scan now"
-            await scan(source.tenant, source.agent_id, {}, agent_config=agent_config)
+            await scan(
+                source.tenant, source.agent_id, {}, agent_config=agent_config,
+                recheck_worker=recheck)
             scanned += 1
         except SalesIntelligenceError as exc:
             # Includes SourceInactiveError (source disabled mid-sweep) and re-raised scan failures --
@@ -127,7 +136,8 @@ async def _already_reminded_today(service: OpportunityService, opportunity: Oppo
 
 
 async def send_deadline_reminders(service: OpportunityService, *, now: datetime | None = None,
-                                  threshold_days: int = DEFAULT_DEADLINE_THRESHOLD_DAYS) -> dict:
+                                  threshold_days: int = DEFAULT_DEADLINE_THRESHOLD_DAYS,
+                                  agents=None) -> dict:
     """Remind on every non-terminal opportunity whose deadline is within `threshold_days`.
 
     Idempotent: at most one reminder per opportunity per day, deduped on the
@@ -146,9 +156,15 @@ async def send_deadline_reminders(service: OpportunityService, *, now: datetime 
             continue
         considered += 1
         try:
+            if agents is None:
+                raise WorkerUnavailable
+            await require_available_worker(
+                agents=agents, tenant=opportunity.tenant, agent_id=opportunity.agent_id)
             if await _already_reminded_today(service, opportunity, now):
                 deduped += 1
                 continue
+            await require_available_worker(
+                agents=agents, tenant=opportunity.tenant, agent_id=opportunity.agent_id)
             await service.record_deadline_reminder(opportunity, due)
             reminded += 1
         except Exception:  # noqa: BLE001 -- one bad opportunity must never kill the whole sweep

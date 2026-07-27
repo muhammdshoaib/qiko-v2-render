@@ -20,7 +20,9 @@ class FakeClickUp:
 
 
 def _reg():
-    return build_messaging_tools(gmail=FakeGmail(), slack=FakeSlack(), clickup=FakeClickUp())
+    return build_messaging_tools(
+        gmail=FakeGmail(), slack=FakeSlack(), clickup=FakeClickUp(),
+        worker_guard=lambda: None)
 
 
 def test_messaging_tools_registered():
@@ -29,14 +31,34 @@ def test_messaging_tools_registered():
 
 async def test_tools_invoke_gateways():
     reg = _reg()
-    assert (await reg.invoke("gmail_send", {"to": "a@x.com", "subject": "Hi", "body": "Hello"}))["sent"] is True
+    assert (await reg.invoke("gmail_send", {"to": "a@invalid", "subject": "Hi", "body": "Hello"}))["sent"] is True
     assert (await reg.invoke("slack_send", {"channel": "#general", "text": "Hi"}))["channel"] == "#general"
     assert (await reg.invoke("clickup_create_task", {"list_id": "L1", "name": "Do it"}))["id"] == "task_1"
+
+
+async def test_worker_guard_runs_after_gateway_failure():
+    checks = 0
+
+    class FailingGmail:
+        def send(self, *_args):
+            raise RuntimeError("gateway failed")
+
+    def guard():
+        nonlocal checks
+        checks += 1
+
+    registry = build_messaging_tools(
+        gmail=FailingGmail(), slack=FakeSlack(), clickup=FakeClickUp(),
+        worker_guard=guard)
+    with pytest.raises(ToolError):
+        await registry.invoke(
+            "gmail_send", {"to": "a@invalid", "subject": "Hi", "body": "Body"})
+    assert checks == 2
 
 
 async def test_messaging_args_validated():
     reg = _reg()
     with pytest.raises(ToolError):
-        await reg.invoke("gmail_send", {"to": "a@x.com", "subject": "", "body": "x"})  # empty subject
+        await reg.invoke("gmail_send", {"to": "a@invalid", "subject": "", "body": "x"})  # empty subject
     with pytest.raises(ToolError):
         await reg.invoke("slack_send", {"channel": "#g"})  # missing text

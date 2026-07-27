@@ -26,9 +26,10 @@ def test_installation_store_save_fetch_delete():
 
 def test_workspace_link_resolves_worker():
     links = WorkspaceLinkStore()
-    links.link("T1", "U1", "worker-9")
-    assert links.resolve("T1", "U1") == "worker-9"
-    assert links.resolve("T1", "U2") is None
+    links.link("acme", "T1", "U1", "worker-9")
+    assert links.resolve("acme", "T1", "U1") == "worker-9"
+    assert links.resolve("acme", "T1", "U2") is None
+    assert links.resolve("beta", "T1", "U1") is None
 
 
 def test_exchange_code_saves_installation():

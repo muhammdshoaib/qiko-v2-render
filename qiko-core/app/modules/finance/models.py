@@ -136,6 +136,10 @@ class FinanceFileStore(Protocol):
 
 class FinanceChatStore(Protocol):
     async def add(self, message: FinanceChatMessage) -> FinanceChatMessage: ...
+    async def add_exchange(
+        self, tenant: str, agent_id: str, user: FinanceChatMessage,
+        assistant: FinanceChatMessage,
+    ) -> None: ...
     async def list_for_agent(self, tenant: str, agent_id: str, limit: int | None = None) -> list[FinanceChatMessage]: ...
     async def clear(self, tenant: str, agent_id: str) -> int: ...
 
@@ -176,6 +180,13 @@ class InMemoryFinanceChatStore:
     async def add(self, message: FinanceChatMessage) -> FinanceChatMessage:
         self._by_id[message.id] = message
         return message
+
+    async def add_exchange(
+        self, tenant: str, agent_id: str, user: FinanceChatMessage,
+        assistant: FinanceChatMessage,
+    ) -> None:
+        self._by_id[user.id] = user
+        self._by_id[assistant.id] = assistant
 
     async def list_for_agent(self, tenant: str, agent_id: str, limit: int | None = None) -> list[FinanceChatMessage]:
         items = [m for m in self._by_id.values() if m.tenant == tenant and m.agent_id == agent_id]

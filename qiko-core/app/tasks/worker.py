@@ -30,37 +30,42 @@ async def generate_tender_artifacts(ctx, **kwargs):  # pragma: no cover - invoke
     return await jobs.generate_tender_artifacts(sessionmaker=ctx["sessionmaker"], **kwargs)
 
 
-def _build_sales_service(sessionmaker):
+def _build_sales_runtime(sessionmaker):
     """Build a Postgres-backed OpportunityService for a worker sweep, mirroring the DB-store wiring
     in app.main's lifespan so scheduled scans read/write the same source of truth as the API."""
     from app.db.stores import (
         SqlActivityLogStore,
+        SqlAgentStore,
         SqlIngestionSourceStore,
         SqlNotificationStore,
         SqlOpportunityStore,
     )
+    from app.modules.agents.service import AgentService
     from app.modules.notifications.service import NotificationService
     from app.modules.sales_intelligence.notifications import SalesNotificationService
     from app.modules.sales_intelligence.service import OpportunityService
 
     notifier = SalesNotificationService(notifications=NotificationService(store=SqlNotificationStore(sessionmaker)))
-    return OpportunityService(
+    agents = AgentService(store=SqlAgentStore(sessionmaker))
+    service = OpportunityService(
         scan_interval_minutes=get_settings().idg_sales_scan_interval_minutes,
         sources=SqlIngestionSourceStore(sessionmaker),
         opportunities=SqlOpportunityStore(sessionmaker),
         activity_logs=SqlActivityLogStore(sessionmaker),
         notifier=notifier,
+        agents=agents,
     )
+    return service, agents
 
 
 async def scan_due_sources(ctx):  # pragma: no cover - invoked by the arq cron runtime
-    service = _build_sales_service(ctx["sessionmaker"])
-    return await sales_scheduler.scan_due_sources(service)
+    service, agents = _build_sales_runtime(ctx["sessionmaker"])
+    return await sales_scheduler.scan_due_sources(service, agents=agents)
 
 
 async def send_deadline_reminders(ctx):  # pragma: no cover - invoked by the arq cron runtime
-    service = _build_sales_service(ctx["sessionmaker"])
-    return await sales_scheduler.send_deadline_reminders(service)
+    service, agents = _build_sales_runtime(ctx["sessionmaker"])
+    return await sales_scheduler.send_deadline_reminders(service, agents=agents)
 
 
 FUNCTIONS = [ingest_document, send_email, generate_tender_artifacts]
