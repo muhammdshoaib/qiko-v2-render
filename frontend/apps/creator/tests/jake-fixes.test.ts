@@ -18,10 +18,16 @@ import {
 } from "../components/pre-sales/section-assignment-utils";
 import {
   AI_DRAFTING_DESCRIPTION,
+  activeBidPacks,
   aiDraftingPercent,
   knowledgeChunkCount,
   nextBidDeadline,
 } from "../components/pre-sales/metrics";
+import {
+  LOSS_REASONS,
+  buildOutcomePayload,
+  outcomeDraftIsValid,
+} from "../components/pre-sales/outcome-utils";
 import procSections from "./fixtures/proc-sections.json";
 
 class MemoryStorage {
@@ -60,13 +66,13 @@ class ThrowingStorage {
 
 test("password reset email prefers the query, falls back to the session and clears after use", () => {
   const storage = new MemoryStorage();
-  storePasswordResetEmail(storage, "  Jake.Example@Qiko.AI ");
+  storePasswordResetEmail(storage, "  Jake.Example@Invalid ");
 
   assert.equal(PASSWORD_RESET_EMAIL_SESSION_KEY, "qiko.password-reset.email");
-  assert.equal(storage.getItem(PASSWORD_RESET_EMAIL_SESSION_KEY), "jake.example@qiko.ai");
-  assert.equal(resolvePasswordResetEmail(" Query.User@Example.COM ", storage), "query.user@example.com");
-  assert.equal(resolvePasswordResetEmail("", storage), "jake.example@qiko.ai");
-  assert.equal(normalisePasswordResetEmail(" No.Email@Example.COM "), "no.email@example.com");
+  assert.equal(storage.getItem(PASSWORD_RESET_EMAIL_SESSION_KEY), "jake.example@invalid");
+  assert.equal(resolvePasswordResetEmail(" Query.User@Invalid ", storage), "query.user@invalid");
+  assert.equal(resolvePasswordResetEmail("", storage), "jake.example@invalid");
+  assert.equal(normalisePasswordResetEmail(" No.Email@Invalid "), "no.email@invalid");
 
   clearPasswordResetEmail(storage);
   assert.equal(resolvePasswordResetEmail(null, storage), "");
@@ -83,14 +89,14 @@ test("password reset storage is best effort when property access, get, set or re
   };
 
   assert.equal(getPasswordResetSessionStorage(blockedWindow), null);
-  assert.doesNotThrow(() => storePasswordResetEmail(null, "Jake@Qiko.AI"));
-  assert.equal(storePasswordResetEmail(null, "Jake@Qiko.AI"), "jake@qiko.ai");
-  assert.equal(resolvePasswordResetEmail("Query@Qiko.AI", null), "query@qiko.ai");
+  assert.doesNotThrow(() => storePasswordResetEmail(null, "Jake@Invalid"));
+  assert.equal(storePasswordResetEmail(null, "Jake@Invalid"), "jake@invalid");
+  assert.equal(resolvePasswordResetEmail("Query@Invalid", null), "query@invalid");
   assert.equal(resolvePasswordResetEmail(null, null), "");
   assert.doesNotThrow(() => clearPasswordResetEmail(null));
 
-  assert.doesNotThrow(() => storePasswordResetEmail(storage, "Jake@Qiko.AI"));
-  assert.equal(resolvePasswordResetEmail("Query@Qiko.AI", storage), "query@qiko.ai");
+  assert.doesNotThrow(() => storePasswordResetEmail(storage, "Jake@Invalid"));
+  assert.equal(resolvePasswordResetEmail("Query@Invalid", storage), "query@invalid");
   assert.doesNotThrow(() => resolvePasswordResetEmail(null, storage));
   assert.equal(resolvePasswordResetEmail(null, storage), "");
   assert.doesNotThrow(() => clearPasswordResetEmail(storage));
@@ -144,6 +150,36 @@ test("AI drafting aggregates totals, ignores invalid totals and clamps completed
   );
 });
 
+test("active bids exclude recorded outcomes but keep pending final-stage packs", () => {
+  const packs = [
+    { id: "pending", stage: "final", outcome: null },
+    { id: "won", outcome: "won" },
+    { id: "lost", outcome: "lost" },
+    { id: "withdrawn", outcome: "withdrawn" },
+    { id: "legacy" },
+  ];
+  assert.deepEqual(activeBidPacks(packs).map((pack) => pack.id), ["pending", "legacy"]);
+});
+
+test("outcome payload validates lost reason and preserves zero value", () => {
+  assert.equal(outcomeDraftIsValid("lost", "", "0"), false);
+  for (const reason of LOSS_REASONS) {
+    assert.equal(outcomeDraftIsValid("lost", reason, "0"), true);
+  }
+  assert.deepEqual(buildOutcomePayload("pending", "", ""), {
+    outcome: null, reason: "", value: null,
+  });
+  assert.deepEqual(buildOutcomePayload("won", "price", "0"), {
+    outcome: "won", reason: "", value: 0,
+  });
+  assert.deepEqual(buildOutcomePayload("lost", "price", "1250.50"), {
+    outcome: "lost", reason: "price", value: 1250.5,
+  });
+  assert.equal(outcomeDraftIsValid("won", "", "-1"), false);
+  assert.equal(outcomeDraftIsValid("won", "", "not-a-number"), false);
+  assert.equal(outcomeDraftIsValid("won", "", "1000000000000001"), false);
+});
+
 test("next bid deadline ignores past and invalid dates and keeps a same-day date deadline", () => {
   const now = new Date(2025, 2, 14, 10, 0, 0);
   const packs = [
@@ -192,7 +228,7 @@ test("UI source pins reset copy, accessible metric tooltips and shared helper wi
     assert.ok(source.includes("AI_DRAFTING_DESCRIPTION"));
     assert.ok(source.includes("MetricInfoTooltip"));
     assert.ok(source.includes('label: "AI Drafting"'));
-    assert.ok(source.includes("formatShortDate(nextBidDeadline(packs, Date.now()))"));
+    assert.ok(source.includes("formatShortDate(nextBidDeadline(activePacks, Date.now()))"));
     assert.ok(source.includes("knowledgeChunkCount"));
     assert.ok(source.includes('label: "Data Volume"'));
     assert.ok(source.includes("`${dataVolume} chunks`"));
@@ -205,6 +241,43 @@ test("UI source pins reset copy, accessible metric tooltips and shared helper wi
   assert.match(tooltipSource, /aria-label=/);
   assert.match(tooltipSource, /focus-visible:/);
   assert.match(tooltipSource, /stopPropagation/);
+});
+
+test("Creator worker usage and Studio calls use server contracts", () => {
+  const apiSource = readFileSync(resolve(process.cwd(), "lib/api.ts"), "utf8");
+  const dashboardSource = readFileSync(resolve(process.cwd(), "app/dashboard/page.tsx"), "utf8");
+  const workersSource = readFileSync(resolve(process.cwd(), "app/workers/page.tsx"), "utf8");
+  const studioSource = readFileSync(resolve(process.cwd(), "app/studio/[id]/page.tsx"), "utf8");
+  const layoutSource = readFileSync(resolve(process.cwd(), "app/studio/[id]/layout.tsx"), "utf8");
+  const guardSource = readFileSync(resolve(process.cwd(), "components/studio/worker-route-guard.tsx"), "utf8");
+  const outcomeSource = readFileSync(resolve(process.cwd(), "components/pre-sales/outcome-dialog.tsx"), "utf8");
+  const landingSource = readFileSync(resolve(process.cwd(), "components/pre-sales/worker-landing.tsx"), "utf8");
+
+  assert.match(apiSource, /getAgentUsage/);
+  assert.match(apiSource, /worker_limit/);
+  assert.match(apiSource, /\.filter\(\(agent\) => agent\.enabled !== false\)/);
+  assert.match(apiSource, /ask = \(conversation_id: string, question: string, agent_id: string\)/);
+  assert.match(apiSource, /batchAnswer = \(questions: string\[\], agent_id: string\)/);
+  assert.match(apiSource, /requestBlob/);
+  assert.doesNotMatch(apiSource, /fetch\(`\$\{BASE\}\/agents\/batch-export/);
+  for (const source of [dashboardSource, workersSource]) {
+    assert.match(source, /getAgentUsage/);
+    assert.doesNotMatch(source, /WORKER_LIMIT/);
+    assert.match(source, /agent-usage/);
+  }
+  assert.match(layoutSource, /StudioWorkerRouteGuard/);
+  assert.match(guardSource, /worker\.status !== "ready"/);
+  assert.match(guardSource, /Worker unavailable/);
+  assert.match(guardSource, /aria-live="assertive"/);
+  assert.match(dashboardSource, /dashboard-worker-usage/);
+  assert.match(dashboardSource, /aria-live=/);
+  assert.match(workersSource, /workers-plan-usage/);
+  assert.match(workersSource, /aria-live=/);
+  assert.match(landingSource, /Edit outcome for/);
+  assert.match(outcomeSource, /Update outcome for \{pack\.title\}/);
+  assert.match(studioSource, /ask\(cid, question, agentId\)/);
+  assert.match(studioSource, /batchAnswer\(questions, agentId\)/);
+  assert.match(studioSource, /batchExportUrl\(questions, agentId\)/);
 });
 
 test("load smoke and deployment playbooks use the versioned health endpoint", () => {

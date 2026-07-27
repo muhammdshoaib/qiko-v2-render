@@ -63,6 +63,12 @@ async def test_set_outcome_rejects_invalid_outcome_and_reason():
         await svc.set_outcome("idg", pack.id, outcome="bogus")
     with pytest.raises(ValueError):
         await svc.set_outcome("idg", pack.id, outcome="lost", reason="bogus-reason")
+    with pytest.raises(ValueError):
+        await svc.set_outcome("idg", pack.id, outcome="lost", reason="")
+    for value in (-1, float("inf"), float("nan"), 1_000_000_000_000_001):
+        with pytest.raises(ValueError):
+            await svc.set_outcome("idg", pack.id, outcome="won", value=value)
+    assert (await svc.get("idg", pack.id)).outcome is None
 
 
 async def test_set_outcome_can_be_cleared():
@@ -176,6 +182,16 @@ def test_outcome_api_roundtrip_and_stats(client):
 
     bad = client.put(f"/api/v1/rfp/packs/{won['id']}/outcome", json={"outcome": "not-real"}, cookies=c)
     assert bad.status_code == 422
+    missing_reason = client.put(
+        f"/api/v1/rfp/packs/{won['id']}/outcome",
+        json={"outcome": "lost", "reason": ""}, cookies=c)
+    assert missing_reason.status_code == 422
+    for value in (-1, 1e16, "NaN", "Infinity"):
+        invalid_value = client.put(
+            f"/api/v1/rfp/packs/{won['id']}/outcome",
+            json={"outcome": "won", "value": value}, cookies=c)
+        assert invalid_value.status_code == 422
+    assert client.get(f"/api/v1/rfp/packs/{won['id']}", cookies=c).json()["outcome_value"] == 25000
 
     missing = client.put("/api/v1/rfp/packs/does-not-exist/outcome", json={"outcome": "won"}, cookies=c)
     assert missing.status_code == 404

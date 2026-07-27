@@ -14,6 +14,7 @@
     "jake-fixes.test.ts",
     "fixtures/proc-sections.json",
     "../components/pre-sales/metrics.ts",
+    "../components/pre-sales/outcome-utils.ts",
     "../components/pre-sales/section-assignment-utils.ts",
     "../lib/password-reset-session.ts"
   ]

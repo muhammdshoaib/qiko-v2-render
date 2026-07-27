@@ -36,7 +36,7 @@ from app.modules.rfp.generation import (
     initial_gen_status,
 )
 from app.modules.rfp.scoring import ScoringError, score_opportunity
-from app.modules.rfp.service import PackRequirement, RfpPack, RfpPackNotFound
+from app.modules.rfp.service import MAX_OUTCOME_VALUE, PackRequirement, RfpPack, RfpPackNotFound
 from app.modules.rfp.tree import PackQuestionNotFound, PackSection, PackSectionNotFound
 from app.modules.workers.worker import source_labels
 from app.tasks.queue import EagerTaskQueue
@@ -129,7 +129,7 @@ async def set_stage(pack_id: str, body: StageBody, request: Request,
 class OutcomeBody(BaseModel):
     outcome: str | None = None  # "won" | "lost" | "withdrawn" | null to clear
     reason: str = ""  # loss reason, one of rfp.service.LOSS_REASONS -- only meaningful when lost
-    value: float | None = None  # contract value, for "won" pipeline-value reporting
+    value: float | None = Field(default=None, ge=0, le=MAX_OUTCOME_VALUE)
 
 
 @router.put("/{pack_id}/outcome")

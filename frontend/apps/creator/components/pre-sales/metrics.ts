@@ -1,3 +1,7 @@
+export function activeBidPacks<T extends { outcome?: string | null }>(packs: readonly T[]): T[] {
+  return packs.filter((pack) => pack.outcome == null);
+}
+
 export const AI_DRAFTING_DESCRIPTION =
   "AI drafting progress is total completed drafts divided by total draftable items across active bids. It does not measure answer quality, confidence, grounding, or KB gaps.";
 

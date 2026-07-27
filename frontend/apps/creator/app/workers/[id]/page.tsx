@@ -44,11 +44,35 @@ export default function WorkerDetailPage() {
   const searchParams = useSearchParams();
   const initialTab = searchParams.get("tab") as Tab | null;
   const [tab, setTab] = useState<Tab>(TABS.some((t) => t.id === initialTab && !t.locked) ? (initialTab as Tab) : "Overview");
-  const docs = useQuery({ queryKey: ["documents"], queryFn: listDocuments });
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const worker = agents.data?.find((a) => a.id === id);
+  const docs = useQuery({ queryKey: ["documents"], queryFn: listDocuments, enabled: !!worker });
   const refresh = () => qc.invalidateQueries({ queryKey: ["documents"] });
   const refreshAgents = () => qc.invalidateQueries({ queryKey: ["agents"] });
+
+  if (agents.isLoading) {
+    return <AppShell title="Worker"><p className="p-6 text-sm text-slate-400">Checking worker availability...</p></AppShell>;
+  }
+  if (agents.isError) {
+    return (
+      <AppShell title="Worker">
+        <div className="p-6 text-sm text-slate-300">
+          Couldn&apos;t verify this worker. <button className="text-cyan-300 underline" onClick={() => agents.refetch()}>Retry</button>
+        </div>
+      </AppShell>
+    );
+  }
+  if (!worker) {
+    return (
+      <AppShell title="Worker unavailable">
+        <div className="mx-auto max-w-md p-6 text-center">
+          <h1 className="text-lg font-semibold text-white">Worker unavailable</h1>
+          <p className="mt-2 text-sm text-slate-400">Return to Workers and choose an available worker.</p>
+          <Link href="/workers" className="mt-4 inline-flex min-h-11 items-center rounded-lg bg-cyan-500 px-4 text-sm font-semibold text-slate-950">Back to Workers</Link>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell title="Worker">

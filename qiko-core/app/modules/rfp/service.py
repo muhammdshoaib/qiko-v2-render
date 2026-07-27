@@ -6,6 +6,7 @@ total requirements; Studio's AI Drafting metric instead uses persisted draft gen
 """
 from __future__ import annotations
 
+import math
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -18,6 +19,7 @@ STAGES = ("parsed", "assigned", "drafting", "review", "final")
 # outcome_status reads in the API/UI.
 OUTCOMES = ("won", "lost", "withdrawn")
 LOSS_REASONS = ("price", "technical", "relationship", "timeline", "no_bid_decision", "other")
+MAX_OUTCOME_VALUE = 1_000_000_000_000_000.0
 
 
 def _now() -> datetime:
@@ -189,22 +191,24 @@ class RfpPackService:
     async def set_source_documents(self, tenant: str, pack_id: str, docs: list) -> RfpPack:
         return await self.store.set_source_documents(tenant, pack_id, docs)
 
-    def _validate_outcome(self, outcome: str | None, reason: str) -> None:
+    def _validate_outcome(self, outcome: str | None, reason: str, value: float | None) -> None:
         if outcome is not None and outcome not in OUTCOMES:
             raise ValueError(f"invalid outcome '{outcome}', must be one of {OUTCOMES} (or null to clear)")
-        if outcome == "lost" and reason and reason not in LOSS_REASONS:
+        if outcome == "lost" and reason not in LOSS_REASONS:
             raise ValueError(f"invalid loss reason '{reason}', must be one of {LOSS_REASONS}")
+        if value is not None and (not math.isfinite(value) or value < 0 or value > MAX_OUTCOME_VALUE):
+            raise ValueError(f"outcome value must be finite and between 0 and {MAX_OUTCOME_VALUE:g}")
 
     async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,
                           reason: str = "", value: float | None = None) -> RfpPack:
-        self._validate_outcome(outcome, reason)
+        self._validate_outcome(outcome, reason, value)
         return await self.store.set_outcome(tenant, pack_id, outcome=outcome, reason=reason, value=value)
 
     async def set_outcome_for_enabled_agent(
         self, tenant: str, pack_id: str, agent_id: str, *, outcome: str | None,
         reason: str = "", value: float | None = None, recheck_worker,
     ) -> RfpPack:
-        self._validate_outcome(outcome, reason)
+        self._validate_outcome(outcome, reason, value)
         return await self.store.set_outcome_for_enabled_agent(
             tenant, pack_id, agent_id, outcome=outcome, reason=reason, value=value,
             recheck_worker=recheck_worker)
