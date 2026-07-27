@@ -3563,7 +3563,7 @@ export interface components {
         /** BatchAskBody */
         BatchAskBody: {
             /** Agent Id */
-            agent_id?: string | null;
+            agent_id: string;
             /** Questions */
             questions: string[];
         };
@@ -3846,7 +3846,7 @@ export interface components {
         /** EvaluateBody */
         EvaluateBody: {
             /** Agent Id */
-            agent_id?: string | null;
+            agent_id: string;
             /** Criterion */
             criterion: string;
             /** Doc Id */
@@ -4405,7 +4405,7 @@ export interface components {
         /** SpeakBody */
         SpeakBody: {
             /** Agent Id */
-            agent_id?: string | null;
+            agent_id: string;
             /** Audio B64 */
             audio_b64: string;
             /** Conversation Id */
@@ -4636,7 +4636,7 @@ export interface components {
         /** FeedbackBody */
         app__modules__agentcore__batch_router__FeedbackBody: {
             /** Agent Id */
-            agent_id?: string | null;
+            agent_id: string;
             /** Approved Text */
             approved_text: string;
             /** Requirement Id */
@@ -4647,7 +4647,7 @@ export interface components {
         /** AskBody */
         app__modules__chat__router__AskBody: {
             /** Agent Id */
-            agent_id?: string | null;
+            agent_id: string;
             /** Conversation Id */
             conversation_id: string;
             /** Question */

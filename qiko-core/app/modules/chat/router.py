@@ -4,7 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from app.core.deps import authed_tenant, build_tenant_worker, get_chat, get_file_generator
+from app.core.deps import authed_tenant, get_chat, get_file_generator, resolve_tenant_worker
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -13,13 +13,16 @@ class AskBody(BaseModel):
     conversation_id: str = Field(min_length=1)
     question: str = Field(min_length=1)
     topic: str | None = None
-    agent_id: str | None = None  # which specific worker is answering -- see build_tenant_worker
+    agent_id: str = Field(min_length=1)
 
 
 @router.post("/ask")
 async def ask(body: AskBody, request: Request, tenant: str = Depends(authed_tenant), chat=Depends(get_chat)) -> dict:
-    worker = await build_tenant_worker(request, tenant, agent_id=body.agent_id)  # agentcore (grounded + gated)
-    msg = await chat.ask(worker, body.conversation_id, body.question, topic=body.topic, agent_id=body.agent_id)
+    worker, recheck = await resolve_tenant_worker(request, tenant, body.agent_id)
+    msg = await chat.ask(
+        worker, body.conversation_id, body.question, topic=body.topic,
+        agent_id=body.agent_id, recheck_worker=recheck)
+    await recheck()
     return {"role": msg.role, "text": msg.text}
 
 
@@ -40,8 +43,14 @@ class ConversationBody(BaseModel):
 
 
 @router.post("/conversations")
-async def create_conversation(body: ConversationBody, tenant: str = Depends(authed_tenant), chat=Depends(get_chat)) -> dict:
-    return {"conversation_id": await chat.find_or_create(tenant, body.user_id, body.agent_id)}
+async def create_conversation(body: ConversationBody, request: Request,
+                              tenant: str = Depends(authed_tenant), chat=Depends(get_chat)) -> dict:
+    _worker, recheck = await resolve_tenant_worker(request, tenant, body.agent_id)
+    await recheck()
+    conversation_id = await chat.find_or_create(
+        tenant, body.user_id, body.agent_id, recheck_worker=recheck)
+    await recheck()
+    return {"conversation_id": conversation_id}
 
 
 class FileBody(BaseModel):

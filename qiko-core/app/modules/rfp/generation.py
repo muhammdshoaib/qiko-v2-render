@@ -48,6 +48,7 @@ from app.modules.rfp.extraction import (
     ensure_unique_codes,
     extract_requirements,
 )
+from app.modules.workers.worker import StubProviderUnavailable
 
 # extract/brief/compliance are one-shot calls over a whole tender document (tens of thousands of
 # chars in, a full structured response out) -- the gateway's default read_timeout (20s) is tuned
@@ -58,12 +59,6 @@ _DOCUMENT_READ_TIMEOUT = 180
 _EXTRACT_CONCURRENCY = 4  # bounded so a huge tender doesn't fire a dozen simultaneous LLM calls
 
 logger = logging.getLogger(__name__)
-
-
-class StubProviderUnavailable(Exception):
-    """The LLM provider fell back to a StubProvider (e.g. a Bedrock outage) so a real grounded
-    draft could not be produced. Callers MUST fail closed -- never persist the stub echo as if it
-    were a ready draft, or a reviewer could lock and submit a fabricated-looking answer."""
 
 
 def _consolidate(items: list[dict]) -> list[dict]:

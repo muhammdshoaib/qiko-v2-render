@@ -3,12 +3,18 @@ is in-memory in dev/tests and Postgres-backed in prod (same protocol). Voice reu
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Protocol
 
 from app.modules.workers.worker import Worker
 
 HISTORY_WINDOW = 20
+WorkerRecheck = Callable[[], Awaitable[None]]
+
+
+class ConversationScopeError(Exception):
+    pass
 
 
 @dataclass
@@ -28,7 +34,15 @@ class ConversationSummary:
 
 class ChatStore(Protocol):
     async def ensure(self, tenant: str, conversation_id: str, *, user_id: str = "", agent_id: str = "") -> None: ...
+    async def ensure_for_enabled_agent(
+        self, tenant: str, conversation_id: str, *, user_id: str, agent_id: str,
+        recheck_worker: WorkerRecheck,
+    ) -> None: ...
     async def append(self, tenant: str, conversation_id: str, role: str, text: str) -> Message: ...
+    async def append_exchange_for_enabled_agent(
+        self, tenant: str, conversation_id: str, *, user_id: str, agent_id: str,
+        user_text: str, assistant_text: str, recheck_worker: WorkerRecheck,
+    ) -> Message: ...
     async def history(self, tenant: str, conversation_id: str, *, limit: int = HISTORY_WINDOW) -> list[Message]: ...
     async def clear(self, tenant: str, conversation_id: str) -> None: ...
     async def list_for_agent(self, tenant: str, agent_id: str) -> list[ConversationSummary]: ...
@@ -45,10 +59,39 @@ class InMemoryChatStore:
                                        ConversationSummary(id=conversation_id, user_id=user_id or "public",
                                                           agent_id=agent_id or "public"))
 
+    async def ensure_for_enabled_agent(
+        self, tenant: str, conversation_id: str, *, user_id: str, agent_id: str,
+        recheck_worker: WorkerRecheck,
+    ) -> None:
+        await recheck_worker()
+        key = f"{tenant}:{conversation_id}"
+        current = self._conversations.get(key)
+        if current is not None and current.agent_id != agent_id:
+            raise ConversationScopeError
+        if current is None:
+            self._history.setdefault((tenant, conversation_id), [])
+            self._conversations[key] = ConversationSummary(
+                id=conversation_id, user_id=user_id or "public", agent_id=agent_id)
+
     async def append(self, tenant: str, conversation_id: str, role: str, text: str) -> Message:
         msg = Message(role=role, text=text)
         self._history.setdefault((tenant, conversation_id), []).append(msg)
         return msg
+
+    async def append_exchange_for_enabled_agent(
+        self, tenant: str, conversation_id: str, *, user_id: str, agent_id: str,
+        user_text: str, assistant_text: str, recheck_worker: WorkerRecheck,
+    ) -> Message:
+        await self.ensure_for_enabled_agent(
+            tenant, conversation_id, user_id=user_id, agent_id=agent_id,
+            recheck_worker=recheck_worker)
+        await recheck_worker()
+        messages = self._history.setdefault((tenant, conversation_id), [])
+        messages.extend([
+            Message(role="user", text=user_text),
+            Message(role="assistant", text=assistant_text),
+        ])
+        return messages[-1]
 
     async def history(self, tenant: str, conversation_id: str, *, limit: int = HISTORY_WINDOW) -> list[Message]:
         msgs = self._history.get((tenant, conversation_id), [])
@@ -71,10 +114,16 @@ class ChatService:
         if self.store is None:
             self.store = InMemoryChatStore()
 
-    async def find_or_create(self, tenant: str, user_id: str, agent_id: str) -> str:
+    async def find_or_create(self, tenant: str, user_id: str, agent_id: str,
+                             recheck_worker: WorkerRecheck | None = None) -> str:
         """Deterministic private conversation id for a (tenant, user, agent) triple."""
         cid = hashlib.sha1(f"{tenant}:{user_id}:{agent_id}".encode()).hexdigest()[:16]
-        await self.store.ensure(tenant, cid, user_id=user_id, agent_id=agent_id)
+        if recheck_worker is None:
+            await self.store.ensure(tenant, cid, user_id=user_id, agent_id=agent_id)
+        else:
+            await self.store.ensure_for_enabled_agent(
+                tenant, cid, user_id=user_id, agent_id=agent_id,
+                recheck_worker=recheck_worker)
         return cid
 
     async def history(self, tenant: str, conversation_id: str, *, limit: int = HISTORY_WINDOW) -> list[Message]:
@@ -90,7 +139,9 @@ class ChatService:
         return await self.store.append(tenant, conversation_id, role, text)
 
     async def ask(self, worker: Worker, conversation_id: str, question: str, *, topic: str | None = None,
-                  agent_id: str | None = None) -> Message:
+                  agent_id: str | None = None,
+                  recheck_worker: WorkerRecheck | None = None,
+                  additional_context: list[str] | None = None) -> Message:
         """Record the user turn, answer via the worker (agentcore), record and return the reply.
 
         `agent_id` (the real agent id, not worker.name -- see public.py's public_ask for why
@@ -101,8 +152,16 @@ class ChatService:
         agent and nothing that looks this worker's conversations up by id (the CRM pipeline)
         would ever find it."""
         tenant = worker.config.tenant
+        result = await worker.answer(
+            conversation_id, question, topic=topic,
+            additional_context=additional_context,
+            recheck_worker=recheck_worker)
+        if agent_id and recheck_worker is not None:
+            return await self.store.append_exchange_for_enabled_agent(
+                tenant, conversation_id, user_id="public", agent_id=agent_id,
+                user_text=question, assistant_text=result.answer,
+                recheck_worker=recheck_worker)
         if agent_id:
             await self.store.ensure(tenant, conversation_id, agent_id=agent_id)
         await self.post(tenant, conversation_id, "user", question)
-        result = await worker.answer(conversation_id, question, topic=topic)
         return await self.post(tenant, conversation_id, "assistant", result.answer)

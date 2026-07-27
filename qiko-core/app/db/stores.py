@@ -47,7 +47,8 @@ from app.db.models import VerifiedAnswer
 from app.modules.agents.service import Agent, AgentStateAudit, PlanLimitError
 from app.modules.assignments.service import Assignment, AssignmentNotFound
 from app.modules.channels.teams_integration import TeamsIntegration
-from app.modules.chat.service import ConversationSummary, Message
+from app.core.deps import WorkerUnavailable
+from app.modules.chat.service import ConversationScopeError, ConversationSummary, Message
 from app.modules.crm.service import Contact, CrmAction
 from app.modules.finance.models import FinanceChatMessage, FinanceFile
 from app.modules.identity.admin_rbac import AdminRole
@@ -156,6 +157,31 @@ class SqlVerifiedStore:
             return
         async with self.sessionmaker() as s, s.begin():
             s.add(VerifiedAnswer(tenant_id=tenant, topic=topic, body=text))
+
+    async def add_for_enabled_agent(
+        self, tenant: str, agent_id: str, topic: str, text: str,
+        recheck_worker,
+    ) -> None:
+        text = (text or "").strip()
+        if not text:
+            return
+        async with self.sessionmaker() as session, session.begin():
+            agent = (await session.execute(
+                select(AgentRow).where(
+                    AgentRow.tenant_id == tenant, AgentRow.id == agent_id
+                ).with_for_update()
+            )).scalar_one_or_none()
+            if agent is None or not agent.enabled:
+                raise WorkerUnavailable
+            exists = (await session.execute(
+                select(VerifiedAnswer.id).where(
+                    VerifiedAnswer.tenant_id == tenant,
+                    VerifiedAnswer.topic == topic,
+                    VerifiedAnswer.body == text,
+                ).limit(1)
+            )).scalar_one_or_none()
+            if exists is None:
+                session.add(VerifiedAnswer(tenant_id=tenant, topic=topic, body=text))
 
     async def get(self, tenant: str, topic: str) -> list[str]:
         async with self.sessionmaker() as s:
@@ -658,11 +684,63 @@ class SqlChatStore:
                 s.add(ConversationRow(id=conversation_id, tenant_id=tenant,
                                       user_id=user_id or "public", agent_id=agent_id or "public"))
 
+    async def _lock_enabled_agent(self, session: AsyncSession, tenant: str, agent_id: str) -> None:
+        agent = (await session.execute(
+            select(AgentRow).where(
+                AgentRow.tenant_id == tenant, AgentRow.id == agent_id
+            ).with_for_update()
+        )).scalar_one_or_none()
+        if agent is None or not agent.enabled:
+            raise WorkerUnavailable
+
+    async def _ensure_conversation_scope(
+        self, session: AsyncSession, tenant: str, conversation_id: str, *,
+        user_id: str, agent_id: str,
+    ) -> None:
+        row = (await session.execute(
+            select(ConversationRow).where(
+                ConversationRow.id == conversation_id
+            ).with_for_update()
+        )).scalar_one_or_none()
+        if row is None:
+            session.add(ConversationRow(
+                id=conversation_id, tenant_id=tenant,
+                user_id=user_id or "public", agent_id=agent_id))
+        elif row.tenant_id != tenant or row.agent_id != agent_id:
+            raise ConversationScopeError
+
+    async def ensure_for_enabled_agent(
+        self, tenant: str, conversation_id: str, *, user_id: str, agent_id: str,
+        recheck_worker,
+    ) -> None:
+        async with self.sessionmaker() as session, session.begin():
+            await self._lock_enabled_agent(session, tenant, agent_id)
+            await self._ensure_conversation_scope(
+                session, tenant, conversation_id, user_id=user_id, agent_id=agent_id)
+
     async def append(self, tenant: str, conversation_id: str, role: str, text: str) -> Message:
         await self.ensure(tenant, conversation_id)
         async with self.sessionmaker() as s, s.begin():
             s.add(MessageRow(conversation_id=conversation_id, tenant_id=tenant, role=role, body=text))
         return Message(role=role, text=text)
+
+    async def append_exchange_for_enabled_agent(
+        self, tenant: str, conversation_id: str, *, user_id: str, agent_id: str,
+        user_text: str, assistant_text: str, recheck_worker,
+    ) -> Message:
+        async with self.sessionmaker() as session, session.begin():
+            await self._lock_enabled_agent(session, tenant, agent_id)
+            await self._ensure_conversation_scope(
+                session, tenant, conversation_id, user_id=user_id, agent_id=agent_id)
+            session.add_all([
+                MessageRow(
+                    conversation_id=conversation_id, tenant_id=tenant,
+                    role="user", body=user_text),
+                MessageRow(
+                    conversation_id=conversation_id, tenant_id=tenant,
+                    role="assistant", body=assistant_text),
+            ])
+        return Message(role="assistant", text=assistant_text)
 
     async def history(self, tenant: str, conversation_id: str, *, limit: int = 20) -> list[Message]:
         async with self.sessionmaker() as s:

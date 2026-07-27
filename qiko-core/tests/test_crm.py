@@ -9,6 +9,15 @@ from app.modules.crm.service import CrmError, CrmService
 from tests.helpers import auth_cookies
 
 
+@pytest.fixture(autouse=True)
+def _non_stub_provider(monkeypatch):
+    class Provider:
+        def generate(self, prompt, **_kwargs):
+            return LLMResponse(text=prompt, model="test", stub=False)
+
+    monkeypatch.setattr("app.modules.agentcore.generator.get_provider", lambda: Provider())
+
+
 class _CannedProvider:
     def __init__(self, text: str):
         self.text = text
@@ -84,9 +93,9 @@ async def test_update_contact_fields_and_pipeline_stage():
     await _seed_conversation(chat)
     contact_id = (await crm.list_pipeline("acme", "agent-1"))["contacts"][0].id
 
-    updated = await crm.update_contact("acme", contact_id, name="Jane Doe", email="jane@acme.com",
+    updated = await crm.update_contact("acme", contact_id, name="Jane Doe", email="jane@invalid",
                                        status="interested", estimated_value=50000)
-    assert updated.name == "Jane Doe" and updated.email == "jane@acme.com"
+    assert updated.name == "Jane Doe" and updated.email == "jane@invalid"
     assert updated.status == "interested" and updated.estimated_value == 50000
 
 
@@ -146,20 +155,25 @@ async def test_update_action_rejects_invalid_status():
 
 
 # --- API-level ---
+def _create_agent(client, cookies, name: str) -> str:
+    return client.post("/api/v1/agents", cookies=cookies, json={"name": name}).json()["id"]
+
+
 def test_crm_pipeline_round_trip_via_api(client):
     cookies = auth_cookies(tenant="acme")
+    agent_id = _create_agent(client, cookies, "CRM")
     # A conversation must be created with its agent_id set (as the embed widget/dashboard test
     # chat both do via /chat/conversations) before /ask -- asking with a bare, never-created
     # conversation_id would default it to a generic "public" agent, not the one being tested.
     conv = client.post("/api/v1/chat/conversations", cookies=cookies,
-                       json={"user_id": "visitor-9", "agent_id": "agent-9"})
+                       json={"user_id": "visitor-9", "agent_id": agent_id})
     assert conv.status_code == 200
     conversation_id = conv.json()["conversation_id"]
     ask_resp = client.post("/api/v1/chat/ask", cookies=cookies,
-                           json={"conversation_id": conversation_id, "agent_id": "agent-9", "question": "Hi there"})
+                           json={"conversation_id": conversation_id, "agent_id": agent_id, "question": "Hi there"})
     assert ask_resp.status_code == 200
 
-    pipeline = client.get("/api/v1/crm/agent-9", cookies=cookies)
+    pipeline = client.get(f"/api/v1/crm/{agent_id}", cookies=cookies)
     assert pipeline.status_code == 200
     body = pipeline.json()
     assert body["total"] == 1
@@ -192,12 +206,13 @@ def test_crm_contact_detail_404_for_missing_contact(client):
 def test_crm_update_contact_requires_editor_role(client):
     viewer_cookies = auth_cookies(tenant="acme", role="viewer")
     owner_cookies = auth_cookies(tenant="acme", role="owner")
+    agent_id = _create_agent(client, owner_cookies, "CRM RBAC")
     conv = client.post("/api/v1/chat/conversations", cookies=owner_cookies,
-                       json={"user_id": "visitor-rbac", "agent_id": "agent-rbac"})
+                       json={"user_id": "visitor-rbac", "agent_id": agent_id})
     conversation_id = conv.json()["conversation_id"]
     client.post("/api/v1/chat/ask", cookies=owner_cookies,
-               json={"conversation_id": conversation_id, "agent_id": "agent-rbac", "question": "Hi"})
-    contact_id = client.get("/api/v1/crm/agent-rbac", cookies=owner_cookies).json()["contacts"][0]["id"]
+               json={"conversation_id": conversation_id, "agent_id": agent_id, "question": "Hi"})
+    contact_id = client.get(f"/api/v1/crm/{agent_id}", cookies=owner_cookies).json()["contacts"][0]["id"]
 
     resp = client.patch(f"/api/v1/crm/contacts/{contact_id}", cookies=viewer_cookies, json={"name": "x"})
     assert resp.status_code == 403
@@ -247,10 +262,11 @@ def test_crm_sync_salesforce_pushes_a_lead(client, monkeypatch):
 
 def test_crm_pipeline_is_isolated_across_tenants(client):
     cookies = auth_cookies(tenant="acme")
+    agent_id = _create_agent(client, cookies, "CRM isolated")
     conv = client.post("/api/v1/chat/conversations", cookies=cookies,
-                       json={"user_id": "visitor-shared", "agent_id": "agent-shared"})
+                       json={"user_id": "visitor-shared", "agent_id": agent_id})
     conversation_id = conv.json()["conversation_id"]
     client.post("/api/v1/chat/ask", cookies=cookies,
-               json={"conversation_id": conversation_id, "agent_id": "agent-shared", "question": "Hi"})
-    other_tenant = client.get("/api/v1/crm/agent-shared", cookies=auth_cookies(tenant="beta"))
+               json={"conversation_id": conversation_id, "agent_id": agent_id, "question": "Hi"})
+    other_tenant = client.get(f"/api/v1/crm/{agent_id}", cookies=auth_cookies(tenant="beta"))
     assert other_tenant.json()["total"] == 0

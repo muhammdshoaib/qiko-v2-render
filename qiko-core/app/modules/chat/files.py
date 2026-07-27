@@ -13,6 +13,7 @@ from app.modules.storage.backend import InMemoryStorage, StorageBackend
 from app.modules.storage.keys import object_key
 
 SUPPORTED_FORMATS = {"csv", "xlsx", "docx", "pdf"}
+_XLSX_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r", "\n")
 
 
 class UnsupportedFormatError(Exception):
@@ -25,6 +26,14 @@ def build_csv(rows: list[list]) -> bytes:
     return buf.getvalue().encode("utf-8")
 
 
+def _safe_xlsx_cell(value):
+    if not isinstance(value, str):
+        return value
+    if value.lstrip(" ").startswith(_XLSX_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 def build_xlsx(sheet: str, rows: list[list]) -> bytes:
     from openpyxl import Workbook
 
@@ -32,7 +41,7 @@ def build_xlsx(sheet: str, rows: list[list]) -> bytes:
     ws = wb.active
     ws.title = sheet or "Sheet1"
     for row in rows:
-        ws.append(row)
+        ws.append([_safe_xlsx_cell(value) for value in row])
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()

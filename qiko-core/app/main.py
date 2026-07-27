@@ -6,12 +6,16 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.core.db import build_engine, build_sessionmaker, build_sync_engine, build_sync_sessionmaker
 from app.core.config import get_settings
+from app.core.deps import WorkerUnavailable
+from app.modules.chat.service import ConversationScopeError
+from app.modules.workers.worker import StubProviderUnavailable
 from app.core.logging import configure_logging
 from app.core.middleware import (
     RateLimitMiddleware,
@@ -98,7 +102,7 @@ from app.modules.leads.service import LeadService
 from app.modules.marketing.router import router as marketing_router
 from app.modules.teams.router import router as teams_router
 from app.modules.teams.service import TeamService
-from app.modules.voice.pipeline import VoicePipeline
+from app.modules.voice.pipeline import SpeechUnavailable, UnavailableSpeechGateway, VoicePipeline
 from app.modules.voice.router import router as voice_router
 from app.modules.email.sender import get_email_sender
 
@@ -239,6 +243,34 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    @app.exception_handler(WorkerUnavailable)
+    async def worker_unavailable_handler(
+        _request: Request, _error: WorkerUnavailable
+    ) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": "worker not found"})
+
+    @app.exception_handler(ConversationScopeError)
+    async def conversation_scope_handler(
+        _request: Request, _error: ConversationScopeError
+    ) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": "worker not found"})
+
+    @app.exception_handler(SpeechUnavailable)
+    async def speech_unavailable_handler(
+        _request: Request, _error: SpeechUnavailable
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=503, content={"detail": "voice service is temporarily unavailable"})
+
+    @app.exception_handler(StubProviderUnavailable)
+    async def stub_provider_unavailable_handler(
+        _request: Request, _error: StubProviderUnavailable
+    ) -> JSONResponse:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "answer generation is temporarily unavailable"},
+        )
+
     # Observability exporters (no-ops unless configured for the environment).
     init_sentry()
     if settings.otel_enabled:
@@ -303,7 +335,8 @@ def create_app() -> FastAPI:
         WhatsAppClient() if settings.whatsapp_access_token else StubWhatsAppGateway())
     app.state.excel = ExcelService(app.state.knowledge)
     app.state.sources = KnowledgeSources(app.state.knowledge)
-    app.state.voice = VoicePipeline(StubSpeechGateway())
+    speech_gateway = StubSpeechGateway() if settings.debug else UnavailableSpeechGateway()
+    app.state.voice = VoicePipeline(speech_gateway)
     app.state.signal_engine = SignalEngineClient() if settings.signal_engine_url else StubSignalEngine()
     app.state.customers = CustomerDirectory()
     app.state.ga4 = GA4Client() if settings.ga4_property_id and settings.ga4_access_token else StubGA4Gateway()

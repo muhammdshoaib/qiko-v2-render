@@ -1,6 +1,8 @@
 """Shared FastAPI dependencies: authenticated tenant + RBAC + service singletons from app.state."""
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+
 from fastapi import Depends, HTTPException, Request
 
 from app.core.config import get_settings
@@ -10,15 +12,41 @@ from app.modules.identity.rbac import Role, role_allows
 from app.modules.identity.tokens import TokenError, decode_token
 
 
-def current_claims(request: Request) -> dict:
+class WorkerUnavailable(Exception):
+    pass
+
+
+WorkerRecheck = Callable[[], Awaitable[None]]
+
+
+async def require_available_worker(*, agents, tenant: str, agent_id: str):
+    agent = await agents.get(tenant, agent_id)
+    if agent is None or not agent.enabled:
+        raise WorkerUnavailable
+    return agent
+
+
+async def current_claims(request: Request) -> dict:
     """Authenticate the request from the httpOnly access cookie (never a client header)."""
     token = request.cookies.get(ACCESS_COOKIE)
     if not token:
         raise HTTPException(status_code=401, detail="not authenticated")
     try:
-        return decode_token(token, expected_type="access")
+        claims = decode_token(token, expected_type="access")
     except TokenError as e:
         raise HTTPException(status_code=401, detail="invalid or expired token") from e
+    if get_settings().use_db_stores:
+        subject, sid = claims.get("sub"), claims.get("sid")
+        user = await get_user_store().get_by_id(subject) if subject and sid else None
+        if user is None or user.current_sid != sid:
+            raise HTTPException(status_code=401, detail="session revoked")
+        claims = {
+            **claims,
+            "tenant": user.tenant,
+            "role": user.role.value,
+            "email": user.email,
+        }
+    return claims
 
 
 async def authed_tenant(claims: dict = Depends(current_claims)):
@@ -251,6 +279,21 @@ async def assemble_worker(*, sessionmaker, agents, knowledge, tenant: str, agent
     return Worker(config=worker_config, knowledge=knowledge,
                   agent=AgentCore(generator=Generator(system_prompt=worker_config.system_prompt),
                                   threshold=worker_config.gate_threshold, verified=verified))
+
+
+async def resolve_tenant_worker(request: Request, tenant: str,
+                                agent_id: str) -> tuple[object, WorkerRecheck]:
+    async def recheck() -> None:
+        await require_available_worker(
+            agents=request.app.state.agents, tenant=tenant, agent_id=agent_id)
+
+    await recheck()
+    worker = await assemble_worker(
+        sessionmaker=getattr(request.app.state, "sessionmaker", None),
+        agents=request.app.state.agents, knowledge=request.app.state.knowledge,
+        tenant=tenant, agent_id=agent_id)
+    await recheck()
+    return worker, recheck
 
 
 async def build_tenant_worker(request: Request, tenant: str, agent_id: str | None = None):

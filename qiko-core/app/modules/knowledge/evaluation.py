@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 
 from app.modules.agentcore.models import AgentResult, Requirement
-from app.modules.agentcore.runtime import AgentCore
+from app.modules.agentcore.runtime import AgentCore, WorkerRecheck
 from app.modules.knowledge.service import KnowledgeService
 
 _WORD = re.compile(r"[a-z0-9]+")
@@ -35,9 +35,10 @@ def relevant_sections(query: str, sections: list[str], *, top_k: int = 5) -> lis
 
 
 async def evaluate_document(agent: AgentCore, knowledge: KnowledgeService, tenant: str, doc_id: str,
-                            criterion: str, *, topic: str | None = None) -> AgentResult:
+                            criterion: str, *, topic: str | None = None,
+                            recheck_worker: WorkerRecheck | None = None) -> AgentResult:
     """Grounded evaluation of one criterion against a stored document."""
     sections = [p.text for p in await knowledge.store.get(tenant) if p.doc_id == doc_id]
     context = relevant_sections(criterion, sections) or sections
     req = Requirement(id=f"{doc_id}:{criterion[:24]}", text=criterion, context=context, topic=topic)
-    return await agent.run(req, tenant=tenant)
+    return await agent.run(req, tenant=tenant, recheck_worker=recheck_worker)

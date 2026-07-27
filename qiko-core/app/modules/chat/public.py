@@ -6,7 +6,7 @@ through the worker -> agentcore (generator/critic/gate), never a direct LLM call
 """
 from __future__ import annotations
 
-from app.modules.agentcore.models import Requirement
+from app.core.deps import WorkerRecheck
 from app.modules.chat.service import ChatService, Message
 from app.modules.workers.worker import Worker
 
@@ -29,8 +29,9 @@ def studio_context_blocks(studio: dict | None) -> list[str]:
     return blocks
 
 
-async def public_ask(worker: Worker, chat: ChatService, *, agent_id: str, user_email: str, question: str,
-                     agent_ready: bool, topic: str | None = None, studio: dict | None = None) -> Message:
+async def public_ask(worker: Worker, chat: ChatService, *, agent_id: str,
+                     user_email: str, question: str, recheck_worker: WorkerRecheck,
+                     topic: str | None = None, studio: dict | None = None) -> Message:
     """Answer a public/embed chat turn. Requires the agent to be ready; merges Studio context
     into the grounded requirement before running agentcore.
 
@@ -38,15 +39,12 @@ async def public_ask(worker: Worker, chat: ChatService, *, agent_id: str, user_e
     CRM pipeline / Sections tab URLs) -- NOT worker.name (its display name, which is what this
     used to key the conversation by, so every public-embed chat silently recorded itself under
     the wrong agent and could never be found by anything looking up "this worker's contacts")."""
-    if not agent_ready:
-        raise AgentNotReadyError("agent is not ready for public chat")
     tenant = worker.config.tenant
-    cid = await chat.find_or_create(tenant, user_email, agent_id)
-    await chat.post(tenant, cid, "user", question)
-
-    extra = studio_context_blocks(studio)
-    passages = await worker.knowledge.retrieve(tenant, question, k=worker.config.retrieval_k)
-    context = [p.text for p in passages] + extra
-    req = Requirement(id=cid, text=question, context=context, topic=topic)
-    result = await worker.agent.run(req, tenant=tenant)
-    return await chat.post(tenant, cid, "assistant", result.answer)
+    await recheck_worker()
+    cid = await chat.find_or_create(
+        tenant, user_email, agent_id, recheck_worker=recheck_worker)
+    return await chat.ask(
+        worker, cid, question, topic=topic, agent_id=agent_id,
+        recheck_worker=recheck_worker,
+        additional_context=studio_context_blocks(studio),
+    )

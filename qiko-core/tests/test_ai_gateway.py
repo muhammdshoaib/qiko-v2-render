@@ -26,6 +26,20 @@ def test_bedrock_provider_uses_config_defaults():
     assert p.read_timeout == 20  # fast per-requirement hot path default
 
 
+def test_bedrock_provider_sets_output_token_ceiling(monkeypatch):
+    captured = {}
+
+    class Client:
+        def converse(self, **kwargs):
+            captured.update(kwargs)
+            return {"output": {"message": {"content": [{"text": "ok"}]}}}
+
+    provider = BedrockProvider()
+    monkeypatch.setattr(provider, "_client", lambda: Client())
+    provider.generate("hello")
+    assert captured["inferenceConfig"]["maxTokens"] == 1024
+
+
 def test_bedrock_provider_read_timeout_override():
     # extraction/compliance/brief/ask are one-shot whole-document calls that need longer than the
     # per-requirement default -- see rfp/router.py's _DOCUMENT_READ_TIMEOUT.

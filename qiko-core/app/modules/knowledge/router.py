@@ -4,10 +4,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
-from app.core.deps import authed_tenant, build_tenant_worker, get_knowledge, require_role
+from app.core.deps import authed_tenant, get_knowledge, require_role, resolve_tenant_worker
 from app.modules.identity.rbac import Role
 from app.modules.knowledge.evaluation import RFP_CRITERIA, evaluate_document
 from app.modules.knowledge.parsing import MAX_UPLOAD_BYTES
+from app.modules.workers.worker import StubProviderUnavailable
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 
@@ -69,13 +70,20 @@ class EvaluateBody(BaseModel):
     doc_id: str = Field(min_length=1)
     criterion: str = Field(min_length=1)
     topic: str | None = None
-    agent_id: str | None = None
+    agent_id: str = Field(min_length=1)
 
 
 @router.post("/evaluate")
 async def evaluate(body: EvaluateBody, request: Request, tenant: str = Depends(authed_tenant),
+                   _role: dict = Depends(require_role(Role.editor)),
                    svc=Depends(get_knowledge)) -> dict:
-    worker = await build_tenant_worker(request, tenant, agent_id=body.agent_id)
+    worker, recheck = await resolve_tenant_worker(request, tenant, body.agent_id)
+    await recheck()
     agent = worker.agent  # agentcore (grounded + gated)
-    result = await evaluate_document(agent, svc, tenant, body.doc_id, body.criterion, topic=body.topic)
+    result = await evaluate_document(
+        agent, svc, tenant, body.doc_id, body.criterion,
+        topic=body.topic, recheck_worker=recheck)
+    if result.stub:
+        raise StubProviderUnavailable
+    await recheck()
     return {"decision": result.decision.value, "answer": result.answer, "grounding": result.critique.grounding}
