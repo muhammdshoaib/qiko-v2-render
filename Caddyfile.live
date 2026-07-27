@@ -36,3 +36,10 @@ admin.qiko.ai {
 	}
 	reverse_proxy admin:3001
 }
+
+# DNS already points www.qiko.ai at Cloudflare, but no site block existed for it, so Caddy had
+# no certificate for that hostname and the Cloudflare Full(strict) origin handshake failed
+# (error 525). Redirect to the apex instead of serving a second copy of the app.
+www.qiko.ai {
+	redir https://qiko.ai{uri} permanent
+}
