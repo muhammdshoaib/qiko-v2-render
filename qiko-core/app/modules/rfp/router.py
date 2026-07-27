@@ -10,8 +10,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.core.deps import (
+    WorkerRecheck,
     authed_tenant,
-    build_tenant_worker,
     current_claims,
     get_chat,
     get_pack_answers,
@@ -20,7 +20,9 @@ from app.core.deps import (
     get_rfp_packs,
     get_teams_notifier,
     get_user_store,
+    require_available_worker,
     require_role,
+    resolve_tenant_worker,
 )
 from app.modules.ai.gateway import get_provider
 from app.modules.chat.files import build_docx, build_xlsx
@@ -47,6 +49,20 @@ router = APIRouter(prefix="/rfp/packs", tags=["rfp"])
 _DOCUMENT_READ_TIMEOUT = 90
 
 
+async def _resolve_pack_worker(request: Request, tenant: str, pack_id: str, packs):
+    try:
+        pack = await packs.get(tenant, pack_id)
+    except RfpPackNotFound as e:
+        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    worker, recheck = await resolve_tenant_worker(request, tenant, pack.agent_id)
+    return pack, worker, recheck
+
+
+async def _resolve_pack(request: Request, tenant: str, pack_id: str, packs):
+    pack, _worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
+    return pack, recheck
+
+
 class CreatePackBody(BaseModel):
     agent_id: str = Field(min_length=1)
     title: str = Field(min_length=1)
@@ -55,8 +71,12 @@ class CreatePackBody(BaseModel):
 
 
 @router.post("")
-async def create_pack(body: CreatePackBody, tenant: str = Depends(authed_tenant),
-                      _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_rfp_packs)) -> RfpPack:
+async def create_pack(body: CreatePackBody, request: Request,
+                      tenant: str = Depends(authed_tenant),
+                      _role: dict = Depends(require_role(Role.editor)),
+                      svc=Depends(get_rfp_packs)) -> RfpPack:
+    await require_available_worker(
+        agents=request.app.state.agents, tenant=tenant, agent_id=body.agent_id)
     return await svc.create(tenant, body.agent_id, body.title,
                             client_name=body.client_name, deadline=body.deadline)
 
@@ -88,14 +108,17 @@ class StageBody(BaseModel):
 
 
 @router.put("/{pack_id}/stage")
-async def set_stage(pack_id: str, body: StageBody, tenant: str = Depends(authed_tenant),
+async def set_stage(pack_id: str, body: StageBody, request: Request,
+                    tenant: str = Depends(authed_tenant),
                     _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_rfp_packs),
                     tree=Depends(get_pack_tree)) -> RfpPack:
+    _pack, recheck = await _resolve_pack(request, tenant, pack_id, svc)
     # A pack can only be finalised once every section is locked (lock roll-up governance) -- guard
     # here so the generic stage transition can't skip review sign-off.
     if body.stage == "final" and not await tree.all_sections_locked(tenant, pack_id):
         raise HTTPException(status_code=409, detail="cannot finalise: every section must be locked first")
     try:
+        await recheck()
         return await svc.set_stage(tenant, pack_id, body.stage)
     except RfpPackNotFound as e:
         raise HTTPException(status_code=404, detail="RFP pack not found") from e
@@ -110,12 +133,16 @@ class OutcomeBody(BaseModel):
 
 
 @router.put("/{pack_id}/outcome")
-async def set_outcome(pack_id: str, body: OutcomeBody, tenant: str = Depends(authed_tenant),
+async def set_outcome(pack_id: str, body: OutcomeBody, request: Request,
+                      tenant: str = Depends(authed_tenant),
                       _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_rfp_packs),
                       notifier=Depends(get_teams_notifier)) -> RfpPack:
     """Win/Loss Analysis: record what happened to a submitted tender. Feeds /rfp/packs/stats."""
+    persisted, recheck = await _resolve_pack(request, tenant, pack_id, svc)
     try:
-        pack = await svc.set_outcome(tenant, pack_id, outcome=body.outcome, reason=body.reason, value=body.value)
+        pack = await svc.set_outcome_for_enabled_agent(
+            tenant, pack_id, persisted.agent_id, outcome=body.outcome,
+            reason=body.reason, value=body.value, recheck_worker=recheck)
     except RfpPackNotFound as e:
         raise HTTPException(status_code=404, detail="RFP pack not found") from e
     except ValueError as e:
@@ -130,19 +157,25 @@ async def set_outcome(pack_id: str, body: OutcomeBody, tenant: str = Depends(aut
 
 
 @router.delete("/{pack_id}")
-async def delete_pack(pack_id: str, tenant: str = Depends(authed_tenant),
+async def delete_pack(pack_id: str, request: Request, tenant: str = Depends(authed_tenant),
                       _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_rfp_packs),
                       reqs=Depends(get_requirements), answers=Depends(get_pack_answers),
                       tree=Depends(get_pack_tree)) -> dict:
+    _pack, recheck = await _resolve_pack(request, tenant, pack_id, svc)
+    await recheck()
     await answers.delete_for_pack(tenant, pack_id)
+    await recheck()
     await reqs.delete_for_pack(tenant, pack_id)
+    await recheck()
     await tree.delete_for_pack(tenant, pack_id)
+    await recheck()
     await svc.delete(tenant, pack_id)
     return {"deleted": pack_id}
 
 
 async def _start_generation(request: Request, tenant: str, pack_id: str, text: str, packs,
-                            reqs, answers, tree, *, agent_id: str | None) -> dict:
+                            reqs, answers, tree, *, agent_id: str,
+                            recheck: WorkerRecheck) -> dict:
     """Persist the uploaded tender text, mark every artifact pending, and kick off the background
     job that produces requirements/sections/brief/compliance/drafts -- then return immediately so
     the upload doesn't block on a full generation pass. The frontend polls GET .../status.
@@ -151,8 +184,11 @@ async def _start_generation(request: Request, tenant: str, pack_id: str, text: s
     everything is populated by the time this returns; the arq backend (prod) enqueues onto Redis
     for the worker tier, which rebuilds the stores from its own DB sessionmaker -- so only the
     serializable ids are put on the wire in that case."""
+    await recheck()
     await packs.set_document_text(tenant, pack_id, text)
+    await recheck()
     await packs.set_gen_status(tenant, pack_id, initial_gen_status())
+    await recheck()
     task_queue = request.app.state.task_queue
     if isinstance(task_queue, EagerTaskQueue):
         await task_queue.enqueue("generate_tender_artifacts", tenant=tenant, pack_id=pack_id,
@@ -182,10 +218,7 @@ async def extract(pack_id: str, request: Request,
 
     Backward compatible: accepts many files under the `files` field, and also a single legacy
     `file` field, so an older single-file client still works."""
-    try:
-        pack = await packs.get(tenant, pack_id)
-    except RfpPackNotFound as e:
-        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
 
     uploads: list[UploadFile] = list(files or [])
     if file is not None:
@@ -217,9 +250,10 @@ async def extract(pack_id: str, request: Request,
 
     # Record the source set on a dedicated field (survives the gen_status reset in
     # _start_generation) before kicking off generation over the combined text.
+    await recheck()
     await packs.set_source_documents(tenant, pack_id, source_documents)
     return await _start_generation(request, tenant, pack_id, "\n\n".join(parts), packs, reqs,
-                                   answers, tree, agent_id=pack.agent_id)
+                                   answers, tree, agent_id=pack.agent_id, recheck=recheck)
 
 
 class ExtractUrlBody(BaseModel):
@@ -258,19 +292,18 @@ async def extract_from_url(pack_id: str, body: ExtractUrlBody, request: Request,
     file -- fetches the URL, extracts its text (HTML or a direct PDF/DOCX link both work, since
     extract_text dispatches on the response's actual content type), then kicks off the same
     BACKGROUND generation job. Returns immediately with {"status": "processing"}."""
-    try:
-        pack = await packs.get(tenant, pack_id)
-    except RfpPackNotFound as e:
-        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
 
     import httpx
 
     _assert_public_url(body.url)
     try:
+        await recheck()
         # Redirects deliberately NOT followed -- a redirect target skips the public-address
         # check above, which would defeat it.
         resp = await asyncio.to_thread(httpx.get, body.url, timeout=20.0, follow_redirects=False,
                                        headers={"User-Agent": "Mozilla/5.0 (compatible; QikoBot/1.0)"})
+        await recheck()
         resp.raise_for_status()
     except httpx.HTTPError as e:
         raise HTTPException(status_code=422, detail=f"could not fetch that URL: {e}") from e
@@ -286,7 +319,7 @@ async def extract_from_url(pack_id: str, body: ExtractUrlBody, request: Request,
         raise HTTPException(status_code=422, detail="that URL had no extractable text")
 
     return await _start_generation(request, tenant, pack_id, text, packs, reqs, answers, tree,
-                                   agent_id=pack.agent_id)
+                                   agent_id=pack.agent_id, recheck=recheck)
 
 
 class AskBody(BaseModel):
@@ -294,16 +327,14 @@ class AskBody(BaseModel):
 
 
 @router.post("/{pack_id}/ask")
-async def ask_bid_context(pack_id: str, body: AskBody, tenant: str = Depends(authed_tenant),
+async def ask_bid_context(pack_id: str, body: AskBody, request: Request,
+                          tenant: str = Depends(authed_tenant),
                           packs=Depends(get_rfp_packs)) -> dict:
     """Bid Context Q&A: answer ad-hoc questions about the tender itself (scope, rules, format,
     deadlines, risks) grounded ONLY in the uploaded tender document -- distinct from the
     requirement-answering flow, which draws on the tenant's knowledge base instead. Port of
     idg-worker's app/agents/bid_context.py."""
-    try:
-        pack = await packs.get(tenant, pack_id)
-    except RfpPackNotFound as e:
-        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     if not pack.document_text:
         raise HTTPException(status_code=422, detail="no tender document on file for this pack -- run /extract first")
 
@@ -311,8 +342,10 @@ async def ask_bid_context(pack_id: str, body: AskBody, tenant: str = Depends(aut
              "document provided. Be precise about scope, submission format, deadlines, "
              "qualification rules and risks. If the document doesn't state it, say so -- do not guess.")
     prompt = f"TENDER DOCUMENT:\n{pack.document_text[:60_000]}\n\nQUESTION: {body.question}\n\nAnswer from the document only."
+    await recheck()
     response = await asyncio.to_thread(get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT).generate,
                                        prompt, system=system, temperature=0.0)
+    await recheck()
     return {"question": body.question, "answer": response.text}
 
 
@@ -342,13 +375,10 @@ async def tender_chat(pack_id: str, body: AskBody, request: Request,
     Each exchange is persisted to a per-pack conversation (reusing the general ChatService store, so
     it is Postgres-backed under USE_DB_STORES and survives close/refresh/logout), which GET
     /rfp/packs/{id}/chat/history reads back in order."""
-    try:
-        pack = await packs.get(tenant, pack_id)
-    except RfpPackNotFound as e:
-        raise HTTPException(status_code=404, detail="RFP pack not found") from e
-
-    worker = await build_tenant_worker(request, tenant, agent_id=pack.agent_id)
+    pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
+    await recheck()
     passages = await worker.knowledge.retrieve(tenant, body.question, k=worker.config.retrieval_k)
+    await recheck()
     kb_block = "\n\n".join(f"[{i + 1}] {p.text}" for i, p in enumerate(passages)) or "(no matching company documents)"
 
     # Tender context must answer TENDER questions (deadline, scope, submission rules, key dates), so
@@ -382,8 +412,10 @@ async def tender_chat(pack_id: str, body: AskBody, request: Request,
               "genuinely in neither the tender context nor the knowledge base, and never invent facts.")
     prompt = (f"TENDER CONTEXT:\n{tender_ctx}\n\nCOMPANY KNOWLEDGE BASE:\n{kb_block}\n\n"
               f"QUESTION: {body.question}\n\nAnswer, grounded in the above.")
+    await recheck()
     response = await asyncio.to_thread(get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT).generate,
                                        prompt, system=system, temperature=0.2)
+    await recheck()
     # Fail closed: never surface StubProvider echo text as a real answer during a provider outage.
     if response.stub:
         raise StubProviderUnavailable()
@@ -393,9 +425,10 @@ async def tender_chat(pack_id: str, body: AskBody, request: Request,
     # they read back in order. The store is the SAME one the general chat uses, so under
     # USE_DB_STORES this is Postgres-backed rather than in-memory.
     cid = _tender_conversation_id(pack_id)
-    await chat.store.ensure(tenant, cid, agent_id=pack.agent_id)
-    await chat.post(tenant, cid, "user", body.question)
-    await chat.post(tenant, cid, "assistant", response.text)
+    await chat.store.append_exchange_for_enabled_agent(
+        tenant, cid, user_id="public", agent_id=pack.agent_id,
+        user_text=body.question, assistant_text=response.text, recheck_worker=recheck)
+    await recheck()
     return {"question": body.question, "answer": response.text, "sources": source_labels(passages)}
 
 
@@ -444,19 +477,18 @@ async def list_assignees(pack_id: str, tenant: str = Depends(authed_tenant),
 
 
 @router.post("/{pack_id}/confirm-assignments")
-async def confirm_assignments(pack_id: str, tenant: str = Depends(authed_tenant),
+async def confirm_assignments(pack_id: str, request: Request,
+                              tenant: str = Depends(authed_tenant),
                               _role: dict = Depends(require_role(Role.editor)),
                               packs=Depends(get_rfp_packs)) -> dict:
     """The stepper's "Confirm Assignments" button (Assigned->Drafting). Sets a top-level
     assignments_confirmed=true into the pack's gen_status (merged, so per-artifact progress is
     preserved) -- purely a stepper-progression marker, nothing server-side is gated on it (drafts
     already run for every section regardless of assignment). GET /status returns gen_status."""
-    try:
-        pack = await packs.get(tenant, pack_id)
-    except RfpPackNotFound as e:
-        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     status = dict(pack.gen_status or {})
     status["assignments_confirmed"] = True
+    await recheck()
     await packs.set_gen_status(tenant, pack_id, status)
     return status
 
@@ -496,33 +528,45 @@ async def _read_tender_text(pack_id: str, tenant: str, file: UploadFile, packs) 
 
 
 @router.post("/{pack_id}/compliance")
-async def compliance_check(pack_id: str, file: UploadFile = File(...), tenant: str = Depends(authed_tenant),
+async def compliance_check(pack_id: str, request: Request, file: UploadFile = File(...),
+                           tenant: str = Depends(authed_tenant),
                            _role: dict = Depends(require_role(Role.editor)),
                            packs=Depends(get_rfp_packs)) -> list[dict]:
     """On-demand regenerate: extract mandatory pass/fail compliance items from an uploaded tender
     document AND persist them (so the GET .../compliance poll reflects the newest run)."""
+    _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     text = await _read_tender_text(pack_id, tenant, file, packs)
     try:
+        await recheck()
         items = await asyncio.to_thread(extract_compliance, text, get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+        await recheck()
     except ComplianceError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    await recheck()
     await packs.set_compliance(tenant, pack_id, items)
+    await recheck()
     return items
 
 
 @router.post("/{pack_id}/brief")
-async def tender_brief(pack_id: str, file: UploadFile = File(...), tenant: str = Depends(authed_tenant),
+async def tender_brief(pack_id: str, request: Request, file: UploadFile = File(...),
+                       tenant: str = Depends(authed_tenant),
                        _role: dict = Depends(require_role(Role.editor)),
                        packs=Depends(get_rfp_packs)) -> dict:
     """On-demand regenerate: extract the Bid Context brief (summary/scope/format/dates/success-
     criteria/gaps) from an uploaded tender document AND persist it (so the GET .../brief poll
     reflects the newest run)."""
+    _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     text = await _read_tender_text(pack_id, tenant, file, packs)
     try:
+        await recheck()
         brief = await asyncio.to_thread(extract_brief, text, get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+        await recheck()
     except BriefError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    await recheck()
     await packs.set_brief(tenant, pack_id, brief)
+    await recheck()
     return brief
 
 
@@ -536,18 +580,19 @@ async def score(pack_id: str, request: Request, tenant: str = Depends(authed_ten
     Scores the tender document already on file for this pack (from /extract or /extract-url) --
     this is meant to run *before* committing to a full draft-every-section pass, so it doesn't
     require a fresh upload."""
-    try:
-        pack = await packs.get(tenant, pack_id)
-    except RfpPackNotFound as e:
-        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     if not pack.document_text:
         raise HTTPException(status_code=422, detail="no tender document on file for this pack -- run /extract or /extract-url first")
 
-    agent = await request.app.state.agents.get(tenant, pack.agent_id) if pack.agent_id else None
-    criteria = list((agent.config.get("opportunity_criteria") if agent else None) or [])
+    await recheck()
+    agent = await request.app.state.agents.get(tenant, pack.agent_id)
+    await recheck()
+    criteria = list(agent.config.get("opportunity_criteria") or [])
     try:
-        return await asyncio.to_thread(score_opportunity, pack.document_text, criteria,
-                                       get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+        result = await asyncio.to_thread(score_opportunity, pack.document_text, criteria,
+                                         get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+        await recheck()
+        return result
     except ScoringError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
@@ -582,14 +627,16 @@ def _tree_answer_row(r: PackRequirement, q) -> dict:
             "decision": q.decision or "human_review", "citations": list(q.ai_sources), "note": note}
 
 
-async def _regenerate_tree(request: Request, tenant: str, pack_id: str, tree) -> None:
+async def _regenerate_tree(request: Request, tenant: str, pack_id: str, tree,
+                           packs) -> None:
     """Explicit editor-triggered regenerate (force=true): re-draft every non-locked question in a
     non-manual section via the SAME grounded generator the cockpit uses, persisting each result
     onto its tree question. Fails closed with 503 on a StubProvider fallback (mirroring
     generation.generate_question) so echo text is never persisted or exported. Locked questions
     (human sign-off) and manual sections are left untouched."""
-    pack = await request.app.state.rfp_packs.get(tenant, pack_id)
-    worker = await build_tenant_worker(request, tenant, agent_id=pack.agent_id if pack else None)
+    _pack, worker, recheck = await _resolve_pack_worker(
+        request, tenant, pack_id, packs)
+    await recheck()
     manual_sections = {s.id for s in await tree.sections.list(tenant, pack_id) if s.manual}
     to_draft = [q for q in await tree.questions.list(tenant, pack_id)
                 if q.section_id not in manual_sections and not q.locked]
@@ -597,7 +644,8 @@ async def _regenerate_tree(request: Request, tenant: str, pack_id: str, tree) ->
 
     async def _regen(q):
         async with semaphore:
-            return await generate_question_core(tenant, q, worker, tree)
+            return await generate_question_core(
+                tenant, q, worker, tree, recheck_worker=recheck)
 
     try:
         await asyncio.gather(*(_regen(q) for q in to_draft))
@@ -606,7 +654,7 @@ async def _regenerate_tree(request: Request, tenant: str, pack_id: str, tree) ->
 
 
 async def _answer_pack(request: Request, tenant: str, pack_id: str, reqs, answers, *,
-                       force: bool = False, tree=None) -> list[dict]:
+                       force: bool = False, tree=None, packs=None) -> list[dict]:
     """Build the pack's deliverable answer set from the REVIEWED section/question tree -- exactly
     what the reviewer approved in the cockpit -- so /answers and every export reflect the tree and
     never silently re-draft or emit StubProvider echo text.
@@ -620,7 +668,7 @@ async def _answer_pack(request: Request, tenant: str, pack_id: str, reqs, answer
     if not requirements:
         raise HTTPException(status_code=404, detail="no extracted requirements for this pack -- run /extract first")
     if force:
-        await _regenerate_tree(request, tenant, pack_id, tree)
+        await _regenerate_tree(request, tenant, pack_id, tree, packs)
     by_req = {q.req_id: q for q in await tree.questions.list(tenant, pack_id) if q.req_id}
     return [_tree_answer_row(r, by_req.get(r.req_id)) for r in requirements]
 
@@ -640,23 +688,22 @@ async def submit_feedback(pack_id: str, body: FeedbackBody, request: Request,
     knowledge base as trusted ground truth for this requirement type -- the feedback flywheel
     (see AgentCore.record_feedback) -- so the next tender's draft for a similar requirement type
     starts from what a human already approved. Reject records the decision without touching the KB."""
-    try:
-        pack = await packs.get(tenant, pack_id)
-    except RfpPackNotFound as e:
-        raise HTTPException(status_code=404, detail="RFP pack not found") from e
+    pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
     if body.decision not in {"Approve", "Edit", "Reject"}:
         raise HTTPException(status_code=422, detail="decision must be Approve, Edit, or Reject")
     if body.decision in {"Approve", "Edit"} and body.comment.strip():
-        worker = await build_tenant_worker(request, tenant, agent_id=pack.agent_id)
-        await worker.approve(body.req_id, body.comment.strip())
+        await worker.approve(
+            body.req_id, body.comment.strip(), agent_id=pack.agent_id,
+            recheck_worker=recheck)
+    await recheck()
     return {"req_id": body.req_id, "decision": body.decision, "saved": True}
 
 
 @router.get("/{pack_id}/answers")
 async def get_answers(pack_id: str, request: Request, force: bool = False,
                       tenant: str = Depends(authed_tenant), claims: dict = Depends(current_claims),
-                      reqs=Depends(get_requirements), answers=Depends(get_pack_answers),
-                      tree=Depends(get_pack_tree)) -> list[dict]:
+                      packs=Depends(get_rfp_packs), reqs=Depends(get_requirements),
+                      answers=Depends(get_pack_answers), tree=Depends(get_pack_tree)) -> list[dict]:
     """JSON form of the same answer-pack pipeline the exports use -- powers the tender cockpit's
     Sections tab (AI draft + confidence/grounding + citations + status per requirement).
     force=true bypasses the cache and re-drafts every KB requirement (Regenerate all) -- a real
@@ -664,7 +711,8 @@ async def get_answers(pack_id: str, request: Request, force: bool = False,
     any authenticated viewer, to avoid unbounded regeneration cost from a read-only role."""
     if force and not role_allows(claims.get("role", "viewer"), Role.editor):
         raise HTTPException(status_code=403, detail="insufficient role to regenerate answers")
-    answered = await _answer_pack(request, tenant, pack_id, reqs, answers, force=force, tree=tree)
+    answered = await _answer_pack(
+        request, tenant, pack_id, reqs, answers, force=force, tree=tree, packs=packs)
     return [{
         "req_id": a["req"].req_id, "req_title": a["req"].title, "classification": a["req"].classification,
         "requirement": a["req"].requirement, "answer": a["answer"], "confidence": a["confidence"],
@@ -785,7 +833,7 @@ class DraftBody(BaseModel):
 
 
 @router.get("/{pack_id}/sections")
-async def list_sections(pack_id: str, tenant: str = Depends(authed_tenant),
+async def list_sections(pack_id: str, request: Request, tenant: str = Depends(authed_tenant),
                         packs=Depends(get_rfp_packs), reqs=Depends(get_requirements),
                         tree=Depends(get_pack_tree)) -> list[dict]:
     """The full section->question tree for a pack (each section with its nested questions).
@@ -798,16 +846,27 @@ async def list_sections(pack_id: str, tenant: str = Depends(authed_tenant),
     if not rows:
         requirements = await reqs.list(tenant, pack_id)
         if requirements:
-            await tree.populate_from_requirements(tenant, pack_id, requirements)
+            _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
+            await recheck()
+            await tree.populate_from_requirements(
+                tenant, pack_id, requirements, recheck_worker=recheck)
+            await recheck()
             rows = await tree.list_tree(tenant, pack_id)
     return rows
 
 
 @router.post("/{pack_id}/sections")
-async def add_section(pack_id: str, body: SectionBody, tenant: str = Depends(authed_tenant),
+async def add_section(pack_id: str, body: SectionBody, request: Request,
+                      tenant: str = Depends(authed_tenant),
                       _role: dict = Depends(require_role(Role.editor)), packs=Depends(get_rfp_packs),
                       tree=Depends(get_pack_tree)) -> PackSection:
-    await _require_pack(pack_id, tenant, packs)
+    _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
+    if body.parent_id:
+        try:
+            await tree.get_section_for_pack(tenant, pack_id, body.parent_id)
+        except PackSectionNotFound as e:
+            raise HTTPException(status_code=404, detail="section not found") from e
+    await recheck()
     return await tree.add_section(tenant, pack_id, code=body.code, name=body.name, page=body.page,
                                   weighting=body.weighting, parent_id=body.parent_id,
                                   assigned_reviewer_user_id=body.assigned_reviewer_user_id,
@@ -816,12 +875,21 @@ async def add_section(pack_id: str, body: SectionBody, tenant: str = Depends(aut
 
 
 @router.patch("/{pack_id}/sections/{section_id}")
-async def edit_section(pack_id: str, section_id: str, body: SectionPatch,
+async def edit_section(pack_id: str, section_id: str, body: SectionPatch, request: Request,
                        tenant: str = Depends(authed_tenant),
                        _role: dict = Depends(require_role(Role.editor)),
-                       tree=Depends(get_pack_tree)) -> PackSection:
+                       packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)) -> PackSection:
+    _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     try:
-        return await tree.update_section(tenant, section_id, **body.model_dump(exclude_unset=True))
+        await tree.get_section_for_pack(tenant, pack_id, section_id)
+        patch = body.model_dump(exclude_unset=True)
+        parent_id = patch.get("parent_id")
+        if parent_id == section_id:
+            raise HTTPException(status_code=422, detail="section cannot be its own parent")
+        if parent_id:
+            await tree.get_section_for_pack(tenant, pack_id, parent_id)
+        await recheck()
+        return await tree.update_section(tenant, section_id, **patch)
     except PackSectionNotFound as e:
         raise HTTPException(status_code=404, detail="section not found") from e
 
@@ -833,12 +901,15 @@ class ReviewerBody(BaseModel):
 
 @router.put("/{pack_id}/sections/{section_id}/reviewer")
 async def set_section_reviewer(pack_id: str, section_id: str, body: ReviewerBody,
-                               tenant: str = Depends(authed_tenant),
+                               request: Request, tenant: str = Depends(authed_tenant),
                                _role: dict = Depends(require_role(Role.editor)),
-                               tree=Depends(get_pack_tree)) -> PackSection:
+                               packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)) -> PackSection:
     """Assign (or clear, with reviewer=null) the per-section stepper reviewer. Metadata only --
     it does NOT change whether/what answers are generated (drafts run for every section)."""
+    _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     try:
+        await tree.get_section_for_pack(tenant, pack_id, section_id)
+        await recheck()
         return await tree.set_reviewer(tenant, section_id, reviewer=body.reviewer,
                                        reviewer_name=body.reviewer_name)
     except PackSectionNotFound as e:
@@ -846,10 +917,14 @@ async def set_section_reviewer(pack_id: str, section_id: str, body: ReviewerBody
 
 
 @router.delete("/{pack_id}/sections/{section_id}")
-async def delete_section(pack_id: str, section_id: str, tenant: str = Depends(authed_tenant),
+async def delete_section(pack_id: str, section_id: str, request: Request,
+                         tenant: str = Depends(authed_tenant),
                          _role: dict = Depends(require_role(Role.editor)),
-                         tree=Depends(get_pack_tree)) -> dict:
+                         packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)) -> dict:
+    _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     try:
+        await tree.get_section_for_pack(tenant, pack_id, section_id)
+        await recheck()
         await tree.delete_section(tenant, section_id)
     except PackSectionNotFound as e:
         raise HTTPException(status_code=404, detail="section not found") from e
@@ -857,32 +932,42 @@ async def delete_section(pack_id: str, section_id: str, tenant: str = Depends(au
 
 
 @router.post("/{pack_id}/sections/{section_id}/questions")
-async def add_question(pack_id: str, section_id: str, body: QuestionBody,
+async def add_question(pack_id: str, section_id: str, body: QuestionBody, request: Request,
                        tenant: str = Depends(authed_tenant),
                        _role: dict = Depends(require_role(Role.editor)),
-                       tree=Depends(get_pack_tree)):
+                       packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)):
+    _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     try:
+        await tree.get_section_for_pack(tenant, pack_id, section_id)
+        await recheck()
         return await tree.add_question(tenant, section_id, text=body.text, word_limit=body.word_limit)
     except PackSectionNotFound as e:
         raise HTTPException(status_code=404, detail="section not found") from e
 
 
 @router.patch("/{pack_id}/questions/{question_id}")
-async def edit_question(pack_id: str, question_id: str, body: QuestionPatch,
+async def edit_question(pack_id: str, question_id: str, body: QuestionPatch, request: Request,
                         tenant: str = Depends(authed_tenant),
                         _role: dict = Depends(require_role(Role.editor)),
-                        tree=Depends(get_pack_tree)):
+                        packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)):
+    _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     try:
+        await tree.get_question_for_pack(tenant, pack_id, question_id)
+        await recheck()
         return await tree.update_question(tenant, question_id, **body.model_dump(exclude_unset=True))
     except PackQuestionNotFound as e:
         raise HTTPException(status_code=404, detail="question not found") from e
 
 
 @router.delete("/{pack_id}/questions/{question_id}")
-async def delete_question(pack_id: str, question_id: str, tenant: str = Depends(authed_tenant),
+async def delete_question(pack_id: str, question_id: str, request: Request,
+                          tenant: str = Depends(authed_tenant),
                           _role: dict = Depends(require_role(Role.editor)),
-                          tree=Depends(get_pack_tree)) -> dict:
+                          packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)) -> dict:
+    _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     try:
+        await tree.get_question_for_pack(tenant, pack_id, question_id)
+        await recheck()
         await tree.delete_question(tenant, question_id)
     except PackQuestionNotFound as e:
         raise HTTPException(status_code=404, detail="question not found") from e
@@ -890,53 +975,69 @@ async def delete_question(pack_id: str, question_id: str, tenant: str = Depends(
 
 
 @router.put("/{pack_id}/questions/{question_id}/draft")
-async def save_draft(pack_id: str, question_id: str, body: DraftBody,
+async def save_draft(pack_id: str, question_id: str, body: DraftBody, request: Request,
                      tenant: str = Depends(authed_tenant),
                      _role: dict = Depends(require_role(Role.editor)),
-                     tree=Depends(get_pack_tree)):
+                     packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)):
+    _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     try:
+        await tree.get_question_for_pack(tenant, pack_id, question_id)
+        await recheck()
         return await tree.save_user_draft(tenant, question_id, body.user_draft)
     except PackQuestionNotFound as e:
         raise HTTPException(status_code=404, detail="question not found") from e
 
 
 @router.post("/{pack_id}/questions/{question_id}/lock")
-async def lock_question(pack_id: str, question_id: str, tenant: str = Depends(authed_tenant),
+async def lock_question(pack_id: str, question_id: str, request: Request,
+                        tenant: str = Depends(authed_tenant),
                         _role: dict = Depends(require_role(Role.editor)),
-                        tree=Depends(get_pack_tree)):
+                        packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)):
+    _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     try:
+        await tree.get_question_for_pack(tenant, pack_id, question_id)
+        await recheck()
         return await tree.lock_question(tenant, question_id, locked=True)
     except PackQuestionNotFound as e:
         raise HTTPException(status_code=404, detail="question not found") from e
 
 
 @router.post("/{pack_id}/questions/{question_id}/unlock")
-async def unlock_question(pack_id: str, question_id: str, tenant: str = Depends(authed_tenant),
+async def unlock_question(pack_id: str, question_id: str, request: Request,
+                          tenant: str = Depends(authed_tenant),
                           _role: dict = Depends(require_role(Role.editor)),
-                          tree=Depends(get_pack_tree)):
+                          packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)):
+    _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     try:
+        await tree.get_question_for_pack(tenant, pack_id, question_id)
+        await recheck()
         return await tree.lock_question(tenant, question_id, locked=False)
     except PackQuestionNotFound as e:
         raise HTTPException(status_code=404, detail="question not found") from e
 
 
 @router.post("/{pack_id}/sections/{section_id}/lock-all")
-async def lock_all_in_section(pack_id: str, section_id: str, tenant: str = Depends(authed_tenant),
+async def lock_all_in_section(pack_id: str, section_id: str, request: Request,
+                              tenant: str = Depends(authed_tenant),
                               _role: dict = Depends(require_role(Role.editor)),
-                              tree=Depends(get_pack_tree)) -> PackSection:
+                              packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)) -> PackSection:
+    _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     try:
+        await tree.get_section_for_pack(tenant, pack_id, section_id)
+        await recheck()
         return await tree.lock_all_in_section(tenant, section_id)
     except PackSectionNotFound as e:
         raise HTTPException(status_code=404, detail="section not found") from e
 
 
-async def _generate_question(request: Request, tenant: str, pack_id: str, question, worker, tree):
+async def _generate_question(tenant: str, question, worker, tree, recheck: WorkerRecheck):
     """Draft one question with agentcore (shared with the background job's drafts stage -- see
     app.modules.rfp.generation.generate_question). A StubProvider fallback (e.g. Bedrock outage)
     echoes context rather than a real grounded answer, so it is never persisted; fail closed with
     503 so the reviewer sees an outage, not a fabricated-looking draft they might lock and submit."""
     try:
-        return await generate_question_core(tenant, question, worker, tree)
+        return await generate_question_core(
+            tenant, question, worker, tree, recheck_worker=recheck)
     except StubProviderUnavailable as e:
         raise HTTPException(status_code=503, detail="answer generation is temporarily unavailable") from e
 
@@ -946,14 +1047,12 @@ async def generate_question(pack_id: str, question_id: str, request: Request,
                             tenant: str = Depends(authed_tenant),
                             _role: dict = Depends(require_role(Role.editor)),
                             packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)):
-    await _require_pack(pack_id, tenant, packs)
+    _pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
     try:
-        question = await tree.get_question(tenant, question_id)
+        question = await tree.get_question_for_pack(tenant, pack_id, question_id)
     except PackQuestionNotFound as e:
         raise HTTPException(status_code=404, detail="question not found") from e
-    pack = await packs.get(tenant, pack_id)
-    worker = await build_tenant_worker(request, tenant, agent_id=pack.agent_id if pack else None)
-    return await _generate_question(request, tenant, pack_id, question, worker, tree)
+    return await _generate_question(tenant, question, worker, tree, recheck)
 
 
 @router.post("/{pack_id}/sections/{section_id}/generate")
@@ -961,18 +1060,18 @@ async def generate_section(pack_id: str, section_id: str, request: Request,
                            tenant: str = Depends(authed_tenant),
                            _role: dict = Depends(require_role(Role.editor)),
                            packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)) -> list:
-    await _require_pack(pack_id, tenant, packs)
+    _pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
     try:
-        section = await tree.get_section(tenant, section_id)
+        section = await tree.get_section_for_pack(tenant, pack_id, section_id)
     except PackSectionNotFound as e:
         raise HTTPException(status_code=404, detail="section not found") from e
     if section.manual:
+        await recheck()
         return []
-    pack = await packs.get(tenant, pack_id)
-    worker = await build_tenant_worker(request, tenant, agent_id=pack.agent_id if pack else None)
     out = []
     for q in await tree.questions.list_for_section(tenant, section_id):
-        out.append(await _generate_question(request, tenant, pack_id, q, worker, tree))
+        await tree.get_question_for_pack(tenant, pack_id, q.id)
+        out.append(await _generate_question(tenant, q, worker, tree, recheck))
     return out
 
 
@@ -981,15 +1080,14 @@ async def generate_pack(pack_id: str, request: Request, tenant: str = Depends(au
                         _role: dict = Depends(require_role(Role.editor)),
                         packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)) -> list:
     """Whole-pack draft: every non-locked question in every non-manual section, via agentcore."""
-    await _require_pack(pack_id, tenant, packs)
-    pack = await packs.get(tenant, pack_id)
-    worker = await build_tenant_worker(request, tenant, agent_id=pack.agent_id if pack else None)
+    _pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
     manual_sections = {s.id for s in await tree.sections.list(tenant, pack_id) if s.manual}
     out = []
     for q in await tree.questions.list(tenant, pack_id):
         if q.section_id in manual_sections:
             continue
-        out.append(await _generate_question(request, tenant, pack_id, q, worker, tree))
+        await tree.get_question_for_pack(tenant, pack_id, q.id)
+        out.append(await _generate_question(tenant, q, worker, tree, recheck))
     return out
 
 

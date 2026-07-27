@@ -1,5 +1,8 @@
+import asyncio
+
 import pytest
 
+from app.modules.agents.service import Agent
 from app.modules.assignments.service import (
     AssignmentError,
     AssignmentService,
@@ -59,12 +62,15 @@ async def test_delete_by_section_and_pack():
 
 
 # --- API-level ---
-def _seed_user(user_id: str, tenant: str) -> None:
-    get_store().seed(User(id=user_id, email=f"{user_id}@example.test", password_hash="x",
-                          tenant=tenant, role=Role.viewer))
+def _seed_user(user_id: str, tenant: str, *, email: str | None = None) -> None:
+    get_store().seed(User(id=user_id, email=email if email is not None else f"{user_id}@invalid",
+                          password_hash="x", tenant=tenant, role=Role.viewer))
 
 
 def _seed_pack_tree(client, *, tenant: str, agent_id: str = "w1", title: str = "Tender X") -> dict:
+    if asyncio.run(client.app.state.agents.get(tenant, agent_id)) is None:
+        asyncio.run(client.app.state.agents.store.add(
+            Agent(id=agent_id, tenant=tenant, name="Worker")))
     admin = auth_cookies(tenant, "owner", user_id=f"{tenant}-admin")
     pack = client.post("/api/v1/rfp/packs", cookies=admin,
                        json={"agent_id": agent_id, "title": title}).json()
@@ -307,7 +313,7 @@ def test_delete_by_section_and_pack_via_api(client):
 
 def test_send_reminder_without_email_reports_failure(client):
     seed = _seed_pack_tree(client, tenant="assignco5")
-    _seed_user("u1", "assignco5")
+    _seed_user("u1", "assignco5", email="")
     client.post("/api/v1/assignments/bulk", cookies=seed["admin"], json={
         "pack_id": seed["pack"]["id"], "agent_id": "w1",
         "questions": [{"assignee_user_id": "u1", "question": "Q"}],
@@ -316,3 +322,27 @@ def test_send_reminder_without_email_reports_failure(client):
                     json={"pack_id": seed["pack"]["id"], "assignee_user_id": "u1"})
     assert r.status_code == 200
     assert r.json()["reminders_sent"] == 0
+
+
+def test_send_reminder_uses_persisted_tenant_user_email(client, monkeypatch):
+    seed = _seed_pack_tree(client, tenant="assignco6")
+    _seed_user("u1", "assignco6", email="persisted@invalid")
+    client.post("/api/v1/assignments/bulk", cookies=seed["admin"], json={
+        "pack_id": seed["pack"]["id"], "agent_id": "w1",
+        "questions": [{"assignee_user_id": "u1", "question": "Confidential"}],
+    })
+    sent = []
+    monkeypatch.setattr(
+        "app.modules.assignments.router.get_email_sender",
+        lambda: type("Sender", (), {"send": lambda _self, **kwargs: sent.append(kwargs)})(),
+    )
+    response = client.post("/api/v1/assignments/send-reminder", cookies=seed["admin"], json={
+        "pack_id": seed["pack"]["id"], "assignee_user_id": "u1",
+        "assignee_email": "attacker@invalid",
+    })
+    assert response.status_code == 200
+    assert sent[0]["to"] == "persisted@invalid"
+    assert client.post(
+        "/api/v1/assignments/send-reminder", cookies=seed["admin"],
+        json={"pack_id": seed["pack"]["id"]},
+    ).status_code == 422

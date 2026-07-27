@@ -126,21 +126,28 @@ class AssignmentService:
 
     async def bulk_assign(self, tenant: str, assigned_by: str, *, pack_id: str, agent_id: str,
                           rfp_title: str | None = None, sections: list[SectionAssignBody] | None = None,
-                          questions: list[QuestionAssignBody] | None = None) -> list[Assignment]:
+                          questions: list[QuestionAssignBody] | None = None,
+                          recheck_worker=None) -> list[Assignment]:
         sections = sections or []
         questions = questions or []
         if not sections and not questions:
             raise AssignmentError("provide at least one section or question to assign")
 
+        async def recheck() -> None:
+            if recheck_worker is not None:
+                await recheck_worker()
+
         saved: list[Assignment] = []
         for row in sections:
             for q in row.questions:
+                await recheck()
                 saved.append(await self.store.add(Assignment(
                     id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, agent_id=agent_id,
                     rfp_title=rfp_title, section_id=row.section_id, section_title=row.title,
                     assignee_user_id=row.assignee_user_id, assigned_by_user_id=assigned_by,
                     question=q, due_at=row.due_at)))
         for row in questions:
+            await recheck()
             saved.append(await self.store.add(Assignment(
                 id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, agent_id=agent_id,
                 rfp_title=rfp_title, assignee_user_id=row.assignee_user_id,
@@ -150,6 +157,9 @@ class AssignmentService:
     async def list(self, tenant: str, *, pack_id: str | None = None,
                    assignee_user_id: str | None = None, status: str | None = None) -> list[Assignment]:
         return await self.store.list(tenant, pack_id=pack_id, assignee_user_id=assignee_user_id, status=status)
+
+    async def get(self, tenant: str, assignment_id: str) -> Assignment | None:
+        return await self.store.get(tenant, assignment_id)
 
     async def update_status(self, tenant: str, assignment_id: str, status: str) -> Assignment:
         if status not in STATUSES:

@@ -4,10 +4,12 @@ Uploading an RFP kicks off a background job (eager/inline in tests) that produce
 Requirements, Sections, the Tender Brief, the Compliance checklist and per-section draft answers,
 exposing a pollable per-artifact gen_status. See app.modules.rfp.generation / app.tasks.jobs.
 """
+import asyncio
 import io
 import json
 
 from app.modules.agentcore.models import AgentResult, Critique, Decision
+from app.modules.agents.service import Agent
 from app.modules.ai.gateway import LLMResponse
 from app.modules.rfp import generation
 from app.modules.rfp.extraction import ExtractionError
@@ -58,12 +60,22 @@ def _worker_factory(*, answer="Grounded AI draft", stub=False):
     return _build
 
 
+def _patch_worker(monkeypatch, builder):
+    async def resolve(**_kwargs):
+        async def recheck():
+            return None
+        return await builder(), recheck
+    monkeypatch.setattr(generation, "resolve_available_worker", resolve)
+
+
 def _patch(monkeypatch, *, stub=False):
     monkeypatch.setattr("app.modules.rfp.generation.get_provider", lambda **_kw: _RoutingProvider())
-    monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _worker_factory(stub=stub))
+    _patch_worker(monkeypatch, _worker_factory(stub=stub))
 
 
 def _pack(client, tenant):
+    asyncio.run(client.app.state.agents.store.add(
+        Agent(id="w1", tenant=tenant, name="Worker")))
     c = auth_cookies(tenant, "owner")
     pid = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender"}, cookies=c).json()["id"]
     return c, pid
@@ -196,10 +208,10 @@ async def test_drafts_loop_isolates_a_failing_question_and_marks_partial(monkeyp
     packs, reqs, answers, tree, pack = await _make_pack()
     _stub_supporting_stages(monkeypatch)
 
-    async def _extract(_text):
+    async def _extract(_text, **_kwargs):
         return _coarse("A1", "A2", "A3")
     monkeypatch.setattr(generation, "extract_requirements_chunked", _extract)
-    monkeypatch.setattr(generation, "assemble_worker", _draft_worker(fail_ids={"A2"}))
+    _patch_worker(monkeypatch, _draft_worker(fail_ids={"A2"}))
 
     status = await generation.run_generation(
         tenant="t", pack_id=pack.id, agent_id=None, packs=packs, reqs=reqs, answers=answers,
@@ -229,11 +241,11 @@ async def test_drafts_loop_resumes_and_skips_already_drafted(monkeypatch):
                                 confidence=0.5, decision="auto_accept", kb_gap=False)
 
     # on the retry extraction transiently fails, so the existing tree is NOT wiped; drafts resume
-    async def _boom(_text):
+    async def _boom(_text, **_kwargs):
         raise ExtractionError("transient extraction outage")
     monkeypatch.setattr(generation, "extract_requirements_chunked", _boom)
     seen: list[str] = []
-    monkeypatch.setattr(generation, "assemble_worker", _draft_worker(record=seen))
+    _patch_worker(monkeypatch, _draft_worker(record=seen))
 
     status = await generation.run_generation(
         tenant="t", pack_id=pack.id, agent_id=None, packs=packs, reqs=reqs, answers=answers,
@@ -253,7 +265,7 @@ async def test_drafts_stub_fallback_still_fails_closed(monkeypatch):
     packs, reqs, answers, tree, pack = await _make_pack()
     _stub_supporting_stages(monkeypatch)
 
-    async def _extract(_text):
+    async def _extract(_text, **_kwargs):
         return _coarse("A1", "A2")
     monkeypatch.setattr(generation, "extract_requirements_chunked", _extract)
 
@@ -263,7 +275,7 @@ async def test_drafts_stub_fallback_still_fails_closed(monkeypatch):
                 return AgentResult(requirement_id=rid, answer="echo", critique=Critique(grounding=0.0),
                                    decision=Decision.human_review, citations=[], stub=True)
         return _W()
-    monkeypatch.setattr(generation, "assemble_worker", _stub_build)
+    _patch_worker(monkeypatch, _stub_build)
 
     status = await generation.run_generation(
         tenant="t", pack_id=pack.id, agent_id=None, packs=packs, reqs=reqs, answers=answers,
@@ -280,7 +292,7 @@ async def test_per_stage_errors_are_attributed_not_clobbered(monkeypatch):
     packs, reqs, answers, tree, pack = await _make_pack()
     monkeypatch.setattr(generation, "get_provider", lambda **_kw: object())
 
-    async def _req_boom(_text):
+    async def _req_boom(_text, **_kwargs):
         raise ExtractionError("req boom")
     monkeypatch.setattr(generation, "extract_requirements_chunked", _req_boom)
     monkeypatch.setattr(generation, "extract_brief", lambda *_a, **_kw: {"summary": "s"})
@@ -288,7 +300,7 @@ async def test_per_stage_errors_are_attributed_not_clobbered(monkeypatch):
     def _comp_boom(*_a, **_kw):
         raise RuntimeError("comp boom")
     monkeypatch.setattr(generation, "extract_compliance", _comp_boom)
-    monkeypatch.setattr(generation, "assemble_worker", _draft_worker())
+    _patch_worker(monkeypatch, _draft_worker())
 
     status = await generation.run_generation(
         tenant="t", pack_id=pack.id, agent_id=None, packs=packs, reqs=reqs, answers=answers,

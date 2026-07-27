@@ -320,6 +320,39 @@ class SqlAgentStore:
                 reason=row.reason, created_at=row.created_at) for row in rows]
 
 
+async def _lock_enabled_pack(
+    session: AsyncSession, tenant: str, pack_id: str, *, agent_id: str | None = None,
+) -> RfpPackRow:
+    pack = (await session.execute(
+        select(RfpPackRow).where(
+            RfpPackRow.tenant_id == tenant, RfpPackRow.id == pack_id
+        ).with_for_update()
+    )).scalar_one_or_none()
+    if pack is None or (agent_id is not None and pack.agent_id != agent_id):
+        raise RfpPackNotFound(pack_id)
+    agent = (await session.execute(
+        select(AgentRow).where(
+            AgentRow.tenant_id == tenant, AgentRow.id == pack.agent_id
+        ).with_for_update()
+    )).scalar_one_or_none()
+    if agent is None or not agent.enabled:
+        raise WorkerUnavailable
+    return pack
+
+
+async def _lock_enabled_agent(
+    session: AsyncSession, tenant: str, agent_id: str,
+) -> AgentRow:
+    agent = (await session.execute(
+        select(AgentRow).where(
+            AgentRow.tenant_id == tenant, AgentRow.id == agent_id
+        ).with_for_update()
+    )).scalar_one_or_none()
+    if agent is None or not agent.enabled:
+        raise WorkerUnavailable
+    return agent
+
+
 @dataclass
 class SqlRfpPackStore:
     sessionmaker: async_sessionmaker[AsyncSession]
@@ -335,6 +368,7 @@ class SqlRfpPackStore:
 
     async def add(self, pack: RfpPack) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, pack.tenant, pack.agent_id)
             s.add(RfpPackRow(id=pack.id, tenant_id=pack.tenant, agent_id=pack.agent_id,
                              title=pack.title, client_name=pack.client_name,
                              deadline=pack.deadline, stage=pack.stage,
@@ -358,33 +392,49 @@ class SqlRfpPackStore:
 
     async def set_stage(self, tenant: str, pack_id: str, stage: str) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(RfpPackRow, pack_id)
-            if row is None or row.tenant_id != tenant:
-                raise RfpPackNotFound(pack_id)
+            row = await _lock_enabled_pack(s, tenant, pack_id)
             row.stage = stage
             return self._to_domain(row)
 
     async def set_document_text(self, tenant: str, pack_id: str, text: str) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(RfpPackRow, pack_id)
-            if row is None or row.tenant_id != tenant:
-                raise RfpPackNotFound(pack_id)
+            row = await _lock_enabled_pack(s, tenant, pack_id)
             row.document_text = text
             return self._to_domain(row)
 
     async def set_source_documents(self, tenant: str, pack_id: str, docs: list) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(RfpPackRow, pack_id)
-            if row is None or row.tenant_id != tenant:
-                raise RfpPackNotFound(pack_id)
+            row = await _lock_enabled_pack(s, tenant, pack_id)
             row.source_documents = list(docs or [])
             return self._to_domain(row)
 
     async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,
                           reason: str, value: float | None) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(RfpPackRow, pack_id)
-            if row is None or row.tenant_id != tenant:
+            row = await _lock_enabled_pack(s, tenant, pack_id)
+            row.outcome, row.outcome_reason, row.outcome_value = outcome, reason, value
+            row.outcome_at = datetime.now(timezone.utc) if outcome else None
+            return self._to_domain(row)
+
+    async def set_outcome_for_enabled_agent(
+        self, tenant: str, pack_id: str, agent_id: str, *, outcome: str | None,
+        reason: str, value: float | None, recheck_worker,
+    ) -> RfpPack:
+        async with self.sessionmaker() as session, session.begin():
+            agent = (await session.execute(
+                select(AgentRow).where(
+                    AgentRow.tenant_id == tenant, AgentRow.id == agent_id
+                ).with_for_update()
+            )).scalar_one_or_none()
+            if agent is None or not agent.enabled:
+                raise WorkerUnavailable
+            row = (await session.execute(
+                select(RfpPackRow).where(
+                    RfpPackRow.tenant_id == tenant, RfpPackRow.id == pack_id,
+                    RfpPackRow.agent_id == agent_id,
+                ).with_for_update()
+            )).scalar_one_or_none()
+            if row is None:
                 raise RfpPackNotFound(pack_id)
             row.outcome, row.outcome_reason, row.outcome_value = outcome, reason, value
             row.outcome_at = datetime.now(timezone.utc) if outcome else None
@@ -392,33 +442,26 @@ class SqlRfpPackStore:
 
     async def set_brief(self, tenant: str, pack_id: str, brief: dict | None) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(RfpPackRow, pack_id)
-            if row is None or row.tenant_id != tenant:
-                raise RfpPackNotFound(pack_id)
+            row = await _lock_enabled_pack(s, tenant, pack_id)
             row.brief = brief
             return self._to_domain(row)
 
     async def set_compliance(self, tenant: str, pack_id: str, items: list | None) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(RfpPackRow, pack_id)
-            if row is None or row.tenant_id != tenant:
-                raise RfpPackNotFound(pack_id)
+            row = await _lock_enabled_pack(s, tenant, pack_id)
             row.compliance = items
             return self._to_domain(row)
 
     async def set_gen_status(self, tenant: str, pack_id: str, status: dict | None) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(RfpPackRow, pack_id)
-            if row is None or row.tenant_id != tenant:
-                raise RfpPackNotFound(pack_id)
+            row = await _lock_enabled_pack(s, tenant, pack_id)
             row.gen_status = status
             return self._to_domain(row)
 
     async def delete(self, tenant: str, pack_id: str) -> None:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(RfpPackRow, pack_id)
-            if row is not None and row.tenant_id == tenant:
-                await s.delete(row)
+            row = await _lock_enabled_pack(s, tenant, pack_id)
+            await s.delete(row)
 
 
 @dataclass
@@ -431,6 +474,7 @@ class SqlRequirementStore:
 
     async def replace_all(self, tenant: str, pack_id: str, items: list[PackRequirement]) -> list[PackRequirement]:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, tenant, pack_id)
             await s.execute(delete(PackRequirementRow).where(
                 PackRequirementRow.tenant_id == tenant, PackRequirementRow.pack_id == pack_id))
             for item in items:
@@ -447,6 +491,7 @@ class SqlRequirementStore:
 
     async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, tenant, pack_id)
             await s.execute(delete(PackRequirementRow).where(
                 PackRequirementRow.tenant_id == tenant, PackRequirementRow.pack_id == pack_id))
 
@@ -465,6 +510,7 @@ class SqlPackSectionStore:
 
     async def add(self, section: PackSection) -> PackSection:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, section.tenant, section.pack_id)
             s.add(PackSectionRow(id=section.id, tenant_id=section.tenant, pack_id=section.pack_id,
                                  code=section.code, name=section.name, page=section.page,
                                  weighting=section.weighting, status=section.status, parent_id=section.parent_id,
@@ -494,6 +540,7 @@ class SqlPackSectionStore:
             row = await s.get(PackSectionRow, section_id)
             if row is None or row.tenant_id != tenant:
                 raise PackSectionNotFound(section_id)
+            await _lock_enabled_pack(s, tenant, row.pack_id)
             for k, v in fields.items():
                 setattr(row, k, v)
             return self._to_domain(row)
@@ -502,10 +549,12 @@ class SqlPackSectionStore:
         async with self.sessionmaker() as s, s.begin():
             row = await s.get(PackSectionRow, section_id)
             if row is not None and row.tenant_id == tenant:
+                await _lock_enabled_pack(s, tenant, row.pack_id)
                 await s.delete(row)
 
     async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, tenant, pack_id)
             await s.execute(delete(PackSectionRow).where(
                 PackSectionRow.tenant_id == tenant, PackSectionRow.pack_id == pack_id))
 
@@ -524,6 +573,7 @@ class SqlPackQuestionStore:
 
     async def add(self, question: PackQuestion) -> PackQuestion:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, question.tenant, question.pack_id)
             s.add(PackQuestionRow(id=question.id, tenant_id=question.tenant, pack_id=question.pack_id,
                                   section_id=question.section_id, text=question.text, req_id=question.req_id,
                                   word_limit=question.word_limit, ai_answer=question.ai_answer,
@@ -559,6 +609,7 @@ class SqlPackQuestionStore:
             row = await s.get(PackQuestionRow, question_id)
             if row is None or row.tenant_id != tenant:
                 raise PackQuestionNotFound(question_id)
+            await _lock_enabled_pack(s, tenant, row.pack_id)
             for k, v in fields.items():
                 setattr(row, k, v)
             return self._to_domain(row)
@@ -567,15 +618,21 @@ class SqlPackQuestionStore:
         async with self.sessionmaker() as s, s.begin():
             row = await s.get(PackQuestionRow, question_id)
             if row is not None and row.tenant_id == tenant:
+                await _lock_enabled_pack(s, tenant, row.pack_id)
                 await s.delete(row)
 
     async def delete_for_section(self, tenant: str, section_id: str) -> None:
         async with self.sessionmaker() as s, s.begin():
+            section = await s.get(PackSectionRow, section_id)
+            if section is None or section.tenant_id != tenant:
+                raise PackSectionNotFound(section_id)
+            await _lock_enabled_pack(s, tenant, section.pack_id)
             await s.execute(delete(PackQuestionRow).where(
                 PackQuestionRow.tenant_id == tenant, PackQuestionRow.section_id == section_id))
 
     async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, tenant, pack_id)
             await s.execute(delete(PackQuestionRow).where(
                 PackQuestionRow.tenant_id == tenant, PackQuestionRow.pack_id == pack_id))
 
@@ -596,6 +653,7 @@ class SqlPackAnswerStore:
 
     async def put(self, tenant: str, pack_id: str, req_id: str, answer: CachedAnswer) -> None:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, tenant, pack_id)
             row = await s.get(PackAnswerRow, (pack_id, req_id))
             if row is None:
                 s.add(PackAnswerRow(pack_id=pack_id, req_id=req_id, tenant_id=tenant, answer=answer.answer,
@@ -607,6 +665,7 @@ class SqlPackAnswerStore:
 
     async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, tenant, pack_id)
             await s.execute(delete(PackAnswerRow).where(
                 PackAnswerRow.tenant_id == tenant, PackAnswerRow.pack_id == pack_id))
 
@@ -624,6 +683,7 @@ class SqlAssignmentStore:
 
     async def add(self, a: Assignment) -> Assignment:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, a.tenant, a.pack_id, agent_id=a.agent_id)
             s.add(AssignmentRow(id=a.id, tenant_id=a.tenant, pack_id=a.pack_id, agent_id=a.agent_id,
                                 rfp_title=a.rfp_title, section_id=a.section_id, section_title=a.section_title,
                                 assignee_user_id=a.assignee_user_id, assigned_by_user_id=a.assigned_by_user_id,
@@ -655,12 +715,14 @@ class SqlAssignmentStore:
             row = await s.get(AssignmentRow, assignment_id)
             if row is None or row.tenant_id != tenant:
                 raise AssignmentNotFound(assignment_id)
+            await _lock_enabled_pack(s, tenant, row.pack_id, agent_id=row.agent_id)
             for k, v in fields.items():
                 setattr(row, k, v)
             return self._to_domain(row)
 
     async def delete_by_section(self, tenant: str, pack_id: str, section_id: str) -> int:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, tenant, pack_id)
             result = await s.execute(delete(AssignmentRow).where(
                 AssignmentRow.tenant_id == tenant, AssignmentRow.pack_id == pack_id,
                 AssignmentRow.section_id == section_id))
@@ -668,6 +730,7 @@ class SqlAssignmentStore:
 
     async def delete_by_pack(self, tenant: str, pack_id: str) -> int:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, tenant, pack_id)
             result = await s.execute(delete(AssignmentRow).where(
                 AssignmentRow.tenant_id == tenant, AssignmentRow.pack_id == pack_id))
             return result.rowcount or 0

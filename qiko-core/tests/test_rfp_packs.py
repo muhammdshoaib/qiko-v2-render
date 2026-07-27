@@ -1,5 +1,8 @@
+import asyncio
+
 import pytest
 
+from app.modules.agents.service import Agent
 from app.modules.rfp.service import RequirementService, RfpPackNotFound, RfpPackService
 
 from tests.helpers import auth_cookies
@@ -95,7 +98,13 @@ async def test_stats_with_no_decided_packs_has_null_win_rate():
 
 
 # --- API-level ---
+def _seed_worker(client, tenant: str) -> None:
+    asyncio.run(client.app.state.agents.store.add(
+        Agent(id="w1", tenant=tenant, name="Worker")))
+
+
 def test_rfp_pack_api_crud(client):
+    _seed_worker(client, "rfpco")
     c = auth_cookies("rfpco", "owner")
     created = client.post("/api/v1/rfp/packs",
                           json={"agent_id": "w1", "title": "Tender A", "client_name": "Client A"},
@@ -121,6 +130,7 @@ def test_rfp_pack_api_crud(client):
 
 
 def test_deleting_pack_also_deletes_its_requirements(client):
+    _seed_worker(client, "rfpco2")
     c = auth_cookies("rfpco2", "owner")
     created = client.post("/api/v1/rfp/packs",
                           json={"agent_id": "w1", "title": "Tender B"}, cookies=c).json()
@@ -144,6 +154,7 @@ def test_rfp_pack_write_requires_editor_role(client):
 
 
 def test_rfp_pack_scoped_to_tenant_via_api(client):
+    _seed_worker(client, "tenant1")
     c1 = auth_cookies("tenant1", "owner")
     c2 = auth_cookies("tenant2", "owner")
     client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tenant1 tender"}, cookies=c1)
@@ -151,6 +162,7 @@ def test_rfp_pack_scoped_to_tenant_via_api(client):
 
 
 def test_outcome_api_roundtrip_and_stats(client):
+    _seed_worker(client, "winlossco")
     c = auth_cookies("winlossco", "owner")
     won = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Won deal"}, cookies=c).json()
     lost = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Lost deal"}, cookies=c).json()
@@ -173,6 +185,7 @@ def test_outcome_api_roundtrip_and_stats(client):
 
 
 def test_outcome_write_requires_editor_role(client):
+    _seed_worker(client, "winlossco2")
     c = auth_cookies("winlossco2", "owner")
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "T"}, cookies=c).json()
     viewer = auth_cookies("winlossco2", "viewer")
@@ -181,6 +194,7 @@ def test_outcome_write_requires_editor_role(client):
 
 
 def test_stats_is_tenant_scoped(client):
+    _seed_worker(client, "statst1")
     c1 = auth_cookies("statst1", "owner")
     c2 = auth_cookies("statst2", "owner")
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "T"}, cookies=c1).json()

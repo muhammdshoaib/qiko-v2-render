@@ -244,6 +244,12 @@ class PackTreeService:
             raise PackSectionNotFound(section_id)
         return section
 
+    async def get_section_for_pack(self, tenant: str, pack_id: str, section_id: str) -> PackSection:
+        section = await self.get_section(tenant, section_id)
+        if section.pack_id != pack_id:
+            raise PackSectionNotFound(section_id)
+        return section
+
     async def update_section(self, tenant: str, section_id: str, **fields) -> PackSection:
         await self.get_section(tenant, section_id)
         clean = {k: v for k, v in fields.items() if v is not None}
@@ -280,6 +286,12 @@ class PackTreeService:
     async def get_question(self, tenant: str, question_id: str) -> PackQuestion:
         question = await self.questions.get(tenant, question_id)
         if question is None:
+            raise PackQuestionNotFound(question_id)
+        return question
+
+    async def get_question_for_pack(self, tenant: str, pack_id: str, question_id: str) -> PackQuestion:
+        question = await self.get_question(tenant, question_id)
+        if question.pack_id != pack_id:
             raise PackQuestionNotFound(question_id)
         return question
 
@@ -474,18 +486,25 @@ class PackTreeService:
         }
 
     # --- extraction wiring ---
-    async def populate_from_extraction(self, tenant: str, pack_id: str, extracted: list[dict]) -> list[PackSection]:
+    async def populate_from_extraction(self, tenant: str, pack_id: str, extracted: list[dict], *,
+                                       recheck_worker=None) -> list[PackSection]:
         """Build the two-level section tree from STRUCTURED extracted sections: each element is one
         top-level section with an EXPLICIT `subsections` array. Each section -> one top-level
         PackSection; each sub-section -> a child PackSection (parent_id set) with its own question;
         a section with no sub-sections keeps a single question (its own requirement) on the
         top-level section. A section (or sub-section) that is all MANUAL/COMPLIANCE is flagged
         manual (team-completed, not AI-drafted)."""
+        if recheck_worker is not None:
+            await recheck_worker()
         await self.sections.delete_for_pack(tenant, pack_id)
+        if recheck_worker is not None:
+            await recheck_worker()
         await self.questions.delete_for_pack(tenant, pack_id)
-        return await self._build_tree(tenant, pack_id, extracted)
+        return await self._build_tree(
+            tenant, pack_id, extracted, recheck_worker=recheck_worker)
 
-    async def populate_from_requirements(self, tenant: str, pack_id: str, requirements: list) -> list[PackSection]:
+    async def populate_from_requirements(self, tenant: str, pack_id: str, requirements: list, *,
+                                         recheck_worker=None) -> list[PackSection]:
         """Backfill the section->question tree for a pack extracted BEFORE this feature existed:
         packs that pre-date populate_from_extraction have flat PackRequirement rows but no tree, so
         the validated Sections view shows nothing. Reuse those already-stored requirements (NO LLM
@@ -497,9 +516,11 @@ class PackTreeService:
             return []  # a tree already exists -- don't rebuild or duplicate it
         extracted = [{"id": r.req_id, "title": r.title, "classification": r.classification,
                       "requirement": r.requirement} for r in requirements]
-        return await self._build_tree_from_flat(tenant, pack_id, extracted)
+        return await self._build_tree_from_flat(
+            tenant, pack_id, extracted, recheck_worker=recheck_worker)
 
-    async def _build_tree(self, tenant: str, pack_id: str, extracted: list[dict]) -> list[PackSection]:
+    async def _build_tree(self, tenant: str, pack_id: str, extracted: list[dict], *,
+                          recheck_worker=None) -> list[PackSection]:
         """Build the two-level section tree from STRUCTURED extracted sections, consuming the
         EXPLICIT `subsections` array on each (no regex over prose).
 
@@ -521,6 +542,8 @@ class PackTreeService:
                                  code=section["id"], name=section["title"].strip() or section["title"],
                                  status="manual" if manual else "not_generated",
                                  manual=manual, order_index=order)
+            if recheck_worker is not None:
+                await recheck_worker()
             await self.sections.add(parent)
             created.append(parent)
             if subs:
@@ -531,18 +554,25 @@ class PackTreeService:
                                         parent_id=parent.id,
                                         status="manual" if sub_manual else "not_generated",
                                         manual=sub_manual, order_index=sub_order)
+                    if recheck_worker is not None:
+                        await recheck_worker()
                     await self.sections.add(child)
+                    if recheck_worker is not None:
+                        await recheck_worker()
                     await self.questions.add(PackQuestion(
                         id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, section_id=child.id,
                         text=sub["requirement"], req_id=sub["id"], order_index=0))
                     created.append(child)
             else:
+                if recheck_worker is not None:
+                    await recheck_worker()
                 await self.questions.add(PackQuestion(
                     id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, section_id=parent.id,
                     text=section["requirement"], req_id=section["id"], order_index=0))
         return created
 
-    async def _build_tree_from_flat(self, tenant: str, pack_id: str, extracted: list[dict]) -> list[PackSection]:
+    async def _build_tree_from_flat(self, tenant: str, pack_id: str, extracted: list[dict], *,
+                                    recheck_worker=None) -> list[PackSection]:
         """LEGACY builder for flat backfills (populate_from_requirements): items are grouped by
         top-level section token so an OLD flat backfill whose stored req_ids are dotted ("B1.1",
         "B1.2") or suffixed ("A1_unpriced") coalesces under one top-level section (dotted items ->
@@ -563,6 +593,8 @@ class PackTreeService:
                                  name=_section_heading(items),
                                  status="manual" if manual else "not_generated",
                                  manual=manual, order_index=order)
+            if recheck_worker is not None:
+                await recheck_worker()
             await self.sections.add(parent)
             created.append(parent)
 
@@ -573,13 +605,17 @@ class PackTreeService:
                 item = plain[0]
                 parts = split_subsections(item["id"], item["requirement"])
                 if len(parts) >= 2:
-                    created += await self._add_split_children(tenant, pack_id, parent, parts, manual)
+                    created += await self._add_split_children(
+                        tenant, pack_id, parent, parts, manual,
+                        recheck_worker=recheck_worker)
                     continue
                 # single part -> one question directly on the section (fall through below)
 
             # plain items answer directly on the top-level section (also the legacy flat-coalesce
             # case where multiple non-dotted ids share one top-level token)
             for qi, item in enumerate(plain):
+                if recheck_worker is not None:
+                    await recheck_worker()
                 await self.questions.add(PackQuestion(
                     id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, section_id=parent.id,
                     text=item["requirement"], req_id=item["id"], order_index=qi))
@@ -590,7 +626,11 @@ class PackTreeService:
                                     code=item["id"], name=_subsection_name(item), parent_id=parent.id,
                                     status="manual" if sub_manual else "not_generated",
                                     manual=sub_manual, order_index=sub_order)
+                if recheck_worker is not None:
+                    await recheck_worker()
                 await self.sections.add(child)
+                if recheck_worker is not None:
+                    await recheck_worker()
                 await self.questions.add(PackQuestion(
                     id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, section_id=child.id,
                     text=item["requirement"], req_id=item["id"], order_index=0))
@@ -598,7 +638,8 @@ class PackTreeService:
         return created
 
     async def _add_split_children(self, tenant: str, pack_id: str, parent: PackSection,
-                                   parts: list[dict], manual: bool) -> list[PackSection]:
+                                  parts: list[dict], manual: bool, *,
+                                  recheck_worker=None) -> list[PackSection]:
         """Create one child sub-section (with its own question) per sub-part derived from a coarse
         section's requirement text. The parent then holds no direct questions -- it rolls up from
         its children, mirroring idg's answer_subsections aggregation."""
@@ -608,7 +649,11 @@ class PackTreeService:
                                 code=part["sub_id"], name=part["title"], parent_id=parent.id,
                                 status="manual" if manual else "not_generated",
                                 manual=manual, order_index=sub_order)
+            if recheck_worker is not None:
+                await recheck_worker()
             await self.sections.add(child)
+            if recheck_worker is not None:
+                await recheck_worker()
             await self.questions.add(PackQuestion(
                 id=uuid.uuid4().hex[:12], tenant=tenant, pack_id=pack_id, section_id=child.id,
                 text=part["body"], req_id=part["sub_id"], order_index=0))

@@ -1,10 +1,19 @@
 """Proves the RFP section->question tree works end-to-end over the Postgres-backed Sql stores
 (exercised here on aiosqlite): CRUD -> lock roll-up -> overview, tenant-scoped."""
+import asyncio
+import os
+
+import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.db import stores as stores_module
 from app.db.base import Base
+from app.db.models import Agent as AgentRow
+from app.db.models import RfpPack as RfpPackRow
+from app.db.models import Tenant
 from app.db.stores import SqlPackQuestionStore, SqlPackSectionStore
-from app.modules.rfp.tree import PackTreeService
+from app.core.deps import WorkerUnavailable
+from app.modules.rfp.tree import PackSection, PackTreeService
 
 
 async def _db_tree(path) -> PackTreeService:
@@ -12,6 +21,10 @@ async def _db_tree(path) -> PackTreeService:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     sm = async_sessionmaker(engine, expire_on_commit=False)
+    async with sm() as session, session.begin():
+        session.add(Tenant(id="acme", name="Acme"))
+        session.add(AgentRow(id="w1", tenant_id="acme", name="Worker", enabled=True))
+        session.add(RfpPackRow(id="p1", tenant_id="acme", agent_id="w1", title="Tender"))
     return PackTreeService(sections=SqlPackSectionStore(sm), questions=SqlPackQuestionStore(sm))
 
 
@@ -44,3 +57,50 @@ async def test_db_backed_tree_is_tenant_scoped(tmp_path):
     assert await svc.sections.list("beta", "p1") == []
     assert await svc.sections.get("beta", s.id) is None
     assert await svc.questions.list("beta", "p1") == []
+
+
+@pytest.mark.skipif(not os.getenv("QIKO_TEST_POSTGRES_URL"), reason="temporary PostgreSQL required")
+async def test_postgres_disable_serializes_against_tree_persistence(monkeypatch):
+    engine = create_async_engine(os.environ["QIKO_TEST_POSTGRES_URL"])
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.drop_all)
+        await connection.run_sync(Base.metadata.create_all)
+    sm = async_sessionmaker(engine, expire_on_commit=False)
+    async with sm() as session, session.begin():
+        session.add(Tenant(id="acme", name="Acme"))
+        session.add(AgentRow(id="w1", tenant_id="acme", name="Worker", enabled=True))
+        session.add(RfpPackRow(id="p1", tenant_id="acme", agent_id="w1", title="Tender"))
+    sections = SqlPackSectionStore(sm)
+    locked = asyncio.Event()
+    release = asyncio.Event()
+    original = stores_module._lock_enabled_pack
+
+    async def lock_then_pause(session, tenant, pack_id, **kwargs):
+        pack = await original(session, tenant, pack_id, **kwargs)
+        locked.set()
+        await release.wait()
+        return pack
+
+    monkeypatch.setattr(stores_module, "_lock_enabled_pack", lock_then_pause)
+    write = asyncio.create_task(sections.add(PackSection(
+        id="s1", tenant="acme", pack_id="p1", code="A", name="Committed"
+    )))
+    await locked.wait()
+
+    async def disable() -> None:
+        async with sm() as session, session.begin():
+            agent = await session.get(AgentRow, "w1", with_for_update=True)
+            agent.enabled = False
+
+    disabling = asyncio.create_task(disable())
+    await asyncio.sleep(0.05)
+    assert not disabling.done()
+    release.set()
+    await write
+    await disabling
+    with pytest.raises(WorkerUnavailable):
+        await sections.add(PackSection(
+            id="s2", tenant="acme", pack_id="p1", code="B", name="Blocked"
+        ))
+    assert [section.id for section in await sections.list("acme", "p1")] == ["s1"]
+    await engine.dispose()

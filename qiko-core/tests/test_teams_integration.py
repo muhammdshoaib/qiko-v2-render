@@ -1,5 +1,9 @@
 """Microsoft Teams Integration: connect/disconnect a per-tenant Incoming Webhook, send a test
 notification, and the real trigger wired into RFP outcome recording (Win/Loss Analysis)."""
+import asyncio
+
+from app.modules.agents.service import Agent
+
 from tests.helpers import auth_cookies
 
 C = auth_cookies("teamsco", "owner")
@@ -110,6 +114,8 @@ def test_webhook_is_tenant_scoped(client):
 def test_recording_a_tender_outcome_notifies_teams(client):
     fake = _FakeGateway()
     client.app.state.teams_notifier.gateway = fake
+    asyncio.run(client.app.state.agents.store.add(
+        Agent(id="w1", tenant="teamswl", name="Worker")))
     c = auth_cookies("teamswl", "owner")
     client.put("/api/v1/channels/teams/webhook",
               json={"webhook_url": "https://outlook.office.com/webhook/wl"}, cookies=c)
@@ -126,6 +132,8 @@ def test_recording_a_tender_outcome_notifies_teams(client):
 
 def test_recording_outcome_without_teams_connected_still_succeeds(client):
     # notify() is best-effort -- no webhook configured must never break the actual outcome write.
+    asyncio.run(client.app.state.agents.store.add(
+        Agent(id="w1", tenant="teamswl2", name="Worker")))
     c = auth_cookies("teamswl2", "owner")
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "T"}, cookies=c).json()
     r = client.put(f"/api/v1/rfp/packs/{pack['id']}/outcome", json={"outcome": "won"}, cookies=c)

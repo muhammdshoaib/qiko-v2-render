@@ -281,19 +281,25 @@ async def assemble_worker(*, sessionmaker, agents, knowledge, tenant: str, agent
                                   threshold=worker_config.gate_threshold, verified=verified))
 
 
-async def resolve_tenant_worker(request: Request, tenant: str,
-                                agent_id: str) -> tuple[object, WorkerRecheck]:
+async def resolve_available_worker(*, sessionmaker, agents, knowledge, tenant: str,
+                                   agent_id: str, assembler=None) -> tuple[object, WorkerRecheck]:
     async def recheck() -> None:
-        await require_available_worker(
-            agents=request.app.state.agents, tenant=tenant, agent_id=agent_id)
+        await require_available_worker(agents=agents, tenant=tenant, agent_id=agent_id)
 
     await recheck()
-    worker = await assemble_worker(
-        sessionmaker=getattr(request.app.state, "sessionmaker", None),
-        agents=request.app.state.agents, knowledge=request.app.state.knowledge,
+    worker = await (assembler or assemble_worker)(
+        sessionmaker=sessionmaker, agents=agents, knowledge=knowledge,
         tenant=tenant, agent_id=agent_id)
     await recheck()
     return worker, recheck
+
+
+async def resolve_tenant_worker(request: Request, tenant: str,
+                                agent_id: str) -> tuple[object, WorkerRecheck]:
+    return await resolve_available_worker(
+        sessionmaker=getattr(request.app.state, "sessionmaker", None),
+        agents=request.app.state.agents, knowledge=request.app.state.knowledge,
+        tenant=tenant, agent_id=agent_id)
 
 
 async def build_tenant_worker(request: Request, tenant: str, agent_id: str | None = None):

@@ -1,8 +1,10 @@
+import asyncio
 import io
 
 import pytest
 
 from app.modules.agentcore.models import AgentResult, Critique, Decision
+from app.modules.agents.service import Agent
 from app.modules.rfp.service import PackRequirement
 from app.modules.rfp.tree import PackQuestionNotFound, PackSectionNotFound, PackTreeService
 
@@ -419,6 +421,8 @@ async def test_overview_metrics():
 
 # --- API-level ---
 def _pack(client, tenant):
+    asyncio.run(client.app.state.agents.store.add(
+        Agent(id="w1", tenant=tenant, name="Worker")))
     c = auth_cookies(tenant, "owner")
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "T"}, cookies=c).json()
     return c, pack["id"]
@@ -446,6 +450,8 @@ def test_section_question_crud_api(client):
 
 
 def test_mutations_require_editor_role(client):
+    asyncio.run(client.app.state.agents.store.add(
+        Agent(id="w1", tenant="treeco2", name="Worker")))
     owner = auth_cookies("treeco2", "owner")
     pid = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "T"}, cookies=owner).json()["id"]
     s = client.post(f"/api/v1/rfp/packs/{pid}/sections", json={"name": "Intro"}, cookies=owner).json()
@@ -484,11 +490,23 @@ def _fake_worker_factory(answer="AI draft", grounding=0.9, confidence=None, gaps
     return _build
 
 
+def _patch_worker(monkeypatch, builder) -> None:
+    async def resolve_http(*_args, **_kwargs):
+        async def recheck():
+            return None
+        return await builder(), recheck
+
+    async def resolve_job(**_kwargs):
+        return await resolve_http()
+
+    monkeypatch.setattr("app.modules.rfp.router.resolve_tenant_worker", resolve_http)
+    monkeypatch.setattr("app.modules.rfp.generation.resolve_available_worker", resolve_job)
+
+
 def test_generate_question_reuses_agentcore(client, monkeypatch):
     # confidence (writer self-report) and grounding (independent critic) are DISTINCT and both
     # persisted, along with the writer's gaps note.
-    monkeypatch.setattr("app.modules.rfp.router.build_tenant_worker",
-                        _fake_worker_factory(grounding=0.9, confidence=0.7, gaps="no SLA evidence"))
+    _patch_worker(monkeypatch, _fake_worker_factory(grounding=0.9, confidence=0.7, gaps="no SLA evidence"))
     c, pid = _pack(client, "genco1")
     s = client.post(f"/api/v1/rfp/packs/{pid}/sections", json={"name": "Intro"}, cookies=c).json()
     q = client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
@@ -506,8 +524,7 @@ def test_generate_question_rejects_stub_fallback_and_does_not_persist(client, mo
     context rather than drafting a real grounded answer. /generate must surface a 503 and must NOT
     persist it onto the question -- otherwise a reviewer could lock and submit a fabricated-looking
     draft. The "real provider persists normally" case is test_generate_question_reuses_agentcore."""
-    monkeypatch.setattr("app.modules.rfp.router.build_tenant_worker",
-                        _fake_worker_factory(answer="echoed context", stub=True))
+    _patch_worker(monkeypatch, _fake_worker_factory(answer="echoed context", stub=True))
     c, pid = _pack(client, "stubgen1")
     s = client.post(f"/api/v1/rfp/packs/{pid}/sections", json={"name": "Intro"}, cookies=c).json()
     q = client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
@@ -522,8 +539,7 @@ def test_generate_question_rejects_stub_fallback_and_does_not_persist(client, mo
 
 
 def test_generate_flags_kb_gap_when_ungrounded(client, monkeypatch):
-    monkeypatch.setattr("app.modules.rfp.router.build_tenant_worker",
-                        _fake_worker_factory(answer="", grounding=0.0, citations=(),
+    _patch_worker(monkeypatch, _fake_worker_factory(answer="", grounding=0.0, citations=(),
                                              decision=Decision.human_review))
     c, pid = _pack(client, "genco2")
     s = client.post(f"/api/v1/rfp/packs/{pid}/sections", json={"name": "Intro"}, cookies=c).json()
@@ -534,7 +550,7 @@ def test_generate_flags_kb_gap_when_ungrounded(client, monkeypatch):
 
 
 def test_generate_section_and_pack(client, monkeypatch):
-    monkeypatch.setattr("app.modules.rfp.router.build_tenant_worker", _fake_worker_factory())
+    _patch_worker(monkeypatch, _fake_worker_factory())
     c, pid = _pack(client, "genco3")
     s = client.post(f"/api/v1/rfp/packs/{pid}/sections", json={"name": "Intro"}, cookies=c).json()
     client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions", json={"text": "Q1"}, cookies=c)
@@ -587,7 +603,7 @@ def test_extract_populates_tree_and_lock_all(client, monkeypatch):
         return P()
 
     monkeypatch.setattr("app.modules.rfp.generation.get_provider", fake_get_provider)
-    monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _fake_worker_factory(stub=True))
+    _patch_worker(monkeypatch, _fake_worker_factory(stub=True))
     c, pid = _pack(client, "extrco1")
     client.post(f"/api/v1/rfp/packs/{pid}/extract", cookies=c,
                 files={"file": ("t.txt", io.BytesIO(b"tender"), "text/plain")})
@@ -616,7 +632,7 @@ def test_manual_section_does_not_block_finalize_api(client, monkeypatch):
         return P()
 
     monkeypatch.setattr("app.modules.rfp.generation.get_provider", fake_get_provider)
-    monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _fake_worker_factory(stub=True))
+    _patch_worker(monkeypatch, _fake_worker_factory(stub=True))
     c, pid = _pack(client, "finalmanual1")
     client.post(f"/api/v1/rfp/packs/{pid}/extract", cookies=c,
                 files={"file": ("t.txt", io.BytesIO(b"tender"), "text/plain")})
@@ -652,7 +668,7 @@ def test_sections_backfill_lazily_for_old_pack(client, monkeypatch):
         return P()
 
     monkeypatch.setattr("app.modules.rfp.generation.get_provider", fake_get_provider)
-    monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _fake_worker_factory(stub=True))
+    _patch_worker(monkeypatch, _fake_worker_factory(stub=True))
     c, pid = _pack(client, "backfillco1")
     client.post(f"/api/v1/rfp/packs/{pid}/extract", cookies=c,
                 files={"file": ("t.txt", io.BytesIO(b"tender"), "text/plain")})
@@ -689,9 +705,8 @@ def test_export_overlay_locked_user_draft_overrides_ai(client, monkeypatch):
         return P()
 
     monkeypatch.setattr("app.modules.rfp.generation.get_provider", fake_get_provider)
-    monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _fake_worker_factory(stub=True))
-    monkeypatch.setattr("app.modules.rfp.router.build_tenant_worker",
-                        _fake_worker_factory(answer="AI generated answer"))
+    _patch_worker(monkeypatch, _fake_worker_factory(stub=True))
+    _patch_worker(monkeypatch, _fake_worker_factory(answer="AI generated answer"))
     c, pid = _pack(client, "ovlyco1")
     client.post(f"/api/v1/rfp/packs/{pid}/extract", cookies=c,
                 files={"file": ("t.txt", io.BytesIO(b"tender"), "text/plain")})
@@ -749,20 +764,22 @@ def test_assignees_lists_tenant_users(client):
     from app.modules.identity.store import User
 
     store = get_store()
-    store.seed(User(id="u-a", email="alice@assignco.com", password_hash="x",
+    store.seed(User(id="u-a", email="alice@invalid", password_hash="x",
                     tenant="assignco", role=Role.editor))
-    store.seed(User(id="u-b", email="bob@assignco.com", password_hash="x",
+    store.seed(User(id="u-b", email="bob@invalid", password_hash="x",
                     tenant="assignco", role=Role.viewer))
     # a different tenant's user must not leak into assignco's dropdown
-    store.seed(User(id="u-x", email="x@other.com", password_hash="x", tenant="otherco", role=Role.owner))
+    store.seed(User(id="u-x", email="x@invalid", password_hash="x", tenant="otherco", role=Role.owner))
 
+    asyncio.run(client.app.state.agents.store.add(
+        Agent(id="w1", tenant="assignco", name="Worker")))
     c = auth_cookies("assignco", "owner")
     pid = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "T"}, cookies=c).json()["id"]
     people = client.get(f"/api/v1/rfp/packs/{pid}/assignees", cookies=c).json()
     ids = {p["id"] for p in people}
     assert ids == {"u-a", "u-b"}
     alice = next(p for p in people if p["id"] == "u-a")
-    assert alice["email"] == "alice@assignco.com" and alice["name"] == "alice"
+    assert alice["email"] == "alice@invalid" and alice["name"] == "alice"
 
 
 def test_confirm_assignments_sets_flag_in_gen_status(client):

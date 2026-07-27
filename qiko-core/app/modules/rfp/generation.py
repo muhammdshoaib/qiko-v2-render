@@ -35,7 +35,7 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from app.core.deps import assemble_worker
+from app.core.deps import WorkerRecheck, WorkerUnavailable, assemble_worker, resolve_available_worker
 from app.modules.agentcore.models import Decision
 from app.modules.ai.gateway import get_provider
 from app.modules.rfp.brief import extract_brief
@@ -99,7 +99,9 @@ def _consolidate(items: list[dict]) -> list[dict]:
     return ensure_unique_codes(out[:MAX_ITEMS])
 
 
-async def extract_requirements_chunked(text: str) -> list[dict]:
+async def extract_requirements_chunked(
+    text: str, *, recheck_worker: WorkerRecheck | None = None,
+) -> list[dict]:
     """Produce the COARSE requirements catalogue for a tender.
 
     For a typical document (<= MAX_CONTEXT_CHARS = 160k) do ONE extraction call over the whole
@@ -111,10 +113,17 @@ async def extract_requirements_chunked(text: str) -> list[dict]:
     Chunking is only a FALLBACK for very large documents (> 160k): each chunk extracts in parallel,
     then the merged result is consolidated (deduped/merged by title) and capped to <= MAX_ITEMS so
     a huge tender still yields a coarse ~15-section tree, not 80."""
+    async def recheck() -> None:
+        if recheck_worker is not None:
+            await recheck_worker()
+
     if len(text) <= MAX_CONTEXT_CHARS:
-        return await asyncio.to_thread(extract_requirements, text,
-                                       get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT),
-                                       max_chars=MAX_CONTEXT_CHARS)
+        await recheck()
+        extracted = await asyncio.to_thread(extract_requirements, text,
+                                            get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT),
+                                            max_chars=MAX_CONTEXT_CHARS)
+        await recheck()
+        return extracted
 
     chunks = chunk_document(text)
     semaphore = asyncio.Semaphore(_EXTRACT_CONCURRENCY)
@@ -122,9 +131,14 @@ async def extract_requirements_chunked(text: str) -> list[dict]:
     async def extract_chunk(i: int, chunk: str) -> list[dict]:
         async with semaphore:
             try:
-                return await asyncio.to_thread(extract_requirements, chunk,
-                                               get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT),
-                                               id_prefix=f"c{i}-")
+                await recheck()
+                extracted = await asyncio.to_thread(
+                    extract_requirements, chunk,
+                    get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT), id_prefix=f"c{i}-")
+                await recheck()
+                return extracted
+            except WorkerUnavailable:
+                raise
             except ExtractionError:
                 return []  # one bad/timed-out chunk shouldn't sink requirements found in the rest
 
@@ -135,26 +149,38 @@ async def extract_requirements_chunked(text: str) -> list[dict]:
     return merged
 
 
-async def generate_question(tenant: str, question, worker, tree):
+async def generate_question(
+    tenant: str, question, worker, tree, *, recheck_worker: WorkerRecheck | None = None,
+):
     """Draft one question with agentcore -- the SAME LLM path as /answers: worker.answer() ->
     grounded generator + independent grounding critic + gate decision. kb_gap flips when nothing
     could be cited OR the answer could not be grounded confidently (the gate escalated to human
     review, i.e. grounding below the accept threshold) -- this is the "KB gap" signal shown in the
     cockpit, matching the validated idg behaviour. Locked questions are left untouched. Raises
     StubProviderUnavailable (never persists) if the answer came from the StubProvider fallback."""
+    async def recheck() -> None:
+        if recheck_worker is not None:
+            await recheck_worker()
+
+    await recheck()
     if question.locked:
         return question
-    result = await worker.answer(question.req_id or question.id, question.text)
+    result = await worker.answer(
+        question.req_id or question.id, question.text, recheck_worker=recheck_worker)
+    await recheck()
     if result.stub:
         raise StubProviderUnavailable()
     # confidence (the writer's self-report) and grounding (the independent critic) are now
     # DISTINCT values; persist both plus the writer's gaps note. kb_gap keeps its meaning: no
     # citations OR the gate escalated to human review.
-    return await tree.apply_generation(
+    await recheck()
+    updated = await tree.apply_generation(
         tenant, question.id, ai_answer=result.answer, ai_sources=result.citations,
         confidence=round(result.confidence, 2), grounding=round(result.critique.grounding, 2),
         gaps=result.gaps, decision=result.decision.value,
         kb_gap=not result.citations or result.decision == Decision.human_review)
+    await recheck()
+    return updated
 
 
 def initial_gen_status() -> dict:
@@ -191,25 +217,41 @@ async def run_generation(*, tenant: str, pack_id: str, agent_id: str | None,
     continues (except the drafts stub-guard, which stops without persisting)."""
     status = initial_gen_status()
 
-    async def save() -> None:
-        await packs.set_gen_status(tenant, pack_id, _touch(status))
-
     pack = await packs.get(tenant, pack_id)
     if pack is None:
         return status
+    if agent_id is not None and agent_id != pack.agent_id:
+        raise WorkerUnavailable
+    worker, recheck = await resolve_available_worker(
+        sessionmaker=sessionmaker, agents=agents, knowledge=knowledge,
+        tenant=tenant, agent_id=pack.agent_id, assembler=assemble_worker)
+
+    async def save() -> None:
+        await recheck()
+        await packs.set_gen_status(tenant, pack_id, _touch(status))
+        await recheck()
+
     document_text = pack.document_text or ""
 
     # --- Stage 1: requirements + sections (one extraction feeds both) -----------------------
     status["requirements"] = status["sections"] = "running"
     await save()
     try:
-        extracted = await extract_requirements_chunked(document_text)
+        extracted = await extract_requirements_chunked(
+            document_text, recheck_worker=recheck)
         # A fresh extraction can rewrite req_ids/content entirely -- drop any cached answers so the
         # cockpit doesn't show drafts for stale requirements, then rebuild the section tree.
+        await recheck()
         await answers.delete_for_pack(tenant, pack_id)
-        await tree.populate_from_extraction(tenant, pack_id, extracted)
+        await recheck()
+        await tree.populate_from_extraction(
+            tenant, pack_id, extracted, recheck_worker=recheck)
+        await recheck()
         await reqs.save_extracted(tenant, pack_id, extracted)
+        await recheck()
         status["requirements"] = status["sections"] = "ready"
+    except WorkerUnavailable:
+        raise
     except Exception as e:  # noqa: BLE001 - one stage failing must not sink the others
         status["requirements"] = status["sections"] = "error"
         _stage_error(status, "requirements", str(e))
@@ -219,10 +261,15 @@ async def run_generation(*, tenant: str, pack_id: str, agent_id: str | None,
     status["brief"] = "running"
     await save()
     try:
+        await recheck()
         brief = await asyncio.to_thread(extract_brief, document_text,
                                         get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+        await recheck()
         await packs.set_brief(tenant, pack_id, brief)
+        await recheck()
         status["brief"] = "ready"
+    except WorkerUnavailable:
+        raise
     except Exception as e:  # noqa: BLE001
         status["brief"] = "error"
         _stage_error(status, "brief", str(e))
@@ -232,10 +279,15 @@ async def run_generation(*, tenant: str, pack_id: str, agent_id: str | None,
     status["compliance"] = "running"
     await save()
     try:
+        await recheck()
         items = await asyncio.to_thread(extract_compliance, document_text,
                                         get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+        await recheck()
         await packs.set_compliance(tenant, pack_id, items)
+        await recheck()
         status["compliance"] = "ready"
+    except WorkerUnavailable:
+        raise
     except Exception as e:  # noqa: BLE001
         status["compliance"] = "error"
         _stage_error(status, "compliance", str(e))
@@ -249,8 +301,7 @@ async def run_generation(*, tenant: str, pack_id: str, agent_id: str | None,
     status["drafts"] = {"state": "running", "done": 0, "total": 0, "failed": 0, "failed_ids": []}
     await save()
     try:
-        worker = await assemble_worker(sessionmaker=sessionmaker, agents=agents,
-                                       knowledge=knowledge, tenant=tenant, agent_id=agent_id)
+        await recheck()
         manual_sections = {s.id for s in await tree.sections.list(tenant, pack_id) if s.manual}
         questions = [q for q in await tree.questions.list(tenant, pack_id)
                      if q.section_id not in manual_sections and not q.locked]
@@ -264,7 +315,12 @@ async def run_generation(*, tenant: str, pack_id: str, agent_id: str | None,
         await save()
         for q in pending:
             try:
-                await generate_question(tenant, q, worker, tree)
+                await recheck()
+                await generate_question(
+                    tenant, q, worker, tree, recheck_worker=recheck)
+                await recheck()
+            except WorkerUnavailable:
+                raise
             except StubProviderUnavailable:
                 raise  # a genuine outage: fail closed (handled below), never persist a stub
             except Exception as e:  # noqa: BLE001 - one bad question must not sink the rest
@@ -279,6 +335,8 @@ async def run_generation(*, tenant: str, pack_id: str, agent_id: str | None,
                 status["drafts"]["done"] = done
             await save()
         status["drafts"]["state"] = "ready" if failed == 0 else "partial"
+    except WorkerUnavailable:
+        raise
     except StubProviderUnavailable:
         # Fail closed: surface the outage, persist nothing further, and stop drafting.
         status["drafts"]["state"] = "error"

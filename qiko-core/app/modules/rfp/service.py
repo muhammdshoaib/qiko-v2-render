@@ -64,6 +64,10 @@ class RfpPackStore(Protocol):
     async def set_source_documents(self, tenant: str, pack_id: str, docs: list) -> RfpPack: ...
     async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,
                           reason: str, value: float | None) -> RfpPack: ...
+    async def set_outcome_for_enabled_agent(
+        self, tenant: str, pack_id: str, agent_id: str, *, outcome: str | None,
+        reason: str, value: float | None, recheck_worker,
+    ) -> RfpPack: ...
     async def set_brief(self, tenant: str, pack_id: str, brief: dict | None) -> RfpPack: ...
     async def set_compliance(self, tenant: str, pack_id: str, items: list | None) -> RfpPack: ...
     async def set_gen_status(self, tenant: str, pack_id: str, status: dict | None) -> RfpPack: ...
@@ -116,6 +120,14 @@ class InMemoryRfpPackStore:
         pack.outcome, pack.outcome_reason, pack.outcome_value = outcome, reason, value
         pack.outcome_at = _now() if outcome else None
         return pack
+
+    async def set_outcome_for_enabled_agent(
+        self, tenant: str, pack_id: str, agent_id: str, *, outcome: str | None,
+        reason: str, value: float | None, recheck_worker,
+    ) -> RfpPack:
+        await recheck_worker()
+        return await self.set_outcome(
+            tenant, pack_id, outcome=outcome, reason=reason, value=value)
 
     async def set_brief(self, tenant: str, pack_id: str, brief: dict | None) -> RfpPack:
         pack = await self.get(tenant, pack_id)
@@ -177,13 +189,25 @@ class RfpPackService:
     async def set_source_documents(self, tenant: str, pack_id: str, docs: list) -> RfpPack:
         return await self.store.set_source_documents(tenant, pack_id, docs)
 
-    async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,
-                          reason: str = "", value: float | None = None) -> RfpPack:
+    def _validate_outcome(self, outcome: str | None, reason: str) -> None:
         if outcome is not None and outcome not in OUTCOMES:
             raise ValueError(f"invalid outcome '{outcome}', must be one of {OUTCOMES} (or null to clear)")
         if outcome == "lost" and reason and reason not in LOSS_REASONS:
             raise ValueError(f"invalid loss reason '{reason}', must be one of {LOSS_REASONS}")
+
+    async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,
+                          reason: str = "", value: float | None = None) -> RfpPack:
+        self._validate_outcome(outcome, reason)
         return await self.store.set_outcome(tenant, pack_id, outcome=outcome, reason=reason, value=value)
+
+    async def set_outcome_for_enabled_agent(
+        self, tenant: str, pack_id: str, agent_id: str, *, outcome: str | None,
+        reason: str = "", value: float | None = None, recheck_worker,
+    ) -> RfpPack:
+        self._validate_outcome(outcome, reason)
+        return await self.store.set_outcome_for_enabled_agent(
+            tenant, pack_id, agent_id, outcome=outcome, reason=reason, value=value,
+            recheck_worker=recheck_worker)
 
     async def set_brief(self, tenant: str, pack_id: str, brief: dict | None) -> RfpPack:
         return await self.store.set_brief(tenant, pack_id, brief)
@@ -251,7 +275,11 @@ class InMemoryRequirementStore:
         return [r for r in self._by_pack.get(pack_id, []) if r.tenant == tenant]
 
     async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
-        self._by_pack.pop(pack_id, None)
+        remaining = [item for item in self._by_pack.get(pack_id, []) if item.tenant != tenant]
+        if remaining:
+            self._by_pack[pack_id] = remaining
+        else:
+            self._by_pack.pop(pack_id, None)
 
 
 @dataclass
@@ -283,7 +311,12 @@ class InMemoryPackAnswerStore:
         self._by_pack.setdefault(pack_id, {})[req_id] = answer
 
     async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
-        self._by_pack.pop(pack_id, None)
+        remaining = {key: item for key, item in self._by_pack.get(pack_id, {}).items()
+                     if item.tenant != tenant}
+        if remaining:
+            self._by_pack[pack_id] = remaining
+        else:
+            self._by_pack.pop(pack_id, None)
 
 
 @dataclass
