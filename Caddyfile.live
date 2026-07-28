@@ -2,7 +2,13 @@
 # Creator + API share one origin (cookies stay first-party); admin on its own subdomain.
 # Mounted into the caddy service by docker-compose.live.yml. Mirrors the preprod Caddyfile,
 # differing only by the public domains (qiko.ai / admin.qiko.ai instead of *.preprod.qiko.ai).
-qiko.ai {
+# www.qiko.ai is served here too (not redirected) - same TLS cert, same routing, same headers.
+# Caddy's automatic HTTPS issues a cert for both names since both are listed as site addresses.
+# Requires CORS_ALLOW_ORIGINS on qiko-core to include "https://www.qiko.ai" too, since the
+# frontend build's PUBLIC_API_BASE always points at https://qiko.ai/api/v1 - a page loaded from
+# www.qiko.ai calling that URL is a cross-origin request from the browser's point of view, even
+# though both hostnames share the same cookie domain (.qiko.ai).
+qiko.ai, www.qiko.ai {
 	header {
 		-Server
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -35,11 +41,4 @@ admin.qiko.ai {
 		Permissions-Policy "camera=(), geolocation=(), microphone=()"
 	}
 	reverse_proxy admin:3001
-}
-
-# DNS already points www.qiko.ai at Cloudflare, but no site block existed for it, so Caddy had
-# no certificate for that hostname and the Cloudflare Full(strict) origin handshake failed
-# (error 525). Redirect to the apex instead of serving a second copy of the app.
-www.qiko.ai {
-	redir https://qiko.ai{uri} permanent
 }
