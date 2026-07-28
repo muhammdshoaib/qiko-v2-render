@@ -20,6 +20,7 @@ from app.core.deps import (
 )
 from app.modules.billing.team_billing import team_plan
 from app.modules.billing.webhook import verify_stripe_signature
+from app.modules.identity import csrf
 from app.modules.identity.rbac import Role
 
 router = APIRouter(prefix="/billing", tags=["billing"])
@@ -164,8 +165,10 @@ class PaymentLinkBody(BaseModel):
 
 
 @router.post("/payment-links")
-def create_payment_link(body: PaymentLinkBody, _tenant: str = Depends(authed_tenant),
+def create_payment_link(body: PaymentLinkBody, request: Request,
+                        _tenant: str = Depends(authed_tenant),
                         _role=Depends(require_platform_super_admin()), links=Depends(get_payment_links)) -> dict:
+    csrf.require_csrf(request)
     try:
         log = links.create(body.customer_email, body.amount_cents, recurring=body.recurring)
     except httpx.HTTPError as e:
@@ -178,8 +181,9 @@ class MarkPaidBody(BaseModel):
 
 
 @router.post("/payment-links/mark-paid")
-def mark_paid(body: MarkPaidBody, _tenant: str = Depends(authed_tenant),
+def mark_paid(body: MarkPaidBody, request: Request, _tenant: str = Depends(authed_tenant),
               _role=Depends(require_platform_super_admin()), links=Depends(get_payment_links)) -> dict:
+    csrf.require_csrf(request)
     # Validated body (was a raw dict -> a missing customer_email 500'd instead of a clean 422).
     return {"marked": links.mark_as_paid_for_user(body.customer_email)}
 

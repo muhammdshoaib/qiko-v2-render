@@ -14,6 +14,8 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.crypto import decrypt, encrypt
+
 from app.db.models import Agent as AgentRow
 from app.db.models import AgentStateAudit as AgentStateAuditRow
 from app.db.models import Assignment as AssignmentRow
@@ -24,6 +26,7 @@ from app.db.models import FinanceChatMessage as FinanceChatMessageRow
 from app.db.models import FinanceFile as FinanceFileRow
 from app.db.models import Lead as LeadRow
 from app.db.models import Message as MessageRow
+from app.db.models import MfaBackupCode as MfaBackupCodeRow
 from app.db.models import Notification as NotificationRow
 from app.db.models import PackAnswer as PackAnswerRow
 from app.db.models import PackQuestion as PackQuestionRow
@@ -53,7 +56,9 @@ from app.modules.crm.service import Contact, CrmAction
 from app.modules.finance.models import FinanceChatMessage, FinanceFile
 from app.modules.identity.admin_rbac import AdminRole
 from app.modules.identity.onboarding import hash_otp, new_otp_code
+from app.modules.identity import twofa
 from app.modules.identity.rbac import Role
+from app.modules.identity.security import verify_password
 from app.modules.identity.store import User
 from app.modules.identity.team_access import PendingInvite
 from app.modules.knowledge.models import Passage
@@ -76,6 +81,14 @@ from app.modules.sales_intelligence.models import (
 from app.modules.teams.service import Team
 
 
+def _encrypt_totp(secret: str | None) -> str | None:
+    return f"enc:{encrypt(secret)}" if secret else None
+
+
+def _decrypt_totp(secret: str | None) -> str | None:
+    return decrypt(secret[4:]) if secret and secret.startswith("enc:") else secret
+
+
 @dataclass
 class SqlUserStore:
     sessionmaker: async_sessionmaker[AsyncSession]
@@ -89,14 +102,15 @@ class SqlUserStore:
                 s.add(TenantRow(id=user.tenant, name=user.tenant))
             s.add(UserRow(id=user.id, email=user.email.lower(), password_hash=user.password_hash,
                           tenant_id=user.tenant, role=user.role.value, twofa_enabled=user.twofa_enabled,
-                          totp_secret=user.totp_secret, current_sid=user.current_sid))
+                          totp_secret=_encrypt_totp(user.totp_secret), current_sid=user.current_sid))
         return user
 
     async def _to_domain(self, row: UserRow | None) -> User | None:
         if row is None:
             return None
         return User(id=row.id, email=row.email, password_hash=row.password_hash, tenant=row.tenant_id,
-                    role=Role(row.role), twofa_enabled=row.twofa_enabled, totp_secret=row.totp_secret,
+                    role=Role(row.role), twofa_enabled=row.twofa_enabled,
+                    totp_secret=_decrypt_totp(row.totp_secret),
                     current_sid=row.current_sid)
 
     async def get_by_email(self, email: str) -> User | None:
@@ -119,12 +133,31 @@ class SqlUserStore:
             if row:
                 row.current_sid = sid
 
-    async def enable_twofa(self, user_id: str, secret: str) -> None:
+    async def enable_twofa(self, user_id: str, secret: str,
+                           backup_code_hashes: dict[str, str] | None = None) -> None:
         async with self.sessionmaker() as s, s.begin():
             row = await s.get(UserRow, user_id)
             if row:
                 row.twofa_enabled = True
-                row.totp_secret = secret
+                row.totp_secret = _encrypt_totp(secret)
+                await s.execute(delete(MfaBackupCodeRow).where(MfaBackupCodeRow.user_id == user_id))
+                s.add_all(MfaBackupCodeRow(user_id=user_id, selector=selector, code_hash=code_hash)
+                          for selector, code_hash in (backup_code_hashes or {}).items())
+
+    async def consume_backup_code(self, user_id: str, code: str) -> bool:
+        selector = twofa.backup_code_selector(code)
+        if not selector:
+            return False
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(MfaBackupCodeRow, (user_id, selector))
+            if row is None or not verify_password(twofa.normalize_backup_code(code), row.code_hash):
+                return False
+            result = await s.execute(delete(MfaBackupCodeRow).where(
+                MfaBackupCodeRow.user_id == user_id,
+                MfaBackupCodeRow.selector == selector,
+                MfaBackupCodeRow.code_hash == row.code_hash,
+            ))
+            return result.rowcount == 1
 
     async def set_password(self, user_id: str, password_hash: str) -> None:
         async with self.sessionmaker() as s, s.begin():

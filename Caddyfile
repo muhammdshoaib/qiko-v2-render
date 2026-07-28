@@ -32,5 +32,10 @@ admin.preprod.qiko.ai {
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), geolocation=(), microphone=()"
 	}
-	reverse_proxy admin:3001
+	handle /api/* {
+		reverse_proxy qiko-core:8000
+	}
+	handle {
+		reverse_proxy admin:3001
+	}
 }

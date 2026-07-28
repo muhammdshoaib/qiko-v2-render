@@ -49,6 +49,10 @@ async def test_sql_user_store_full_lifecycle(tmp_path):
     await store.enable_twofa("u1", "SECRET123")
     u = await store.get_by_id("u1")
     assert u.twofa_enabled is True and u.totp_secret == "SECRET123"
+    from app.db.models import User as UserRow
+    async with store.sessionmaker() as session:
+        row = await session.get(UserRow, "u1")
+    assert row.totp_secret.startswith("enc:") and "SECRET123" not in row.totp_secret
     await store.set_password("u1", "new-hash")
     assert (await store.get_by_id("u1")).password_hash == "new-hash"
 

@@ -31,7 +31,7 @@ export default function OverviewPage() {
           <p className="text-sm text-muted-foreground">Key metrics across the platform.</p>
         </div>
 
-        {ov.isError && <Card><CardContent className="py-6 text-sm text-destructive">Not authorized (admin role required).</CardContent></Card>}
+        {ov.isError && <Card><CardContent role="alert" className="py-6 text-sm text-destructive">Overview unavailable. <button className="underline" onClick={() => ov.refetch()}>Retry</button></CardContent></Card>}
 
         {ov.isLoading ? (
           <div className="grid gap-4 sm:grid-cols-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-24 w-full" />)}</div>

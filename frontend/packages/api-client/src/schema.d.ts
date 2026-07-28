@@ -703,6 +703,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/2fa/backup-codes/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Regenerate Backup Codes */
+        post: operations["regenerate_backup_codes_api_v1_auth_2fa_backup_codes_regenerate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/2fa/exchange": {
         parameters: {
             query?: never;
@@ -4165,6 +4182,13 @@ export interface components {
             /** Question */
             question?: string | null;
         };
+        /** RegenerateBody */
+        RegenerateBody: {
+            /** Current Code */
+            current_code: string;
+            /** Password */
+            password: string;
+        };
         /** ReminderBody */
         ReminderBody: {
             /** Assignee User Id */
@@ -4594,6 +4618,10 @@ export interface components {
         VerifyBody: {
             /** Code */
             code: string;
+            /** Current Code */
+            current_code?: string | null;
+            /** Password */
+            password: string;
             /** Secret */
             secret: string;
         };
@@ -6151,6 +6179,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UpdateStatusBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    regenerate_backup_codes_api_v1_auth_2fa_backup_codes_regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegenerateBody"];
             };
         };
         responses: {

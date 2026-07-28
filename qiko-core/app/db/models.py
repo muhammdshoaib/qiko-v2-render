@@ -34,8 +34,16 @@ class User(Base):
     tenant_id: Mapped[str | None] = mapped_column(ForeignKey("tenants.id"), index=True, nullable=True)
     role: Mapped[str] = mapped_column(String(16), default="viewer")
     twofa_enabled: Mapped[bool] = mapped_column(default=False)
-    totp_secret: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_secret: Mapped[str | None] = mapped_column(String(512), nullable=True)
     current_sid: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class MfaBackupCode(Base):
+    __tablename__ = "mfa_backup_codes"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    selector: Mapped[str] = mapped_column(String(4), primary_key=True)
+    code_hash: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

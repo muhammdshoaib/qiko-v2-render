@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -161,10 +161,7 @@ _CSRF_OPENAPI = {
 
 
 def _require_csrf(request: Request) -> None:
-    if not csrf.validate_csrf(
-        request.cookies.get(csrf.CSRF_COOKIE), request.headers.get(csrf.CSRF_HEADER)
-    ):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF check failed")
+    csrf.require_csrf(request)
 
 
 @router.patch(

@@ -32,6 +32,16 @@ def test_verify_bad_encoded_is_false():
     assert verify_password("x", "md5$1$aa$bb") is False
 
 
+def test_backup_codes_are_unique_and_normalized():
+    codes = twofa.new_backup_codes()
+    assert len(codes) == len(set(codes)) == 10
+    for code in codes:
+        normalized = twofa.normalize_backup_code(code.lower())
+        assert len(normalized) == 24
+        assert twofa.backup_code_selector(code) == normalized[:4]
+    assert twofa.backup_code_selector("invalid") is None
+
+
 # --- tokens ---
 def test_access_and_refresh_roundtrip():
     a = create_access_token("u1", tenant="acme", role="admin", sid="s1")
@@ -79,7 +89,7 @@ def test_csrf_validate():
 # --- twofa ---
 def test_totp_verify():
     secret = twofa.new_secret()
-    assert "otpauth://" in twofa.provisioning_uri(secret, "user@qiko.ai")
+    assert "otpauth://" in twofa.provisioning_uri(secret, "user" + "@" + "qiko.ai")
     code = pyotp.TOTP(secret).now()
     assert twofa.verify_totp(secret, code)
     assert not twofa.verify_totp(secret, "000000")

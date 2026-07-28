@@ -17,17 +17,12 @@ export default function AnalyticsPage() {
           <p className="text-sm text-muted-foreground">Traffic from Google Analytics (GA4).</p>
         </div>
 
-        {a.isError && <Card><CardContent className="py-6 text-sm text-destructive">Not authorized (admin role required).</CardContent></Card>}
+        {a.isError && <Card><CardContent role="alert" className="py-6 text-sm text-destructive">Analytics unavailable. <button className="underline" onClick={() => a.refetch()}>Retry</button></CardContent></Card>}
 
         {a.isLoading ? (
           <div className="grid gap-4 sm:grid-cols-2">{[0, 1].map((i) => <Skeleton key={i} className="h-24 w-full" />)}</div>
-        ) : a.data && (
+        ) : a.data?.had_data ? (
           <>
-            {!a.data.had_data && (
-              <Card><CardContent className="py-4 text-sm text-muted-foreground">
-                No GA4 data yet — configure GA4 credentials to see live traffic.
-              </CardContent></Card>
-            )}
             <div className="grid gap-4 sm:grid-cols-2">
               <Card><CardContent className="flex items-center gap-4 py-5">
                 <span className="grid size-11 place-items-center rounded-lg bg-accent text-accent-foreground"><Activity className="size-5" /></span>
@@ -51,7 +46,9 @@ export default function AnalyticsPage() {
               </CardContent>
             </Card>
           </>
-        )}
+        ) : a.data ? (
+          <Card><CardContent className="py-6 text-sm text-muted-foreground">Analytics data is currently unavailable. No traffic metrics are being reported.</CardContent></Card>
+        ) : null}
       </div>
     </AppShell>
   );

@@ -54,7 +54,7 @@ services:
       context: ./frontend
       dockerfile: apps/admin/Dockerfile
       args:
-        NEXT_PUBLIC_API_BASE: ${PUBLIC_API_BASE:-http://localhost:8000/api/v1}
+        NEXT_PUBLIC_API_BASE: ${ADMIN_PUBLIC_API_BASE:-/api/v1}
     depends_on: [qiko-core]
     restart: unless-stopped
     networks: [proxy-net]

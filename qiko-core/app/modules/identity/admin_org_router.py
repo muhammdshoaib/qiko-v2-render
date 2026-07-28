@@ -1,11 +1,12 @@
 """Admin-organisation RBAC API (super_admin/viewer) - distinct from the product tenant RBAC."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
-from app.core.deps import current_claims, get_admin_org, require_platform_admin
+from app.core.deps import current_claims, get_admin_org, require_platform_admin, require_platform_super_admin
+from app.modules.identity import csrf
 from app.modules.identity.admin_rbac import AdminAuthzError, AdminRole
 
 router = APIRouter(prefix="/admin/org", tags=["admin"])
@@ -61,7 +62,11 @@ async def accept(body: AcceptBody, org=Depends(get_admin_org)) -> dict:
 
 
 @router.delete("/{email}")
-async def remove(email: str, claims: dict = Depends(current_claims), org=Depends(get_admin_org)) -> dict:
+async def remove(email: str, request: Request, claims: dict = Depends(current_claims),
+                 _role=Depends(require_platform_super_admin()), org=Depends(get_admin_org)) -> dict:
+    csrf.require_csrf(request)
+    if await org.role_of(email) is AdminRole.super_admin:
+        raise HTTPException(status_code=409, detail="super-admin removal requires operator recovery process")
     try:
         await org.remove(_actor_email(claims), email)
     except AdminAuthzError as e:

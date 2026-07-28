@@ -73,6 +73,22 @@ def _seed_customer_and_workers(client) -> None:
     asyncio.run(seed())
 
 
+def test_super_admin_cannot_be_removed(client):
+    actor = "actor-admin@invalid"
+    target = "target-admin@invalid"
+    bootstrap_admin(client, actor)
+    bootstrap_admin(client, target)
+    cookies, headers = _csrf(auth_cookies("acme", "viewer", email=actor))
+    assert client.delete(f"/api/v1/admin/org/{target}", cookies=cookies, headers=headers).status_code == 409
+
+
+def test_platform_admin_requires_mfa_session(client):
+    email = "mfa-admin@invalid"
+    bootstrap_admin(client, email)
+    cookies = auth_cookies("acme", "viewer", email=email, mfa=False)
+    assert client.get("/api/v1/admin/me", cookies=cookies).status_code == 403
+
+
 def test_admin_detail_viewer_reads_all_workers_with_safe_config_and_role(client):
     _seed_customer_and_workers(client)
     viewer = _platform_viewer(client)
@@ -224,7 +240,7 @@ def test_migration_is_single_head_with_enabled_backfill_and_audit_indexes():
     config = Config(str(root / "alembic.ini"))
     config.set_main_option("script_location", str(root / "alembic"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["0025_agent_enabled_audit"]
+    assert scripts.get_heads() == ["0027_mfa_backup_codes"]
 
     migration = root / "alembic/versions/0025_agent_enabled_audit.py"
     source = migration.read_text()

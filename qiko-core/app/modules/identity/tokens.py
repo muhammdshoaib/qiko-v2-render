@@ -29,17 +29,17 @@ def _encode(claims: dict, ttl_seconds: int, secret: str) -> str:
 
 def create_access_token(user_id: str, *, tenant: str | None = None, role: str = "viewer",
                         sid: str | None = None, email: str | None = None, secret: str | None = None,
-                        ttl_seconds: int | None = None) -> str:
+                        ttl_seconds: int | None = None, mfa: bool = False) -> str:
     s = get_settings()
     return _encode({"sub": user_id, "type": "access", "tenant": tenant, "role": role,
-                    "sid": sid, "email": email},
+                    "sid": sid, "email": email, "mfa": mfa},
                    ttl_seconds or s.access_token_ttl_seconds, secret or s.session_secret)
 
 
 def create_refresh_token(user_id: str, *, sid: str, secret: str | None = None,
-                         ttl_seconds: int | None = None) -> str:
+                         ttl_seconds: int | None = None, mfa: bool = False) -> str:
     s = get_settings()
-    return _encode({"sub": user_id, "type": "refresh", "sid": sid},
+    return _encode({"sub": user_id, "type": "refresh", "sid": sid, "mfa": mfa},
                    ttl_seconds or s.refresh_token_ttl_seconds, secret or s.session_secret)
 
 
