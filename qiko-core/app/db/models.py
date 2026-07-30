@@ -67,8 +67,8 @@ class ConsentRecord(Base):
     __tablename__ = "consent_records"
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     decision_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
-    revision: Mapped[int] = mapped_column(index=True)
-    client_revision: Mapped[int] = mapped_column(index=True)
+    revision: Mapped[int] = mapped_column(BigInteger, index=True)
+    client_revision: Mapped[int] = mapped_column(BigInteger, index=True)
     key_version: Mapped[str] = mapped_column(String(16), default="v1")
     subject_hmac: Mapped[str] = mapped_column(String(64), index=True)
     preferences: Mapped[bool] = mapped_column(Boolean, nullable=False)
