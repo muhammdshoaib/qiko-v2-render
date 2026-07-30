@@ -36,6 +36,7 @@ jobs:
               - 'docker-compose*.yml'
               - '.env*.example'
               - 'qiko-core/Dockerfile'
+              - 'Caddyfile*'
               - '.github/deploy/**'
               - '.github/workflows/ci.yml'
               - '.github/workflows/deploy-preprod.yml'

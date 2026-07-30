@@ -10,13 +10,11 @@
 # Creator + API share one origin (cookies stay first-party); admin on its own subdomain.
 # Mounted into the caddy service by docker-compose.live.yml. Mirrors the preprod Caddyfile,
 # differing only by the public domains (qiko.ai / admin.qiko.ai instead of *.preprod.qiko.ai).
-# www.qiko.ai is served here too (not redirected) - same TLS cert, same routing, same headers.
-# Caddy's automatic HTTPS issues a cert for both names since both are listed as site addresses.
-# Requires CORS_ALLOW_ORIGINS on qiko-core to include "https://www.qiko.ai" too, since the
-# frontend build's PUBLIC_API_BASE always points at https://qiko.ai/api/v1 - a page loaded from
-# www.qiko.ai calling that URL is a cross-origin request from the browser's point of view, even
-# though both hostnames share the same cookie domain (.qiko.ai).
+# Caddy issues a certificate for both names and redirects www to the canonical qiko.ai origin.
+# This keeps API, auth, CSRF and consent requests same-origin without expanding CORS policy.
 qiko.ai, www.qiko.ai {
+	@www host www.qiko.ai
+	redir @www https://qiko.ai{uri} permanent
 	request_body {
 		max_size 10MB
 	}
@@ -27,6 +25,7 @@ qiko.ai, www.qiko.ai {
 		X-Frame-Options "SAMEORIGIN"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), geolocation=(), microphone=(self)"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'unsafe-inline' https://js.stripe.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://qiko.ai https://*.stripe.com; font-src 'self' data:; connect-src 'self' https://api.stripe.com; frame-src 'self' https://js.stripe.com; worker-src 'self' blob:"
 	}
 	handle /embed/* {
 		respond 404
@@ -53,6 +52,7 @@ admin.qiko.ai {
 		X-Frame-Options "SAMEORIGIN"
 		Referrer-Policy "strict-origin-when-cross-origin"
 		Permissions-Policy "camera=(), geolocation=(), microphone=()"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'self'; form-action 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://qiko.ai; font-src 'self' data:; connect-src 'self'"
 	}
 	handle /api/* {
 		reverse_proxy qiko-core:8000
