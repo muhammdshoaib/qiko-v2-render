@@ -32,6 +32,12 @@ test("Next hides framework disclosure and publishes security.txt", () => {
   assert.match(security, /Expires: 2027-/);
 });
 
+test("CI validates Caddy changes through the compose security job", () => {
+  const workflow = readFileSync(resolve(repositoryRoot, ".github/workflows/ci.yml"), "utf8");
+  assert.match(workflow, /- 'Caddyfile\*'/);
+  assert.match(workflow, /caddy validate --config/);
+});
+
 test("preprod and live expose one strict creator CSP without unsafe eval or broad HTTPS", () => {
   for (const filename of ["Caddyfile", "Caddyfile.live"]) {
     const caddy = readFileSync(resolve(repositoryRoot, filename), "utf8");
