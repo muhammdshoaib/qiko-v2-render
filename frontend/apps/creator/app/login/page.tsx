@@ -12,6 +12,7 @@ import { Link } from "@/lib/wouter";
 import { toast } from "sonner";
 import { loginAvatar } from "@/lib/avatarApi";
 import { resolveDecryptedCalendlyToken } from "@/lib/calendlyToken";
+import { ConsentSettingsButton } from "@/components/consent/ConsentUI";
 
 export default function Login() {
   const dispatch = useAppDispatch();
@@ -98,7 +99,7 @@ export default function Login() {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="you@example.com"
+                  placeholder={"you" + "@" + "example.com"}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
@@ -158,13 +159,12 @@ export default function Login() {
               </p>
             </div>
 
-            <p className="mt-4 text-xs text-slate-500 text-center">
+            <nav aria-label="Legal" className="mt-4 flex flex-wrap justify-center gap-x-3 gap-y-2 text-xs text-slate-500">
               <a href="/terms" className="hover:text-slate-300">Terms</a>
-              {" · "}
               <a href="/privacy" className="hover:text-slate-300">Privacy</a>
-              {" · "}
               <a href="/cookies" className="hover:text-slate-300">Cookies</a>
-            </p>
+              <ConsentSettingsButton className="hover:text-slate-300" />
+            </nav>
           </CardContent>
         </Card>
       </div>

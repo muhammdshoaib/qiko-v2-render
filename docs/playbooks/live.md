@@ -50,12 +50,14 @@ Store as `/qiko/live/ENV` and/or place as `.env` on the box. Real values via SSM
 **Must be set (deploy refuses to start / breaks without these):**
 - `ENVIRONMENT=live`, `LOG_LEVEL=WARNING`
 - `USE_DB_STORES=true`, `TASK_BACKEND=arq` (startup guard enforces both in non-dev)
-- `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, and a matching
-  `DATABASE_URL=postgresql+asyncpg://<user>:<password>@db:5432/<db>`
+- `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, and a matching `DATABASE_URL` assembled from those values for the private `db` service
 - `REDIS_URL=redis://redis:6379/0`
 - `SESSION_SECRET` - strong random; the startup guard refuses the insecure default in non-dev.
 - `ENCRYPTION_KEY` - strong random, SEPARATE from `SESSION_SECRET` (encryption-at-rest for channel
   tokens / Vapi / Salesforce secrets; rotating `SESSION_SECRET` must not brick these).
+- `CONSENT_PSEUDONYM_KEYS` - JSON keyring with an active key of at least 32 random characters. Retain
+  every prior version required to read legal consent history.
+- `CONSENT_PSEUDONYM_ACTIVE_VERSION=v1` and `FORWARDED_ALLOW_IPS=172.28.20.2`.
 - `PUBLIC_API_BASE=https://qiko.ai/api/v1` - baked into the frontend build (creator + admin).
 - `PUBLIC_BASE_URL=https://qiko.ai`
 - `PUBLIC_CHAT_ENABLED=false` (enterprise launch; `/embed/*`, `/widget.js` and the public chat API are disabled)
@@ -91,39 +93,24 @@ aws ssm get-parameter --region eu-central-1 --name /qiko/live/ENV --with-decrypt
 ## Cutover (the exact sequence a human runs)
 Do steps 1-4 with Cloudflare still NOT pointing at the box, so you validate before going live.
 
-1. **Ship + bring up the live stack** via the manual pipeline (recommended), which uploads the
-   artifact, swaps it in on the box, brings the stack up, and runs migrations:
+1. **Ship + bring up the live stack** via the manual pipeline (recommended):
    ```bash
    gh workflow run deploy-live.yml -f confirm=deploy-live
    # then approve the `live` environment gate in the GitHub UI when prompted
    ```
-   The on-box deploy script validates the new qiko-core container directly before reporting success.
-   It does not query public `qiko.ai`, which still points at the old origin before step 3.
+   The on-box script serializes deploys with a lock and runs with `umask 077`. After restoring or
+   bootstrapping `.env`, it sets mode `600`, verifies ownership by the deployment user, and rejects
+   group/other permissions. It starts and health-checks only `db` and `redis`, validates Compose,
+   builds, and runs the non-dev startup preflight. For an existing database it then stops the public
+   and write-capable services and creates and validates a pre-migration dump. Migration runs from the
+   new image in a one-off `qiko-core` container. Only after success does the script recreate
+   `qiko-core`, `worker`, `creator`, `admin` and `caddy`, probe the local applications/routes, and
+   require every service to be running plus `qiko-core`, `db` and `redis` to be healthy.
 
-   Equivalent manual on-box path (if not using the pipeline):
+   The script does not query public `qiko.ai`, which still points at the old origin before step 3.
+   To run the same checked path directly on the box after the reviewed artifact is in S3:
    ```bash
-   export COMPOSE_PROJECT_NAME=qiko-live
-   cd /opt/docker/qiko/platform
-   C="docker compose -f docker-compose.yml -f docker-compose.live.yml"
-   # ensure .env is present (bootstrap from SSM on a fresh host)
-   aws ssm get-parameter --region eu-central-1 --name /qiko/live/ENV --with-decryption \
-     --query Parameter.Value --output text > .env
-   DB_VOLUME="${COMPOSE_PROJECT_NAME}_postgres_data"
-   EXISTING_DB=0
-   docker volume inspect "$DB_VOLUME" >/dev/null 2>&1 && EXISTING_DB=1
-   $C up -d db redis
-   # wait until both are healthy, then build while the current application still serves traffic
-   $C build
-   if [ "$EXISTING_DB" -eq 1 ]; then
-     # enter a short maintenance window so no writes occur after the backup
-     $C stop caddy worker qiko-core creator admin
-     BACKUP=~/qiko-live-$(date +%F-%H%M).dump
-     $C exec -T db sh -c 'pg_dump -Fc -U "$POSTGRES_USER" "$POSTGRES_DB"' > "$BACKUP"
-     test -s "$BACKUP" && $C exec -T db pg_restore -l < "$BACKUP" >/dev/null \
-       || { echo "backup failed" >&2; exit 1; }
-   fi
-   $C run --rm --no-deps qiko-core alembic upgrade head
-   $C up -d --force-recreate qiko-core worker creator admin caddy
+   bash /opt/docker/qiko/platform/.github/deploy/redeploy-live.sh
    ```
 
 2. **Validate on the box before DNS** (bypass Cloudflare by resolving the domains to the box IP):
@@ -151,8 +138,9 @@ Do steps 1-4 with Cloudflare still NOT pointing at the box, so you validate befo
    ```
    The email wordmark uses the stable live URL above. Deploy and verify the live PNG asset before
    sending any preprod test email, because preprod email deliberately loads that live asset. The arq
-   `worker` container reports "unhealthy" by design (no HTTP server on :8000); that is expected, not
-   a fault. Watch logs and Sentry for 10 minutes; confirm a real login, a chat answer and a webhook.
+   `worker` has no HTTP server on :8000, so its inherited image health check is disabled. It must be
+   running, but has no health status. Watch logs and Sentry for 10 minutes; confirm a real login, a
+   chat answer and a webhook.
 
 ## Provision a tenant
 

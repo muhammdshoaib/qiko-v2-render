@@ -17,7 +17,7 @@ function run(command, args) {
 try {
   rmSync(outputDirectory, { recursive: true, force: true });
   if (!run(tsc, ["--project", "tests/tsconfig.node.json"])) return;
-  run(process.execPath, ["--test", join(outputDirectory, "tests", "jake-fixes.test.js")]);
+  run(process.execPath, ["--test", join(outputDirectory, "tests", "*.test.js")]);
 } finally {
   rmSync(outputDirectory, { recursive: true, force: true });
 }

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, String, true
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -44,6 +44,68 @@ class MfaBackupCode(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     selector: Mapped[str] = mapped_column(String(4), primary_key=True)
     code_hash: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PolicyRelease(Base):
+    """An immutable release of legal content, identified by its public release id and exact digest."""
+
+    __tablename__ = "policy_releases"
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    policy_type: Mapped[str] = mapped_column(String(16))
+    content_sha256: Mapped[str] = mapped_column(String(64))
+    effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    __table_args__ = (
+        CheckConstraint("policy_type IN ('terms', 'privacy', 'cookies')", name="ck_policy_release_type"),
+    )
+
+
+class ConsentRecord(Base):
+    """Append-only consent evidence. subject_hmac is pseudonymous and is not a User foreign key."""
+
+    __tablename__ = "consent_records"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    decision_id: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    revision: Mapped[int] = mapped_column(index=True)
+    client_revision: Mapped[int] = mapped_column(index=True)
+    key_version: Mapped[str] = mapped_column(String(16), default="v1")
+    subject_hmac: Mapped[str] = mapped_column(String(64), index=True)
+    preferences: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    analytics: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    marketing: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    source: Mapped[str] = mapped_column(String(16))
+    action: Mapped[str] = mapped_column(String(16))
+    terms_release_id: Mapped[str] = mapped_column(ForeignKey("policy_releases.id"))
+    privacy_release_id: Mapped[str] = mapped_column(ForeignKey("policy_releases.id"))
+    cookies_release_id: Mapped[str] = mapped_column(ForeignKey("policy_releases.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    __table_args__ = (
+        CheckConstraint("source IN ('anonymous', 'authenticated', 'signup')", name="ck_consent_source"),
+        CheckConstraint("action IN ('accept', 'reject', 'update', 'withdraw')", name="ck_consent_action"),
+        Index("ix_consent_subject_created", "subject_hmac", "created_at"),
+        Index("uq_consent_subject_revision", "subject_hmac", "revision", unique=True),
+    )
+
+
+class PendingSignup(Base):
+    """A non-login-capable account candidate awaiting one-time email verification."""
+
+    __tablename__ = "pending_signups"
+    email: Mapped[str] = mapped_column(String(320), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(64), unique=True)
+    password_hash: Mapped[str] = mapped_column(String(255))
+    tenant_id: Mapped[str] = mapped_column(String(64))
+    role: Mapped[str] = mapped_column(String(16))
+    code_hash: Mapped[str] = mapped_column(String(64))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    attempts_remaining: Mapped[int] = mapped_column(default=5)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_team_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    terms_release_id: Mapped[str] = mapped_column(ForeignKey("policy_releases.id"))
+    privacy_release_id: Mapped[str] = mapped_column(ForeignKey("policy_releases.id"))
+    cookies_release_id: Mapped[str] = mapped_column(ForeignKey("policy_releases.id"))
+    invite_version: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 

@@ -70,11 +70,37 @@ export COMPOSE_PROJECT_NAME=qiko-live
 if [ -n "$PRESERVED_ENV" ]; then
   cp "$PRESERVED_ENV" .env \
     || { echo "FATAL: could not restore the live environment" >&2; exit 1; }
-  rm -f "$PRESERVED_ENV"
+  rm -f "$PRESERVED_ENV" \
+    || { echo "FATAL: could not remove the temporary environment copy" >&2; exit 1; }
   PRESERVED_ENV=""
 else
-  aws ssm get-parameter --region "$REGION" --name /qiko/live/ENV --with-decryption \
-    --query Parameter.Value --output text > .env
+  if ! aws ssm get-parameter --region "$REGION" --name /qiko/live/ENV --with-decryption \
+    --query Parameter.Value --output text > .env; then
+    echo "FATAL: could not bootstrap the live environment" >&2
+    exit 1
+  fi
+fi
+if [ ! -f .env ] || [ -L .env ]; then
+  echo "FATAL: .env must be a regular file, not a symbolic link" >&2
+  exit 1
+fi
+if ! chmod 600 .env; then
+  echo "FATAL: could not restrict .env permissions" >&2
+  exit 1
+fi
+ENV_OWNER_UID=$(stat -c '%u' .env) \
+  || { echo "FATAL: could not read .env owner" >&2; exit 1; }
+CURRENT_UID=$(id -u) \
+  || { echo "FATAL: could not determine the deployment user" >&2; exit 1; }
+if [ "$ENV_OWNER_UID" != "$CURRENT_UID" ]; then
+  echo "FATAL: .env must be owned by the deployment user (uid $CURRENT_UID), found uid $ENV_OWNER_UID" >&2
+  exit 1
+fi
+ENV_MODE=$(stat -c '%a' .env) \
+  || { echo "FATAL: could not read .env permissions" >&2; exit 1; }
+if [ $((8#$ENV_MODE & 077)) -ne 0 ]; then
+  echo "FATAL: .env must not grant permissions to group or other (mode $ENV_MODE)" >&2
+  exit 1
 fi
 if ! grep -q '^POSTGRES_PASSWORD=' .env; then
   echo "FATAL: .env is missing POSTGRES_PASSWORD -- refusing to deploy with a broken env" >&2
@@ -112,8 +138,16 @@ done
 # Pre-build sweep: free space so a build cannot hit ENOSPC. Never touches named volumes.
 docker image prune -f >/dev/null 2>&1 || true
 docker builder prune -f >/dev/null 2>&1 || true
+if ! $C config --quiet; then
+  echo "FATAL: docker compose configuration is invalid" >&2
+  exit 1
+fi
 if ! $C build; then
   echo "FATAL: docker compose build failed" >&2
+  exit 1
+fi
+if ! $C run --rm --no-deps qiko-core python -c 'from app.core.config import Settings; from app.modules.email.sender import SmtpEmailSender; Settings().assert_secrets_set(); SmtpEmailSender().check_connection()'; then
+  echo "FATAL: resolved non-dev environment failed startup preflight" >&2
   exit 1
 fi
 

@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.middleware import RateLimitMiddleware, RequestSizeLimitMiddleware
-from app.core.ratelimit import InMemoryRateLimiter
+from app.core.ratelimit import InMemoryRateLimiter, RedisRateLimiter
 
 
 # --- rate limiter unit ---
@@ -18,6 +18,17 @@ def test_rate_limiter_window_reset():
     rl = InMemoryRateLimiter(limit=1, window_seconds=0)  # window immediately expired
     assert rl.allow("k") is True
     assert rl.allow("k") is True  # window reset each call
+
+
+async def test_redis_rate_limiter_uses_atomic_shared_counter():
+    class FakeRedis:
+        async def eval(self, script, keys, key, limit, window):
+            assert "INCR" in script and keys == 1 and key.endswith(":shared")
+            assert limit == 2 and window == 60
+            return 1
+
+    limiter = RedisRateLimiter(redis=FakeRedis(), namespace="rate", limit=2, window_seconds=60)
+    assert await limiter.allow("shared") is True
 
 
 # --- security headers on the real app ---
@@ -75,7 +86,7 @@ def test_login_endpoint_has_its_own_strict_rate_limit(client):
 
     assert get_settings().auth_rate_limit_per_minute < get_settings().rate_limit_per_minute
     limit = get_settings().auth_rate_limit_per_minute
-    responses = [client.post("/api/v1/auth/login", json={"email": "x@x.com", "password": "wrong"})
+    responses = [client.post("/api/v1/auth/login", json={"email": "x" + "@" + "x.com", "password": "wrong"})
                 for _ in range(limit + 2)]
     assert responses[-1].status_code == 429
     assert any(r.status_code == 401 for r in responses[:limit])  # legit attempts still 401, not 429
@@ -85,3 +96,28 @@ def test_request_size_limit_middleware():
     c = _app_with(RequestSizeLimitMiddleware, max_bytes=10)
     assert c.post("/echo", json={"x": "y"}).status_code == 200         # small
     assert c.post("/echo", json={"x": "y" * 100}).status_code == 413   # too large
+
+
+async def test_request_size_limit_counts_streamed_body_without_content_length():
+    messages = iter([
+        {"type": "http.request", "body": b"123456", "more_body": True},
+        {"type": "http.request", "body": b"789012", "more_body": False},
+    ])
+    sent = []
+
+    async def receive():
+        return next(messages)
+
+    async def send(message):
+        sent.append(message)
+
+    async def downstream(scope, receive, send):
+        while (await receive()).get("more_body"):
+            pass
+
+    middleware = RequestSizeLimitMiddleware(downstream, max_bytes=10)
+    scope = {"type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+             "method": "POST", "scheme": "http", "path": "/echo", "raw_path": b"/echo",
+             "query_string": b"", "headers": [], "client": ("test", 1), "server": ("test", 80)}
+    await middleware(scope, receive, send)
+    assert sent[0]["status"] == 413

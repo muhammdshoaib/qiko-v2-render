@@ -54,13 +54,11 @@ export async function loginAvatar(body: { email: string; password: string }) {
   return { data: { token: "cookie", user: r.user } };
 }
 
-export async function signupAvatar(body: { user_name: string; email: string; password: string; invite_token?: string }) {
-  await req("/auth/signup", {
+export async function signupAvatar(body: { user_name: string; email: string; password: string; invite_token?: string; terms_release_id: string; privacy_release_id: string; cookies_release_id: string }) {
+  return req("/auth/signup", {
     method: "POST",
-    body: JSON.stringify({ email: body.email, password: body.password, invite_token: body.invite_token }),
+    body: JSON.stringify({ email: body.email, password: body.password, invite_token: body.invite_token, accept_policies: true, terms_release_id: body.terms_release_id, privacy_release_id: body.privacy_release_id, cookies_release_id: body.cookies_release_id }),
   });
-  // establish the session cookie so the subsequent authed create calls work
-  return req("/auth/login", { method: "POST", body: JSON.stringify({ email: body.email, password: body.password }) });
 }
 
 export async function forgotPasswordAvatar(email: string) {

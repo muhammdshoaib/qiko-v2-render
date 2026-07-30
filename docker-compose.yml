@@ -13,6 +13,7 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - USE_DB_STORES=true          # persist to Postgres (dev overlay turns this off)
       - TASK_BACKEND=arq            # offload heavy work to the worker tier
+      - FORWARDED_ALLOW_IPS=${FORWARDED_ALLOW_IPS:-127.0.0.1}
     depends_on:
       db: {condition: service_healthy}
       redis: {condition: service_healthy}
@@ -78,6 +79,9 @@ services:
 
   redis:
     image: redis:8
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 15s
@@ -92,3 +96,4 @@ networks:
 
 volumes:
   postgres_data:
+  redis_data:

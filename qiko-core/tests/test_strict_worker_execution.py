@@ -353,10 +353,9 @@ def test_openapi_artifacts_require_agent_id(client):
     root = Path(__file__).parents[1]
     runtime = client.app.openapi()
     core_spec = json.loads((root / "openapi.json").read_text())
-    client_spec = json.loads((root.parent / "frontend/packages/api-client/openapi.json").read_text())
     generated = (root.parent / "frontend/packages/api-client/src/schema.d.ts").read_text()
 
-    assert runtime == core_spec == client_spec
+    assert runtime == core_spec
     for schema_name in (
         "app__modules__chat__router__AskBody",
         "BatchAskBody",

@@ -38,8 +38,21 @@ class SmtpEmailSender:  # pragma: no cover - requires an SMTP server
         self.user = self.user or s.smtp_user
         self.password = self.password or s.smtp_password
 
+    def check_connection(self) -> bool:
+        import smtplib
+        import ssl
+
+        with smtplib.SMTP(self.host, self.port, timeout=get_settings().smtp_timeout_seconds) as smtp:
+            if self.use_tls:
+                smtp.starttls(context=ssl.create_default_context())
+            if self.user:
+                smtp.login(self.user, self.password)
+            smtp.noop()
+        return True
+
     def send(self, *, to: str, subject: str, body: str, html: str | None = None) -> bool:
         import smtplib
+        import ssl
         from email.message import EmailMessage
 
         msg = EmailMessage()
@@ -49,7 +62,7 @@ class SmtpEmailSender:  # pragma: no cover - requires an SMTP server
             msg.add_alternative(html, subtype="html")  # branded HTML for capable clients
         with smtplib.SMTP(self.host, self.port, timeout=get_settings().smtp_timeout_seconds) as smtp:
             if self.use_tls:
-                smtp.starttls()
+                smtp.starttls(context=ssl.create_default_context())
             if self.user:
                 smtp.login(self.user, self.password)
             smtp.send_message(msg)

@@ -897,6 +897,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/verify-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify Signup */
+        post: operations["verify_signup_api_v1_auth_verify_email_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/billing/checkout": {
         parameters: {
             query?: never;
@@ -1433,6 +1450,59 @@ export interface paths {
         post?: never;
         /** Clear History */
         delete: operations["clear_history_api_v1_chat_history__conversation_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Authenticated */
+        get: operations["get_authenticated_api_v1_consent_get"];
+        put?: never;
+        /** Record Authenticated */
+        post: operations["record_authenticated_api_v1_consent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/consent/anonymous": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Anonymous */
+        get: operations["get_anonymous_api_v1_consent_anonymous_get"];
+        put?: never;
+        /** Record Anonymous */
+        post: operations["record_anonymous_api_v1_consent_anonymous_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/consent/policy-releases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Policy Releases */
+        get: operations["policy_releases_api_v1_consent_policy_releases_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3555,6 +3625,36 @@ export interface components {
             /** Rows */
             rows: unknown[][];
         };
+        /** AnonymousConsentBody */
+        AnonymousConsentBody: {
+            /** Analytics */
+            analytics: boolean;
+            /** Anonymous Id */
+            anonymous_id: string;
+            /** Client Revision */
+            client_revision: number;
+            /**
+             * Cookies Release Id
+             * @constant
+             */
+            cookies_release_id: "cookies-2026-07-24";
+            /** Decision Id */
+            decision_id: string;
+            /** Marketing */
+            marketing: boolean;
+            /** Preferences */
+            preferences: boolean;
+            /**
+             * Privacy Release Id
+             * @constant
+             */
+            privacy_release_id: "privacy-2026-07-24";
+            /**
+             * Terms Release Id
+             * @constant
+             */
+            terms_release_id: "terms-2026-07-24";
+        };
         /** AssignReviewerBody */
         AssignReviewerBody: {
             /** Name */
@@ -3708,6 +3808,34 @@ export interface components {
             name: string;
             /** Worker Id */
             worker_id: string;
+        };
+        /** ConsentChoicesBody */
+        ConsentChoicesBody: {
+            /** Analytics */
+            analytics: boolean;
+            /** Client Revision */
+            client_revision: number;
+            /**
+             * Cookies Release Id
+             * @constant
+             */
+            cookies_release_id: "cookies-2026-07-24";
+            /** Decision Id */
+            decision_id: string;
+            /** Marketing */
+            marketing: boolean;
+            /** Preferences */
+            preferences: boolean;
+            /**
+             * Privacy Release Id
+             * @constant
+             */
+            privacy_release_id: "privacy-2026-07-24";
+            /**
+             * Terms Release Id
+             * @constant
+             */
+            terms_release_id: "terms-2026-07-24";
         };
         /** ConversationBody */
         ConversationBody: {
@@ -4407,14 +4535,34 @@ export interface components {
         };
         /** SignupBody */
         SignupBody: {
+            /**
+             * Accept Policies
+             * @constant
+             */
+            accept_policies: true;
+            /**
+             * Cookies Release Id
+             * @constant
+             */
+            cookies_release_id: "cookies-2026-07-24";
             /** Email */
             email: string;
             /** Invite Token */
             invite_token?: string | null;
             /** Password */
             password: string;
+            /**
+             * Privacy Release Id
+             * @constant
+             */
+            privacy_release_id: "privacy-2026-07-24";
             /** Tenant */
             tenant?: string | null;
+            /**
+             * Terms Release Id
+             * @constant
+             */
+            terms_release_id: "terms-2026-07-24";
         };
         /** SlackLink */
         SlackLink: {
@@ -4624,6 +4772,35 @@ export interface components {
             password: string;
             /** Secret */
             secret: string;
+        };
+        /** VerifySignupBody */
+        VerifySignupBody: {
+            /**
+             * Accept Policies
+             * @constant
+             */
+            accept_policies: true;
+            /** Code */
+            code: string;
+            /**
+             * Cookies Release Id
+             * @constant
+             */
+            cookies_release_id: "cookies-2026-07-24";
+            /** Email */
+            email: string;
+            /** Password */
+            password: string;
+            /**
+             * Privacy Release Id
+             * @constant
+             */
+            privacy_release_id: "privacy-2026-07-24";
+            /**
+             * Terms Release Id
+             * @constant
+             */
+            terms_release_id: "terms-2026-07-24";
         };
         /** WebsiteBody */
         WebsiteBody: {
@@ -6516,6 +6693,41 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_signup_api_v1_auth_verify_email_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifySignupBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -7678,6 +7890,153 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_authenticated_api_v1_consent_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    record_authenticated_api_v1_consent_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsentChoicesBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_anonymous_api_v1_consent_anonymous_get: {
+        parameters: {
+            query: {
+                anonymous_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_anonymous_api_v1_consent_anonymous_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnonymousConsentBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    policy_releases_api_v1_consent_policy_releases_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
                 };
             };
         };

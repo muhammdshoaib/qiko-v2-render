@@ -1,11 +1,5 @@
 import type { ReactNode } from "react";
-
-/**
- * Shared dark-themed, responsive shell for the public legal pages (/terms, /privacy, /cookies).
- *
- * These are intentionally simple server components with placeholder copy so a lawyer can later
- * replace the wording without touching layout. Keep the section structure and swap the text.
- */
+import { ConsentSettingsButton } from "@/components/consent/ConsentUI";
 
 export function LegalSection({ heading, children }: { heading: string; children: ReactNode }) {
   return (
@@ -40,7 +34,7 @@ export function LegalPage({
         <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
       </div>
 
-      <div className="relative z-10 mx-auto w-full max-w-3xl px-4 py-12 sm:py-16">
+      <div className="relative z-10 mx-auto w-full max-w-4xl px-4 py-10 sm:px-6 sm:py-16">
         <header className="mb-10">
           <a
             href="/"
@@ -50,15 +44,15 @@ export function LegalPage({
           </a>
           <div className="mb-4">
             <img
-              src="/qiko-logo-email.png"
+              src="/qiko-logo.webp"
               alt="Qiko"
-              width={200}
-              height={80}
-              className="h-12 w-auto"
+              width={160}
+              height={48}
+              className="h-10 w-auto object-contain"
             />
           </div>
           <h1 className="text-3xl font-bold text-white sm:text-4xl">{title}</h1>
-          <p className="mt-2 text-sm text-slate-500">Last updated: {lastUpdated}</p>
+          <p className="mt-2 text-sm text-slate-500">Effective date: {lastUpdated}</p>
           {intro ? <div className="mt-4 text-sm leading-relaxed text-slate-300">{intro}</div> : null}
         </header>
 
@@ -67,8 +61,8 @@ export function LegalPage({
         <footer className="mt-12 border-t border-slate-800 pt-6 text-sm text-slate-500">
           <p>
             Questions? Contact us at{" "}
-            <a href="mailto:support@qiko.ai" className="text-cyan-400 hover:text-cyan-300">
-              support@qiko.ai
+            <a href="mailto:support%40qiko.ai" className="text-cyan-400 hover:text-cyan-300">
+              support{"@"}qiko.ai
             </a>
             .
           </p>
@@ -78,6 +72,7 @@ export function LegalPage({
                 {l.label}
               </a>
             ))}
+            <ConsentSettingsButton className="text-slate-400" />
           </nav>
         </footer>
       </div>

@@ -21,6 +21,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      compose: ${{ steps.filter.outputs.compose }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -31,6 +32,33 @@ jobs:
               - 'qiko-core/**'
             frontend:
               - 'frontend/**'
+            compose:
+              - 'docker-compose*.yml'
+              - '.env*.example'
+              - 'qiko-core/Dockerfile'
+              - '.github/deploy/**'
+              - '.github/workflows/ci.yml'
+
+  compose:
+    needs: changes
+    if: ${{ needs.changes.outputs.compose == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create non-secret Compose environment fixture
+        run: |
+          umask 077
+          printf '%s\n' \
+            'POSTGRES_USER=qiko' \
+            'POSTGRES_PASSWORD=ci-placeholder' \
+            'POSTGRES_DB=qiko' \
+            'SESSION_SECRET=ci-placeholder-not-a-secret' > .env
+          chmod 600 .env
+      - run: docker compose -f docker-compose.yml -f docker-compose.preprod.yml config --quiet
+      - run: docker compose -f docker-compose.yml -f docker-compose.live.yml config --quiet
+      - run: bash -n .github/deploy/redeploy-preprod.sh .github/deploy/redeploy-live.sh
+      - run: docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile
+      - run: docker run --rm -v "$PWD/Caddyfile.live:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile
 
   backend:
     needs: changes

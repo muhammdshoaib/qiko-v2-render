@@ -60,7 +60,7 @@
 .qiko-landing-1to1 h1,
 .qiko-landing-1to1 h2,
 .qiko-landing-1to1 h3 {
-  font-family: var(--font-qiko), ui-sans-serif, system-ui, sans-serif !important;
+  font-family: "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
 }
 
 /* Chrome/WebKit paints autofilled inputs with an opaque near-white background regardless of the

@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.crypto import decrypt, encrypt
@@ -19,6 +19,7 @@ from app.core.crypto import decrypt, encrypt
 from app.db.models import Agent as AgentRow
 from app.db.models import AgentStateAudit as AgentStateAuditRow
 from app.db.models import Assignment as AssignmentRow
+from app.db.models import ConsentRecord as ConsentRecordRow
 from app.db.models import Contact as ContactRow
 from app.db.models import Conversation as ConversationRow
 from app.db.models import CrmAction as CrmActionRow
@@ -34,8 +35,10 @@ from app.db.models import PackRequirement as PackRequirementRow
 from app.db.models import PackSection as PackSectionRow
 from app.db.models import Passage as PassageRow
 from app.db.models import PasswordResetOtp as PasswordResetOtpRow
+from app.db.models import PendingSignup as PendingSignupRow
 from app.db.models import PendingTeamInvite as PendingTeamInviteRow
 from app.db.models import PlatformAdmin as PlatformAdminRow
+from app.db.models import PolicyRelease as PolicyReleaseRow
 from app.db.models import RfpPack as RfpPackRow
 from app.db.models import SalesIntelActivityLog as SalesIntelActivityLogRow
 from app.db.models import SalesIntelIngestionSource as SalesIntelIngestionSourceRow
@@ -50,12 +53,20 @@ from app.db.models import VerifiedAnswer
 from app.modules.agents.service import Agent, AgentStateAudit, PlanLimitError
 from app.modules.assignments.service import Assignment, AssignmentNotFound
 from app.modules.channels.teams_integration import TeamsIntegration
+from app.modules.consent.models import ConsentChoices, ConsentRecord, ConsentSource, PolicyRelease
+from app.modules.consent.service import (
+    active_pseudonym_version,
+    derive_action,
+    pseudonymous_subject,
+    same_consent_decision,
+)
 from app.core.deps import WorkerUnavailable
 from app.modules.chat.service import ConversationScopeError, ConversationSummary, Message
 from app.modules.crm.service import Contact, CrmAction
 from app.modules.finance.models import FinanceChatMessage, FinanceFile
 from app.modules.identity.admin_rbac import AdminRole
 from app.modules.identity.onboarding import hash_otp, new_otp_code
+from app.modules.identity.pending_signup import PendingSignup, hash_signup_code
 from app.modules.identity import twofa
 from app.modules.identity.rbac import Role
 from app.modules.identity.security import verify_password
@@ -1629,3 +1640,324 @@ class SqlPendingInviteStore:
                 return False
             await s.delete(row)
             return True
+
+
+# --- Legal consent and pending signups -------------------------------------------------------
+
+
+def _consent_from_row(row: ConsentRecordRow) -> ConsentRecord:
+    return ConsentRecord(
+        id=row.id,
+        decision_id=row.decision_id,
+        revision=row.revision,
+        client_revision=row.client_revision,
+        key_version=row.key_version,
+        subject_hmac=row.subject_hmac,
+        preferences=row.preferences,
+        analytics=row.analytics,
+        marketing=row.marketing,
+        source=row.source,
+        action=row.action,
+        terms_release_id=row.terms_release_id,
+        privacy_release_id=row.privacy_release_id,
+        cookies_release_id=row.cookies_release_id,
+        created_at=_aware(row.created_at),
+    )
+
+
+@dataclass
+class SqlConsentStore:
+    """Append-only consent store. Its public API deliberately has no mutation or deletion method."""
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def add(self, record: ConsentRecord) -> ConsentRecord:
+        existing = await self.get(record.decision_id)
+        if existing is not None:
+            if not same_consent_decision(existing, record):
+                raise ValueError("consent decision id conflict")
+            return existing
+        async with self.sessionmaker() as session, session.begin():
+            session.add(ConsentRecordRow(
+                id=record.id,
+                decision_id=record.decision_id,
+                revision=record.revision,
+                client_revision=record.client_revision,
+                key_version=record.key_version,
+                subject_hmac=record.subject_hmac,
+                preferences=record.preferences,
+                analytics=record.analytics,
+                marketing=record.marketing,
+                source=record.source,
+                action=record.action,
+                terms_release_id=record.terms_release_id,
+                privacy_release_id=record.privacy_release_id,
+                cookies_release_id=record.cookies_release_id,
+                created_at=record.created_at,
+            ))
+        return record
+
+    async def get(self, decision_id: str) -> ConsentRecord | None:
+        async with self.sessionmaker() as session:
+            row = (await session.execute(select(ConsentRecordRow).where(
+                ConsentRecordRow.decision_id == decision_id))).scalar_one_or_none()
+            return _consent_from_row(row) if row is not None else None
+
+    async def record_decision(
+        self, *, subject_hmac: str, subject_hmacs: list[str], key_version: str,
+        decision_id: str, client_revision: int, choices: ConsentChoices, source: ConsentSource,
+        terms_release_id: str, privacy_release_id: str, cookies_release_id: str,
+    ) -> ConsentRecord:
+        async with self.sessionmaker() as session, session.begin():
+            if session.bind.dialect.name == "postgresql":
+                for lock_key in sorted({decision_id, *subject_hmacs}):
+                    await session.execute(
+                        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": lock_key})
+            existing_row = (await session.execute(select(ConsentRecordRow).where(
+                ConsentRecordRow.decision_id == decision_id))).scalar_one_or_none()
+            if existing_row is not None:
+                existing = _consent_from_row(existing_row)
+                same_request = (
+                    existing.subject_hmac in subject_hmacs
+                    and existing.client_revision == client_revision
+                    and existing.preferences == choices.preferences
+                    and existing.analytics == choices.analytics
+                    and existing.marketing == choices.marketing
+                    and existing.source == source
+                    and existing.terms_release_id == terms_release_id
+                    and existing.privacy_release_id == privacy_release_id
+                    and existing.cookies_release_id == cookies_release_id
+                )
+                if not same_request:
+                    raise ValueError("consent decision id conflict")
+                return existing
+            previous_row = (await session.execute(
+                select(ConsentRecordRow)
+                .where(ConsentRecordRow.subject_hmac.in_(subject_hmacs))
+                .order_by(ConsentRecordRow.revision.desc())
+                .limit(1)
+            )).scalar_one_or_none()
+            previous = _consent_from_row(previous_row) if previous_row is not None else None
+            if previous is not None and client_revision < previous.client_revision:
+                raise ValueError("stale consent decision")
+            if previous is not None and client_revision == previous.client_revision:
+                merged = ConsentChoices(
+                    previous.preferences and choices.preferences,
+                    previous.analytics and choices.analytics,
+                    previous.marketing and choices.marketing)
+                if (merged.preferences, merged.analytics, merged.marketing) == (
+                        previous.preferences, previous.analytics, previous.marketing):
+                    raise ValueError("stale consent decision")
+                choices = merged
+            revision = previous.revision + 1 if previous else 1
+            action = "accept" if source == "signup" else derive_action(previous, choices)
+            record = ConsentRecord(
+                id=uuid.uuid4().hex, decision_id=decision_id, revision=revision,
+                client_revision=client_revision, key_version=key_version, subject_hmac=subject_hmac,
+                preferences=choices.preferences, analytics=choices.analytics,
+                marketing=choices.marketing, source=source, action=action,
+                terms_release_id=terms_release_id, privacy_release_id=privacy_release_id,
+                cookies_release_id=cookies_release_id, created_at=datetime.now(timezone.utc))
+            session.add(ConsentRecordRow(
+                id=record.id, decision_id=record.decision_id, revision=record.revision,
+                client_revision=record.client_revision, key_version=record.key_version, subject_hmac=record.subject_hmac,
+                preferences=record.preferences, analytics=record.analytics,
+                marketing=record.marketing, source=record.source, action=record.action,
+                terms_release_id=record.terms_release_id,
+                privacy_release_id=record.privacy_release_id,
+                cookies_release_id=record.cookies_release_id, created_at=record.created_at))
+            await session.flush()
+            return record
+
+    async def latest(self, subject_hmac: str) -> ConsentRecord | None:
+        async with self.sessionmaker() as session:
+            row = (await session.execute(
+                select(ConsentRecordRow)
+                .where(ConsentRecordRow.subject_hmac == subject_hmac)
+                .order_by(ConsentRecordRow.revision.desc(), ConsentRecordRow.id.desc())
+                .limit(1)
+            )).scalar_one_or_none()
+            return _consent_from_row(row) if row is not None else None
+
+    async def list_policy_releases(self) -> list[PolicyRelease]:
+        async with self.sessionmaker() as session:
+            rows = (await session.execute(
+                select(PolicyReleaseRow).order_by(PolicyReleaseRow.effective_at, PolicyReleaseRow.id)
+            )).scalars().all()
+            return [PolicyRelease(
+                id=row.id,
+                policy_type=row.policy_type,
+                content_sha256=row.content_sha256,
+                effective_at=_aware(row.effective_at),
+            ) for row in rows]
+
+
+@dataclass
+class SqlPendingSignupStore:
+    """Durable pending signup store with hashed, expiring, atomically consumed verification codes."""
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    @staticmethod
+    def _to_domain(row: PendingSignupRow) -> PendingSignup:
+        return PendingSignup(
+            user_id=row.user_id,
+            email=row.email,
+            password_hash=row.password_hash,
+            tenant=row.tenant_id,
+            role=Role(row.role),
+            code_hash=row.code_hash,
+            expires_at=_aware(row.expires_at),
+            terms_release_id=row.terms_release_id,
+            privacy_release_id=row.privacy_release_id,
+            cookies_release_id=row.cookies_release_id,
+            invite_version=row.invite_version,
+            attempts_remaining=row.attempts_remaining,
+            completed_at=_aware(row.completed_at) if row.completed_at else None,
+            completed_team_id=row.completed_team_id,
+            created_at=_aware(row.created_at),
+        )
+
+    async def put(self, signup: PendingSignup) -> bool:
+        async with self.sessionmaker() as session, session.begin():
+            row = await session.get(PendingSignupRow, signup.email.lower())
+            values = {
+                "user_id": signup.user_id,
+                "password_hash": signup.password_hash,
+                "tenant_id": signup.tenant,
+                "role": signup.role.value,
+                "code_hash": signup.code_hash,
+                "expires_at": signup.expires_at,
+                "terms_release_id": signup.terms_release_id,
+                "privacy_release_id": signup.privacy_release_id,
+                "cookies_release_id": signup.cookies_release_id,
+                "invite_version": signup.invite_version,
+                "attempts_remaining": signup.attempts_remaining,
+                "completed_at": signup.completed_at,
+                "completed_team_id": signup.completed_team_id,
+                "created_at": signup.created_at,
+            }
+            if row is not None and _aware(row.expires_at) > datetime.now(timezone.utc):
+                return False
+            if row is not None:
+                await session.delete(row)
+                await session.flush()
+            session.add(PendingSignupRow(email=signup.email.lower(), **values))
+            return True
+
+    async def get(self, email: str) -> PendingSignup | None:
+        async with self.sessionmaker() as session, session.begin():
+            row = await session.get(PendingSignupRow, email.lower())
+            if row is None:
+                return None
+            if _aware(row.expires_at) <= datetime.now(timezone.utc):
+                await session.delete(row)
+                return None
+            return self._to_domain(row)
+
+    async def consume(self, email: str, code: str) -> PendingSignup | None:
+        async with self.sessionmaker() as session, session.begin():
+            row = (await session.execute(
+                select(PendingSignupRow)
+                .where(PendingSignupRow.email == email.lower())
+                .with_for_update()
+            )).scalar_one_or_none()
+            if row is None:
+                return None
+            if _aware(row.expires_at) <= datetime.now(timezone.utc):
+                await session.delete(row)
+                return None
+            if not secrets.compare_digest(row.code_hash, hash_signup_code(code)):
+                row.attempts_remaining -= 1
+                if row.attempts_remaining <= 0:
+                    await session.delete(row)
+                return None
+            return self._to_domain(row)
+
+    async def finalize_signup(self, email: str, code: str, password_hash: str,
+                              terms_release_id: str, privacy_release_id: str,
+                              cookies_release_id: str) -> tuple[PendingSignup, bool] | None:
+        async with self.sessionmaker() as session, session.begin():
+            row = (await session.execute(
+                select(PendingSignupRow).where(PendingSignupRow.email == email.lower()).with_for_update()
+            )).scalar_one_or_none()
+            if row is None:
+                return None
+            now = datetime.now(timezone.utc)
+            if _aware(row.expires_at) <= now:
+                await session.delete(row)
+                return None
+            if not secrets.compare_digest(row.code_hash, hash_signup_code(code)):
+                row.attempts_remaining -= 1
+                if row.attempts_remaining <= 0:
+                    await session.delete(row)
+                return None
+            if row.completed_at is not None:
+                return self._to_domain(row), False
+            existing_user = (await session.execute(select(UserRow).where(UserRow.email == row.email))).scalar_one_or_none()
+            if await session.get(UserRow, row.user_id) is not None or existing_user is not None:
+                return None
+
+            team_id = None
+            if row.invite_version is None:
+                if await session.get(TenantRow, row.tenant_id) is None:
+                    session.add(TenantRow(id=row.tenant_id, name=row.tenant_id))
+                team_id = uuid.uuid4().hex[:12]
+                session.add(TeamRow(id=team_id, tenant_id=row.tenant_id))
+                session.add(TeamMemberRow(team_id=team_id, user_id=row.email, role=Role.owner.value))
+            else:
+                invite = (await session.execute(
+                    select(PendingTeamInviteRow)
+                    .where(PendingTeamInviteRow.tenant_id == row.tenant_id,
+                           PendingTeamInviteRow.email == row.email)
+                    .with_for_update()
+                )).scalar_one_or_none()
+                if (invite is None or invite.role != row.role
+                        or int(_aware(invite.invited_at).timestamp() * 1_000_000) != row.invite_version):
+                    return None
+                await session.delete(invite)
+
+            accepted_at = datetime.now(timezone.utc)
+            revision = int(accepted_at.timestamp() * 1000)
+            key_version = active_pseudonym_version()
+            session.add(ConsentRecordRow(
+                id=uuid.uuid4().hex,
+                decision_id=f"signup:{row.user_id}",
+                revision=revision,
+                client_revision=revision,
+                key_version=key_version,
+                subject_hmac=pseudonymous_subject("user", row.user_id, key_version),
+                preferences=False,
+                analytics=False,
+                marketing=False,
+                source="signup",
+                action="accept",
+                terms_release_id=terms_release_id,
+                privacy_release_id=privacy_release_id,
+                cookies_release_id=cookies_release_id,
+                created_at=accepted_at,
+            ))
+            session.add(UserRow(
+                id=row.user_id,
+                email=row.email,
+                password_hash=password_hash,
+                tenant_id=row.tenant_id,
+                role=row.role,
+            ))
+            row.completed_at = now
+            row.completed_team_id = team_id
+            row.expires_at = now + timedelta(minutes=10)
+            await session.flush()
+            return self._to_domain(row), True
+
+    async def delete(self, email: str) -> None:
+        async with self.sessionmaker() as session, session.begin():
+            row = await session.get(PendingSignupRow, email.lower())
+            if row is not None:
+                await session.delete(row)
+
+    async def purge_expired(self) -> int:
+        async with self.sessionmaker() as session, session.begin():
+            result = await session.execute(delete(PendingSignupRow).where(
+                PendingSignupRow.expires_at <= datetime.now(timezone.utc)))
+            return result.rowcount

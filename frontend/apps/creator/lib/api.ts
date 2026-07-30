@@ -83,6 +83,40 @@ async function requestBlob(path: string, opts: RequestInit = {}): Promise<Blob> 
   return (await requestResponse(path, opts)).blob();
 }
 
+export type ServerConsent = {
+  decision_id: string; client_revision: number; preferences: boolean; analytics: boolean;
+  marketing: boolean; terms_release_id: string; privacy_release_id: string;
+  cookies_release_id: string; created_at: string;
+};
+
+export async function getAuthenticatedConsent(): Promise<ServerConsent | "anonymous" | "missing" | "retry"> {
+  try {
+    let response = await doFetch("/consent", { method: "GET" });
+    if (response.status === 401 && await refreshSession()) response = await doFetch("/consent", { method: "GET" });
+    if (response.ok) return await response.json() as ServerConsent;
+    if (response.status === 401) return "anonymous";
+    if (response.status === 404) return "missing";
+    return "retry";
+  } catch { return "retry"; }
+}
+
+export async function syncAuthenticatedConsent(body: Record<string, unknown>): Promise<"user" | "anonymous" | "stale" | "retry"> {
+  try {
+    let response = await doFetch("/consent", { method: "POST", body: JSON.stringify(body) });
+    if (response.status === 401 && await refreshSession()) response = await doFetch("/consent", { method: "POST", body: JSON.stringify(body) });
+    if (response.ok) return "user";
+    if (response.status === 401) return "anonymous";
+    if (response.status === 409) return "stale";
+    return "retry";
+  } catch { return "retry"; }
+}
+export const recordAnonymousConsent = (body: Record<string, unknown>) =>
+  request<{ recorded: boolean }>("/consent/anonymous", { method: "POST", body: JSON.stringify(body) });
+export const verifySignupEmail = (body: Record<string, unknown>) =>
+  request<{ user_id: string; email: string }>("/auth/verify-email", {
+    method: "POST", body: JSON.stringify(body),
+  });
+
 // Auth
 export const login = (email: string, password: string) =>
   request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });

@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 
 from app import __version__
 from app.core.db import build_engine, build_sessionmaker, build_sync_engine, build_sync_sessionmaker
-from app.core.config import get_settings
+from app.core.config import Environment, get_settings
 from app.core.deps import WorkerUnavailable
 from app.modules.chat.service import ConversationScopeError
 from app.modules.workers.worker import StubProviderUnavailable
@@ -23,7 +23,8 @@ from app.core.middleware import (
     SecurityHeadersMiddleware,
 )
 from app.core.observability import RequestContextMiddleware
-from app.core.ratelimit import InMemoryRateLimiter
+from app.core.ratelimit import InMemoryRateLimiter, RedisRateLimiter
+from app.core.redis import build_redis
 from app.core.dev_gateways import (
     StubCalendlyGateway,
     StubClickUpGateway,
@@ -52,6 +53,7 @@ from app.modules.channels.teams_integration import TeamsNotifier
 from app.modules.chat.files import FileGenerator
 from app.modules.identity.admin_rbac import AdminOrg
 from app.modules.identity.onboarding import OtpStore
+from app.modules.identity.pending_signup import InMemoryPendingSignupStore
 from app.tasks.jobs import registry as task_registry
 from app.tasks.queue import get_task_queue as build_task_queue
 from app.modules.admin.customers import CustomerDirectory
@@ -73,6 +75,8 @@ from app.modules.channels.whatsapp import WhatsAppAdapter
 from app.modules.chat.public_router import router as public_chat_router
 from app.modules.chat.router import router as chat_router
 from app.modules.chat.service import ChatService
+from app.modules.consent.router import router as consent_router
+from app.modules.consent.service import ConsentService
 from app.modules.crm.router import router as crm_router
 from app.modules.crm.service import CrmService
 from app.modules.notifications.router import router as notifications_router
@@ -127,6 +131,7 @@ async def lifespan(app: FastAPI):
             SqlAgentStore,
             SqlAssignmentStore,
             SqlChatStore,
+            SqlConsentStore,
             SqlContactStore,
             SqlFinanceChatStore,
             SqlFinanceFileStore,
@@ -139,6 +144,7 @@ async def lifespan(app: FastAPI):
             SqlPackQuestionStore,
             SqlPackSectionStore,
             SqlPendingInviteStore,
+            SqlPendingSignupStore,
             SqlRequirementStore,
             SqlRfpPackStore,
             SqlSalesforceConnectionStore,
@@ -196,6 +202,8 @@ async def lifespan(app: FastAPI):
         # processes (previously in-memory, so a code/invite could silently stop working).
         app.state.otp_store = SqlOtpStore(sm)
         app.state.pending_invites = SqlPendingInviteStore(sm)
+        app.state.pending_signups = SqlPendingSignupStore(sm)
+        app.state.consent = ConsentService(store=SqlConsentStore(sm))
         set_user_store(SqlUserStore(sm))  # users/sessions/2FA persist to Postgres
 
         # Billing state + the admin Customers console are reached through SYNCHRONOUS route
@@ -280,12 +288,21 @@ def create_app() -> FastAPI:
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestSizeLimitMiddleware, max_bytes=settings.max_request_bytes)
+    if settings.environment is Environment.dev:
+        limiter = InMemoryRateLimiter(limit=settings.rate_limit_per_minute)
+        strict_limiter = InMemoryRateLimiter(limit=settings.auth_rate_limit_per_minute)
+    else:
+        redis = build_redis(settings.redis_url)
+        limiter = RedisRateLimiter(redis=redis, namespace="qiko:rate", limit=settings.rate_limit_per_minute)
+        strict_limiter = RedisRateLimiter(
+            redis=redis, namespace="qiko:strict-rate", limit=settings.auth_rate_limit_per_minute)
     app.add_middleware(RateLimitMiddleware,
-                       limiter=InMemoryRateLimiter(limit=settings.rate_limit_per_minute),
-                       strict_limiter=InMemoryRateLimiter(limit=settings.auth_rate_limit_per_minute),
+                       limiter=limiter,
+                       strict_limiter=strict_limiter,
                        strict_paths=("/api/v1/auth/login", "/api/v1/auth/refresh",
                                     "/api/v1/auth/2fa", "/api/v1/auth/signup",
-                                    "/api/v1/auth/forgot-password", "/api/v1/auth/reset-password"))
+                                    "/api/v1/auth/verify-email", "/api/v1/auth/forgot-password",
+                                    "/api/v1/auth/reset-password", "/api/v1/consent"))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allow_origins,
@@ -344,6 +361,8 @@ def create_app() -> FastAPI:
     app.state.admin_org = AdminOrg()
     app.state.otp_store = OtpStore()
     app.state.pending_invites = PendingInviteStore()
+    app.state.pending_signups = InMemoryPendingSignupStore()
+    app.state.consent = ConsentService()
     app.state.channel_sessions = ChannelSessionStore()
     app.state.slack_oauth = SlackOAuth(InstallationStore())
     app.state.slack_links = WorkspaceLinkStore()
@@ -361,7 +380,7 @@ def create_app() -> FastAPI:
               assignments_router, admin_router, chat_router, teams_router, leads_router, billing_router,
               channels_router, excel_router, voice_router, signal_router, public_chat_router, sources_router,
               twofa_router, onboarding_router, admin_org_router, batch_router, marketing_router, crm_router,
-              sales_intelligence_router, finance_router, notifications_router):
+              sales_intelligence_router, finance_router, notifications_router, consent_router):
         app.include_router(r, prefix="/api/v1")
     return app
 

@@ -5,6 +5,7 @@ services:
     environment:
       - ENVIRONMENT=preprod
       - LOG_LEVEL=INFO
+      - FORWARDED_ALLOW_IPS=172.28.10.2
 
   caddy:
     image: caddy:2
@@ -15,7 +16,18 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on: [creator, admin, qiko-core]
-    networks: [proxy-net]
+    networks:
+      proxy-net:
+        ipv4_address: 172.28.10.2
+
+networks:
+  proxy-net:
+    name: ${COMPOSE_PROJECT_NAME:-qiko-preprod}_proxy_net_v2
+    ipam:
+      config:
+        - subnet: 172.28.10.0/24
+          ip_range: 172.28.10.128/25
+          gateway: 172.28.10.1
 
 volumes:
   caddy_data:

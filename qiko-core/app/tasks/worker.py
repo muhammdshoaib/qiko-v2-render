@@ -63,6 +63,11 @@ async def scan_due_sources(ctx):  # pragma: no cover - invoked by the arq cron r
     return await sales_scheduler.scan_due_sources(service, agents=agents)
 
 
+async def purge_expired_signups(ctx):  # pragma: no cover - invoked by the arq cron runtime
+    from app.db.stores import SqlPendingSignupStore
+    return {"purged": await SqlPendingSignupStore(ctx["sessionmaker"]).purge_expired()}
+
+
 async def send_deadline_reminders(ctx):  # pragma: no cover - invoked by the arq cron runtime
     service, agents = _build_sales_runtime(ctx["sessionmaker"])
     return await sales_scheduler.send_deadline_reminders(service, agents=agents)
@@ -80,6 +85,7 @@ CRON_JOBS = [
     cron(scan_due_sources, name="sales_intel:scan_due_sources", second=0, unique=True),
     # dailyAt 08:00 (idg-sales notify-deadlines parity)
     cron(send_deadline_reminders, name="sales_intel:send_deadline_reminders", hour=8, minute=0, unique=True),
+    cron(purge_expired_signups, name="identity:purge_expired_signups", hour=2, minute=15, unique=True),
 ]
 
 
