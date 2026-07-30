@@ -10,6 +10,7 @@ from alembic.config import Config
 from sqlalchemy import BigInteger
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.db.models import ConsentRecord as ConsentRecordRow
 from app.db.models import PendingSignup as PendingSignupRow
 from app.db.stores import SqlConsentStore, SqlPendingSignupStore
 from app.modules.consent.models import CURRENT_POLICY_RELEASES, ConsentChoices
@@ -30,6 +31,11 @@ def _migrated_database(tmp_path) -> Path:
 
 def test_pending_invite_version_uses_big_integer():
     assert isinstance(PendingSignupRow.__table__.c.invite_version.type, BigInteger)
+
+
+def test_consent_revisions_use_big_integer_for_millisecond_values():
+    assert isinstance(ConsentRecordRow.__table__.c.revision.type, BigInteger)
+    assert isinstance(ConsentRecordRow.__table__.c.client_revision.type, BigInteger)
 
 
 def test_policy_release_digests_match_exact_current_legal_tsx_files():
