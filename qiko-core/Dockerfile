@@ -6,13 +6,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
  && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir -e .
-
+COPY pyproject.toml uv.lock ./
 COPY app ./app
 COPY scripts ./scripts
 COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
+RUN pip install --no-cache-dir uv==0.11.23 \
+ && uv sync --frozen --no-dev
+ENV PATH="/app/.venv/bin:$PATH"
 
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

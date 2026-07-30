@@ -16,6 +16,23 @@ def test_compose_reserves_proxy_ips_and_persists_redis():
     assert "proxy_net_v2" in preprod and "proxy_net_v2" in live
 
 
+def test_release_workflows_require_oidc_sha_and_checksum_provenance():
+    root = Path(__file__).resolve().parents[2]
+    preprod_workflow = (root / ".github/workflows/deploy-preprod.yml").read_text()
+    live_workflow = (root / ".github/workflows/deploy-live.yml").read_text()
+    preprod_script = (root / ".github/deploy/redeploy-preprod.sh").read_text()
+    live_script = (root / ".github/deploy/redeploy-live.sh").read_text()
+    assert "PREPROD_DEPLOY_ROLE_ARN" in preprod_workflow and "aws-access-key-id" not in preprod_workflow
+    assert "LIVE_DEPLOY_ROLE_ARN" in live_workflow and "aws-access-key-id" not in live_workflow
+    assert "release_sha" in live_workflow and "/qiko/preprod/DEPLOYED_SHA" in live_workflow
+    assert "deploy-${{ inputs.release_sha }}.tar.gz" in live_workflow
+    assert "deploy-latest.tar.gz" not in live_workflow
+    assert "head -n 1 .github/deploy/redeploy-preprod.sh" in preprod_workflow
+    assert "head -n 1 .github/deploy/redeploy-live.sh" in live_workflow
+    for script in (preprod_script, live_script):
+        assert "RELEASE_SHA256" in script and "sha256sum -c" in script and "deploy-$RELEASE_SHA.tar.gz" in script
+
+
 def test_environment_drives_debug_and_production_gates():
     # Behaviour that matters: only dev exposes debug affordances; only live is production.
     assert Settings(environment="dev").debug is True

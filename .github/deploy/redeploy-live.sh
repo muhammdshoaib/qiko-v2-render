@@ -14,12 +14,16 @@ if ! flock -n 9; then
   echo "FATAL: another qiko-live deployment is already running" >&2
   exit 1
 fi
+: "${RELEASE_SHA:?set RELEASE_SHA}"
+: "${RELEASE_SHA256:?set RELEASE_SHA256}"
+[[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "FATAL: invalid RELEASE_SHA" >&2; exit 1; }
+[[ "$RELEASE_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "FATAL: invalid RELEASE_SHA256" >&2; exit 1; }
 
 # Live deploy bucket. Mirrors the preprod naming convention (qiko-v2-<env>-deploy-<accountid>);
 # must exist with host-role read access (see docs/playbooks/live.md).
 BUCKET="qiko-v2-live-deploy-064247010239"
 REGION="eu-central-1"
-KEY="live/deploy-latest.tar.gz"
+KEY="live/deploy-$RELEASE_SHA.tar.gz"
 BASE="/opt/docker/qiko"
 PRESERVED_ENV=""
 cleanup() {
@@ -31,6 +35,8 @@ trap cleanup EXIT
 # 1. Fetch the code artifact CI just uploaded.
 aws s3 cp "s3://$BUCKET/$KEY" /tmp/qiko-v2-deploy.tar.gz --region "$REGION" \
   || { echo "FATAL: could not download s3://$BUCKET/$KEY" >&2; exit 1; }
+printf '%s  %s\n' "$RELEASE_SHA256" /tmp/qiko-v2-deploy.tar.gz | sha256sum -c - \
+  || { echo "FATAL: artifact checksum mismatch" >&2; exit 1; }
 
 # 2. Extract to a staging dir, then atomically swap. All persistent state lives in named docker
 #    volumes (postgres_data, caddy_data, caddy_config) that are independent of this directory, so
