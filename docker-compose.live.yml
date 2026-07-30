@@ -17,6 +17,7 @@ services:
       - LOG_LEVEL=WARNING
       - USE_DB_STORES=true          # persist to Postgres (never in-memory in production)
       - TASK_BACKEND=arq            # offload heavy work to the worker tier
+      - FORWARDED_ALLOW_IPS=172.28.20.2
     deploy:
       resources:
         limits: {memory: 512M, cpus: "1.0"}
@@ -58,7 +59,18 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on: [creator, admin, qiko-core]
-    networks: [proxy-net]
+    networks:
+      proxy-net:
+        ipv4_address: 172.28.20.2
+
+networks:
+  proxy-net:
+    name: ${COMPOSE_PROJECT_NAME:-qiko-live}_proxy_net_v2
+    ipam:
+      config:
+        - subnet: 172.28.20.0/24
+          ip_range: 172.28.20.128/25
+          gateway: 172.28.20.1
 
 volumes:
   caddy_data:

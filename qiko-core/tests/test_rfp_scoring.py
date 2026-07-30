@@ -1,10 +1,17 @@
 import io
 import json
 
+import pytest
+
 from app.modules.ai.gateway import LLMResponse
 from app.modules.rfp.scoring import ScoringError, score_opportunity
 
-from tests.helpers import auth_cookies
+from tests.helpers import auth_cookies, autoseed_rfp_pack_workers
+
+@pytest.fixture(autouse=True)
+def _seed_pack_workers(client, monkeypatch):
+    autoseed_rfp_pack_workers(client, monkeypatch)
+
 
 GOOD_JSON = json.dumps({
     "score": 82, "qualified": True,

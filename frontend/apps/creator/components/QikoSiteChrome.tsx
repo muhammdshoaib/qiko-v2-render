@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { ConsentSettingsButton } from "@/components/consent/ConsentUI";
 
 const dropdownItem: React.CSSProperties = {
   display: "block", padding: "9px 12px", borderRadius: 9, fontSize: 14, color: "#cdd7e3",
@@ -152,6 +153,7 @@ export function QikoFooter({ onSignal, onLabs, onAbout, onSignIn, onGetStarted }
           <a href="/terms" className="transition-colors hover:text-slate-300">Terms</a>
           <a href="/privacy" className="transition-colors hover:text-slate-300">Privacy</a>
           <a href="/cookies" className="transition-colors hover:text-slate-300">Cookies</a>
+          <ConsentSettingsButton className="hover:text-slate-300" />
         </nav>
       </div>
     </footer>

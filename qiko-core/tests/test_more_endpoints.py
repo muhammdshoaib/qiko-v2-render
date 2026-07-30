@@ -1,19 +1,46 @@
 import io
 
+import pytest
+
+from app.core.config import Environment, get_settings
+from app.modules.ai.gateway import LLMResponse
+from app.modules.voice.pipeline import UnavailableSpeechGateway
+from app.main import create_app
 from tests.helpers import auth_cookies
 
-C = auth_cookies("more", "owner")
+def _cookies():
+    return auth_cookies("more", "owner")
 ISO = "IDG holds a current ISO 9001 certification valid through 2027."
 
 
+@pytest.fixture(autouse=True)
+def _non_stub_provider(monkeypatch):
+    class Provider:
+        def generate(self, prompt, **_kwargs):
+            return LLMResponse(text=prompt, model="test", stub=False)
+
+    monkeypatch.setattr("app.modules.agentcore.generator.get_provider", lambda: Provider())
+
+
 def test_knowledge_ingest_file_and_evaluate(client):
+    agent_id = client.post(
+        "/api/v1/agents", json={"name": "Evaluator"}, cookies=_cookies()
+    ).json()["id"]
     r = client.post("/api/v1/knowledge/ingest-file", data={"doc_id": "rfp1"},
-                    files={"file": ("rfp.txt", ISO, "text/plain")}, cookies=C)
+                    files={"file": ("rfp.txt", ISO, "text/plain")}, cookies=_cookies())
     assert r.status_code == 200 and r.json()["chunks"] >= 1
-    assert client.get("/api/v1/knowledge/rfp-criteria", cookies=C).json()["criteria"]
+    assert client.get("/api/v1/knowledge/rfp-criteria", cookies=_cookies()).json()["criteria"]
     ev = client.post("/api/v1/knowledge/evaluate",
-                     json={"doc_id": "rfp1", "criterion": "Are certifications evidenced?", "topic": "rfp"}, cookies=C).json()
+                     json={"doc_id": "rfp1", "criterion": "Are certifications evidenced?",
+                           "topic": "rfp", "agent_id": agent_id}, cookies=_cookies()).json()
     assert "ISO 9001" in ev["answer"] and "decision" in ev
+
+
+def test_non_dev_voice_fails_closed_without_supported_gateway(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "environment", Environment.preprod)
+    app = create_app()
+    assert isinstance(app.state.voice.speech, UnavailableSpeechGateway)
 
 
 def _wb() -> bytes:
@@ -30,20 +57,20 @@ def _wb() -> bytes:
 
 def test_excel_upload_analytics_report(client):
     up = client.post("/api/v1/excel/upload", data={"source_name": "q3"},
-                     files={"file": ("q3.xlsx", _wb(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}, cookies=C)
+                     files={"file": ("q3.xlsx", _wb(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")}, cookies=_cookies())
     assert up.json()["records"] == 1
-    a = client.post("/api/v1/excel/analytics", json={"rows": [["region", "revenue"], ["EMEA", 120000], ["APAC", 90000]]}, cookies=C).json()
+    a = client.post("/api/v1/excel/analytics", json={"rows": [["region", "revenue"], ["EMEA", 120000], ["APAC", 90000]]}, cookies=_cookies()).json()
     assert a["columns"]["revenue"]["sum"] == 210000
-    rep = client.post("/api/v1/excel/report", json={"source": "q3", "analytics": a, "fmt": "xlsx"}, cookies=C).json()
+    rep = client.post("/api/v1/excel/report", json={"source": "q3", "analytics": a, "fmt": "xlsx"}, cookies=_cookies()).json()
     assert rep["key"].endswith(".xlsx")
 
 
 def test_signal_buckets_recs_export(client):
-    assert client.get("/api/v1/signal/buckets/s1", cookies=C).status_code == 200
-    assert client.get("/api/v1/signal/recommendations/s1", cookies=C).json() == []
-    assert client.post("/api/v1/signal/export/s1", cookies=C).json()["url"].endswith(".pdf")
+    assert client.get("/api/v1/signal/buckets/s1", cookies=_cookies()).status_code == 200
+    assert client.get("/api/v1/signal/recommendations/s1", cookies=_cookies()).json() == []
+    assert client.post("/api/v1/signal/export/s1", cookies=_cookies()).json()["url"].endswith(".pdf")
 
 
 def test_voice_web_call_config(client):
-    cfg = client.get("/api/v1/voice/web-call-config", cookies=C).json()
+    cfg = client.get("/api/v1/voice/web-call-config", cookies=_cookies()).json()
     assert cfg["provider"] == "bedrock-nova-sonic" and "key" not in str(cfg).lower()

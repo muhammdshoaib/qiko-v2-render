@@ -42,10 +42,7 @@ def _public_user(u: User) -> dict:
 
 
 def _require_csrf(request: Request) -> None:
-    cookie = request.cookies.get(csrf.CSRF_COOKIE)
-    header = request.headers.get(csrf.CSRF_HEADER)
-    if not csrf.validate_csrf(cookie, header):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "CSRF check failed")
+    csrf.require_csrf(request)
 
 
 @router.post("/login")
@@ -54,11 +51,15 @@ async def login(payload: LoginRequest, response: Response, store: UserStore = De
     if not user or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
     if user.twofa_enabled:
-        if not twofa.verify_totp(user.totp_secret or "", payload.totp or ""):
+        provided = payload.totp or ""
+        verified = twofa.verify_totp(user.totp_secret or "", provided)
+        if not verified:
+            verified = await store.consume_backup_code(user.id, provided)
+        if not verified:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or missing 2FA code")
     sid = secrets.token_urlsafe(16)
     await store.set_sid(user.id, sid)
-    _issue(response, user, sid)
+    _issue(response, user, sid, mfa=user.twofa_enabled)
     return {"user": _public_user(user)}
 
 
@@ -77,7 +78,7 @@ async def refresh(request: Request, response: Response, store: UserStore = Depen
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session revoked")
     sid = secrets.token_urlsafe(16)  # rotate
     await store.set_sid(user.id, sid)
-    _issue(response, user, sid)
+    _issue(response, user, sid, mfa=bool(claims.get("mfa")))
     return {"user": _public_user(user)}
 
 
@@ -95,10 +96,10 @@ async def logout(request: Request, response: Response, store: UserStore = Depend
     return {"ok": True}
 
 
-def _issue(response: Response, user: User, sid: str) -> None:
+def _issue(response: Response, user: User, sid: str, *, mfa: bool) -> None:
     access = tokens.create_access_token(user.id, tenant=user.tenant, role=user.role.value,
-                                        sid=sid, email=user.email)
-    refresh_token = tokens.create_refresh_token(user.id, sid=sid)
+                                        sid=sid, email=user.email, mfa=mfa)
+    refresh_token = tokens.create_refresh_token(user.id, sid=sid, mfa=mfa)
     csrf_token = csrf.generate_csrf_token()
     cookies.set_auth_cookies(response, access, refresh_token, csrf_token)
 

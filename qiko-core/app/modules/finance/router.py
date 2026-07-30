@@ -14,7 +14,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
-from app.core.deps import authed_tenant, require_role
+from app.core.deps import authed_tenant, require_role, resolve_tenant_worker
 from app.modules.finance.service import MAX_UPLOAD_BYTES, FinanceError, FinanceUploadError
 from app.modules.identity.rbac import Role
 
@@ -25,11 +25,18 @@ def get_finance(request: Request):
     return request.app.state.finance
 
 
+async def _resolve_worker(request: Request, tenant: str, agent_id: str):
+    _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+    return recheck
+
+
 @router.post("/{agent_id}/upload", status_code=201)
-async def upload(agent_id: str, file: UploadFile = File(...), title: str | None = Form(default=None),
+async def upload(agent_id: str, request: Request, file: UploadFile = File(...),
+                 title: str | None = Form(default=None),
                  description: str | None = Form(default=None),  # noqa: ARG001 -- accepted, not stored as data
                  tenant: str = Depends(authed_tenant), _role: dict = Depends(require_role(Role.editor)),
                  svc=Depends(get_finance)) -> dict:
+    recheck = await _resolve_worker(request, tenant, agent_id)
     # Read with a hard cap so a huge upload can't exhaust memory (defence beyond the global
     # request-size middleware). Filename is never trusted -- the service sanitizes it.
     data = await file.read(MAX_UPLOAD_BYTES + 1)
@@ -40,6 +47,7 @@ async def upload(agent_id: str, file: UploadFile = File(...), title: str | None 
                                   content_type=file.content_type, source_name=title)
     except FinanceUploadError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    await recheck()
     return {
         "fileName": stored.file_name, "sourceName": stored.source_name, "size": stored.size_bytes,
         "namespace": stored.namespace, "totalRows": stored.row_count, "indexed": True,
@@ -57,13 +65,17 @@ class DeleteFilesBody(BaseModel):
 
 
 @router.delete("/{agent_id}/files")
-async def delete_files(agent_id: str, body: DeleteFilesBody, tenant: str = Depends(authed_tenant),
+async def delete_files(agent_id: str, body: DeleteFilesBody, request: Request,
+                       tenant: str = Depends(authed_tenant),
                        _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_finance)) -> dict:
+    recheck = await _resolve_worker(request, tenant, agent_id)
     ids = body.ids if isinstance(body.ids, list) else [body.ids]
     ids = [str(i).strip() for i in ids if str(i).strip()]
     if not ids:
         raise HTTPException(status_code=422, detail="at least one file id is required")
-    return await svc.delete_files(tenant, agent_id, ids)
+    result = await svc.delete_files(tenant, agent_id, ids)
+    await recheck()
+    return result
 
 
 @router.get("/{agent_id}/analytics")
@@ -82,10 +94,15 @@ class ChatBody(BaseModel):
 
 
 @router.post("/{agent_id}/chat")
-async def chat(agent_id: str, body: ChatBody, tenant: str = Depends(authed_tenant),
+async def chat(agent_id: str, body: ChatBody, request: Request,
+               tenant: str = Depends(authed_tenant),
                _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_finance)) -> dict:
+    recheck = await _resolve_worker(request, tenant, agent_id)
     try:
-        return await svc.chat(tenant, agent_id, body.message)
+        result = await svc.chat(
+            tenant, agent_id, body.message, recheck_worker=recheck)
+        await recheck()
+        return result
     except FinanceError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
 
@@ -97,6 +114,10 @@ async def history(agent_id: str, limit: int = 100, tenant: str = Depends(authed_
 
 
 @router.delete("/{agent_id}/history")
-async def clear_history(agent_id: str, tenant: str = Depends(authed_tenant),
+async def clear_history(agent_id: str, request: Request,
+                        tenant: str = Depends(authed_tenant),
                         _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_finance)) -> dict:
-    return await svc.clear_history(tenant, agent_id)
+    recheck = await _resolve_worker(request, tenant, agent_id)
+    result = await svc.clear_history(tenant, agent_id)
+    await recheck()
+    return result

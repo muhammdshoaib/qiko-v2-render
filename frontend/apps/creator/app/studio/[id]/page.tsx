@@ -75,8 +75,8 @@ export default function StudioWorkerPage() {
             onOpenKnowledge={() => router.push(`/workers/${id}`)}
             onOpenConnections={() => router.push(`/workers/${id}?tab=Connections`)} />
         )}
-        {tab === "Chat" && <StudioChat />}
-        {tab === "Research" && <StudioResearch />}
+        {tab === "Chat" && <StudioChat agentId={id} />}
+        {tab === "Research" && <StudioResearch agentId={id} />}
       </div>
     </AppShell>
   );
@@ -150,12 +150,12 @@ function WorkerOverview({ agentId, ready, onOpenChat, onOpenResearch, onOpenKnow
   );
 }
 
-function StudioChat() {
+function StudioChat({ agentId }: { agentId: string }) {
   const [cid] = useState(() => `studio-${Math.random().toString(36).slice(2)}`);
   const [messages, setMessages] = useState<{ role: string; text: string }[]>([]);
   const [text, setText] = useState("");
   const send = useMutation({
-    mutationFn: (question: string) => ask(cid, question),
+    mutationFn: (question: string) => ask(cid, question, agentId),
     onMutate: (question) => setMessages((m) => [...m, { role: "user", text: question }]),
     onSuccess: (reply) => setMessages((m) => [...m, { role: "assistant", text: reply.text }]),
     onError: () => setMessages((m) => [...m, { role: "assistant", text: "Sorry, I couldn't answer that just now. Please try again in a moment." }]),
@@ -183,16 +183,16 @@ function StudioChat() {
   );
 }
 
-function StudioResearch() {
+function StudioResearch({ agentId }: { agentId: string }) {
   const [raw, setRaw] = useState("");
   const questions = raw.split("\n").map((q) => q.trim()).filter(Boolean);
-  const run = useMutation({ mutationFn: () => batchAnswer(questions) });
+  const run = useMutation({ mutationFn: () => batchAnswer(questions, agentId) });
   const [exporting, setExporting] = useState(false);
 
   async function onExport() {
     setExporting(true);
     try {
-      const url = await batchExportUrl(questions);
+      const url = await batchExportUrl(questions, agentId);
       const a = document.createElement("a");
       a.href = url; a.download = "studio-research.xlsx"; a.click();
       URL.revokeObjectURL(url);

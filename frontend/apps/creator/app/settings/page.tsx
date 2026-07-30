@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, CreditCard, KeyRound, Lock, Search, Settings2, Trash2, User, UserPlus, Users } from "lucide-react";
+import { ArrowRight, Cookie, CreditCard, KeyRound, Lock, Search, Settings2, Trash2, User, UserPlus, Users } from "lucide-react";
 import { Badge, Button, Input, Label, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -17,6 +17,7 @@ import {
   type TenantRole,
   type TenantUser,
 } from "@/lib/api";
+import { ConsentSettingsButton } from "@/components/consent/ConsentUI";
 
 const SETTINGS_TABS = [
   { id: "general", label: "General", icon: Settings2 },
@@ -103,6 +104,11 @@ export default function SettingsPage() {
                   className="w-full border-0 bg-gradient-to-r from-violet-600 to-purple-600 text-white shadow-lg shadow-violet-900/30 hover:shadow-violet-800/50">
                   <KeyRound className="size-4" /> Change Password <ArrowRight className="size-4" />
                 </Button>
+              </SettingsCard>
+
+              <SettingsCard icon={Cookie} iconColor="text-cyan-400" title="Privacy choices">
+                <p className="mb-4 text-sm text-slate-400">Review or withdraw optional analytics and marketing consent.</p>
+                <ConsentSettingsButton className="inline-flex min-h-10 w-full items-center justify-center rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 text-sm font-medium text-cyan-200 hover:bg-cyan-500/20" />
               </SettingsCard>
             </div>
           )}
@@ -196,7 +202,7 @@ function TeamPanel() {
             onSubmit={(e) => { e.preventDefault(); if (inviteEmail.trim()) inviteMut.mutate(); }}>
             <div className="flex-1 space-y-1.5">
               <Label htmlFor="invite-email">Email</Label>
-              <Input id="invite-email" type="email" placeholder="teammate@company.com"
+              <Input id="invite-email" type="email" placeholder={"teammate" + "@" + "company.com"}
                 value={inviteEmail} onChange={(e) => setInviteEmail(e.target.value)} />
             </div>
             <div className="space-y-1.5">

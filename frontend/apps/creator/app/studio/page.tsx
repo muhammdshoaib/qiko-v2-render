@@ -13,6 +13,7 @@ import {
 import { normalizeFinanceSummary } from "@/components/finance/utils";
 import {
   AI_DRAFTING_DESCRIPTION,
+  activeBidPacks,
   aiDraftingPercent,
   knowledgeChunkCount,
   nextBidDeadline,
@@ -166,8 +167,9 @@ export default function StudioPage() {
                       href = `/studio/${a.id}/sales-intelligence`;
                     } else if (preSales) {
                       const packs: RfpPack[] = packsQ[idx]?.data ?? [];
-                      const activeBids = packs.length;
-                      const aiDrafting = aiDraftingPercent(packs);
+                      const activePacks = activeBidPacks(packs);
+                      const activeBids = activePacks.length;
+                      const aiDrafting = aiDraftingPercent(activePacks);
                       metrics = [
                         { label: "Active Bids", value: String(activeBids) },
                         {
@@ -176,7 +178,7 @@ export default function StudioPage() {
                           description: AI_DRAFTING_DESCRIPTION,
                         },
                         { label: "Data Volume", value: `${dataVolume} chunks` },
-                        { label: "Next Bid", value: formatShortDate(nextBidDeadline(packs, Date.now())) },
+                        { label: "Next Bid", value: formatShortDate(nextBidDeadline(activePacks, Date.now())) },
                       ];
                       useCaseCount = 6;
                       href = `/studio/${a.id}/pre-sales`;

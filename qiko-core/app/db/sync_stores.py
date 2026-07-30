@@ -227,7 +227,7 @@ class SqlCustomerDirectory:
             records[t.id] = CustomerRecord(
                 user_id=t.id,
                 email=owner_email.get(t.id) or t.name,
-                plan=sub.plan if sub is not None else "free",
+                plan=sub.plan if sub is not None and sub.status == "active" else "free",
                 stripe_paid_cents=earnings.get(t.id, 0),
                 local_paid_cents=0,
                 agents=worker_count.get(t.id, 0),

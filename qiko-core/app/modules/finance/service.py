@@ -162,18 +162,32 @@ class FinanceService:
         result["totalRows"] = sum(f.row_count for f in files)
         return result
 
-    async def chat(self, tenant: str, agent_id: str, message: str) -> dict:
+    async def chat(self, tenant: str, agent_id: str, message: str,
+                   recheck_worker=None) -> dict:
         message = (message or "").strip()
         if not message:
             raise FinanceError("message is required")
+        async def recheck() -> None:
+            if recheck_worker is not None:
+                await recheck_worker()
+
+        await recheck()
         analytics = await self.analytics(tenant, agent_id)
-        await self.chats.add(FinanceChatMessage(id=_new_id(), tenant=tenant, agent_id=agent_id,
-                                                role="user", content=message))
         # Offload the (synchronous, network-bound) LLM call to a thread so it doesn't block the
         # event loop -- same pattern the rfp router uses for its provider calls.
-        result = await asyncio.to_thread(FinancialAnalystChat(self.provider).answer, message, analytics)
-        await self.chats.add(FinanceChatMessage(id=_new_id(), tenant=tenant, agent_id=agent_id,
-                                                role="assistant", content=result["reply"]))
+        try:
+            result = await asyncio.to_thread(
+                FinancialAnalystChat(self.provider).answer, message, analytics)
+        finally:
+            await recheck()
+        user = FinanceChatMessage(
+            id=_new_id(), tenant=tenant, agent_id=agent_id,
+            role="user", content=message)
+        assistant = FinanceChatMessage(
+            id=_new_id(), tenant=tenant, agent_id=agent_id,
+            role="assistant", content=result["reply"])
+        await self.chats.add_exchange(tenant, agent_id, user, assistant)
+        await recheck()
         return result
 
     async def history(self, tenant: str, agent_id: str, limit: int = 100) -> dict:

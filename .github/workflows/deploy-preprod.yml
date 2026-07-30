@@ -8,6 +8,10 @@ on:
     branches: [main]
   workflow_dispatch: {}
 
+permissions:
+  contents: read
+  id-token: write
+
 concurrency:
   group: deploy-preprod
   cancel-in-progress: false
@@ -24,38 +28,45 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.PREPROD_DEPLOY_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Package code and upload to S3 (snapshot previous for rollback)
+      - name: Package immutable code artifact and checksum
         run: |
           set -e
-          # Keep the currently-live artifact as the rollback target (no-op on the first deploy).
-          aws s3 cp "s3://$DEPLOY_BUCKET/preprod/deploy-latest.tar.gz" \
-            "s3://$DEPLOY_BUCKET/preprod/deploy-previous.tar.gz" || echo "no existing latest yet"
+          # Publish only immutable SHA-addressed artifacts and their checksums.
           # Clean, tracked-files-only source archive (no .git / node_modules / untracked).
-          git archive --format=tar.gz -o /tmp/qiko-v2.tar.gz HEAD
+          git archive --format=tar.gz -o /tmp/qiko-v2.tar.gz "${{ github.sha }}"
+          sha256sum /tmp/qiko-v2.tar.gz | cut -d ' ' -f1 > /tmp/qiko-v2.tar.gz.sha256
           aws s3 cp /tmp/qiko-v2.tar.gz "s3://$DEPLOY_BUCKET/preprod/deploy-${{ github.sha }}.tar.gz"
-          aws s3 cp /tmp/qiko-v2.tar.gz "s3://$DEPLOY_BUCKET/preprod/deploy-latest.tar.gz"
+          aws s3 cp /tmp/qiko-v2.tar.gz.sha256 "s3://$DEPLOY_BUCKET/preprod/deploy-${{ github.sha }}.tar.gz.sha256"
 
       - name: Deploy via SSM
         id: deploy
         run: |
           set -e
-          jq -Rs '{commands: [.]}' < .github/deploy/redeploy-preprod.sh > /tmp/redeploy.json
+          ARTIFACT_SHA256=$(cat /tmp/qiko-v2.tar.gz.sha256)
+          { head -n 1 .github/deploy/redeploy-preprod.sh; printf 'export RELEASE_SHA=%q RELEASE_SHA256=%q\n' '${{ github.sha }}' "$ARTIFACT_SHA256"; tail -n +2 .github/deploy/redeploy-preprod.sh; } | jq -Rs '{commands: [.]}' > /tmp/redeploy.json
           CMD_ID=$(aws ssm send-command --instance-ids "${{ secrets.PREPROD_INSTANCE_ID }}" \
             --document-name AWS-RunShellScript \
             --parameters file:///tmp/redeploy.json \
             --timeout-seconds 900 --query "Command.CommandId" --output text)
           echo "Command: $CMD_ID"
           STATUS=Pending
-          for i in $(seq 1 50); do
+          for i in $(seq 1 70); do
             STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "${{ secrets.PREPROD_INSTANCE_ID }}" --query Status --output text 2>/dev/null || echo Pending)
             echo "status=$STATUS"
             [[ "$STATUS" =~ ^(Success|Failed|Cancelled|TimedOut)$ ]] && break
             sleep 15
           done
+          if [[ ! "$STATUS" =~ ^(Success|Failed|Cancelled|TimedOut)$ ]]; then
+            aws ssm cancel-command --command-id "$CMD_ID"
+            for i in $(seq 1 20); do
+              STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "${{ secrets.PREPROD_INSTANCE_ID }}" --query Status --output text 2>/dev/null || echo Cancelling)
+              [[ "$STATUS" =~ ^(Success|Failed|Cancelled|TimedOut)$ ]] && break
+              sleep 10
+            done
+          fi
           [[ "$STATUS" == "Success" ]] || { echo "::error::deploy command ended with $STATUS"; exit 1; }
 
       - name: Health check
@@ -69,20 +80,11 @@ jobs:
           done
           [[ "$ok" == "true" ]] || exit 1
 
-      - name: Rollback to previous artifact on failure
+      - name: Record verified preprod SHA
+        run: aws ssm put-parameter --name /qiko/preprod/DEPLOYED_SHA --type String --value "${{ github.sha }}" --overwrite
+
+      - name: Report controlled failure
         if: failure()
         run: |
-          set -e
-          if aws s3 ls "s3://$DEPLOY_BUCKET/preprod/deploy-previous.tar.gz"; then
-            echo "Restoring previous artifact and redeploying..."
-            aws s3 cp "s3://$DEPLOY_BUCKET/preprod/deploy-previous.tar.gz" \
-              "s3://$DEPLOY_BUCKET/preprod/deploy-latest.tar.gz"
-            jq -Rs '{commands: [.]}' < .github/deploy/redeploy-preprod.sh > /tmp/redeploy.json
-            CMD_ID=$(aws ssm send-command --instance-ids "${{ secrets.PREPROD_INSTANCE_ID }}" \
-              --document-name AWS-RunShellScript \
-              --parameters file:///tmp/redeploy.json \
-              --timeout-seconds 900 --query "Command.CommandId" --output text)
-            echo "Rollback command sent: $CMD_ID"
-          else
-            echo "No previous artifact to roll back to."
-          fi
+          echo "::error::Preprod deploy failed. Do not start rollback until the SSM command is terminal."
+          echo "Use a reviewed SHA-addressed artifact and verify migration compatibility before rollback."

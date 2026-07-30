@@ -76,7 +76,7 @@ class BedrockProvider:
         kwargs = {
             "modelId": self.model_id,
             "messages": messages,
-            "inferenceConfig": {"temperature": temperature},
+            "inferenceConfig": {"temperature": temperature, "maxTokens": 1024},
         }
         if system:
             kwargs["system"] = [{"text": system}]

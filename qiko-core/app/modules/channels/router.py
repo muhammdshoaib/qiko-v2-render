@@ -1,6 +1,7 @@
 """Channels HTTP API: WhatsApp (Meta Graph) webhook verify + inbound receive."""
 from __future__ import annotations
 
+import asyncio
 import json
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
@@ -8,17 +9,18 @@ from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 from app.core.deps import (
+    WorkerUnavailable,
     authed_tenant,
     get_calendly,
     get_channel_sessions,
     get_clickup,
     get_gmail,
-    get_slack,
     get_slack_links,
     get_slack_oauth,
     get_teams_notifier,
     get_whatsapp,
     require_role,
+    resolve_tenant_worker,
 )
 from app.modules.channels.teams_integration import TeamsWebhookError
 from app.modules.channels.webhooks import verify_hmac_signature
@@ -27,6 +29,13 @@ from app.modules.identity.rbac import Role
 
 router = APIRouter(prefix="/channels", tags=["channels"])
 _editor = Depends(require_role(Role.editor))
+
+
+async def _external_call(recheck, function, *args):
+    try:
+        return await asyncio.to_thread(function, *args)
+    finally:
+        await recheck()
 
 
 @router.get("/whatsapp/webhook")
@@ -60,72 +69,124 @@ async def whatsapp_inbound(request: Request, x_hub_signature_256: str = Header(d
 class SendText(BaseModel):
     to: str = Field(min_length=1)
     text: str = Field(min_length=1)
+    worker_id: str = Field(min_length=1)
 
 
 @router.post("/whatsapp/send")
-def whatsapp_send(body: SendText, _t: str = Depends(authed_tenant), _r: dict = _editor, adapter=Depends(get_whatsapp)) -> dict:
-    return adapter.reply(body.to, body.text)
+async def whatsapp_send(body: SendText, request: Request,
+                        tenant: str = Depends(authed_tenant), _role: dict = _editor,
+                        adapter=Depends(get_whatsapp)) -> dict:
+    _worker, recheck = await resolve_tenant_worker(request, tenant, body.worker_id)
+    return await _external_call(recheck, adapter.reply, body.to, body.text)
 
 
 class GmailSend(BaseModel):
     to: str = Field(min_length=1)
     subject: str = Field(min_length=1)
     body: str = Field(min_length=1)
+    worker_id: str = Field(min_length=1)
 
 
 @router.post("/gmail/send")
-def gmail_send(body: GmailSend, _t: str = Depends(authed_tenant), _r: dict = _editor, gmail=Depends(get_gmail)) -> dict:
-    return gmail.send(body.to, body.subject, body.body)
+async def gmail_send(body: GmailSend, request: Request,
+                     tenant: str = Depends(authed_tenant), _role: dict = _editor,
+                     gmail=Depends(get_gmail)) -> dict:
+    _worker, recheck = await resolve_tenant_worker(request, tenant, body.worker_id)
+    return await _external_call(
+        recheck, gmail.send, body.to, body.subject, body.body)
 
 
 class SlackSend(BaseModel):
+    team_id: str = Field(min_length=1)
+    slack_user_id: str = Field(min_length=1)
     channel: str = Field(min_length=1)
     text: str = Field(min_length=1)
 
 
 @router.post("/slack/send")
-def slack_send(body: SlackSend, _t: str = Depends(authed_tenant), _r: dict = _editor, slack=Depends(get_slack)) -> dict:
-    return slack.send_message(body.channel, body.text)
+async def slack_send(body: SlackSend, request: Request,
+                     tenant: str = Depends(authed_tenant), _role: dict = _editor,
+                     links=Depends(get_slack_links), oauth=Depends(get_slack_oauth)) -> dict:
+    worker_id = links.resolve(tenant, body.team_id, body.slack_user_id)
+    if worker_id is None:
+        raise HTTPException(status_code=404, detail="Slack worker link not found")
+    _worker, recheck = await resolve_tenant_worker(request, tenant, worker_id)
+    installation = oauth.store.fetch(body.team_id, tenant=tenant)
+    if installation is None or installation.worker_id != worker_id:
+        raise HTTPException(status_code=404, detail="Slack installation not found")
+    from app.integrations.clients import SlackClient
+
+    slack = SlackClient(bot_token=installation.bot_token)
+    return await _external_call(
+        recheck, slack.send_message, body.channel, body.text)
 
 
 class ClickUpTask(BaseModel):
     list_id: str = Field(min_length=1)
     name: str = Field(min_length=1)
     description: str = ""
+    worker_id: str = Field(min_length=1)
 
 
 @router.post("/clickup/task")
-def clickup_task(body: ClickUpTask, _t: str = Depends(authed_tenant), _r: dict = _editor, clickup=Depends(get_clickup)) -> dict:
-    return clickup.create_task(body.list_id, body.name, body.description)
+async def clickup_task(body: ClickUpTask, request: Request,
+                       tenant: str = Depends(authed_tenant), _role: dict = _editor,
+                       clickup=Depends(get_clickup)) -> dict:
+    _worker, recheck = await resolve_tenant_worker(request, tenant, body.worker_id)
+    return await _external_call(
+        recheck, clickup.create_task, body.list_id, body.name, body.description)
 
 
 # --- Calendly ---
 @router.get("/calendly/slots")
-def calendly_slots(event_type: str, _t: str = Depends(authed_tenant), cal=Depends(get_calendly)) -> dict:
-    return {"slots": cal.available_slots(event_type)}
+async def calendly_slots(event_type: str, worker_id: str, request: Request,
+                         tenant: str = Depends(authed_tenant), cal=Depends(get_calendly)) -> dict:
+    _worker, recheck = await resolve_tenant_worker(request, tenant, worker_id)
+    slots = await _external_call(recheck, cal.available_slots, event_type)
+    return {"slots": slots}
 
 
 class CalendlyBook(BaseModel):
     event_type: str = Field(min_length=1)
     invitee_email: str = Field(min_length=3)
     start: str = Field(min_length=1)
+    worker_id: str = Field(min_length=1)
 
 
 @router.post("/calendly/book")
-def calendly_book(body: CalendlyBook, _t: str = Depends(authed_tenant), cal=Depends(get_calendly)) -> dict:
-    return cal.create_booking(body.event_type, body.invitee_email, body.start)
+async def calendly_book(body: CalendlyBook, request: Request,
+                        tenant: str = Depends(authed_tenant), _role: dict = _editor,
+                        cal=Depends(get_calendly)) -> dict:
+    _worker, recheck = await resolve_tenant_worker(request, tenant, body.worker_id)
+    return await _external_call(
+        recheck, cal.create_booking, body.event_type, body.invitee_email, body.start)
 
 
 # --- Slack OAuth (public redirects) ---
 @router.get("/slack/install")
-def slack_install(state: str = "qiko", oauth=Depends(get_slack_oauth)) -> dict:
-    return {"url": oauth.install_url(state)}
+async def slack_install(worker_id: str, request: Request,
+                        tenant: str = Depends(authed_tenant),
+                        claims: dict = Depends(require_role(Role.editor)),
+                        oauth=Depends(get_slack_oauth)) -> dict:
+    _worker, recheck = await resolve_tenant_worker(request, tenant, worker_id)
+    result = oauth.create_install(tenant, worker_id, claims.get("sub"))
+    await recheck()
+    return result
 
 
 @router.get("/slack/callback")
-def slack_callback(code: str, oauth=Depends(get_slack_oauth)) -> dict:
-    inst = oauth.exchange_code(code)
-    return {"team_id": inst.team_id, "installed": True}
+async def slack_callback(code: str, state: str, request: Request,
+                         oauth=Depends(get_slack_oauth)) -> dict:
+    async def recheck(tenant: str, worker_id: str) -> None:
+        _worker, check = await resolve_tenant_worker(request, tenant, worker_id)
+        await check()
+
+    try:
+        installation = await oauth.complete_install(
+            code, state, recheck_worker=recheck)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="invalid Slack OAuth callback") from exc
+    return {"team_id": installation.team_id, "installed": True}
 
 
 class SlackLink(BaseModel):
@@ -135,8 +196,12 @@ class SlackLink(BaseModel):
 
 
 @router.post("/slack/link")
-def slack_link(body: SlackLink, _t: str = Depends(authed_tenant), links=Depends(get_slack_links)) -> dict:
-    links.link(body.team_id, body.slack_user_id, body.worker_id)
+async def slack_link(body: SlackLink, request: Request,
+                     tenant: str = Depends(authed_tenant), _role: dict = _editor,
+                     links=Depends(get_slack_links)) -> dict:
+    _worker, recheck = await resolve_tenant_worker(request, tenant, body.worker_id)
+    links.link(tenant, body.team_id, body.slack_user_id, body.worker_id)
+    await recheck()
     return {"linked": True}
 
 
@@ -146,18 +211,28 @@ class WorkerSel(BaseModel):
 
 
 @router.post("/sessions/{external_id}/worker")
-def session_select_worker(external_id: str, body: WorkerSel, tenant: str = Depends(authed_tenant),
-                          sessions=Depends(get_channel_sessions)) -> dict:
+async def session_select_worker(external_id: str, body: WorkerSel, request: Request,
+                                tenant: str = Depends(authed_tenant), _role: dict = _editor,
+                                sessions=Depends(get_channel_sessions)) -> dict:
+    _worker, recheck = await resolve_tenant_worker(request, tenant, body.worker)
     sessions.select_worker(tenant, external_id, body.worker)
+    await recheck()
     return {"external_id": external_id, "selected_worker": body.worker}
 
 
 @router.get("/sessions/{external_id}")
-def session_get(external_id: str, tenant: str = Depends(authed_tenant), sessions=Depends(get_channel_sessions)) -> dict:
-    s = sessions.get(tenant, external_id)
-    if s is None:
+async def session_get(external_id: str, request: Request,
+                      tenant: str = Depends(authed_tenant),
+                      sessions=Depends(get_channel_sessions)) -> dict:
+    session = sessions.get(tenant, external_id)
+    if session is None:
         raise HTTPException(status_code=404, detail="no session")
-    return {"external_id": external_id, "selected_worker": s.selected_worker, "reply_mode": s.reply_mode}
+    if session.selected_worker:
+        _worker, recheck = await resolve_tenant_worker(
+            request, tenant, session.selected_worker)
+        await recheck()
+    return {"external_id": external_id, "selected_worker": session.selected_worker,
+            "reply_mode": session.reply_mode}
 
 
 # --- Microsoft Teams Integration (notifications via a per-tenant Incoming Webhook) ---
@@ -190,10 +265,17 @@ async def teams_webhook_disconnect(tenant: str = Depends(authed_tenant), _r: dic
 
 
 @router.post("/teams/test")
-async def teams_webhook_test(tenant: str = Depends(authed_tenant), _r: dict = _editor,
+async def teams_webhook_test(body: WorkerSel, request: Request,
+                             tenant: str = Depends(authed_tenant), _role: dict = _editor,
                              notifier=Depends(get_teams_notifier)) -> dict:
+    _worker, recheck = await resolve_tenant_worker(request, tenant, body.worker)
     try:
-        await notifier.send_test(tenant)
+        try:
+            await notifier.send_test(tenant)
+        finally:
+            await recheck()
+    except WorkerUnavailable:
+        raise
     except TeamsWebhookError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except Exception as e:  # webhook URL rejected by Teams, network error, ...

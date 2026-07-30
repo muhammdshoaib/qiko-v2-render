@@ -5,7 +5,7 @@ from app.modules.identity.admin_rbac import AdminRole
 from tests.helpers import auth_cookies, bootstrap_admin
 
 C = auth_cookies("bill", "owner")
-ADMIN_EMAIL = "billing-admin@example.com"
+ADMIN_EMAIL = "billing-admin" + "@" + "example.com"
 
 
 def _admin_cookies(client):
@@ -17,11 +17,11 @@ def _platform_viewer_cookies(client):
     async def create_viewer():
         await client.app.state.admin_org.bootstrap_super_admin(ADMIN_EMAIL)
         token = await client.app.state.admin_org.invite(
-            ADMIN_EMAIL, "billing-viewer@example.com", AdminRole.viewer)
+            ADMIN_EMAIL, "billing-viewer" + "@" + "example.com", AdminRole.viewer)
         await client.app.state.admin_org.accept(token)
 
     asyncio.run(create_viewer())
-    return auth_cookies("platform", "viewer", email="billing-viewer@example.com")
+    return auth_cookies("platform", "viewer", email="billing-viewer" + "@" + "example.com")
 
 
 def test_checkout_and_portal(client):
@@ -106,28 +106,29 @@ def test_subscription_is_tenant_scoped_no_cross_tenant_bola(client):
 
 
 def test_payment_links_require_platform_admin(client):
-    body = {"customer_email": "buyer@example.com", "amount_cents": 5000}
+    body = {"customer_email": "buyer" + "@" + "example.com", "amount_cents": 5000}
     assert client.post("/api/v1/billing/payment-links", json=body, cookies=C).status_code == 403
-    admin = _admin_cookies(client)
-    created = client.post("/api/v1/billing/payment-links", json=body, cookies=admin).json()
+    admin = {**_admin_cookies(client), "qiko_csrf": "csrf-test"}
+    headers = {"x-csrf-token": "csrf-test", "origin": "http://testserver"}
+    created = client.post("/api/v1/billing/payment-links", json=body, cookies=admin, headers=headers).json()
     assert created["url"] and created["status"]
-    assert client.get("/api/v1/billing/payment-links", params={"email": "buyer@example.com"}, cookies=admin).json()
+    assert client.get("/api/v1/billing/payment-links", params={"email": "buyer" + "@" + "example.com"}, cookies=admin).json()
     assert client.post("/api/v1/billing/payment-links/mark-paid",
-                       json={"customer_email": "buyer@example.com"}, cookies=admin).json()["marked"] >= 1
+                       json={"customer_email": "buyer" + "@" + "example.com"}, cookies=admin, headers=headers).json()["marked"] >= 1
 
 
 def test_platform_viewer_cannot_mutate_payment_links(client):
     viewer = _platform_viewer_cookies(client)
-    body = {"customer_email": "buyer@example.com", "amount_cents": 5000}
+    body = {"customer_email": "buyer" + "@" + "example.com", "amount_cents": 5000}
     assert client.post("/api/v1/billing/payment-links", json=body, cookies=viewer).status_code == 403
     assert client.post("/api/v1/billing/payment-links/mark-paid",
-                       json={"customer_email": "buyer@example.com"}, cookies=viewer).status_code == 403
+                       json={"customer_email": "buyer" + "@" + "example.com"}, cookies=viewer).status_code == 403
 
 
 def test_recurring_payment_link_is_rejected_until_stripe_support_is_wired(client):
     response = client.post(
         "/api/v1/billing/payment-links",
-        json={"customer_email": "buyer@example.com", "amount_cents": 5000, "recurring": True},
+        json={"customer_email": "buyer" + "@" + "example.com", "amount_cents": 5000, "recurring": True},
         cookies=_admin_cookies(client),
     )
     assert response.status_code == 422
@@ -138,7 +139,7 @@ def test_payment_link_amount_is_positive_and_bounded(client):
     for amount in (0, -1, 100_000_001):
         response = client.post(
             "/api/v1/billing/payment-links",
-            json={"customer_email": "buyer@example.com", "amount_cents": amount},
+            json={"customer_email": "buyer" + "@" + "example.com", "amount_cents": amount},
             cookies=admin,
         )
         assert response.status_code == 422

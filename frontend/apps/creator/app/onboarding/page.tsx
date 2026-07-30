@@ -43,6 +43,7 @@ import {
   Activity,
 } from "lucide-react";
 import { addAvatarKnowledge, createAvatar, createSignalWorker, signupAvatar, getSubscriptionPlans, type SubscriptionPlan } from "@/lib/avatarApi";
+import { COOKIES_RELEASE_ID, PRIVACY_RELEASE_ID, TERMS_RELEASE_ID } from "@/lib/consent/consent-record";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useAppSelector } from "@/store/hooks";
 import { motion } from "framer-motion";
@@ -393,15 +394,8 @@ export default function Onboarding() {
   }
 
   const handleSelectPlan = async (plan: SubscriptionType) => {
-    if (plan === "custom_model") {
-      setSelectedPlan(plan);
-      localStorage.setItem("selectedPlan", "Premium");
-    } else {
-      setSelectedPlan(plan);
-      localStorage.setItem("selectedPlan", plan);
-    }
-    // return null
-    
+    setSelectedPlan(plan);
+
     if (!isLoggedIn) {
       setAccount((prev) => ({ ...prev, fullName: prev.fullName || wizardData.fullName || "" }));
       setStep(6);
@@ -463,8 +457,6 @@ export default function Onboarding() {
     };
   }
 
-  const PENDING_CHECKOUT_PLAN_KEY = "qiko_pending_checkout_plan";
-
   async function runCreateAvatarAndKnowledge(plan: SubscriptionType, redirectToDashboardForCheckout = false) {
 
     setIsSubmitting(true);
@@ -487,11 +479,6 @@ export default function Onboarding() {
           signal_query_sets: wizardData.signal_query_sets,
         });
         if (redirectToDashboardForCheckout) {
-          try {
-            sessionStorage.setItem(PENDING_CHECKOUT_PLAN_KEY, plan);
-          } catch {
-            /* ignore */
-          }
           setLocation("/dashboard");
         } else {
           setLocation("/creating");
@@ -513,12 +500,6 @@ export default function Onboarding() {
       }
 
       if (redirectToDashboardForCheckout) {
-        try {
-          // Remember selected plan so the dashboard can redirect to Stripe checkout
-          sessionStorage.setItem(PENDING_CHECKOUT_PLAN_KEY, plan);
-        } catch {
-          /* ignore */
-        }
         setLocation("/dashboard");
       } else {
         setLocation("/creating");
@@ -568,10 +549,12 @@ export default function Onboarding() {
         user_name: account.fullName,
         email: account.email,
         password: account.password,
+        terms_release_id: TERMS_RELEASE_ID,
+        privacy_release_id: PRIVACY_RELEASE_ID,
+        cookies_release_id: COOKIES_RELEASE_ID,
       });
-      setLocation("/creating");
-      await refresh();
-      await runCreateAvatarAndKnowledge(selectedPlan!, true);
+      setLocation(`/verify-email?email=${encodeURIComponent(account.email)}`);
+      return;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Sign up failed. Please try again.";
       const validationErrors =
@@ -1212,6 +1195,7 @@ function Step6AccountCreation({
   setLocation: (path: string) => void;
 }) {
   const passwordRequirements = getPasswordRequirements(account.password);
+  const [acceptedPolicies, setAcceptedPolicies] = useState(false);
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300">
@@ -1250,7 +1234,7 @@ function Step6AccountCreation({
           <Label htmlFor="email" className="text-slate-300 text-sm font-medium">Email Address</Label>
           <div className="relative">
             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500" />
-            <Input id="email" type="email" placeholder="john@example.com" value={account.email} onChange={(e) => setAccount((prev) => ({ ...prev, email: e.target.value }))} className={`h-14 pl-12 bg-[#0a0f1a]/80 border-white/10 text-white placeholder:text-slate-500 rounded-xl focus:border-[#6366F1] focus:ring-[#6366F1]/20 ${accountFieldErrors.email ? "border-red-500" : ""}`} />
+            <Input id="email" type="email" placeholder={"john" + "@" + "example.com"} value={account.email} onChange={(e) => setAccount((prev) => ({ ...prev, email: e.target.value }))} className={`h-14 pl-12 bg-[#0a0f1a]/80 border-white/10 text-white placeholder:text-slate-500 rounded-xl focus:border-[#6366F1] focus:ring-[#6366F1]/20 ${accountFieldErrors.email ? "border-red-500" : ""}`} />
           </div>
           {accountFieldErrors.email && (
             <p className="text-xs text-red-400">{accountFieldErrors.email}</p>
@@ -1289,9 +1273,25 @@ function Step6AccountCreation({
             <p className="text-xs text-red-400">Passwords do not match</p>
           )}
         </div>
+        <div className="flex items-start gap-3 rounded-xl border border-white/10 bg-[#0a0f1a]/80 p-4">
+          <input
+            id="onboarding-policy-acceptance"
+            type="checkbox"
+            required
+            checked={acceptedPolicies}
+            onChange={(event) => setAcceptedPolicies(event.target.checked)}
+            className="mt-0.5 size-4 shrink-0 accent-cyan-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+          />
+          <label htmlFor="onboarding-policy-acceptance" className="text-xs leading-5 text-slate-300">
+            I confirm that I am authorised to bind my organisation, agree to the{" "}
+            <a href="/terms" target="_blank" rel="noreferrer" className="text-[#22D3EE] hover:underline">Terms of Service</a>
+            {", and acknowledge the "}
+            <a href="/privacy" target="_blank" rel="noreferrer" className="text-[#22D3EE] hover:underline">Privacy Policy</a>.
+          </label>
+        </div>
       </div>
       <div className="space-y-4">
-        <Button onClick={handleCreateAccount} disabled={isSubmitting} className="w-full h-14 bg-gradient-to-r from-[#6366F1] to-[#22D3EE] text-white font-semibold rounded-xl shadow-lg shadow-[#6366F1]/30 hover:shadow-[#6366F1]/50">
+        <Button onClick={handleCreateAccount} disabled={isSubmitting || !acceptedPolicies} className="w-full h-14 bg-gradient-to-r from-[#6366F1] to-[#22D3EE] text-white font-semibold rounded-xl shadow-lg shadow-[#6366F1]/30 hover:shadow-[#6366F1]/50">
           {isSubmitting ? <><Loader2 className="mr-2 h-5 w-5 animate-spin" />Creating your account...</> : <>Create Account & Continue<ArrowRight className="ml-2 h-5 w-5" /></>}
         </Button>
         <Button variant="ghost" onClick={handleBack} disabled={isSubmitting} className="w-full text-slate-500 hover:text-slate-300">

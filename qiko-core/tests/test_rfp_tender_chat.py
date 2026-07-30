@@ -3,14 +3,22 @@ GET /rfp/packs/{id}/chat/history reads them back in order, tenant-scoped, and it
 SQL-backed chat store (so the conversation survives a restart, not just in process memory)."""
 import asyncio
 
+import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.db.base import Base
+from app.db.models import Agent as AgentRow
+from app.db.models import Tenant
 from app.db.stores import SqlChatStore
 from app.modules.ai.gateway import LLMResponse
 from app.modules.chat.service import ChatService
 
-from tests.helpers import auth_cookies
+from tests.helpers import auth_cookies, autoseed_rfp_pack_workers
+
+
+@pytest.fixture(autouse=True)
+def _seed_pack_workers(client, monkeypatch):
+    autoseed_rfp_pack_workers(client, monkeypatch)
 
 
 class _CannedProvider:
@@ -84,6 +92,10 @@ def test_tender_chat_persists_via_sql_store(client, monkeypatch, tmp_path):
         engine = create_async_engine(db_url)
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+        sm = async_sessionmaker(engine, expire_on_commit=False)
+        async with sm() as session, session.begin():
+            session.add(Tenant(id="tchatsql", name="Tender Chat"))
+            session.add(AgentRow(id="w1", tenant_id="tchatsql", name="Worker", enabled=True))
         await engine.dispose()
 
     asyncio.run(_create_schema())

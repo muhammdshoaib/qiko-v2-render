@@ -6,6 +6,7 @@ the arq worker). Each gateway is a protocol so the tools are testable without th
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Protocol
 
 from pydantic import BaseModel, Field
@@ -42,19 +43,27 @@ class ClickUpTaskArgs(BaseModel):
     description: str = ""
 
 
-def build_messaging_tools(*, gmail: GmailGateway, slack: SlackGateway, clickup: ClickUpGateway) -> ToolRegistry:
+def build_messaging_tools(*, gmail: GmailGateway, slack: SlackGateway, clickup: ClickUpGateway,
+                          worker_guard: Callable[[], None]) -> ToolRegistry:
     reg = ToolRegistry()
+
+    def guarded(function, *args):
+        worker_guard()
+        try:
+            return function(*args)
+        finally:
+            worker_guard()
 
     @reg.register("gmail_send", GmailSendArgs)
     def _gmail(a: GmailSendArgs) -> dict:
-        return gmail.send(a.to, a.subject, a.body)
+        return guarded(gmail.send, a.to, a.subject, a.body)
 
     @reg.register("slack_send", SlackSendArgs)
     def _slack(a: SlackSendArgs) -> dict:
-        return slack.send_message(a.channel, a.text)
+        return guarded(slack.send_message, a.channel, a.text)
 
     @reg.register("clickup_create_task", ClickUpTaskArgs)
     def _clickup(a: ClickUpTaskArgs) -> dict:
-        return clickup.create_task(a.list_id, a.name, a.description)
+        return guarded(clickup.create_task, a.list_id, a.name, a.description)
 
     return reg

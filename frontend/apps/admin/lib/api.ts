@@ -63,17 +63,44 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
   return response.status === 204 ? (null as T) : ((await response.json()) as T);
 }
 
-export const login = (email: string, password: string) =>
-  request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+export const login = (email: string, password: string, totp?: string) =>
+  request("/auth/login", { method: "POST", body: JSON.stringify({ email, password, totp: totp || null }) });
 export const logout = () => request("/auth/logout", { method: "POST" });
+export const authMe = () => request<{ user: { id: string; email: string; role: string; twofa_enabled: boolean } }>("/auth/me");
 export const forgotPassword = (email: string) =>
   request("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
 
 export type Customer = { user_id: string; email: string; plan: string; earnings_cents: number };
-export const listCustomers = (search = "") =>
-  request<{ total: number; page: number; items: Customer[] }>(
-    `/admin/customers${search ? `?search=${encodeURIComponent(search)}` : ""}`,
-  );
+export const listCustomers = (search = "", page = 1) => {
+  const params = new URLSearchParams({ page: String(page) });
+  if (search) params.set("search", search);
+  return request<{ total: number; page: number; items: Customer[] }>(`/admin/customers?${params}`);
+};
+
+export type AdminRole = "viewer" | "super_admin";
+export type AdminWorker = {
+  id: string; name: string; type: string; status: string; enabled: boolean;
+  created_at: string; config: Record<string, string | boolean | number>;
+};
+export type WorkerAudit = {
+  id: number; agent_id: string; changed_by_email: string; previous_enabled: boolean;
+  enabled: boolean; reason: string | null; created_at: string;
+};
+export type CustomerDetail = Customer & {
+  is_studio: boolean; deleted: boolean; workers: AdminWorker[]; worker_state_audit: WorkerAudit[];
+};
+export const adminMe = () => request<{ role: AdminRole }>("/admin/me");
+export const adminRoleOf = (email: string) => request<{ email: string; role: AdminRole | null }>(`/admin/org/role/${encodeURIComponent(email)}`);
+export const removePlatformAdmin = (email: string) => request<{ removed: string }>(`/admin/org/${encodeURIComponent(email)}`, { method: "DELETE" });
+export const customerDetail = (userId: string) => request<CustomerDetail>(`/admin/customers/${encodeURIComponent(userId)}`);
+export const setCustomerStudio = (customerId: string, enabled: boolean) =>
+  request<CustomerDetail>(`/admin/customers/${encodeURIComponent(customerId)}/studio`, {
+    method: "POST", body: JSON.stringify({ enabled }),
+  });
+export const setWorkerEnabled = (customerId: string, workerId: string, enabled: boolean, reason: string) =>
+  request<AdminWorker>(`/admin/customers/${encodeURIComponent(customerId)}/workers/${encodeURIComponent(workerId)}/enabled`, {
+    method: "PATCH", body: JSON.stringify({ enabled, reason: reason.trim() || null }),
+  });
 
 export type Overview = { customers_total: number; active_subscriptions: number; by_plan: Record<string, number> };
 export const overview = () => request<Overview>("/admin/overview");
@@ -88,8 +115,20 @@ export const analytics = () => request<Analytics>("/admin/analytics");
 
 export type Invoice = { stripe_invoice_id: string; customer_id: string; amount_cents: number; status: string };
 export const listInvoices = () => request<Invoice[]>("/billing/invoices");
+export type PaymentLink = { session_id: string; customer_email: string; amount_cents: number; url: string; status: string };
+export const listPaymentLinks = (email: string) => request<PaymentLink[]>(`/billing/payment-links?email=${encodeURIComponent(email)}`);
+export const createPaymentLink = (customerEmail: string, amountCents: number) =>
+  request<{ session_id: string; url: string; status: string }>("/billing/payment-links", {
+    method: "POST", body: JSON.stringify({ customer_email: customerEmail, amount_cents: amountCents, recurring: false }),
+  });
 
 // 2FA enrollment
 export const twofaSetup = () => request<{ secret: string; provisioning_uri: string }>("/auth/2fa/setup", { method: "POST" });
-export const twofaVerify = (secret: string, code: string) =>
-  request<{ enabled: boolean }>("/auth/2fa/verify-setup", { method: "POST", body: JSON.stringify({ secret, code }) });
+export const regenerateBackupCodes = (password: string, currentCode: string) =>
+  request<{ backup_codes: string[]; reauthentication_required: boolean }>("/auth/2fa/backup-codes/regenerate", {
+    method: "POST", body: JSON.stringify({ password, current_code: currentCode }),
+  });
+export const twofaVerify = (secret: string, code: string, password: string, currentCode?: string) =>
+  request<{ enabled: boolean; reauthentication_required: boolean; backup_codes: string[] }>("/auth/2fa/verify-setup", {
+    method: "POST", body: JSON.stringify({ secret, code, password, current_code: currentCode || null }),
+  });

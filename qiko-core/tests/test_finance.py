@@ -9,7 +9,9 @@ import io
 import pytest
 from openpyxl import Workbook
 
+from app.modules.agents.service import Agent
 from app.modules.ai.gateway import StubProvider
+from app.modules.identity.tokens import decode_token
 from app.modules.finance.analytics import compute_analytics
 from app.modules.finance.parser import ParseError, parse_workbook
 from app.modules.finance.service import FinanceService, FinanceUploadError
@@ -252,7 +254,17 @@ async def test_service_delete_is_tenant_scoped():
 
 # --- router (API level) ----------------------------------------------------------------------
 
+def _seed_api_worker(client, cookies, agent_id: str) -> None:
+    import asyncio
+
+    tenant = decode_token(cookies["qiko_access"], expected_type="access")["tenant"]
+    if asyncio.run(client.app.state.agents.get(tenant, agent_id)) is None:
+        asyncio.run(client.app.state.agents.store.add(
+            Agent(id=agent_id, tenant=tenant, name=agent_id)))
+
+
 def _upload_via_api(client, cookies, agent_id: str):
+    _seed_api_worker(client, cookies, agent_id)
     return client.post(
         f"/api/v1/finance/{agent_id}/upload", cookies=cookies,
         files={"file": ("portfolio.xlsx", _build_workbook(),
@@ -278,6 +290,7 @@ def test_finance_upload_and_analytics_via_api(client):
 
 def test_finance_analytics_month_filter_via_api(client):
     cookies = auth_cookies(tenant="acme")
+    _seed_api_worker(client, cookies, "agent-fin-month")
     client.post("/api/v1/finance/agent-fin-month/upload", cookies=cookies,
                 files={"file": ("p.xlsx", _two_month_workbook(),
                                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
@@ -299,6 +312,7 @@ def test_finance_upload_requires_editor_role(client):
 
 def test_finance_rejects_non_xlsx_upload(client):
     cookies = auth_cookies(tenant="acme")
+    _seed_api_worker(client, cookies, "agent-fin-3")
     resp = client.post("/api/v1/finance/agent-fin-3/upload", cookies=cookies,
                        files={"file": ("evil.xlsx", b"not a workbook",
                                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
@@ -346,11 +360,18 @@ async def _finance_sessionmaker(path: str):
     from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
     from app.db.base import Base
+    from app.db.models import Agent as AgentRow
+    from app.db.models import Tenant
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{path}")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    return async_sessionmaker(engine, expire_on_commit=False), engine
+    sm = async_sessionmaker(engine, expire_on_commit=False)
+    async with sm() as session, session.begin():
+        if await session.get(Tenant, "acme") is None:
+            session.add(Tenant(id="acme", name="Acme"))
+            session.add(AgentRow(id="agent-1", tenant_id="acme", name="Agent", enabled=True))
+    return sm, engine
 
 
 async def test_sql_finance_file_store_persists_and_is_tenant_scoped(tmp_path):

@@ -24,16 +24,22 @@ not a host-side git pull:
    contains `docker-compose.yml`, and atomically swaps it into `/opt/docker/qiko/platform`
    (persistent state lives in named Docker volumes, independent of the directory).
 5. It preserves the live `.env` across the swap (only bootstrapping from the SSM parameter
-   `/qiko/preprod/ENV` if the host has none yet), and refuses to deploy if `.env` is missing
-   `POSTGRES_PASSWORD`.
-6. It prunes dangling images and build cache (pre-build sweep), runs `docker compose build`, then
-   `up -d --force-recreate`.
-7. It runs `alembic upgrade head` inside `qiko-core` with up to 8 retries (the container may still
-   be starting); the final failure is fatal.
-8. It **auto-reclaims disk**: `docker image prune -af` plus `docker builder prune -f` and drops the
+   `/qiko/preprod/ENV` if the host has none yet). The script runs with `umask 077`, sets `.env` to
+   mode `600`, verifies that the deployment user owns it and that group/other have no permissions,
+   then refuses to continue if `POSTGRES_PASSWORD` is missing.
+6. Before changing the running stack, it validates the resolved Compose configuration, prunes only
+   dangling images/build cache, builds every image, and runs the non-dev startup preflight in an
+   isolated `qiko-core` container. Every failure is fatal.
+7. It starts only `db` and `redis`, waits for both to become healthy, then runs `alembic upgrade
+   head` from the newly built image in a one-off `qiko-core` container. Migration is retried up to
+   8 times and the final failure is fatal.
+8. Only after migration succeeds does it force-recreate `qiko-core`, `worker`, `creator`, `admin`
+   and `caddy`. It requires all seven services to be running and requires `qiko-core`, `db` and
+   `redis` to report healthy.
+9. It **auto-reclaims disk**: `docker image prune -af` plus `docker builder prune -f` and drops the
    previous release dir. This never touches named volumes, so Postgres data is safe.
-9. CI health-checks `https://preprod.qiko.ai/api/v1/health` (expects 200). On any failure it
-   restores `deploy-previous.tar.gz` to `deploy-latest.tar.gz` and redeploys.
+10. CI health-checks `https://preprod.qiko.ai/api/v1/health` (expects 200). On any failure it
+    restores `deploy-previous.tar.gz` to `deploy-latest.tar.gz` and redeploys.
 
 IAM: the CI user `qiko-ci-deploy` has S3 read/write on the deploy prefix; the host role
 `qiko-preprod-ec2` has S3 read on it.
@@ -63,7 +69,9 @@ aws ssm put-parameter --region eu-central-1 --name /qiko/preprod/ENV --type Secu
   --value "$(cat updated.env)" --overwrite
 ```
 Required keys in `.env`: `POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`, `SESSION_SECRET`,
-`ENCRYPTION_KEY`, `USE_DB_STORES=true`, `TASK_BACKEND=arq`, `AWS_REGION` and Bedrock config,
+`ENCRYPTION_KEY`, `CONSENT_PSEUDONYM_KEYS` (JSON keyring retaining prior versions),
+`CONSENT_PSEUDONYM_ACTIVE_VERSION`, `FORWARDED_ALLOW_IPS=172.28.10.2`, `EMAIL_BACKEND=smtp`,
+`USE_DB_STORES=true`, `TASK_BACKEND=arq`, `AWS_REGION` and Bedrock config,
 `PUBLIC_API_BASE` (baked into the frontend build), plus any integration keys in use
 (`STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`, `WHATSAPP_*`, `GA4_*`, SMTP, `SIGNAL_ENGINE_*`,
 Salesforce/Vapi/Calendly). Never commit these.
@@ -71,7 +79,7 @@ Salesforce/Vapi/Calendly). Never commit these.
 ## Verify (post-deploy)
 ```bash
 curl -sf https://preprod.qiko.ai/api/v1/health        # 200
-# containers healthy (the arq worker shows "unhealthy" by design: it has no HTTP server on :8000)
+# all containers running; qiko-core, db and redis healthy (the worker health check is disabled)
 docker compose -f docker-compose.yml -f docker-compose.preprod.yml ps
 # smoke + SLO check
 BASE_URL=https://preprod.qiko.ai k6 run loadtest/smoke.js

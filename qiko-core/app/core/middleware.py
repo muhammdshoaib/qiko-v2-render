@@ -1,6 +1,8 @@
 """Security middleware: response security headers, request-size cap, and rate limiting."""
 from __future__ import annotations
 
+import inspect
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -24,16 +26,39 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+class _RequestTooLarge(Exception):
+    pass
+
+
+class RequestSizeLimitMiddleware:
     def __init__(self, app, *, max_bytes: int) -> None:
-        super().__init__(app)
+        self.app = app
         self.max_bytes = max_bytes
 
-    async def dispatch(self, request: Request, call_next) -> Response:
-        cl = request.headers.get("content-length")
-        if cl and cl.isdigit() and int(cl) > self.max_bytes:
-            return JSONResponse({"detail": "Request entity too large"}, status_code=413)
-        return await call_next(request)
+    async def __call__(self, scope, receive, send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = {key.lower(): value for key, value in scope.get("headers", [])}
+        content_length = headers.get(b"content-length", b"").decode()
+        if content_length.isdigit() and int(content_length) > self.max_bytes:
+            await JSONResponse({"detail": "Request entity too large"}, status_code=413)(scope, receive, send)
+            return
+        received = 0
+
+        async def limited_receive():
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > self.max_bytes:
+                    raise _RequestTooLarge
+            return message
+
+        try:
+            await self.app(scope, limited_receive, send)
+        except _RequestTooLarge:
+            await JSONResponse({"detail": "Request entity too large"}, status_code=413)(scope, receive, send)
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
@@ -52,11 +77,15 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         client = request.client.host if request.client else "unknown"
         return f"{client}:{request.url.path}"
 
+    async def _allowed(self, limiter: RateLimiter, key: str) -> bool:
+        result = limiter.allow(key)
+        return await result if inspect.isawaitable(result) else result
+
     async def dispatch(self, request: Request, call_next) -> Response:
         key = self._key(request)
-        if not self.limiter.allow(key):
+        if not await self._allowed(self.limiter, key):
             return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
         if self.strict_limiter and request.url.path.startswith(self.strict_paths):
-            if not self.strict_limiter.allow(key):
+            if not await self._allowed(self.strict_limiter, key):
                 return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
         return await call_next(request)

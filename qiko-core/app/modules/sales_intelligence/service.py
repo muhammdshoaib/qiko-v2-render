@@ -30,6 +30,7 @@ from app.modules.sales_intelligence.models import (
     SOURCE_KEYS,
     SOURCE_STATUSES,
 )
+from app.core.deps import WorkerUnavailable
 from app.modules.sales_intelligence.notifications import SalesNotificationService
 from app.modules.sales_intelligence.qualification import QualificationService
 
@@ -189,14 +190,16 @@ class OpportunityService:
             raise SourceInactiveError(f"{source.source_key.upper()} is inactive for this agent. Enable it before scanning.")
 
     async def scan_ungm(self, tenant: str, agent_id: str, filters: dict, actor_user_id: str | None = None,
-                        agent_config: dict | None = None) -> dict:
-        return await self._scan_source(tenant, agent_id, "ungm", "UNGM Public Notices",
-                                        lambda: self.ungm.search(filters), actor_user_id, agent_config)
+                        agent_config: dict | None = None, recheck_worker=None) -> dict:
+        return await self._scan_source(
+            tenant, agent_id, "ungm", "UNGM Public Notices",
+            lambda: self.ungm.search(filters), actor_user_id, agent_config, recheck_worker)
 
     async def scan_ted(self, tenant: str, agent_id: str, filters: dict, actor_user_id: str | None = None,
-                       agent_config: dict | None = None) -> dict:
-        return await self._scan_source(tenant, agent_id, "ted", "TED - EU Tenders",
-                                        lambda: self.ted.search(filters), actor_user_id, agent_config)
+                       agent_config: dict | None = None, recheck_worker=None) -> dict:
+        return await self._scan_source(
+            tenant, agent_id, "ted", "TED - EU Tenders",
+            lambda: self.ted.search(filters), actor_user_id, agent_config, recheck_worker)
 
     async def _resolve_scorer(self, tenant: str, agent_id: str,
                               agent_config: dict | None) -> QualificationService:
@@ -210,20 +213,27 @@ class OpportunityService:
 
     async def _scan_source(self, tenant: str, agent_id: str, source_key: str, source_name: str,
                            search_fn, actor_user_id: str | None = None,
-                           agent_config: dict | None = None) -> dict:
+                           agent_config: dict | None = None, recheck_worker=None) -> dict:
         import asyncio
 
+        async def recheck() -> None:
+            if recheck_worker is not None:
+                await recheck_worker()
+
+        await recheck()
         source = await (self.ensure_ted_source(tenant, agent_id) if source_key == "ted"
                         else self.ensure_ungm_source(tenant, agent_id))
         self.assert_source_active(source)
         source.last_scan_status = "running"
         source.last_error = None
+        await recheck()
         await self.sources.update(source)
 
         scorer = await self._resolve_scorer(tenant, agent_id, agent_config)
 
         try:
             result = await asyncio.to_thread(search_fn)
+            await recheck()
             upserted: list[Opportunity] = []
             created = 0
             updated = 0
@@ -258,11 +268,13 @@ class OpportunityService:
                     setattr(opportunity, k, v)
                 opportunity.updated_at = _now()
 
+                await recheck()
                 opportunity = await (self.opportunities.add(opportunity) if is_new else self.opportunities.update(opportunity))
                 created += 1 if is_new else 0
                 updated += 0 if is_new else 1
                 upserted.append(opportunity)
 
+                await recheck()
                 await self._log(tenant, agent_id, "opportunity_ingested" if is_new else "opportunity_updated",
                                 f"{'Ingested' if is_new else 'Updated'} {source_key.upper()} opportunity: {opportunity.title}",
                                 tone="success", opportunity_id=opportunity.id, actor_user_id=actor_user_id,
@@ -271,14 +283,17 @@ class OpportunityService:
 
                 # Notification trigger: a freshly-ingested opportunity that needs human validation.
                 if is_new and self.notifier is not None and opportunity.stage == "awaiting_review":
+                    await recheck()
                     await self.notifier.notify_review_required(opportunity)
 
             source.last_scan_status = "success"
             source.last_scan_at = _now()
             source.opportunities_found = len(upserted)
             source.last_error = None
+            await recheck()
             source = await self.sources.update(source)
 
+            await recheck()
             await self._log(tenant, agent_id, f"{source_key}_scan_completed",
                             f"{source_key.upper()} scan completed with {len(upserted)} opportunities."
                             + (f" {skipped} notices skipped by ingest filters." if skipped else ""),
@@ -287,10 +302,12 @@ class OpportunityService:
                                      "skipped": skipped, "payload": result.get("payload", {}),
                                      "total_notice_count": result.get("total_notice_count")})
 
+            await recheck()
             return {"source": source, "opportunities": upserted, "created": created, "updated": updated, "skipped": skipped}
-        except SourceInactiveError:
+        except (SourceInactiveError, WorkerUnavailable):
             raise
         except Exception as e:
+            await recheck()
             source.last_scan_status = "failed"
             source.last_scan_at = _now()
             source.last_error = str(e)

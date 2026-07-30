@@ -1,10 +1,17 @@
 import io
 
+import pytest
+
 from app.modules.ai.gateway import LLMResponse
 
-from tests.helpers import auth_cookies
+from tests.helpers import auth_cookies, autoseed_rfp_pack_workers
 
 TENDER_TEXT = "Submission deadline is 2026-08-01. Format: sealed electronic submission via portal."
+
+
+@pytest.fixture(autouse=True)
+def _seed_pack_workers(client, monkeypatch):
+    autoseed_rfp_pack_workers(client, monkeypatch)
 
 
 class _CannedProvider:

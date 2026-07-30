@@ -1,4 +1,4 @@
-const { rmSync } = require("node:fs");
+const { readdirSync, rmSync } = require("node:fs");
 const { spawnSync } = require("node:child_process");
 const { join } = require("node:path");
 
@@ -17,7 +17,11 @@ function run(command, args) {
 try {
   rmSync(outputDirectory, { recursive: true, force: true });
   if (!run(tsc, ["--project", "tests/tsconfig.node.json"])) return;
-  run(process.execPath, ["--test", join(outputDirectory, "tests", "jake-fixes.test.js")]);
+  const testDirectory = join(outputDirectory, "tests");
+  const testFiles = readdirSync(testDirectory)
+    .filter((name) => name.endsWith(".test.js"))
+    .map((name) => join(testDirectory, name));
+  run(process.execPath, ["--test", ...testFiles]);
 } finally {
   rmSync(outputDirectory, { recursive: true, force: true });
 }

@@ -14,7 +14,12 @@ from app.modules.rfp.extraction import (
     split_subsections,
 )
 
-from tests.helpers import auth_cookies
+from tests.helpers import auth_cookies, autoseed_rfp_pack_workers
+
+@pytest.fixture(autouse=True)
+def _seed_pack_workers(client, monkeypatch):
+    autoseed_rfp_pack_workers(client, monkeypatch)
+
 
 SAMPLE_JSON = json.dumps([
     {"id": "A1", "title": "Company Profile", "classification": "KB",

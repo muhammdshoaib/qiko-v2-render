@@ -7,10 +7,8 @@ import { Plus } from "lucide-react";
 import { Badge, Button } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import { WorkerAvatar, workerTypeIcon } from "@/components/worker-avatar";
-import { createAgent, listAgents, type Agent } from "@/lib/api";
+import { createAgent, getAgentUsage, listAgents, type Agent } from "@/lib/api";
 import { workerTypeLabel } from "@/lib/stringUtils";
-
-const WORKER_LIMIT = 3;
 
 // Per-type tint for the workers-list GROUP header icon (matches idg-sales.qiko.ai: a small coloured
 // per-vertical icon next to the humanised label). The per-worker avatar stays a cyan->blue letter.
@@ -39,12 +37,27 @@ export default function WorkersPage() {
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
+  const usage = useQuery({ queryKey: ["agent-usage"], queryFn: getAgentUsage });
   const workers = agents.data ?? [];
-  const atLimit = workers.length >= WORKER_LIMIT;
+  const workerLimit = usage.data?.worker_limit;
+  const usedCount = usage.data?.used_count;
+  const unlimited = workerLimit === -1;
+  const atLimit = workerLimit !== undefined && !unlimited && (usedCount ?? 0) >= workerLimit;
+  const usageText = usage.isLoading
+    ? "Checking plan usage..."
+    : usage.isError
+      ? "Plan usage unavailable"
+      : unlimited
+        ? `${usedCount ?? 0} worker slots used · Unlimited plan`
+        : `${usedCount ?? 0} / ${workerLimit ?? 0} worker slots used`;
 
   const create = useMutation({
     mutationFn: () => createAgent(name),
-    onSuccess: () => { setName(""); qc.invalidateQueries({ queryKey: ["agents"] }); },
+    onSuccess: () => {
+      setName("");
+      qc.invalidateQueries({ queryKey: ["agents"] });
+      qc.invalidateQueries({ queryKey: ["agent-usage"] });
+    },
   });
 
   // Group by worker vertical (atype) so the section headers read as the humanised vertical
@@ -65,13 +78,21 @@ export default function WorkersPage() {
           <h1 className="mb-1 text-2xl font-bold text-white" style={{ fontFamily: "var(--font-display)" }}>
             Your Workers
           </h1>
-          <p className="text-sm text-slate-400">{workers.length} active worker{workers.length === 1 ? "" : "s"}</p>
+          <p
+            id="workers-plan-usage"
+            role={usage.isError ? "alert" : "status"}
+            aria-live={usage.isError ? "assertive" : "polite"}
+            aria-busy={usage.isLoading}
+            className="text-sm text-slate-400"
+          >
+            {workers.length} active worker{workers.length === 1 ? "" : "s"} · {usageText}
+          </p>
         </div>
         <div className="flex w-full items-center justify-start gap-3 sm:w-auto sm:justify-end">
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New worker name..."
             aria-label="New worker name"
             className="w-56 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 transition-colors focus-visible:border-cyan-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500" />
-          <Button disabled={atLimit || !name || create.isPending} onClick={() => create.mutate()}
+          <Button disabled={usage.isLoading || usage.isError || atLimit || !name || create.isPending} aria-describedby="workers-plan-usage" onClick={() => create.mutate()}
             className="rounded-xl bg-gradient-to-r from-violet-500 to-cyan-400 font-medium text-white shadow-lg shadow-cyan-500/20 hover:opacity-90">
             <Plus className="size-4" /> Create Worker
           </Button>
@@ -83,6 +104,15 @@ export default function WorkersPage() {
         {agents.isLoading && <p className="text-sm text-muted-foreground">Loading…</p>}
         {agents.isError && (
           <p className="mb-4 text-sm text-destructive">Couldn&apos;t load your workers. <button className="underline" onClick={() => agents.refetch()}>Retry</button></p>
+        )}
+        {usage.isError && (
+          <p role="alert" className="mb-4 text-sm text-amber-300">
+            Couldn&apos;t load plan usage. Creation is paused until usage is verified. {" "}
+            <button className="underline" onClick={() => usage.refetch()}>Retry</button>
+          </p>
+        )}
+        {atLimit && (
+          <p className="mb-4 text-sm text-amber-300">Your plan worker limit is reached. Existing disabled workers still use a plan slot.</p>
         )}
 
         {!agents.isLoading && !agents.isError && workers.length === 0 && (

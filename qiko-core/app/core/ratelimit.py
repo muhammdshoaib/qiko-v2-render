@@ -4,11 +4,31 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class RateLimiter(Protocol):
     def allow(self, key: str) -> bool: ...
+
+
+@dataclass
+class RedisRateLimiter:
+    _SCRIPT = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
+return count <= tonumber(ARGV[1]) and 1 or 0
+"""
+
+    def __init__(self, *, redis: Any, namespace: str, limit: int, window_seconds: int = 60) -> None:
+        self.redis = redis
+        self.namespace = namespace
+        self.limit = limit
+        self.window_seconds = window_seconds
+
+    async def allow(self, key: str) -> bool:
+        result = await self.redis.eval(
+            self._SCRIPT, 1, f"{self.namespace}:{key}", self.limit, self.window_seconds)
+        return bool(result)
 
 
 @dataclass

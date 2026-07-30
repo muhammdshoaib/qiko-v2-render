@@ -1,8 +1,21 @@
 """Functional API tests via TestClient: routers are authenticated, tenant-scoped (from token), RBAC-gated."""
+import pytest
+
+from app.modules.ai.gateway import LLMResponse
 from tests.helpers import auth_cookies, bootstrap_admin
 
-C = auth_cookies("acme", "owner")
+def _cookies():
+    return auth_cookies("acme", "owner")
 ISO = "IDG holds a current ISO 9001 certification valid through 2027."
+
+
+@pytest.fixture(autouse=True)
+def _non_stub_provider(monkeypatch):
+    class Provider:
+        def generate(self, prompt, **_kwargs):
+            return LLMResponse(text=prompt, model="test", stub=False)
+
+    monkeypatch.setattr("app.modules.agentcore.generator.get_provider", lambda: Provider())
 
 
 def test_unauthenticated_is_401(client):
@@ -12,9 +25,9 @@ def test_unauthenticated_is_401(client):
 def test_tenant_comes_from_token_not_header(client):
     # even if a caller spoofs a header, the tenant is the token's; ingest under token tenant (acme)
     client.post("/api/v1/knowledge/ingest", json={"doc_id": "iso", "text": ISO},
-                headers={"X-Tenant-Id": "attacker"}, cookies=C)
+                headers={"X-Tenant-Id": "attacker"}, cookies=_cookies())
     hits = client.post("/api/v1/knowledge/search", json={"query": "ISO 9001"},
-                       headers={"X-Tenant-Id": "attacker"}, cookies=C).json()["results"]
+                       headers={"X-Tenant-Id": "attacker"}, cookies=_cookies()).json()["results"]
     assert any("ISO 9001" in h for h in hits)
     # a token for a different tenant sees nothing
     other = client.post("/api/v1/knowledge/search", json={"query": "ISO 9001"},
@@ -23,9 +36,9 @@ def test_tenant_comes_from_token_not_header(client):
 
 
 def test_knowledge_ingest_list_delete(client):
-    client.post("/api/v1/knowledge/ingest", json={"doc_id": "iso", "text": ISO}, cookies=C)
-    assert client.get("/api/v1/knowledge/documents", cookies=C).json()[0]["doc_id"] == "iso"
-    assert client.delete("/api/v1/knowledge/documents/iso", cookies=C).json()["removed"] >= 1
+    client.post("/api/v1/knowledge/ingest", json={"doc_id": "iso", "text": ISO}, cookies=_cookies())
+    assert client.get("/api/v1/knowledge/documents", cookies=_cookies()).json()[0]["doc_id"] == "iso"
+    assert client.delete("/api/v1/knowledge/documents/iso", cookies=_cookies()).json()["removed"] >= 1
 
 
 def test_knowledge_mutations_require_editor_role(client):
@@ -48,7 +61,7 @@ def test_knowledge_mutations_require_editor_role(client):
 def test_knowledge_ingest_text_has_max_length(client):
     # An oversized free-text ingest is rejected by validation before it hits chunk -> embed.
     too_big = "x" * (2 * 1024 * 1024 + 1)
-    r = client.post("/api/v1/knowledge/ingest", json={"doc_id": "big", "text": too_big}, cookies=C)
+    r = client.post("/api/v1/knowledge/ingest", json={"doc_id": "big", "text": too_big}, cookies=_cookies())
     assert r.status_code == 422
 
 
@@ -57,7 +70,7 @@ def test_knowledge_ingest_file_enforces_upload_cap(client, monkeypatch):
     # payload stays small and never trips the global request-size middleware first).
     monkeypatch.setattr("app.modules.knowledge.router.MAX_UPLOAD_BYTES", 16)
     r = client.post("/api/v1/knowledge/ingest-file", data={"doc_id": "big"},
-                    files={"file": ("big.txt", b"x" * 64, "text/plain")}, cookies=C)
+                    files={"file": ("big.txt", b"x" * 64, "text/plain")}, cookies=_cookies())
     assert r.status_code == 413
 
 
@@ -82,9 +95,11 @@ def test_agent_plan_limit_cannot_be_bypassed_by_client_supplied_plan(client):
 
 def test_batch_answer_is_grounded_confidence_scored_and_gated(client):
     c = auth_cookies("batchco", "owner")
+    agent_id = client.post("/api/v1/agents", json={"name": "Batch"}, cookies=c).json()["id"]
     client.post("/api/v1/knowledge/ingest", json={"doc_id": "iso", "text": ISO}, cookies=c)
     r = client.post("/api/v1/agents/batch-answer",
-                     json={"questions": ["Does IDG hold ISO 9001?", "What is the capital of Mars?"]},
+                     json={"questions": ["Does IDG hold ISO 9001?", "What is the capital of Mars?"],
+                           "agent_id": agent_id},
                      cookies=c)
     assert r.status_code == 200
     results = r.json()
@@ -97,12 +112,14 @@ def test_batch_answer_is_grounded_confidence_scored_and_gated(client):
 
 def test_feedback_approves_answer_into_flywheel(client):
     c = auth_cookies("feedbackco", "owner")
+    agent_id = client.post("/api/v1/agents", json={"name": "Feedback"}, cookies=c).json()["id"]
     r = client.post("/api/v1/agents/feedback",
-                     json={"requirement_id": "q1", "topic": "iso", "approved_text": "IDG holds ISO 9001."},
+                     json={"requirement_id": "q1", "topic": "iso",
+                           "approved_text": "IDG holds ISO 9001.", "agent_id": agent_id},
                      cookies=c)
     assert r.status_code == 200 and r.json() == {"verified": True}
     # the next answer on the same topic should be grounded in the verified text, not escalate
-    r2 = client.post("/api/v1/agents/batch-answer", json={"questions": ["Does the company hold ISO 9001?"]}, cookies=c)
+    r2 = client.post("/api/v1/agents/batch-answer", json={"questions": ["Does the company hold ISO 9001?"], "agent_id": agent_id}, cookies=c)
     assert r2.status_code == 200
 
 
@@ -118,7 +135,10 @@ def test_feedback_requires_editor_role(client):
 
 def test_batch_export_returns_xlsx(client):
     c = auth_cookies("exportco", "owner")
-    r = client.post("/api/v1/agents/batch-export", json={"questions": ["Any question?"]}, cookies=c)
+    agent_id = client.post("/api/v1/agents", json={"name": "Export"}, cookies=c).json()["id"]
+    r = client.post(
+        "/api/v1/agents/batch-export",
+        json={"questions": ["Any question?"], "agent_id": agent_id}, cookies=c)
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("application/vnd.openxmlformats")
     assert len(r.content) > 0
@@ -151,7 +171,7 @@ def test_admin_requires_platform_admin_not_tenant_role(client):
     assert client.post("/api/v1/admin/revenue", json=subs, cookies=auth_cookies("t", "owner")).status_code == 403
     assert client.post("/api/v1/admin/revenue", json=subs, cookies=auth_cookies("t", "admin")).status_code == 403
 
-    admin_email = "platform-admin@qiko.ai"
+    admin_email = "platform-admin@invalid"
     bootstrap_admin(client, admin_email)
     ok = client.post("/api/v1/admin/revenue", json=subs, cookies=auth_cookies("t", "viewer", email=admin_email))
     assert ok.json()["active_subscriptions"] == 1

@@ -21,6 +21,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       frontend: ${{ steps.filter.outputs.frontend }}
+      compose: ${{ steps.filter.outputs.compose }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -31,6 +32,35 @@ jobs:
               - 'qiko-core/**'
             frontend:
               - 'frontend/**'
+            compose:
+              - 'docker-compose*.yml'
+              - '.env*.example'
+              - 'qiko-core/Dockerfile'
+              - '.github/deploy/**'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/deploy-preprod.yml'
+              - '.github/workflows/deploy-live.yml'
+
+  compose:
+    needs: changes
+    if: ${{ needs.changes.outputs.compose == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create non-secret Compose environment fixture
+        run: |
+          umask 077
+          printf '%s\n' \
+            'POSTGRES_USER=qiko' \
+            'POSTGRES_PASSWORD=ci-placeholder' \
+            'POSTGRES_DB=qiko' \
+            'SESSION_SECRET=ci-placeholder-not-a-secret' > .env
+          chmod 600 .env
+      - run: docker compose -f docker-compose.yml -f docker-compose.preprod.yml config --quiet
+      - run: docker compose -f docker-compose.yml -f docker-compose.live.yml config --quiet
+      - run: bash -n .github/deploy/redeploy-preprod.sh .github/deploy/redeploy-live.sh
+      - run: docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile
+      - run: docker run --rm -v "$PWD/Caddyfile.live:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile
 
   backend:
     needs: changes
@@ -44,10 +74,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
-      - run: pip install -e ".[dev]"
-      - run: ruff check .
-      - run: pytest   # enforces --cov-fail-under=80 from pyproject.toml
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.23"
+          enable-cache: true
+          cache-dependency-glob: qiko-core/uv.lock
+      - run: uv sync --frozen --extra dev
+      - run: uv run ruff check .
+      - run: uv run pytest   # enforces --cov-fail-under=80 from pyproject.toml
 
   frontend:
     needs: changes

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from app.modules.agents.service import Agent
 from app.modules.notifications.models import (
     InMemoryNotificationStore,
     TYPE_DEADLINE_REMINDER,
@@ -26,7 +27,12 @@ def _now() -> datetime:
 def _build() -> tuple[OpportunityService, InMemoryNotificationStore]:
     inbox = InMemoryNotificationStore()
     notifier = SalesNotificationService(notifications=NotificationService(store=inbox))
-    svc = OpportunityService(scan_interval_minutes=1, notifier=notifier)
+
+    class Agents:
+        async def get(self, tenant: str, agent_id: str):
+            return Agent(id=agent_id, tenant=tenant, name="Sales", enabled=True)
+
+    svc = OpportunityService(scan_interval_minutes=1, notifier=notifier, agents=Agents())
     return svc, inbox
 
 
@@ -159,7 +165,7 @@ async def test_deadline_reminder_fires_once_for_approaching_opp():
     svc, inbox = _build()
     await _add_opp(svc, deadline_days=2)
 
-    summary = await scheduler.send_deadline_reminders(svc)
+    summary = await scheduler.send_deadline_reminders(svc, agents=svc.agents)
 
     assert summary["reminded"] == 1 and summary["considered"] == 1 and summary["deduped"] == 0
     assert len(_notifications_of_type(inbox, TYPE_DEADLINE_REMINDER)) == 1
@@ -169,8 +175,8 @@ async def test_deadline_reminder_not_sent_twice_same_day():
     svc, inbox = _build()
     await _add_opp(svc, deadline_days=2)
 
-    first = await scheduler.send_deadline_reminders(svc)
-    second = await scheduler.send_deadline_reminders(svc)
+    first = await scheduler.send_deadline_reminders(svc, agents=svc.agents)
+    second = await scheduler.send_deadline_reminders(svc, agents=svc.agents)
 
     assert first["reminded"] == 1
     assert second["reminded"] == 0 and second["deduped"] == 1
@@ -186,7 +192,7 @@ async def test_deadline_reminder_skips_far_off_and_terminal_and_no_deadline():
                               stage="qualified", deadline_at=None)
     await svc.opportunities.add(no_deadline)
 
-    summary = await scheduler.send_deadline_reminders(svc)
+    summary = await scheduler.send_deadline_reminders(svc, agents=svc.agents)
 
     assert summary["reminded"] == 0 and summary["considered"] == 0
     assert _notifications_of_type(inbox, TYPE_DEADLINE_REMINDER) == []
@@ -194,5 +200,5 @@ async def test_deadline_reminder_skips_far_off_and_terminal_and_no_deadline():
 
 async def test_deadline_reminder_no_opportunities_is_clean():
     svc, _ = _build()
-    summary = await scheduler.send_deadline_reminders(svc)
+    summary = await scheduler.send_deadline_reminders(svc, agents=svc.agents)
     assert summary == {"with_deadline": 0, "considered": 0, "reminded": 0, "deduped": 0, "skipped": 0}

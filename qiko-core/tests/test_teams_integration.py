@@ -1,8 +1,18 @@
 """Microsoft Teams Integration: connect/disconnect a per-tenant Incoming Webhook, send a test
 notification, and the real trigger wired into RFP outcome recording (Win/Loss Analysis)."""
+import asyncio
+
+from app.modules.agents.service import Agent
+
 from tests.helpers import auth_cookies
 
 C = auth_cookies("teamsco", "owner")
+
+
+def _seed_worker(client, tenant: str, worker_id: str = "w1") -> None:
+    if asyncio.run(client.app.state.agents.get(tenant, worker_id)) is None:
+        asyncio.run(client.app.state.agents.store.add(
+            Agent(id=worker_id, tenant=tenant, name="Worker")))
 
 
 class _FakeGateway:
@@ -25,6 +35,7 @@ def test_webhook_status_defaults_to_disconnected(client):
 
 
 def test_webhook_connect_disconnect_and_test(client):
+    _seed_worker(client, "teamsco")
     fake = _FakeGateway()
     client.app.state.teams_notifier.gateway = fake
 
@@ -35,7 +46,7 @@ def test_webhook_connect_disconnect_and_test(client):
     status = client.get("/api/v1/channels/teams/webhook", cookies=C).json()
     assert status["connected"] is True and status["connected_at"]
 
-    test = client.post("/api/v1/channels/teams/test", cookies=C)
+    test = client.post("/api/v1/channels/teams/test", json={"worker": "w1"}, cookies=C)
     assert test.status_code == 200 and test.json()["sent"] is True
     assert fake.sent and fake.sent[0][0] == "https://outlook.office.com/webhook/abc"
 
@@ -78,15 +89,19 @@ def test_webhook_connect_accepts_teams_workflow_host(client):
 
 
 def test_webhook_test_without_a_connection_404s_as_422(client):
-    r = client.post("/api/v1/channels/teams/test", cookies=auth_cookies("teamsco2", "owner"))
+    _seed_worker(client, "teamsco2", "w2")
+    r = client.post(
+        "/api/v1/channels/teams/test", json={"worker": "w2"},
+        cookies=auth_cookies("teamsco2", "owner"))
     assert r.status_code == 422
 
 
 def test_webhook_test_surfaces_gateway_failure_as_502(client):
+    _seed_worker(client, "teamsco")
     client.app.state.teams_notifier.gateway = _FailingGateway()
     client.put("/api/v1/channels/teams/webhook",
               json={"webhook_url": "https://outlook.office.com/webhook/xyz"}, cookies=C)
-    r = client.post("/api/v1/channels/teams/test", cookies=C)
+    r = client.post("/api/v1/channels/teams/test", json={"worker": "w1"}, cookies=C)
     assert r.status_code == 502
 
 
@@ -95,7 +110,7 @@ def test_webhook_writes_require_editor_role(client):
     assert client.put("/api/v1/channels/teams/webhook", json={"webhook_url": "https://x.example"},
                       cookies=viewer).status_code == 403
     assert client.delete("/api/v1/channels/teams/webhook", cookies=viewer).status_code == 403
-    assert client.post("/api/v1/channels/teams/test", cookies=viewer).status_code == 403
+    assert client.post("/api/v1/channels/teams/test", json={"worker": "w1"}, cookies=viewer).status_code == 403
 
 
 def test_webhook_is_tenant_scoped(client):
@@ -110,6 +125,8 @@ def test_webhook_is_tenant_scoped(client):
 def test_recording_a_tender_outcome_notifies_teams(client):
     fake = _FakeGateway()
     client.app.state.teams_notifier.gateway = fake
+    asyncio.run(client.app.state.agents.store.add(
+        Agent(id="w1", tenant="teamswl", name="Worker")))
     c = auth_cookies("teamswl", "owner")
     client.put("/api/v1/channels/teams/webhook",
               json={"webhook_url": "https://outlook.office.com/webhook/wl"}, cookies=c)
@@ -126,6 +143,8 @@ def test_recording_a_tender_outcome_notifies_teams(client):
 
 def test_recording_outcome_without_teams_connected_still_succeeds(client):
     # notify() is best-effort -- no webhook configured must never break the actual outcome write.
+    asyncio.run(client.app.state.agents.store.add(
+        Agent(id="w1", tenant="teamswl2", name="Worker")))
     c = auth_cookies("teamswl2", "owner")
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "T"}, cookies=c).json()
     r = client.put(f"/api/v1/rfp/packs/{pack['id']}/outcome", json={"outcome": "won"}, cookies=c)

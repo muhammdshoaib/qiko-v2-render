@@ -2,6 +2,7 @@
 this way, so shipping a new client worker is a config, not a new service."""
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from app.modules.agentcore.generator import Generator
@@ -10,6 +11,12 @@ from app.modules.agentcore.runtime import AgentCore
 from app.modules.knowledge.models import Passage
 from app.modules.knowledge.service import KnowledgeService
 from app.modules.workers.config import WorkerConfig
+
+WorkerRecheck = Callable[[], Awaitable[None]]
+
+
+class StubProviderUnavailable(Exception):
+    pass
 
 
 # Citations must be short SOURCE LABELS a UI can enumerate as "N Sources", never the raw passage
@@ -42,16 +49,32 @@ class Worker:
     async def ingest(self, doc_id: str, text: str) -> int:
         return await self.knowledge.ingest(self.config.tenant, doc_id, text)
 
-    async def answer(self, requirement_id: str, requirement_text: str, *, topic: str | None = None) -> AgentResult:
-        passages = await self.knowledge.retrieve(self.config.tenant, requirement_text, k=self.config.retrieval_k)
+    async def answer(self, requirement_id: str, requirement_text: str, *,
+                     topic: str | None = None,
+                     additional_context: list[str] | None = None,
+                     recheck_worker: WorkerRecheck | None = None) -> AgentResult:
+        if recheck_worker is not None:
+            await recheck_worker()
+        passages = await self.knowledge.retrieve(
+            self.config.tenant, requirement_text, k=self.config.retrieval_k)
+        if recheck_worker is not None:
+            await recheck_worker()
         req = Requirement(id=requirement_id, text=requirement_text,
-                          context=[p.text for p in passages], topic=topic,
-                          sources=source_labels(passages))
-        return await self.agent.run(req, tenant=self.config.tenant)
+                          context=[p.text for p in passages] + list(additional_context or []),
+                          topic=topic, sources=source_labels(passages))
+        result = await self.agent.run(
+            req, tenant=self.config.tenant, recheck_worker=recheck_worker)
+        if result.stub and recheck_worker is not None:
+            raise StubProviderUnavailable
+        return result
 
-    async def approve(self, requirement_id: str, approved_text: str, *, topic: str | None = None) -> None:
+    async def approve(self, requirement_id: str, approved_text: str, *,
+                      topic: str | None = None, agent_id: str | None = None,
+                      recheck_worker: WorkerRecheck | None = None) -> None:
         req = Requirement(id=requirement_id, text="", topic=topic)
-        await self.agent.record_feedback(req, tenant=self.config.tenant, approved_text=approved_text)
+        await self.agent.record_feedback(
+            req, tenant=self.config.tenant, approved_text=approved_text,
+            agent_id=agent_id, recheck_worker=recheck_worker)
 
 
 def build_worker(config: WorkerConfig, *, provider=None, embeddings=None) -> Worker:

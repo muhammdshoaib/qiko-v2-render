@@ -7,10 +7,8 @@ import { ArrowRight, Brain, Lightbulb, Plus, Sparkles, Star } from "lucide-react
 import { Badge, Button, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import { WorkerAvatar } from "@/components/worker-avatar";
-import { createAgent, listAgents } from "@/lib/api";
+import { createAgent, getAgentUsage, listAgents } from "@/lib/api";
 import { workerTypeLabel } from "@/lib/stringUtils";
-
-const WORKER_LIMIT = 3; // matches the qiko-frontend free-plan default
 
 // Shared cockpit card surface (matches components/cockpit/* + outcomes-strip).
 const CARD = "rounded-2xl border border-white/[0.06] bg-white/[0.015]";
@@ -53,15 +51,26 @@ export default function DashboardPage() {
   const [name, setName] = useState("");
   const [atype, setAtype] = useState<"worker" | "pre_sales_writer" | "sales_intelligence" | "finance">("worker");
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
+  const usage = useQuery({ queryKey: ["agent-usage"], queryFn: getAgentUsage });
   const workers = agents.data ?? [];
   const readyWorkers = workers.filter((a) => a.status === "ready");
   const trainingWorkers = workers.filter((a) => a.status !== "ready");
   const industries = useMemo(() => new Set(workers.map((a) => workerTypeLabel(a.atype))).size, [workers]);
-  const atLimit = workers.length >= WORKER_LIMIT;
+  const workerLimit = usage.data?.worker_limit;
+  const usedCount = usage.data?.used_count;
+  const unlimited = workerLimit === -1;
+  const atLimit = workerLimit !== undefined && !unlimited && (usedCount ?? 0) >= workerLimit;
+  const creationBlocked = usage.isLoading || usage.isError || atLimit;
 
   const create = useMutation({
     mutationFn: () => createAgent(name, atype),
-    onSuccess: () => { setName(""); setAtype("worker"); setCreating(false); qc.invalidateQueries({ queryKey: ["agents"] }); },
+    onSuccess: () => {
+      setName("");
+      setAtype("worker");
+      setCreating(false);
+      qc.invalidateQueries({ queryKey: ["agents"] });
+      qc.invalidateQueries({ queryKey: ["agent-usage"] });
+    },
   });
 
   const insights = useMemo(() => {
@@ -76,9 +85,14 @@ export default function DashboardPage() {
       list.push({ title: `${trainingWorkers.length} worker${trainingWorkers.length === 1 ? "" : "s"} still training`, body: "Finish training so they can go live and start handling conversations." });
     }
     const pct = Math.round((readyWorkers.length / workers.length) * 100);
-    list.push({ title: `${pct}% of workers are ready`, body: `${Math.max(WORKER_LIMIT - workers.length, 0)} slots left on your current plan.` });
+    const slots = unlimited
+      ? "Unlimited worker slots on your current plan."
+      : usage.data
+        ? `${Math.max(usage.data.worker_limit - usage.data.used_count, 0)} slots left on your current plan.`
+        : "Plan usage is still being verified.";
+    list.push({ title: `${pct}% of workers are ready`, body: slots });
     return list;
-  }, [workers, readyWorkers, trainingWorkers]);
+  }, [workers, readyWorkers, trainingWorkers, unlimited, usage.data]);
 
   return (
     <AppShell title="Dashboard">
@@ -92,6 +106,27 @@ export default function DashboardPage() {
               <h1 className="text-2xl font-bold text-white">Command Center</h1>
               <p className="text-sm text-slate-400">Your AI workforce at a glance</p>
             </div>
+          </div>
+
+          <div
+            id="dashboard-worker-usage"
+            role={usage.isError ? "alert" : "status"}
+            aria-live={usage.isError ? "assertive" : "polite"}
+            aria-busy={usage.isLoading}
+            className="mb-6 rounded-xl border border-white/[0.06] bg-white/[0.02] px-4 py-3 text-sm text-slate-300"
+          >
+            {usage.isLoading ? (
+              <span>Checking plan usage...</span>
+            ) : usage.isError ? (
+              <span>
+                Plan usage unavailable. Worker creation is paused. {" "}
+                <button className="font-medium text-cyan-300 underline" onClick={() => usage.refetch()}>Retry</button>
+              </span>
+            ) : unlimited ? (
+              <span>{usedCount ?? 0} worker slots used · Unlimited plan</span>
+            ) : (
+              <span>{usedCount ?? 0} of {workerLimit ?? 0} worker slots used{atLimit ? ". Limit reached." : "."}</span>
+            )}
           </div>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -193,7 +228,7 @@ export default function DashboardPage() {
                       ))}
                     </div>
                     <div className="flex gap-2">
-                      <Button className="flex-1 bg-gradient-to-r from-violet-500 to-cyan-400 text-white hover:opacity-90" disabled={atLimit || !name || create.isPending} onClick={() => create.mutate()}>
+                      <Button className="flex-1 bg-gradient-to-r from-violet-500 to-cyan-400 text-white hover:opacity-90" disabled={creationBlocked || !name || create.isPending} aria-describedby="dashboard-worker-usage" onClick={() => create.mutate()}>
                         <Plus className="size-4" /> Create
                       </Button>
                       <Button variant="outline" onClick={() => { setCreating(false); setName(""); }}>Cancel</Button>
@@ -201,7 +236,7 @@ export default function DashboardPage() {
                     {create.isError && <p className="text-xs text-destructive">Plan limit reached or not permitted.</p>}
                   </div>
                 ) : (
-                  <button onClick={() => setCreating(true)} disabled={atLimit}
+                  <button onClick={() => setCreating(true)} disabled={creationBlocked} aria-describedby="dashboard-worker-usage"
                     className="group w-full rounded-2xl border border-dashed border-white/10 p-4 transition-colors hover:border-cyan-500/50 hover:bg-cyan-500/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 disabled:opacity-50">
                     <div className="flex items-center justify-center gap-2">
                       <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-white/5 transition-colors group-hover:bg-cyan-500/20">

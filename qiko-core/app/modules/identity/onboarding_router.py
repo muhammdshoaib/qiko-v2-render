@@ -3,17 +3,29 @@ from __future__ import annotations
 
 import logging
 import uuid
+from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import Settings, get_settings
 from app.core.deps import get_otp_store, get_pending_invites, get_teams
 from app.modules.email.sender import EmailSender, get_email_sender
 from app.modules.email.templates import password_reset_code_email, welcome_email
-from app.modules.identity.onboarding import signup as bootstrap_signup
+from app.modules.consent.models import (
+    COOKIES_RELEASE_ID,
+    PRIVACY_RELEASE_ID,
+    TERMS_RELEASE_ID,
+    ConsentChoices,
+)
+from app.modules.consent.service import ConsentService
+from app.modules.identity.pending_signup import (
+    SIGNUP_VERIFICATION_TTL_SECONDS,
+    PendingSignupStore,
+    make_pending_signup,
+)
 from app.modules.identity.rbac import Role
 from app.modules.identity.router import get_store
 from app.modules.identity.security import hash_password
@@ -26,26 +38,43 @@ logger = logging.getLogger(__name__)
 
 
 class SignupBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     # `tenant` remains accepted for backwards-compatible clients but is never trusted. Public signup
     # receives a server-generated tenant; invited signup derives membership from a signed token.
     tenant: str | None = None
     email: str = Field(min_length=3)
     password: str = Field(min_length=8)
     invite_token: str | None = None
+    accept_policies: Literal[True]
+    terms_release_id: Literal["terms-2026-07-24"]
+    privacy_release_id: Literal["privacy-2026-07-24"]
+    cookies_release_id: Literal["cookies-2026-07-24"]
 
 
-@router.post("/signup")
+def get_pending_signups(request: Request) -> PendingSignupStore:
+    return request.app.state.pending_signups
+
+
+def get_signup_consent(request: Request) -> ConsentService:
+    return request.app.state.consent
+
+
+@router.post("/signup", status_code=202)
 async def signup(
     body: SignupBody,
     store: UserStore = Depends(get_store),
-    teams=Depends(get_teams),
-    pending: PendingInviteStore = Depends(get_pending_invites),
+    pending_invites: PendingInviteStore = Depends(get_pending_invites),
+    pending_signups: PendingSignupStore = Depends(get_pending_signups),
     email_sender: EmailSender = Depends(get_email_sender),
     settings: Settings = Depends(get_settings),
 ) -> dict:
     email = body.email.strip().lower()
-    uid = uuid.uuid4().hex[:12]
-    team_id: str | None = None
+    if await store.get_by_email(email) is not None:
+        raise HTTPException(status_code=409, detail="an account with that email already exists")
+
+    role = Role.owner
+    invite_version: int | None = None
     if body.invite_token:
         try:
             claims = decode_token(body.invite_token, expected_type="team_invite")
@@ -57,47 +86,164 @@ async def signup(
             raise HTTPException(status_code=400, detail="invalid or expired invitation") from exc
         if email != invited_email or role not in ASSIGNABLE_ROLES:
             raise HTTPException(status_code=400, detail="invitation does not match this account")
-        invite = await pending.get(tenant, email)
+        invite = await pending_invites.get(tenant, email)
         if (invite is None or invite.role != role
                 or int(invite.invited_at * 1_000_000) != invite_version):
             raise HTTPException(status_code=400, detail="invitation is no longer pending")
-        if await store.get_by_email(email) is not None:
-            raise HTTPException(status_code=409, detail="an account with that email already exists")
-        await store.add(User(id=uid, email=email, password_hash=hash_password(body.password),
-                             tenant=tenant, role=role))
-        await pending.remove(tenant, email)
-        rec = {"email": email}
     else:
-        # A public caller must never select an existing tenant and grant itself Owner access. New
-        # public signups always receive a server-generated isolated tenant.
+        # Public callers cannot choose an existing tenant or grant themselves access to it.
         tenant = f"org-{uuid.uuid4().hex[:12]}"
-        rec = await bootstrap_signup(teams, tenant, email, body.password)
-        team_id = rec["team_id"]
-        await store.add(User(id=uid, email=rec["email"], password_hash=rec["password_hash"],
-                             tenant=tenant, role=Role.owner))
+
+    candidate, code = make_pending_signup(
+        user_id=uuid.uuid4().hex[:12],
+        email=email,
+        password_hash="",
+        tenant=tenant,
+        role=role,
+        terms_release_id=body.terms_release_id,
+        privacy_release_id=body.privacy_release_id,
+        cookies_release_id=body.cookies_release_id,
+        invite_version=invite_version,
+    )
+    created = await pending_signups.put(candidate)
+    if not created:
+        return {"verification_required": True, "email": email,
+                "expires_in": SIGNUP_VERIFICATION_TTL_SECONDS}
+
+    verify_url = f"{settings.public_base_url.rstrip('/')}/verify-email?email={quote(email, safe='')}"
+    text_body = (
+        f"Your Qiko verification code is {code}.\n\n"
+        f"Enter this one-time code at {verify_url}. It expires in 10 minutes."
+    )
+    html_body = (
+        "<p>Your Qiko verification code is:</p>"
+        f"<p><strong>{code}</strong></p>"
+        f'<p>Enter it at <a href="{verify_url}">Verify email</a>. It expires in 10 minutes.</p>'
+    )
+    try:
+        sent = await run_in_threadpool(
+            email_sender.send,
+            to=email,
+            subject="Verify your Qiko email",
+            body=text_body,
+            html=html_body,
+        )
+    except Exception as exc:
+        await pending_signups.delete(email)
+        logger.warning("transactional_email_failed", extra={"flow": "signup_verification"})
+        raise HTTPException(status_code=503, detail="verification email could not be sent") from exc
+    if not sent:
+        await pending_signups.delete(email)
+        logger.warning("transactional_email_failed", extra={"flow": "signup_verification"})
+        raise HTTPException(status_code=503, detail="verification email could not be sent")
+
+    response = {
+        "verification_required": True,
+        "email": email,
+        "expires_in": SIGNUP_VERIFICATION_TTL_SECONDS,
+    }
+    if settings.debug and settings.email_backend == "console":
+        response["verification_code"] = code
+    return response
+
+
+class VerifySignupBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(min_length=3)
+    code: str = Field(pattern=r"^\d{6}$")
+    password: str = Field(min_length=8, max_length=256)
+    accept_policies: Literal[True]
+    terms_release_id: Literal[TERMS_RELEASE_ID]
+    privacy_release_id: Literal[PRIVACY_RELEASE_ID]
+    cookies_release_id: Literal[COOKIES_RELEASE_ID]
+
+
+@router.post("/verify-email")
+async def verify_signup(
+    body: VerifySignupBody,
+    store: UserStore = Depends(get_store),
+    teams=Depends(get_teams),
+    pending_invites: PendingInviteStore = Depends(get_pending_invites),
+    pending_signups: PendingSignupStore = Depends(get_pending_signups),
+    consent: ConsentService = Depends(get_signup_consent),
+    email_sender: EmailSender = Depends(get_email_sender),
+    settings: Settings = Depends(get_settings),
+) -> dict:
+    email = body.email.strip().lower()
+    finalize_signup = getattr(pending_signups, "finalize_signup", None)
+    if finalize_signup is not None:
+        finalized = await finalize_signup(
+            email, body.code, hash_password(body.password), body.terms_release_id,
+            body.privacy_release_id, body.cookies_release_id)
+        if finalized is None:
+            raise HTTPException(status_code=400, detail="invalid or expired verification code")
+        candidate, created = finalized
+        if created:
+            login_url = f"{settings.public_base_url.rstrip('/')}/login"
+            subject, text_body, html_body = welcome_email(login_url=login_url)
+            try:
+                await run_in_threadpool(email_sender.send, to=email, subject=subject, body=text_body, html=html_body)
+            except Exception:
+                logger.warning("transactional_email_failed", extra={"flow": "signup_welcome"})
+        return {"user_id": candidate.user_id, "email": email, "team_id": candidate.completed_team_id}
+
+    candidate = await pending_signups.consume(email, body.code)
+    if candidate is None:
+        raise HTTPException(status_code=400, detail="invalid or expired verification code")
+    if await store.get_by_email(email) is not None:
+        raise HTTPException(status_code=409, detail="an account with that email already exists")
+
+    if candidate.invite_version is not None:
+        invite = await pending_invites.get(candidate.tenant, email)
+        if (invite is None or invite.role != candidate.role
+                or int(invite.invited_at * 1_000_000) != candidate.invite_version):
+            raise HTTPException(status_code=400, detail="invitation is no longer pending")
+
+    # Legal evidence must commit before a login-capable User is created.
+    await consent.record(
+        namespace="user",
+        identifier=candidate.user_id,
+        choices=ConsentChoices(preferences=False, analytics=False, marketing=False),
+        source="signup",
+        decision_id=f"signup:{candidate.user_id}",
+        terms_release_id=body.terms_release_id,
+        privacy_release_id=body.privacy_release_id,
+        cookies_release_id=body.cookies_release_id,
+    )
+
+    team_id: str | None = None
+    if candidate.invite_version is None:
+        team = await teams.create_team(candidate.tenant, email)
+        team_id = team.id
+    await store.add(User(
+        id=candidate.user_id,
+        email=email,
+        password_hash=hash_password(body.password),
+        tenant=candidate.tenant,
+        role=candidate.role,
+    ))
+    if candidate.invite_version is not None:
+        await pending_invites.remove(candidate.tenant, email)
+    await pending_signups.delete(email)
+
     login_url = f"{settings.public_base_url.rstrip('/')}/login"
     subject, text_body, html_body = welcome_email(login_url=login_url)
     try:
         sent = await run_in_threadpool(
             email_sender.send,
-            to=rec["email"],
+            to=email,
             subject=subject,
             body=text_body,
             html=html_body,
         )
-    except Exception as exc:
-        logger.warning("transactional_email_failed", extra={"flow": "welcome", "tenant": tenant})
-        raise HTTPException(
-            status_code=503,
-            detail="account created, but the welcome email could not be sent",
-        ) from exc
-    if not sent:
-        logger.warning("transactional_email_failed", extra={"flow": "welcome", "tenant": tenant})
-        raise HTTPException(
-            status_code=503,
-            detail="account created, but the welcome email could not be sent",
-        )
-    return {"user_id": uid, "email": rec["email"], "team_id": team_id}
+        if not sent:
+            logger.warning("transactional_email_failed", extra={"flow": "welcome", "tenant": candidate.tenant})
+    except Exception:
+        # Verification already succeeded and its code is consumed. Do not report a retryable failure
+        # after creating the account, because a retry cannot reuse the one-time code.
+        logger.warning("transactional_email_failed", extra={"flow": "welcome", "tenant": candidate.tenant})
+    return {"user_id": candidate.user_id, "email": email, "team_id": team_id}
 
 
 class ForgotBody(BaseModel):

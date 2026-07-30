@@ -1,28 +1,41 @@
 "use client";
 
+import { useEffect, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Users, BarChart3, Receipt, ShieldCheck, LogOut } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { LayoutDashboard, Users, BarChart3, Receipt, ShieldCheck, LogOut, Menu, X, UserCog, CreditCard } from "lucide-react";
 import { Button, Logo, cn } from "@qiko/ui";
 import { logout } from "@/lib/api";
 
 const NAV = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
   { href: "/customers", label: "Customers", icon: Users },
+  { href: "/subscriptions", label: "Subscriptions", icon: CreditCard },
   { href: "/invoices", label: "Invoices", icon: Receipt },
+  { href: "/admins", label: "Platform Admins", icon: UserCog },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/security", label: "Security", icon: ShieldCheck },
 ];
 
 export function AppShell({ title, children }: { title: string; children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
+  const queryClient = useQueryClient();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const mobileDialog = useRef<HTMLDialogElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (mobileOpen) mobileDialog.current?.showModal();
+    else if (mobileDialog.current?.open) mobileDialog.current.close();
+  }, [mobileOpen]);
 
   async function onLogout() {
     try {
       await logout();
     } finally {
-      router.push("/login");
+      queryClient.clear();
+      window.location.assign("/login");
     }
   }
 
@@ -52,8 +65,25 @@ export function AppShell({ title, children }: { title: string; children: React.R
           </Button>
         </div>
       </aside>
+      <dialog
+        ref={mobileDialog}
+        aria-labelledby="mobile-nav-title"
+        onClose={() => { setMobileOpen(false); requestAnimationFrame(() => menuButton.current?.focus()); }}
+        className="m-0 h-dvh w-72 max-w-[85vw] border-0 bg-sidebar p-4 text-sidebar-foreground shadow-2xl backdrop:bg-black/60 md:hidden"
+      >
+        <div className="flex h-full flex-col">
+          <div className="mb-4 flex items-center justify-between"><div><Logo /><span id="mobile-nav-title" className="sr-only">Admin navigation</span></div><Button variant="ghost" size="icon" autoFocus onClick={() => mobileDialog.current?.close()} aria-label="Close menu"><X className="size-5" /></Button></div>
+          <nav className="flex flex-col gap-1" aria-label="Admin mobile navigation">
+            {NAV.map(({ href, label, icon: Icon }) => (
+              <Link key={href} href={href} onClick={() => mobileDialog.current?.close()} className={cn("flex min-h-11 items-center gap-2 rounded-md p-2 text-sm", pathname.startsWith(href) ? "bg-sidebar-accent font-medium" : "text-sidebar-foreground/70")}><Icon className="size-4" />{label}</Link>
+            ))}
+          </nav>
+          <Button variant="ghost" className="mt-auto min-h-11 justify-start" onClick={onLogout}><LogOut className="size-4" /> Sign out</Button>
+        </div>
+      </dialog>
       <div className="flex flex-col">
-        <header className="flex h-14 items-center border-b border-sidebar-border px-6">
+        <header className="flex h-14 items-center gap-3 border-b border-sidebar-border px-4 sm:px-6">
+          <button ref={menuButton} type="button" className="inline-flex size-10 items-center justify-center rounded-md hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu className="size-5" /></button>
           <h1 className="text-sm font-semibold">{title}</h1>
         </header>
         <main className="flex-1 overflow-y-auto p-6">{children}</main>

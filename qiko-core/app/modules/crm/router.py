@@ -2,15 +2,31 @@
 one worker's industry/vertical."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.core.deps import authed_tenant, get_agents, get_crm, require_role
+from app.core.deps import authed_tenant, get_agents, get_crm, require_role, resolve_tenant_worker
 from app.modules.ai.gateway import get_provider
 from app.modules.crm.service import CrmError
 from app.modules.identity.rbac import Role
 
 router = APIRouter(prefix="/crm", tags=["crm"])
+
+
+async def _contact_guard(request: Request, tenant: str, contact_id: str, svc):
+    contact = await svc.contacts.get(tenant, contact_id)
+    if contact is None:
+        raise HTTPException(status_code=404, detail="contact not found")
+    _worker, recheck = await resolve_tenant_worker(request, tenant, contact.agent_id)
+    return contact, recheck
+
+
+async def _action_guard(request: Request, tenant: str, action_id: str, svc):
+    action = await svc.get_action(tenant, action_id)
+    if action is None:
+        raise HTTPException(status_code=404, detail="action not found")
+    contact, recheck = await _contact_guard(request, tenant, action.contact_id, svc)
+    return action, contact, recheck
 
 
 def _contact_out(c) -> dict:
@@ -62,24 +78,31 @@ class UpdateContactBody(BaseModel):
 
 
 @router.patch("/contacts/{contact_id}")
-async def update_contact(contact_id: str, body: UpdateContactBody, tenant: str = Depends(authed_tenant),
+async def update_contact(contact_id: str, body: UpdateContactBody, request: Request,
+                         tenant: str = Depends(authed_tenant),
                          _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_crm)) -> dict:
+    _contact, recheck = await _contact_guard(request, tenant, contact_id, svc)
     try:
         contact = await svc.update_contact(tenant, contact_id, name=body.name, email=body.email,
                                            phone=body.phone, status=body.status,
                                            estimated_value=body.estimated_value)
     except CrmError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    await recheck()
     return _contact_out(contact)
 
 
 @router.post("/contacts/{contact_id}/summary")
-async def generate_summary(contact_id: str, tenant: str = Depends(authed_tenant),
+async def generate_summary(contact_id: str, request: Request,
+                           tenant: str = Depends(authed_tenant),
                            _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_crm)) -> dict:
+    _contact, recheck = await _contact_guard(request, tenant, contact_id, svc)
     try:
-        contact = await svc.generate_summary(tenant, contact_id, get_provider())
+        contact = await svc.generate_summary(
+            tenant, contact_id, get_provider(), recheck_worker=recheck)
     except CrmError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    await recheck()
     return _contact_out(contact)
 
 
@@ -91,13 +114,16 @@ class AddActionBody(BaseModel):
 
 
 @router.post("/contacts/{contact_id}/actions")
-async def add_action(contact_id: str, body: AddActionBody, tenant: str = Depends(authed_tenant),
+async def add_action(contact_id: str, body: AddActionBody, request: Request,
+                     tenant: str = Depends(authed_tenant),
                      _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_crm)) -> dict:
+    _contact, recheck = await _contact_guard(request, tenant, contact_id, svc)
     try:
         action = await svc.add_action(tenant, contact_id, title=body.title, action_type=body.action_type,
                                       description=body.description, priority=body.priority)
     except CrmError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+    await recheck()
     return _action_out(action)
 
 
@@ -106,17 +132,21 @@ class UpdateActionBody(BaseModel):
 
 
 @router.patch("/actions/{action_id}")
-async def update_action(action_id: str, body: UpdateActionBody, tenant: str = Depends(authed_tenant),
+async def update_action(action_id: str, body: UpdateActionBody, request: Request,
+                        tenant: str = Depends(authed_tenant),
                         _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_crm)) -> dict:
+    _action, _contact, recheck = await _action_guard(request, tenant, action_id, svc)
     try:
         action = await svc.update_action_status(tenant, action_id, body.status)
     except CrmError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    await recheck()
     return _action_out(action)
 
 
 @router.post("/contacts/{contact_id}/sync-salesforce")
-async def sync_to_salesforce(contact_id: str, tenant: str = Depends(authed_tenant),
+async def sync_to_salesforce(contact_id: str, request: Request,
+                             tenant: str = Depends(authed_tenant),
                              _role: dict = Depends(require_role(Role.editor)),
                              svc=Depends(get_crm), agents=Depends(get_agents)) -> dict:
     """Push a pipeline contact to Salesforce as a Lead, using whichever worker (agent) this
@@ -132,6 +162,7 @@ async def sync_to_salesforce(contact_id: str, tenant: str = Depends(authed_tenan
     except CrmError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     contact = detail["contact"]
+    _persisted, recheck = await _contact_guard(request, tenant, contact_id, svc)
 
     agent = await agents.get(tenant, contact.agent_id)
     if agent is None:
@@ -144,9 +175,14 @@ async def sync_to_salesforce(contact_id: str, tenant: str = Depends(authed_tenan
                               client_secret=decrypt(cfg["salesforce_client_secret_encrypted"]),
                               instance_url=cfg["salesforce_instance_url"])
     try:
-        result = await asyncio.to_thread(client.create_lead, last_name=contact.name or "Unknown",
-                                         company=f"{contact.name or 'Unknown'} (via {agent.name})",
-                                         email=contact.email, phone=contact.phone, description=contact.ai_summary)
+        try:
+            result = await asyncio.to_thread(
+                client.create_lead, last_name=contact.name or "Unknown",
+                company=f"{contact.name or 'Unknown'} (via {agent.name})",
+                email=contact.email, phone=contact.phone,
+                description=contact.ai_summary)
+        finally:
+            await recheck()
     except SalesforceAuthError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     return {"synced": True, "salesforce_id": result.get("id")}

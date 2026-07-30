@@ -1,11 +1,18 @@
 import io
 
-from tests.helpers import auth_cookies
+import pytest
+
+from tests.helpers import auth_cookies, autoseed_rfp_pack_workers
 
 ISO = "IDG holds a current ISO 9001 certification valid through 2027, verified annually."
 
 
 DRAFT_ANSWER = "IDG holds a current ISO 9001 certification, drafted and reviewed in the cockpit."
+
+
+@pytest.fixture(autouse=True)
+def _seed_pack_workers(client, monkeypatch):
+    autoseed_rfp_pack_workers(client, monkeypatch)
 
 
 def _stub_worker():
@@ -21,6 +28,17 @@ def _stub_worker():
                                    decision=Decision.human_review, citations=[], stub=True)
         return _W()
     return _build
+
+
+def _strict_resolver(builder):
+    async def _resolve(*args, **kwargs):
+        worker = await builder(*args, **kwargs)
+
+        async def recheck():
+            return None
+
+        return worker, recheck
+    return _resolve
 
 
 def _drafting_worker(answer: str = DRAFT_ANSWER):
@@ -127,7 +145,7 @@ def test_answers_read_path_uses_tree_and_never_calls_generator(client, monkeypat
     # After FIX 1 the plain (non-force) /answers read is built entirely from the reviewed tree --
     # it must never build a worker or fire a fresh LLM draft, no matter how many times it is read.
     c, pack = _setup_pack_with_requirements(client, monkeypatch, "cacheco1")
-    monkeypatch.setattr("app.modules.rfp.router.build_tenant_worker", _fail_if_called_worker)
+    monkeypatch.setattr("app.modules.rfp.router.resolve_tenant_worker", _fail_if_called_worker)
 
     first = client.get(f"/api/v1/rfp/packs/{pack['id']}/answers", cookies=c)
     assert first.status_code == 200
@@ -176,7 +194,8 @@ def test_force_regenerate_raises_503_on_stub(client, monkeypatch):
     c, pack = _setup_pack_with_requirements(client, monkeypatch, "stubforce")
     pid = pack["id"]
     # Undrafted-worker style: worker.answer() reports stub=True on the regenerate path.
-    monkeypatch.setattr("app.modules.rfp.router.build_tenant_worker", _stub_worker())
+    monkeypatch.setattr(
+        "app.modules.rfp.router.resolve_tenant_worker", _strict_resolver(_stub_worker()))
 
     r = client.get(f"/api/v1/rfp/packs/{pid}/answers", params={"force": "true"}, cookies=c)
     assert r.status_code == 503
@@ -190,8 +209,9 @@ def test_force_regenerate_redrafts_the_tree(client, monkeypatch):
     # A working provider on force=true re-drafts the tree questions, and the read reflects it.
     c, pack = _setup_pack_with_requirements(client, monkeypatch, "regenco")
     pid = pack["id"]
-    monkeypatch.setattr("app.modules.rfp.router.build_tenant_worker",
-                        _drafting_worker("Regenerated grounded answer."))
+    monkeypatch.setattr(
+        "app.modules.rfp.router.resolve_tenant_worker",
+        _strict_resolver(_drafting_worker("Regenerated grounded answer.")))
 
     r = client.get(f"/api/v1/rfp/packs/{pid}/answers", params={"force": "true"}, cookies=c)
     assert r.status_code == 200

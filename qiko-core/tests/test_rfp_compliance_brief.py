@@ -7,9 +7,14 @@ from app.modules.ai.gateway import LLMResponse
 from app.modules.rfp.brief import BriefError, extract_brief
 from app.modules.rfp.compliance import ComplianceError, extract_compliance
 
-from tests.helpers import auth_cookies
+from tests.helpers import auth_cookies, autoseed_rfp_pack_workers
 
 TENDER_TEXT = "This tender requires bidders to submit a signed declaration confirming ISO 27001 compliance."
+
+
+@pytest.fixture(autouse=True)
+def _seed_pack_workers(client, monkeypatch):
+    autoseed_rfp_pack_workers(client, monkeypatch)
 
 COMPLIANCE_JSON = json.dumps([
     {"requirement": "Signed declaration confirming ISO 27001 compliance", "category": "Legal",

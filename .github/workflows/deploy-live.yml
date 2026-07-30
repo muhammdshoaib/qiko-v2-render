@@ -20,6 +20,14 @@ on:
         description: 'Type "deploy-live" to confirm a PRODUCTION deploy'
         required: true
         default: ""
+      release_sha:
+        description: 'Exact 40-character commit SHA already verified in preprod'
+        required: true
+        default: ""
+
+permissions:
+  contents: read
+  id-token: write
 
 concurrency:
   group: deploy-live
@@ -48,30 +56,43 @@ jobs:
           fi
 
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_sha }}
+          fetch-depth: 0
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.LIVE_DEPLOY_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Package code and upload to S3 (snapshot previous for rollback)
+      - name: Verify immutable release provenance
+        env:
+          RELEASE_SHA: ${{ inputs.release_sha }}
         run: |
           set -e
-          # Keep the currently-live artifact as the rollback target (no-op on the first deploy).
-          aws s3 cp "s3://$DEPLOY_BUCKET/live/deploy-latest.tar.gz" \
-            "s3://$DEPLOY_BUCKET/live/deploy-previous.tar.gz" || echo "no existing latest yet"
-          # Clean, tracked-files-only source archive (no .git / node_modules / untracked).
-          git archive --format=tar.gz -o /tmp/qiko-v2.tar.gz HEAD
-          aws s3 cp /tmp/qiko-v2.tar.gz "s3://$DEPLOY_BUCKET/live/deploy-${{ github.sha }}.tar.gz"
-          aws s3 cp /tmp/qiko-v2.tar.gz "s3://$DEPLOY_BUCKET/live/deploy-latest.tar.gz"
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::release_sha must be 40 lowercase hex characters"; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "$RELEASE_SHA" ]] || { echo "::error::checked out SHA mismatch"; exit 1; }
+          git fetch origin main
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main || { echo "::error::release SHA is not reachable from origin/main"; exit 1; }
+          PREPROD_SHA=$(aws ssm get-parameter --name /qiko/preprod/DEPLOYED_SHA --query Parameter.Value --output text)
+          [[ "$PREPROD_SHA" == "$RELEASE_SHA" ]] || { echo "::error::release SHA was not verified in preprod"; exit 1; }
+
+      - name: Package immutable code artifact and checksum
+        run: |
+          set -e
+          # Publish only the exact preprod-verified SHA and checksum.
+          git archive --format=tar.gz -o /tmp/qiko-v2.tar.gz "${{ inputs.release_sha }}"
+          sha256sum /tmp/qiko-v2.tar.gz | cut -d ' ' -f1 > /tmp/qiko-v2.tar.gz.sha256
+          aws s3 cp /tmp/qiko-v2.tar.gz "s3://$DEPLOY_BUCKET/live/deploy-${{ inputs.release_sha }}.tar.gz"
+          aws s3 cp /tmp/qiko-v2.tar.gz.sha256 "s3://$DEPLOY_BUCKET/live/deploy-${{ inputs.release_sha }}.tar.gz.sha256"
 
       - name: Deploy via SSM
         id: deploy
         run: |
           set -e
-          jq -Rs '{commands: [.]}' < .github/deploy/redeploy-live.sh > /tmp/redeploy.json
+          ARTIFACT_SHA256=$(cat /tmp/qiko-v2.tar.gz.sha256)
+          { head -n 1 .github/deploy/redeploy-live.sh; printf 'export RELEASE_SHA=%q RELEASE_SHA256=%q\n' '${{ inputs.release_sha }}' "$ARTIFACT_SHA256"; tail -n +2 .github/deploy/redeploy-live.sh; } | jq -Rs '{commands: [.]}' > /tmp/redeploy.json
           CMD_ID=$(aws ssm send-command --instance-ids "${{ secrets.LIVE_SSM_INSTANCE_ID }}" \
             --document-name AWS-RunShellScript \
             --parameters file:///tmp/redeploy.json \

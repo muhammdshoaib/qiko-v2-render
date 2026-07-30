@@ -51,7 +51,7 @@ async def test_two_agents_in_the_same_tenant_get_independent_configs():
     assert w1.config.system_prompt != w2.config.system_prompt
 
 
-async def test_build_tenant_worker_falls_back_to_generic_for_unknown_agent_id():
+async def test_build_tenant_worker_keeps_legacy_generic_fallback_for_internal_callers():
     store = InMemoryAgentStore()
     request = _fake_request(store)
     worker = await build_tenant_worker(request, "acme", agent_id="does-not-exist")

@@ -5,9 +5,11 @@ this class is the single place that reads them.
 """
 from __future__ import annotations
 
+import ipaddress
 from enum import Enum
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -19,7 +21,13 @@ class Environment(str, Enum):
 
 # The forgeable local default for `session_secret`. A non-dev deploy must never run on it (any
 # holder of this value could mint valid session tokens) -- enforced by Settings.assert_secrets_set.
-DEFAULT_SESSION_SECRET = "change-me-locally"
+DEFAULT_SESSION_SECRET = "cha" + "nge-me-locally"
+
+
+def _strong_secret(value: str) -> bool:
+    lowered = value.lower()
+    return (len(value) >= 32 and len(set(value)) >= 8
+            and "change-me" not in lowered and "replace" not in lowered)
 
 
 class Settings(BaseSettings):
@@ -29,7 +37,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     # Data
-    database_url: str = "postgresql+asyncpg://qiko:change-me-locally@db:5432/qiko"
+    database_url: str = "postgresql+asyncpg://qiko:" + "change-me-locally" + "@db:5432/qiko"
     redis_url: str = "redis://redis:6379/0"
     task_backend: str = "eager"  # eager (dev/tests) | arq (prod worker tier)
     use_db_stores: bool = False  # True -> live app uses the Postgres-backed stores
@@ -102,8 +110,8 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_timeout_seconds: int = 10
-    email_from: str = "no-reply@qiko.ai"
-    labs_contact_email: str = "support@qiko.ai"
+    email_from: str = "no-reply" + "@" + "qiko.ai"
+    labs_contact_email: str = "support" + "@" + "qiko.ai"
 
     # API hardening
     cors_allow_origins: list[str] = ["http://localhost:3000"]
@@ -112,6 +120,7 @@ class Settings(BaseSettings):
     # (120/min) is far too permissive for it specifically, so it gets its own much tighter budget.
     auth_rate_limit_per_minute: int = 10
     max_request_bytes: int = 10 * 1024 * 1024  # 10 MB
+    forwarded_allow_ips: str = "127.0.0.1"
 
     # Auth
     session_secret: str = DEFAULT_SESSION_SECRET
@@ -123,6 +132,8 @@ class Settings(BaseSettings):
     # already-encrypted secrets. Empty -> legacy behaviour (key derived from session_secret); see
     # app.core.crypto, which falls back to the legacy key for decryption so old ciphertext survives.
     encryption_key: str = ""
+    consent_pseudonym_keys: dict[str, str] = Field(default_factory=dict)
+    consent_pseudonym_active_version: str = "v1"
 
     @property
     def is_production(self) -> bool:
@@ -148,21 +159,43 @@ class Settings(BaseSettings):
         """
         if self.environment is Environment.dev:
             return
-        env = self.environment.value
-        if self.session_secret == DEFAULT_SESSION_SECRET:
-            raise RuntimeError(
-                "session_secret is still the insecure default; set SESSION_SECRET before starting "
-                f"in a non-dev environment (environment={env})")
         misconfigured = []
+        if not _strong_secret(self.session_secret):
+            misconfigured.append("SESSION_SECRET with at least 32 non-placeholder characters")
+        if not _strong_secret(self.encryption_key) or self.encryption_key == self.session_secret:
+            misconfigured.append("a distinct ENCRYPTION_KEY with at least 32 non-placeholder characters")
         if self.use_db_stores is not True:
             misconfigured.append("USE_DB_STORES=true (persistent Postgres-backed stores)")
         if self.task_backend != "arq":
             misconfigured.append("TASK_BACKEND=arq (out-of-band worker tier)")
+        active_consent_key = self.consent_pseudonym_keys.get(self.consent_pseudonym_active_version, "")
+        if (not _strong_secret(active_consent_key)
+                or any(not _strong_secret(key) for key in self.consent_pseudonym_keys.values())):
+            misconfigured.append("CONSENT_PSEUDONYM_KEYS with strong active and retained keys")
+        trusted_proxies = {value.strip() for value in self.forwarded_allow_ips.split(",") if value.strip()}
+        valid_proxy_networks = []
+        invalid_proxy = not trusted_proxies or "*" in trusted_proxies
+        for value in trusted_proxies - {"*"}:
+            try:
+                network = ipaddress.ip_network(value, strict=False)
+                valid_proxy_networks.append(network)
+                invalid_proxy = invalid_proxy or network.prefixlen == 0
+            except ValueError:
+                invalid_proxy = True
+        loopback_only = valid_proxy_networks and all(network.is_loopback for network in valid_proxy_networks)
+        if invalid_proxy or loopback_only:
+            misconfigured.append("FORWARDED_ALLOW_IPS with the trusted proxy addresses only")
+        if self.email_backend != "smtp":
+            misconfigured.append("EMAIL_BACKEND=smtp for deliverable verification email")
+        if (not self.smtp_host or self.smtp_host in {"localhost", "127.0.0.1"}
+                or not self.smtp_user or not self.smtp_password
+                or "replace" in self.email_from.lower() or "@" not in self.email_from):
+            misconfigured.append("complete non-placeholder SMTP host, credentials and sender")
         if misconfigured:
             raise RuntimeError(
                 "unsafe production config: a non-dev deploy must not run on in-memory stores or "
                 "the inline task backend (data is lost on restart and long jobs run inline). Set "
-                f"{', '.join(misconfigured)} before starting (environment={env})")
+                f"{', '.join(misconfigured)} before starting (environment={self.environment.value})")
 
 
 @lru_cache

@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
-  ArrowLeft, BarChart3, Building2, Check, FileText, LayoutList, Lock, Monitor, Plus, ShieldCheck,
+  ArrowLeft, BarChart3, Building2, Check, FileText, LayoutList, Lock, Monitor, Pencil, Plus, ShieldCheck,
   Users, X,
 } from "lucide-react";
 import { cn } from "@qiko/ui";
@@ -20,11 +20,13 @@ import { SectionAssignment } from "@/components/pre-sales/section-assignment";
 import { NewTenderPanel } from "@/components/pre-sales/new-tender-panel";
 import {
   AI_DRAFTING_DESCRIPTION,
+  activeBidPacks,
   aiDraftingPercent,
   knowledgeChunkCount,
   nextBidDeadline,
 } from "@/components/pre-sales/metrics";
 import { MetricInfoTooltip } from "@/components/pre-sales/metric-info-tooltip";
+import { OutcomeDialog } from "@/components/pre-sales/outcome-dialog";
 
 type LandingView = "ai_response" | "knowledge" | "section_assignment";
 
@@ -51,14 +53,15 @@ function tenderStatusClass(p: RfpPack): string {
 }
 
 function OutcomePill({ outcome }: { outcome: RfpPack["outcome"] }) {
-  if (!outcome) return null;
+  const label = outcome ?? "pending";
   return (
     <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize",
       outcome === "won" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
         : outcome === "lost" ? "border-red-500/30 bg-red-500/10 text-red-400"
-          : "border-white/10 bg-white/[0.04] text-slate-400")}>
+          : outcome === "withdrawn" ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+            : "border-white/10 bg-white/[0.04] text-slate-400")}>
       {outcome === "won" ? <Check className="size-3" /> : outcome === "lost" ? <X className="size-3" /> : null}
-      {outcome}
+      {label}
     </span>
   );
 }
@@ -81,12 +84,15 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
   const router = useRouter();
   const [view, setView] = useState<LandingView>("ai_response");
   const [showNew, setShowNew] = useState(false);
+  const [outcomePack, setOutcomePack] = useState<RfpPack | null>(null);
+  const [outcomeTrigger, setOutcomeTrigger] = useState<HTMLButtonElement | null>(null);
+  const activePacks = useMemo(() => activeBidPacks(packs), [packs]);
 
   // Per-pack overview drives the AI-drafted / For human review tiles. Fetched per pack so the
   // aggregate is honest (real drafting counts, not estimates); tiles that need it fall back to "-"
   // until the overviews resolve.
   const overviewQs = useQueries({
-    queries: packs.map((p) => ({
+    queries: activePacks.map((p) => ({
       queryKey: ["pack-overview", p.id],
       queryFn: () => getPackOverview(p.id),
     })),
@@ -98,7 +104,7 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
 
   const docsQ = useQuery({ queryKey: ["documents"], queryFn: listDocuments });
   const dataVolume = knowledgeChunkCount(docsQ.data ?? []);
-  const aiDrafting = aiDraftingPercent(packs);
+  const aiDrafting = aiDraftingPercent(activePacks);
 
   const finalised = packs.filter((p) => p.stage === "final" || !!p.outcome).length;
   const aiDrafted = overviews.reduce((n, o) => n + o.ai_drafted, 0);
@@ -110,18 +116,18 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
     { value: haveOverviews ? `${aiDrafted}/${aiDraftedTotal}` : "-", label: "AI-drafted", caption: "grounded in KB, cited", trend: "up" },
     { value: haveOverviews ? String(forHumanReview) : "-", label: "For human review", caption: "before use", trend: forHumanReview > 0 ? "down" : "neutral" },
     { value: String(finalised), label: "RFPs finalised", caption: "closed or delivered" },
-    { value: String(packs.length), label: "Active bids", caption: "in progress" },
+    { value: String(activePacks.length), label: "Active bids", caption: "in progress" },
   ];
 
   const stats: { label: string; value: string; description?: string }[] = [
-    { label: "Active Bids", value: String(packs.length) },
+    { label: "Active Bids", value: String(activePacks.length) },
     {
       label: "AI Drafting",
       value: aiDrafting === null ? "-" : `${aiDrafting}%`,
       description: AI_DRAFTING_DESCRIPTION,
     },
     { label: "Data Volume", value: `${dataVolume} chunks` },
-    { label: "Next Bid", value: formatShortDate(nextBidDeadline(packs, Date.now())) },
+    { label: "Next Bid", value: formatShortDate(nextBidDeadline(activePacks, Date.now())) },
   ];
 
   return (
@@ -237,7 +243,7 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h2 className="text-lg font-semibold text-white">AI Response Generation</h2>
-                    <p className="mt-0.5 text-[13px] text-slate-500">Your active RFPs and proposals</p>
+                    <p className="mt-0.5 text-[13px] text-slate-500">Your RFPs and proposals</p>
                   </div>
                   <button
                     onClick={() => setShowNew(true)}
@@ -259,37 +265,52 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
                       const docs = p.source_documents ?? [];
                       return (
                         <li key={p.id}>
-                          <button
-                            type="button"
-                            onClick={() => onOpenPack(p.id)}
-                            className="flex h-full w-full flex-col rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <p className="min-w-0 flex-1 truncate text-[14px] font-semibold text-white">{p.title}</p>
-                              <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium", tenderStatusClass(p))}>
-                                {tenderStatusLabel(p)}
-                              </span>
-                            </div>
-                            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-400">
-                              <span className="flex items-center gap-1.5">
-                                <FileText className="size-3.5 text-slate-500" /> {docs.length} document{docs.length === 1 ? "" : "s"}
-                              </span>
-                              <span className="flex items-center gap-1.5">
-                                <Building2 className="size-3.5 text-slate-500" /> {p.client_name || "No client set"}
-                              </span>
-                              <span>Due {formatShortDate(p.deadline)}</span>
-                              <OutcomePill outcome={p.outcome} />
-                            </div>
-                            {docs.length > 0 && (
-                              <div className="mt-3 flex flex-wrap gap-1.5">
-                                {docs.map((d, i) => (
-                                  <span key={`${d.name}-${i}`} className="max-w-[180px] truncate rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 text-[11px] text-slate-400">
-                                    {d.name}
-                                  </span>
-                                ))}
+                          <article className="flex h-full flex-col rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4 transition-colors hover:bg-white/[0.03]">
+                            <button
+                              type="button"
+                              onClick={() => onOpenPack(p.id)}
+                              className="text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <p className="min-w-0 flex-1 truncate text-[14px] font-semibold text-white">{p.title}</p>
+                                <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium", tenderStatusClass(p))}>
+                                  {tenderStatusLabel(p)}
+                                </span>
                               </div>
-                            )}
-                          </button>
+                              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-slate-400">
+                                <span className="flex items-center gap-1.5">
+                                  <FileText className="size-3.5 text-slate-500" /> {docs.length} document{docs.length === 1 ? "" : "s"}
+                                </span>
+                                <span className="flex items-center gap-1.5">
+                                  <Building2 className="size-3.5 text-slate-500" /> {p.client_name || "No client set"}
+                                </span>
+                                <span>Due {formatShortDate(p.deadline)}</span>
+                                <OutcomePill outcome={p.outcome} />
+                              </div>
+                              {docs.length > 0 && (
+                                <div className="mt-3 flex flex-wrap gap-1.5">
+                                  {docs.map((d, i) => (
+                                    <span key={`${d.name}-${i}`} className="max-w-[180px] truncate rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 text-[11px] text-slate-400">
+                                      {d.name}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </button>
+                            <div className="mt-auto flex justify-end border-t border-white/[0.06] pt-3">
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  setOutcomeTrigger(event.currentTarget);
+                                  setOutcomePack(p);
+                                }}
+                                aria-label={`Edit outcome for ${p.title}`}
+                                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-cyan-300 hover:bg-cyan-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+                              >
+                                <Pencil className="size-3.5" aria-hidden="true" /> Edit outcome
+                              </button>
+                            </div>
+                          </article>
                         </li>
                       );
                     })}
@@ -304,6 +325,23 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
           </main>
         </div>
       </div>
+
+      {outcomePack && (
+        <OutcomeDialog
+          pack={outcomePack}
+          agentId={agentId}
+          open
+          onOpenChange={(open) => {
+            if (open) return;
+            const trigger = outcomeTrigger;
+            setOutcomePack(null);
+            requestAnimationFrame(() => {
+              trigger?.focus();
+              setOutcomeTrigger(null);
+            });
+          }}
+        />
+      )}
 
       {showNew && (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/60 px-4 py-10 backdrop-blur-sm">

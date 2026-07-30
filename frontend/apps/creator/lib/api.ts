@@ -56,7 +56,7 @@ async function doFetch(path: string, opts: RequestInit): Promise<Response> {
 // including /auth/me, should refresh on a 401 so an expired access token does not surface an error.
 const NO_REFRESH_PATHS = ["/auth/login", "/auth/refresh", "/auth/logout"];
 
-async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
+async function requestResponse(path: string, opts: RequestInit = {}): Promise<Response> {
   let res = await doFetch(path, opts);
   // The access token is short-lived (15 min). On a 401, silently refresh once (using the long-lived
   // refresh cookie) and retry, so an active user is never kicked to login mid-session.
@@ -71,8 +71,51 @@ async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
     }
   }
   if (!res.ok) throw new ApiError(res.status, await res.text());
-  return res.status === 204 ? (null as T) : ((await res.json()) as T);
+  return res;
 }
+
+async function request<T>(path: string, opts: RequestInit = {}): Promise<T> {
+  const response = await requestResponse(path, opts);
+  return response.status === 204 ? (null as T) : ((await response.json()) as T);
+}
+
+async function requestBlob(path: string, opts: RequestInit = {}): Promise<Blob> {
+  return (await requestResponse(path, opts)).blob();
+}
+
+export type ServerConsent = {
+  decision_id: string; client_revision: number; preferences: boolean; analytics: boolean;
+  marketing: boolean; terms_release_id: string; privacy_release_id: string;
+  cookies_release_id: string; created_at: string;
+};
+
+export async function getAuthenticatedConsent(): Promise<ServerConsent | "anonymous" | "missing" | "retry"> {
+  try {
+    let response = await doFetch("/consent", { method: "GET" });
+    if (response.status === 401 && await refreshSession()) response = await doFetch("/consent", { method: "GET" });
+    if (response.ok) return await response.json() as ServerConsent;
+    if (response.status === 401) return "anonymous";
+    if (response.status === 404) return "missing";
+    return "retry";
+  } catch { return "retry"; }
+}
+
+export async function syncAuthenticatedConsent(body: Record<string, unknown>): Promise<"user" | "anonymous" | "stale" | "retry"> {
+  try {
+    let response = await doFetch("/consent", { method: "POST", body: JSON.stringify(body) });
+    if (response.status === 401 && await refreshSession()) response = await doFetch("/consent", { method: "POST", body: JSON.stringify(body) });
+    if (response.ok) return "user";
+    if (response.status === 401) return "anonymous";
+    if (response.status === 409) return "stale";
+    return "retry";
+  } catch { return "retry"; }
+}
+export const recordAnonymousConsent = (body: Record<string, unknown>) =>
+  request<{ recorded: boolean }>("/consent/anonymous", { method: "POST", body: JSON.stringify(body) });
+export const verifySignupEmail = (body: Record<string, unknown>) =>
+  request<{ user_id: string; email: string }>("/auth/verify-email", {
+    method: "POST", body: JSON.stringify(body),
+  });
 
 // Auth
 export const login = (email: string, password: string) =>
@@ -84,8 +127,11 @@ export const me = async () => {
 };
 
 // Agents (workers)
-export type Agent = { id: string; tenant: string; name: string; status: string; atype: string; config: Record<string, unknown>; created_at: string };
-export const listAgents = () => request<Agent[]>("/agents");
+export type Agent = { id: string; tenant: string; name: string; status: string; atype: string; enabled: boolean; config: Record<string, unknown>; created_at: string };
+export type AgentUsage = { used_count: number; worker_limit: number };
+export const listAgents = async () =>
+  (await request<Agent[]>("/agents")).filter((agent) => agent.enabled !== false);
+export const getAgentUsage = () => request<AgentUsage>("/agents/usage");
 export const createAgent = (name: string, atype: "worker" | "pre_sales_writer" | "sales_intelligence" | "finance" = "worker") =>
   request<Agent>("/agents", { method: "POST", body: JSON.stringify({ name, atype }) });
 export const markReady = (id: string) => request<Agent>(`/agents/${id}/ready`, { method: "POST" });
@@ -117,7 +163,11 @@ export const getTeamsWebhookStatus = () => request<TeamsWebhookStatus>("/channel
 export const connectTeamsWebhook = (webhook_url: string) =>
   request<TeamsWebhookStatus>("/channels/teams/webhook", { method: "PUT", body: JSON.stringify({ webhook_url }) });
 export const disconnectTeamsWebhook = () => request<TeamsWebhookStatus>("/channels/teams/webhook", { method: "DELETE" });
-export const testTeamsWebhook = () => request<{ sent: boolean }>("/channels/teams/test", { method: "POST" });
+export const testTeamsWebhook = (workerId: string) =>
+  request<{ sent: boolean }>("/channels/teams/test", {
+    method: "POST",
+    body: JSON.stringify({ worker: workerId }),
+  });
 
 // Knowledge + chat
 export type Doc = { doc_id: string; chunks: number };
@@ -129,7 +179,7 @@ export const ingest = (doc_id: string, text: string) =>
 export const listDocuments = () => request<Doc[]>("/knowledge/documents");
 export const deleteDocument = (docId: string) =>
   request<{ removed: number }>(`/knowledge/documents/${encodeURIComponent(docId)}`, { method: "DELETE" });
-export const ask = (conversation_id: string, question: string, agent_id?: string) =>
+export const ask = (conversation_id: string, question: string, agent_id: string) =>
   request<{ role: string; text: string }>("/chat/ask", {
     method: "POST",
     body: JSON.stringify({ conversation_id, question, agent_id }),
@@ -137,16 +187,14 @@ export const ask = (conversation_id: string, question: string, agent_id?: string
 
 // Grounded batch answering (confidence + citations + human-review gate) + xlsx export
 export type BatchAnswer = { id: string; question: string; answer: string; confidence: number; decision: string; citations: string[] };
-export const batchAnswer = (questions: string[], agent_id?: string) =>
+export const batchAnswer = (questions: string[], agent_id: string) =>
   request<BatchAnswer[]>("/agents/batch-answer", { method: "POST", body: JSON.stringify({ questions, agent_id }) });
-export async function batchExportUrl(questions: string[], agent_id?: string): Promise<string> {
-  const res = await fetch(`${BASE}/agents/batch-export`, {
-    method: "POST", credentials: "include",
-    headers: { "Content-Type": "application/json" },
+export async function batchExportUrl(questions: string[], agent_id: string): Promise<string> {
+  const blob = await requestBlob("/agents/batch-export", {
+    method: "POST",
     body: JSON.stringify({ questions, agent_id }),
   });
-  if (!res.ok) throw new ApiError(res.status, await res.text());
-  return URL.createObjectURL(await res.blob());
+  return URL.createObjectURL(blob);
 }
 
 // Worker knowledge sources
@@ -495,9 +543,7 @@ export async function extractPack(packId: string, files: File | File[]): Promise
 
 /** Fetch an export (xlsx / clean docx / annotated review docx) as a Blob for client-side download. */
 export async function exportPackBlob(packId: string, kind: "xlsx" | "docx-clean" | "docx-review"): Promise<Blob> {
-  const res = await fetch(exportUrl(packId, kind), { credentials: "include" });
-  if (!res.ok) throw new ApiError(res.status, await res.text());
-  return res.blob();
+  return requestBlob(`/rfp/packs/${packId}/export/${kind}`);
 }
 
 export async function ingestFile(docId: string, file: File): Promise<{ chunks: number }> {

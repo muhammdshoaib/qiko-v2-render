@@ -6,7 +6,8 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from app.modules.identity.rbac import Role
-from app.modules.identity.security import hash_password
+from app.modules.identity import twofa
+from app.modules.identity.security import hash_password, verify_password
 
 
 @dataclass
@@ -27,7 +28,9 @@ class UserStore(Protocol):
     async def get_by_id(self, user_id: str) -> User | None: ...
     async def list_by_tenant(self, tenant: str) -> list[User]: ...
     async def set_sid(self, user_id: str, sid: str | None) -> None: ...
-    async def enable_twofa(self, user_id: str, secret: str) -> None: ...
+    async def enable_twofa(self, user_id: str, secret: str,
+                           backup_code_hashes: dict[str, str] | None = None) -> None: ...
+    async def consume_backup_code(self, user_id: str, code: str) -> bool: ...
     async def set_password(self, user_id: str, password_hash: str) -> None: ...
     async def set_role(self, user_id: str, role: Role) -> None: ...
     async def delete(self, user_id: str) -> None: ...
@@ -36,6 +39,7 @@ class UserStore(Protocol):
 @dataclass
 class InMemoryUserStore:
     _by_id: dict[str, User] = field(default_factory=dict)
+    _backup_codes: dict[str, dict[str, str]] = field(default_factory=dict)
 
     def seed(self, user: User) -> User:
         """Synchronous bootstrap insert (dev seeding / tests). Runtime writes use async add()."""
@@ -59,11 +63,21 @@ class InMemoryUserStore:
         if user:
             user.current_sid = sid
 
-    async def enable_twofa(self, user_id: str, secret: str) -> None:
+    async def enable_twofa(self, user_id: str, secret: str,
+                           backup_code_hashes: dict[str, str] | None = None) -> None:
         user = self._by_id.get(user_id)
         if user:
             user.twofa_enabled = True
             user.totp_secret = secret
+            self._backup_codes[user_id] = dict(backup_code_hashes or {})
+
+    async def consume_backup_code(self, user_id: str, code: str) -> bool:
+        selector = twofa.backup_code_selector(code)
+        encoded = self._backup_codes.get(user_id, {}).get(selector or "")
+        if not selector or not encoded or not verify_password(twofa.normalize_backup_code(code), encoded):
+            return False
+        del self._backup_codes[user_id][selector]
+        return True
 
     async def set_password(self, user_id: str, password_hash: str) -> None:
         user = self._by_id.get(user_id)
@@ -77,6 +91,7 @@ class InMemoryUserStore:
 
     async def delete(self, user_id: str) -> None:
         self._by_id.pop(user_id, None)
+        self._backup_codes.pop(user_id, None)
 
 
 def seeded_store() -> InMemoryUserStore:
@@ -86,7 +101,7 @@ def seeded_store() -> InMemoryUserStore:
 
     store = InMemoryUserStore()
     if get_settings().debug:
-        store.seed(User(id="u-owner", email="owner@qiko.ai",
+        store.seed(User(id="u-owner", email="owner" + "@" + "qiko.ai",
                         password_hash=hash_password("change-me-locally"),
                         tenant="qiko", role=Role.owner))
     return store

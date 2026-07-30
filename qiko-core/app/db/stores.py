@@ -11,11 +11,15 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.core.crypto import decrypt, encrypt
+
 from app.db.models import Agent as AgentRow
+from app.db.models import AgentStateAudit as AgentStateAuditRow
 from app.db.models import Assignment as AssignmentRow
+from app.db.models import ConsentRecord as ConsentRecordRow
 from app.db.models import Contact as ContactRow
 from app.db.models import Conversation as ConversationRow
 from app.db.models import CrmAction as CrmActionRow
@@ -23,6 +27,7 @@ from app.db.models import FinanceChatMessage as FinanceChatMessageRow
 from app.db.models import FinanceFile as FinanceFileRow
 from app.db.models import Lead as LeadRow
 from app.db.models import Message as MessageRow
+from app.db.models import MfaBackupCode as MfaBackupCodeRow
 from app.db.models import Notification as NotificationRow
 from app.db.models import PackAnswer as PackAnswerRow
 from app.db.models import PackQuestion as PackQuestionRow
@@ -30,8 +35,10 @@ from app.db.models import PackRequirement as PackRequirementRow
 from app.db.models import PackSection as PackSectionRow
 from app.db.models import Passage as PassageRow
 from app.db.models import PasswordResetOtp as PasswordResetOtpRow
+from app.db.models import PendingSignup as PendingSignupRow
 from app.db.models import PendingTeamInvite as PendingTeamInviteRow
 from app.db.models import PlatformAdmin as PlatformAdminRow
+from app.db.models import PolicyRelease as PolicyReleaseRow
 from app.db.models import RfpPack as RfpPackRow
 from app.db.models import SalesIntelActivityLog as SalesIntelActivityLogRow
 from app.db.models import SalesIntelIngestionSource as SalesIntelIngestionSourceRow
@@ -43,15 +50,26 @@ from app.db.models import Tenant as TenantRow
 from app.db.models import TeamsWebhook as TeamsWebhookRow
 from app.db.models import User as UserRow
 from app.db.models import VerifiedAnswer
-from app.modules.agents.service import Agent
+from app.modules.agents.service import Agent, AgentStateAudit, PlanLimitError
 from app.modules.assignments.service import Assignment, AssignmentNotFound
 from app.modules.channels.teams_integration import TeamsIntegration
-from app.modules.chat.service import ConversationSummary, Message
+from app.modules.consent.models import ConsentChoices, ConsentRecord, ConsentSource, PolicyRelease
+from app.modules.consent.service import (
+    active_pseudonym_version,
+    derive_action,
+    pseudonymous_subject,
+    same_consent_decision,
+)
+from app.core.deps import WorkerUnavailable
+from app.modules.chat.service import ConversationScopeError, ConversationSummary, Message
 from app.modules.crm.service import Contact, CrmAction
 from app.modules.finance.models import FinanceChatMessage, FinanceFile
 from app.modules.identity.admin_rbac import AdminRole
 from app.modules.identity.onboarding import hash_otp, new_otp_code
+from app.modules.identity.pending_signup import PendingSignup, hash_signup_code
+from app.modules.identity import twofa
 from app.modules.identity.rbac import Role
+from app.modules.identity.security import verify_password
 from app.modules.identity.store import User
 from app.modules.identity.team_access import PendingInvite
 from app.modules.knowledge.models import Passage
@@ -74,6 +92,14 @@ from app.modules.sales_intelligence.models import (
 from app.modules.teams.service import Team
 
 
+def _encrypt_totp(secret: str | None) -> str | None:
+    return f"enc:{encrypt(secret)}" if secret else None
+
+
+def _decrypt_totp(secret: str | None) -> str | None:
+    return decrypt(secret[4:]) if secret and secret.startswith("enc:") else secret
+
+
 @dataclass
 class SqlUserStore:
     sessionmaker: async_sessionmaker[AsyncSession]
@@ -87,14 +113,15 @@ class SqlUserStore:
                 s.add(TenantRow(id=user.tenant, name=user.tenant))
             s.add(UserRow(id=user.id, email=user.email.lower(), password_hash=user.password_hash,
                           tenant_id=user.tenant, role=user.role.value, twofa_enabled=user.twofa_enabled,
-                          totp_secret=user.totp_secret, current_sid=user.current_sid))
+                          totp_secret=_encrypt_totp(user.totp_secret), current_sid=user.current_sid))
         return user
 
     async def _to_domain(self, row: UserRow | None) -> User | None:
         if row is None:
             return None
         return User(id=row.id, email=row.email, password_hash=row.password_hash, tenant=row.tenant_id,
-                    role=Role(row.role), twofa_enabled=row.twofa_enabled, totp_secret=row.totp_secret,
+                    role=Role(row.role), twofa_enabled=row.twofa_enabled,
+                    totp_secret=_decrypt_totp(row.totp_secret),
                     current_sid=row.current_sid)
 
     async def get_by_email(self, email: str) -> User | None:
@@ -117,12 +144,31 @@ class SqlUserStore:
             if row:
                 row.current_sid = sid
 
-    async def enable_twofa(self, user_id: str, secret: str) -> None:
+    async def enable_twofa(self, user_id: str, secret: str,
+                           backup_code_hashes: dict[str, str] | None = None) -> None:
         async with self.sessionmaker() as s, s.begin():
             row = await s.get(UserRow, user_id)
             if row:
                 row.twofa_enabled = True
-                row.totp_secret = secret
+                row.totp_secret = _encrypt_totp(secret)
+                await s.execute(delete(MfaBackupCodeRow).where(MfaBackupCodeRow.user_id == user_id))
+                s.add_all(MfaBackupCodeRow(user_id=user_id, selector=selector, code_hash=code_hash)
+                          for selector, code_hash in (backup_code_hashes or {}).items())
+
+    async def consume_backup_code(self, user_id: str, code: str) -> bool:
+        selector = twofa.backup_code_selector(code)
+        if not selector:
+            return False
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(MfaBackupCodeRow, (user_id, selector))
+            if row is None or not verify_password(twofa.normalize_backup_code(code), row.code_hash):
+                return False
+            result = await s.execute(delete(MfaBackupCodeRow).where(
+                MfaBackupCodeRow.user_id == user_id,
+                MfaBackupCodeRow.selector == selector,
+                MfaBackupCodeRow.code_hash == row.code_hash,
+            ))
+            return result.rowcount == 1
 
     async def set_password(self, user_id: str, password_hash: str) -> None:
         async with self.sessionmaker() as s, s.begin():
@@ -155,6 +201,31 @@ class SqlVerifiedStore:
             return
         async with self.sessionmaker() as s, s.begin():
             s.add(VerifiedAnswer(tenant_id=tenant, topic=topic, body=text))
+
+    async def add_for_enabled_agent(
+        self, tenant: str, agent_id: str, topic: str, text: str,
+        recheck_worker,
+    ) -> None:
+        text = (text or "").strip()
+        if not text:
+            return
+        async with self.sessionmaker() as session, session.begin():
+            agent = (await session.execute(
+                select(AgentRow).where(
+                    AgentRow.tenant_id == tenant, AgentRow.id == agent_id
+                ).with_for_update()
+            )).scalar_one_or_none()
+            if agent is None or not agent.enabled:
+                raise WorkerUnavailable
+            exists = (await session.execute(
+                select(VerifiedAnswer.id).where(
+                    VerifiedAnswer.tenant_id == tenant,
+                    VerifiedAnswer.topic == topic,
+                    VerifiedAnswer.body == text,
+                ).limit(1)
+            )).scalar_one_or_none()
+            if exists is None:
+                session.add(VerifiedAnswer(tenant_id=tenant, topic=topic, body=text))
 
     async def get(self, tenant: str, topic: str) -> list[str]:
         async with self.sessionmaker() as s:
@@ -194,13 +265,34 @@ class SqlAgentStore:
 
     def _to_domain(self, r: AgentRow) -> Agent:
         return Agent(id=r.id, tenant=r.tenant_id, name=r.name, atype=r.atype,
-                     status=r.status, config=dict(r.config or {}), created_at=r.created_at)
+                     status=r.status, config=dict(r.config or {}), created_at=r.created_at,
+                     enabled=r.enabled)
+
+    @staticmethod
+    def _row(agent: Agent) -> AgentRow:
+        return AgentRow(id=agent.id, tenant_id=agent.tenant, name=agent.name,
+                        atype=agent.atype, status=agent.status, config=agent.config,
+                        created_at=agent.created_at, enabled=agent.enabled)
 
     async def add(self, agent: Agent) -> Agent:
         async with self.sessionmaker() as s, s.begin():
-            s.add(AgentRow(id=agent.id, tenant_id=agent.tenant, name=agent.name,
-                           atype=agent.atype, status=agent.status, config=agent.config,
-                           created_at=agent.created_at))
+            s.add(self._row(agent))
+        return agent
+
+    async def add_with_limit(self, agent: Agent, worker_limit: int) -> Agent:
+        async with self.sessionmaker() as s, s.begin():
+            tenant = (await s.execute(
+                select(TenantRow).where(TenantRow.id == agent.tenant).with_for_update()
+            )).scalar_one_or_none()
+            if tenant is None:
+                raise KeyError(agent.tenant)
+            count = (await s.execute(
+                select(func.count()).select_from(AgentRow)
+                .where(AgentRow.tenant_id == agent.tenant)
+            )).scalar_one()
+            if worker_limit >= 0 and count >= worker_limit:
+                raise PlanLimitError(f"worker limit {worker_limit} reached")
+            s.add(self._row(agent))
         return agent
 
     async def list(self, tenant: str) -> list[Agent]:
@@ -209,7 +301,10 @@ class SqlAgentStore:
             return [self._to_domain(r) for r in rows]
 
     async def count(self, tenant: str) -> int:
-        return len(await self.list(tenant))
+        async with self.sessionmaker() as s:
+            return (await s.execute(
+                select(func.count()).select_from(AgentRow).where(AgentRow.tenant_id == tenant)
+            )).scalar_one()
 
     async def get(self, tenant: str, agent_id: str) -> Agent | None:
         async with self.sessionmaker() as s:
@@ -234,6 +329,73 @@ class SqlAgentStore:
             row.config = {**(row.config or {}), **patch}
             return self._to_domain(row)
 
+    async def set_enabled(self, tenant: str, agent_id: str, enabled: bool, *,
+                          changed_by_email: str, reason: str | None) -> Agent:
+        async with self.sessionmaker() as s, s.begin():
+            row = (await s.execute(
+                select(AgentRow).where(
+                    AgentRow.tenant_id == tenant, AgentRow.id == agent_id
+                ).with_for_update()
+            )).scalar_one_or_none()
+            if row is None:
+                raise KeyError(agent_id)
+            if row.enabled == enabled:
+                return self._to_domain(row)
+            previous = row.enabled
+            row.enabled = enabled
+            s.add(AgentStateAuditRow(
+                tenant_id=tenant, agent_id=agent_id, changed_by_email=changed_by_email,
+                previous_enabled=previous, enabled=enabled,
+                reason=(reason or "").strip() or None))
+            return self._to_domain(row)
+
+    async def list_state_audit(self, tenant: str, *, limit: int = 50) -> list[AgentStateAudit]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(AgentStateAuditRow)
+                .where(AgentStateAuditRow.tenant_id == tenant)
+                .order_by(AgentStateAuditRow.created_at.desc(), AgentStateAuditRow.id.desc())
+                .limit(max(1, min(limit, 200)))
+            )).scalars().all()
+            return [AgentStateAudit(
+                id=row.id, tenant=row.tenant_id, agent_id=row.agent_id,
+                changed_by_email=row.changed_by_email,
+                previous_enabled=row.previous_enabled, enabled=row.enabled,
+                reason=row.reason, created_at=row.created_at) for row in rows]
+
+
+async def _lock_enabled_pack(
+    session: AsyncSession, tenant: str, pack_id: str, *, agent_id: str | None = None,
+) -> RfpPackRow:
+    pack = (await session.execute(
+        select(RfpPackRow).where(
+            RfpPackRow.tenant_id == tenant, RfpPackRow.id == pack_id
+        ).with_for_update()
+    )).scalar_one_or_none()
+    if pack is None or (agent_id is not None and pack.agent_id != agent_id):
+        raise RfpPackNotFound(pack_id)
+    agent = (await session.execute(
+        select(AgentRow).where(
+            AgentRow.tenant_id == tenant, AgentRow.id == pack.agent_id
+        ).with_for_update()
+    )).scalar_one_or_none()
+    if agent is None or not agent.enabled:
+        raise WorkerUnavailable
+    return pack
+
+
+async def _lock_enabled_agent(
+    session: AsyncSession, tenant: str, agent_id: str,
+) -> AgentRow:
+    agent = (await session.execute(
+        select(AgentRow).where(
+            AgentRow.tenant_id == tenant, AgentRow.id == agent_id
+        ).with_for_update()
+    )).scalar_one_or_none()
+    if agent is None or not agent.enabled:
+        raise WorkerUnavailable
+    return agent
+
 
 @dataclass
 class SqlRfpPackStore:
@@ -250,6 +412,7 @@ class SqlRfpPackStore:
 
     async def add(self, pack: RfpPack) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, pack.tenant, pack.agent_id)
             s.add(RfpPackRow(id=pack.id, tenant_id=pack.tenant, agent_id=pack.agent_id,
                              title=pack.title, client_name=pack.client_name,
                              deadline=pack.deadline, stage=pack.stage,
@@ -273,33 +436,49 @@ class SqlRfpPackStore:
 
     async def set_stage(self, tenant: str, pack_id: str, stage: str) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(RfpPackRow, pack_id)
-            if row is None or row.tenant_id != tenant:
-                raise RfpPackNotFound(pack_id)
+            row = await _lock_enabled_pack(s, tenant, pack_id)
             row.stage = stage
             return self._to_domain(row)
 
     async def set_document_text(self, tenant: str, pack_id: str, text: str) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(RfpPackRow, pack_id)
-            if row is None or row.tenant_id != tenant:
-                raise RfpPackNotFound(pack_id)
+            row = await _lock_enabled_pack(s, tenant, pack_id)
             row.document_text = text
             return self._to_domain(row)
 
     async def set_source_documents(self, tenant: str, pack_id: str, docs: list) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(RfpPackRow, pack_id)
-            if row is None or row.tenant_id != tenant:
-                raise RfpPackNotFound(pack_id)
+            row = await _lock_enabled_pack(s, tenant, pack_id)
             row.source_documents = list(docs or [])
             return self._to_domain(row)
 
     async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,
                           reason: str, value: float | None) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(RfpPackRow, pack_id)
-            if row is None or row.tenant_id != tenant:
+            row = await _lock_enabled_pack(s, tenant, pack_id)
+            row.outcome, row.outcome_reason, row.outcome_value = outcome, reason, value
+            row.outcome_at = datetime.now(timezone.utc) if outcome else None
+            return self._to_domain(row)
+
+    async def set_outcome_for_enabled_agent(
+        self, tenant: str, pack_id: str, agent_id: str, *, outcome: str | None,
+        reason: str, value: float | None, recheck_worker,
+    ) -> RfpPack:
+        async with self.sessionmaker() as session, session.begin():
+            agent = (await session.execute(
+                select(AgentRow).where(
+                    AgentRow.tenant_id == tenant, AgentRow.id == agent_id
+                ).with_for_update()
+            )).scalar_one_or_none()
+            if agent is None or not agent.enabled:
+                raise WorkerUnavailable
+            row = (await session.execute(
+                select(RfpPackRow).where(
+                    RfpPackRow.tenant_id == tenant, RfpPackRow.id == pack_id,
+                    RfpPackRow.agent_id == agent_id,
+                ).with_for_update()
+            )).scalar_one_or_none()
+            if row is None:
                 raise RfpPackNotFound(pack_id)
             row.outcome, row.outcome_reason, row.outcome_value = outcome, reason, value
             row.outcome_at = datetime.now(timezone.utc) if outcome else None
@@ -307,33 +486,26 @@ class SqlRfpPackStore:
 
     async def set_brief(self, tenant: str, pack_id: str, brief: dict | None) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(RfpPackRow, pack_id)
-            if row is None or row.tenant_id != tenant:
-                raise RfpPackNotFound(pack_id)
+            row = await _lock_enabled_pack(s, tenant, pack_id)
             row.brief = brief
             return self._to_domain(row)
 
     async def set_compliance(self, tenant: str, pack_id: str, items: list | None) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(RfpPackRow, pack_id)
-            if row is None or row.tenant_id != tenant:
-                raise RfpPackNotFound(pack_id)
+            row = await _lock_enabled_pack(s, tenant, pack_id)
             row.compliance = items
             return self._to_domain(row)
 
     async def set_gen_status(self, tenant: str, pack_id: str, status: dict | None) -> RfpPack:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(RfpPackRow, pack_id)
-            if row is None or row.tenant_id != tenant:
-                raise RfpPackNotFound(pack_id)
+            row = await _lock_enabled_pack(s, tenant, pack_id)
             row.gen_status = status
             return self._to_domain(row)
 
     async def delete(self, tenant: str, pack_id: str) -> None:
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(RfpPackRow, pack_id)
-            if row is not None and row.tenant_id == tenant:
-                await s.delete(row)
+            row = await _lock_enabled_pack(s, tenant, pack_id)
+            await s.delete(row)
 
 
 @dataclass
@@ -346,6 +518,7 @@ class SqlRequirementStore:
 
     async def replace_all(self, tenant: str, pack_id: str, items: list[PackRequirement]) -> list[PackRequirement]:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, tenant, pack_id)
             await s.execute(delete(PackRequirementRow).where(
                 PackRequirementRow.tenant_id == tenant, PackRequirementRow.pack_id == pack_id))
             for item in items:
@@ -362,6 +535,7 @@ class SqlRequirementStore:
 
     async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, tenant, pack_id)
             await s.execute(delete(PackRequirementRow).where(
                 PackRequirementRow.tenant_id == tenant, PackRequirementRow.pack_id == pack_id))
 
@@ -380,6 +554,7 @@ class SqlPackSectionStore:
 
     async def add(self, section: PackSection) -> PackSection:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, section.tenant, section.pack_id)
             s.add(PackSectionRow(id=section.id, tenant_id=section.tenant, pack_id=section.pack_id,
                                  code=section.code, name=section.name, page=section.page,
                                  weighting=section.weighting, status=section.status, parent_id=section.parent_id,
@@ -409,6 +584,7 @@ class SqlPackSectionStore:
             row = await s.get(PackSectionRow, section_id)
             if row is None or row.tenant_id != tenant:
                 raise PackSectionNotFound(section_id)
+            await _lock_enabled_pack(s, tenant, row.pack_id)
             for k, v in fields.items():
                 setattr(row, k, v)
             return self._to_domain(row)
@@ -417,10 +593,12 @@ class SqlPackSectionStore:
         async with self.sessionmaker() as s, s.begin():
             row = await s.get(PackSectionRow, section_id)
             if row is not None and row.tenant_id == tenant:
+                await _lock_enabled_pack(s, tenant, row.pack_id)
                 await s.delete(row)
 
     async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, tenant, pack_id)
             await s.execute(delete(PackSectionRow).where(
                 PackSectionRow.tenant_id == tenant, PackSectionRow.pack_id == pack_id))
 
@@ -439,6 +617,7 @@ class SqlPackQuestionStore:
 
     async def add(self, question: PackQuestion) -> PackQuestion:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, question.tenant, question.pack_id)
             s.add(PackQuestionRow(id=question.id, tenant_id=question.tenant, pack_id=question.pack_id,
                                   section_id=question.section_id, text=question.text, req_id=question.req_id,
                                   word_limit=question.word_limit, ai_answer=question.ai_answer,
@@ -474,6 +653,7 @@ class SqlPackQuestionStore:
             row = await s.get(PackQuestionRow, question_id)
             if row is None or row.tenant_id != tenant:
                 raise PackQuestionNotFound(question_id)
+            await _lock_enabled_pack(s, tenant, row.pack_id)
             for k, v in fields.items():
                 setattr(row, k, v)
             return self._to_domain(row)
@@ -482,15 +662,21 @@ class SqlPackQuestionStore:
         async with self.sessionmaker() as s, s.begin():
             row = await s.get(PackQuestionRow, question_id)
             if row is not None and row.tenant_id == tenant:
+                await _lock_enabled_pack(s, tenant, row.pack_id)
                 await s.delete(row)
 
     async def delete_for_section(self, tenant: str, section_id: str) -> None:
         async with self.sessionmaker() as s, s.begin():
+            section = await s.get(PackSectionRow, section_id)
+            if section is None or section.tenant_id != tenant:
+                raise PackSectionNotFound(section_id)
+            await _lock_enabled_pack(s, tenant, section.pack_id)
             await s.execute(delete(PackQuestionRow).where(
                 PackQuestionRow.tenant_id == tenant, PackQuestionRow.section_id == section_id))
 
     async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, tenant, pack_id)
             await s.execute(delete(PackQuestionRow).where(
                 PackQuestionRow.tenant_id == tenant, PackQuestionRow.pack_id == pack_id))
 
@@ -511,6 +697,7 @@ class SqlPackAnswerStore:
 
     async def put(self, tenant: str, pack_id: str, req_id: str, answer: CachedAnswer) -> None:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, tenant, pack_id)
             row = await s.get(PackAnswerRow, (pack_id, req_id))
             if row is None:
                 s.add(PackAnswerRow(pack_id=pack_id, req_id=req_id, tenant_id=tenant, answer=answer.answer,
@@ -522,6 +709,7 @@ class SqlPackAnswerStore:
 
     async def delete_for_pack(self, tenant: str, pack_id: str) -> None:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, tenant, pack_id)
             await s.execute(delete(PackAnswerRow).where(
                 PackAnswerRow.tenant_id == tenant, PackAnswerRow.pack_id == pack_id))
 
@@ -539,6 +727,7 @@ class SqlAssignmentStore:
 
     async def add(self, a: Assignment) -> Assignment:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, a.tenant, a.pack_id, agent_id=a.agent_id)
             s.add(AssignmentRow(id=a.id, tenant_id=a.tenant, pack_id=a.pack_id, agent_id=a.agent_id,
                                 rfp_title=a.rfp_title, section_id=a.section_id, section_title=a.section_title,
                                 assignee_user_id=a.assignee_user_id, assigned_by_user_id=a.assigned_by_user_id,
@@ -570,12 +759,14 @@ class SqlAssignmentStore:
             row = await s.get(AssignmentRow, assignment_id)
             if row is None or row.tenant_id != tenant:
                 raise AssignmentNotFound(assignment_id)
+            await _lock_enabled_pack(s, tenant, row.pack_id, agent_id=row.agent_id)
             for k, v in fields.items():
                 setattr(row, k, v)
             return self._to_domain(row)
 
     async def delete_by_section(self, tenant: str, pack_id: str, section_id: str) -> int:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, tenant, pack_id)
             result = await s.execute(delete(AssignmentRow).where(
                 AssignmentRow.tenant_id == tenant, AssignmentRow.pack_id == pack_id,
                 AssignmentRow.section_id == section_id))
@@ -583,6 +774,7 @@ class SqlAssignmentStore:
 
     async def delete_by_pack(self, tenant: str, pack_id: str) -> int:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_pack(s, tenant, pack_id)
             result = await s.execute(delete(AssignmentRow).where(
                 AssignmentRow.tenant_id == tenant, AssignmentRow.pack_id == pack_id))
             return result.rowcount or 0
@@ -599,11 +791,63 @@ class SqlChatStore:
                 s.add(ConversationRow(id=conversation_id, tenant_id=tenant,
                                       user_id=user_id or "public", agent_id=agent_id or "public"))
 
+    async def _lock_enabled_agent(self, session: AsyncSession, tenant: str, agent_id: str) -> None:
+        agent = (await session.execute(
+            select(AgentRow).where(
+                AgentRow.tenant_id == tenant, AgentRow.id == agent_id
+            ).with_for_update()
+        )).scalar_one_or_none()
+        if agent is None or not agent.enabled:
+            raise WorkerUnavailable
+
+    async def _ensure_conversation_scope(
+        self, session: AsyncSession, tenant: str, conversation_id: str, *,
+        user_id: str, agent_id: str,
+    ) -> None:
+        row = (await session.execute(
+            select(ConversationRow).where(
+                ConversationRow.id == conversation_id
+            ).with_for_update()
+        )).scalar_one_or_none()
+        if row is None:
+            session.add(ConversationRow(
+                id=conversation_id, tenant_id=tenant,
+                user_id=user_id or "public", agent_id=agent_id))
+        elif row.tenant_id != tenant or row.agent_id != agent_id:
+            raise ConversationScopeError
+
+    async def ensure_for_enabled_agent(
+        self, tenant: str, conversation_id: str, *, user_id: str, agent_id: str,
+        recheck_worker,
+    ) -> None:
+        async with self.sessionmaker() as session, session.begin():
+            await self._lock_enabled_agent(session, tenant, agent_id)
+            await self._ensure_conversation_scope(
+                session, tenant, conversation_id, user_id=user_id, agent_id=agent_id)
+
     async def append(self, tenant: str, conversation_id: str, role: str, text: str) -> Message:
         await self.ensure(tenant, conversation_id)
         async with self.sessionmaker() as s, s.begin():
             s.add(MessageRow(conversation_id=conversation_id, tenant_id=tenant, role=role, body=text))
         return Message(role=role, text=text)
+
+    async def append_exchange_for_enabled_agent(
+        self, tenant: str, conversation_id: str, *, user_id: str, agent_id: str,
+        user_text: str, assistant_text: str, recheck_worker,
+    ) -> Message:
+        async with self.sessionmaker() as session, session.begin():
+            await self._lock_enabled_agent(session, tenant, agent_id)
+            await self._ensure_conversation_scope(
+                session, tenant, conversation_id, user_id=user_id, agent_id=agent_id)
+            session.add_all([
+                MessageRow(
+                    conversation_id=conversation_id, tenant_id=tenant,
+                    role="user", body=user_text),
+                MessageRow(
+                    conversation_id=conversation_id, tenant_id=tenant,
+                    role="assistant", body=assistant_text),
+            ])
+        return Message(role="assistant", text=assistant_text)
 
     async def history(self, tenant: str, conversation_id: str, *, limit: int = 20) -> list[Message]:
         async with self.sessionmaker() as s:
@@ -787,6 +1031,7 @@ class SqlContactStore:
 
     async def add(self, contact: Contact) -> Contact:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, contact.tenant, contact.agent_id)
             s.add(ContactRow(id=contact.id, tenant_id=contact.tenant, agent_id=contact.agent_id,
                              conversation_id=contact.conversation_id, name=contact.name, email=contact.email,
                              phone=contact.phone, status=contact.status, estimated_value=contact.estimated_value,
@@ -799,6 +1044,7 @@ class SqlContactStore:
         async with self.sessionmaker() as s, s.begin():
             row = await s.get(ContactRow, contact.id)
             if row is not None:
+                await _lock_enabled_agent(s, contact.tenant, contact.agent_id)
                 row.name, row.email, row.phone = contact.name, contact.email, contact.phone
                 row.status, row.estimated_value = contact.status, contact.estimated_value
                 row.ai_summary, row.sentiment = contact.ai_summary, contact.sentiment
@@ -817,8 +1063,23 @@ class SqlContactStore:
 class SqlActionStore:
     sessionmaker: async_sessionmaker[AsyncSession]
 
+    def _to_domain(self, row: CrmActionRow) -> CrmAction:
+        return CrmAction(
+            id=row.id, tenant=row.tenant_id, contact_id=row.contact_id, title=row.title,
+            action_type=row.action_type, description=row.description or "",
+            priority=row.priority, status=row.status, created_at=row.created_at)
+
+    async def get(self, tenant: str, action_id: str) -> CrmAction | None:
+        async with self.sessionmaker() as session:
+            row = await session.get(CrmActionRow, action_id)
+            return self._to_domain(row) if row is not None and row.tenant_id == tenant else None
+
     async def add(self, action: CrmAction) -> CrmAction:
         async with self.sessionmaker() as s, s.begin():
+            contact = await s.get(ContactRow, action.contact_id)
+            if contact is None or contact.tenant_id != action.tenant:
+                return action
+            await _lock_enabled_agent(s, action.tenant, contact.agent_id)
             s.add(CrmActionRow(id=action.id, tenant_id=action.tenant, contact_id=action.contact_id,
                                action_type=action.action_type, title=action.title,
                                description=action.description, priority=action.priority,
@@ -839,6 +1100,10 @@ class SqlActionStore:
             row = await s.get(CrmActionRow, action_id)
             if row is None or row.tenant_id != tenant:
                 return None
+            contact = await s.get(ContactRow, row.contact_id)
+            if contact is None or contact.tenant_id != tenant:
+                return None
+            await _lock_enabled_agent(s, tenant, contact.agent_id)
             row.status = status
             return CrmAction(id=row.id, tenant=row.tenant_id, contact_id=row.contact_id, title=row.title,
                              action_type=row.action_type, description=row.description or "",
@@ -868,6 +1133,7 @@ class SqlIngestionSourceStore:
 
     async def get_or_create(self, tenant: str, agent_id: str, source_key: str, defaults: dict) -> IngestionSource:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, tenant, agent_id)
             row = (await s.execute(select(SalesIntelIngestionSourceRow).where(
                 SalesIntelIngestionSourceRow.tenant_id == tenant,
                 SalesIntelIngestionSourceRow.agent_id == agent_id,
@@ -904,6 +1170,7 @@ class SqlIngestionSourceStore:
 
     async def update(self, source: IngestionSource) -> IngestionSource:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, source.tenant, source.agent_id)
             row = await s.get(SalesIntelIngestionSourceRow, source.id)
             if row is not None and row.tenant_id == source.tenant:
                 row.name, row.type, row.status = source.name, source.type, source.status
@@ -977,6 +1244,7 @@ class SqlOpportunityStore:
 
     async def add(self, opp: Opportunity) -> Opportunity:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, opp.tenant, opp.agent_id)
             row = SalesIntelOpportunityRow(id=opp.id, tenant_id=opp.tenant, agent_id=opp.agent_id,
                                            external_id=opp.external_id, source_key=opp.source_key,
                                            source_name=opp.source_name, created_at=opp.created_at)
@@ -986,6 +1254,7 @@ class SqlOpportunityStore:
 
     async def update(self, opp: Opportunity) -> Opportunity:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, opp.tenant, opp.agent_id)
             row = await s.get(SalesIntelOpportunityRow, opp.id)
             if row is not None and row.tenant_id == opp.tenant and row.agent_id == opp.agent_id:
                 _apply_opportunity_columns(row, opp)
@@ -1031,6 +1300,7 @@ class SqlActivityLogStore:
 
     async def add(self, log: ActivityLog) -> ActivityLog:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, log.tenant, log.agent_id)
             s.add(SalesIntelActivityLogRow(id=log.id, tenant_id=log.tenant, agent_id=log.agent_id,
                                            opportunity_id=log.opportunity_id, actor_user_id=log.actor_user_id,
                                            activity_type=log.activity_type, action=log.action, detail=log.detail,
@@ -1077,6 +1347,7 @@ class SqlSalesforceConnectionStore:
 
     async def get_or_create(self, tenant: str, agent_id: str) -> SalesforceConnection:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, tenant, agent_id)
             row = await s.get(SalesIntelSalesforceConnectionRow, (tenant, agent_id))
             if row is None:
                 row = SalesIntelSalesforceConnectionRow(tenant_id=tenant, agent_id=agent_id)
@@ -1086,6 +1357,7 @@ class SqlSalesforceConnectionStore:
 
     async def update(self, conn: SalesforceConnection) -> SalesforceConnection:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, conn.tenant, conn.agent_id)
             row = await s.get(SalesIntelSalesforceConnectionRow, (conn.tenant, conn.agent_id))
             if row is None:
                 row = SalesIntelSalesforceConnectionRow(tenant_id=conn.tenant, agent_id=conn.agent_id)
@@ -1120,6 +1392,7 @@ class SqlFinanceFileStore:
 
     async def add(self, file: FinanceFile) -> FinanceFile:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, file.tenant, file.agent_id)
             s.add(FinanceFileRow(
                 id=file.id, tenant_id=file.tenant, agent_id=file.agent_id, file_name=file.file_name,
                 source_name=file.source_name, namespace=file.namespace, size_bytes=file.size_bytes,
@@ -1144,6 +1417,7 @@ class SqlFinanceFileStore:
     async def delete(self, tenant: str, agent_id: str, ids: list[str]) -> list[str]:
         deleted: list[str] = []
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, tenant, agent_id)
             for file_id in ids:
                 row = await s.get(FinanceFileRow, file_id)
                 if row is not None and row.tenant_id == tenant and row.agent_id == agent_id:
@@ -1159,10 +1433,27 @@ class SqlFinanceChatStore:
 
     async def add(self, message: FinanceChatMessage) -> FinanceChatMessage:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, message.tenant, message.agent_id)
             s.add(FinanceChatMessageRow(id=message.id, tenant_id=message.tenant, agent_id=message.agent_id,
                                         role=message.role, content=message.content,
                                         created_at=message.created_at))
         return message
+
+    async def add_exchange(
+        self, tenant: str, agent_id: str, user: FinanceChatMessage,
+        assistant: FinanceChatMessage,
+    ) -> None:
+        async with self.sessionmaker() as session, session.begin():
+            await _lock_enabled_agent(session, tenant, agent_id)
+            session.add_all([
+                FinanceChatMessageRow(
+                    id=user.id, tenant_id=tenant, agent_id=agent_id,
+                    role=user.role, content=user.content, created_at=user.created_at),
+                FinanceChatMessageRow(
+                    id=assistant.id, tenant_id=tenant, agent_id=agent_id,
+                    role=assistant.role, content=assistant.content,
+                    created_at=assistant.created_at),
+            ])
 
     async def list_for_agent(self, tenant: str, agent_id: str,
                              limit: int | None = None) -> list[FinanceChatMessage]:
@@ -1177,6 +1468,7 @@ class SqlFinanceChatStore:
 
     async def clear(self, tenant: str, agent_id: str) -> int:
         async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, tenant, agent_id)
             result = await s.execute(delete(FinanceChatMessageRow).where(
                 FinanceChatMessageRow.tenant_id == tenant, FinanceChatMessageRow.agent_id == agent_id))
             return result.rowcount or 0
@@ -1209,6 +1501,8 @@ class SqlNotificationStore:
 
     async def add(self, notification: Notification) -> Notification:
         async with self.sessionmaker() as s, s.begin():
+            if notification.agent_id:
+                await _lock_enabled_agent(s, notification.tenant, notification.agent_id)
             s.add(NotificationRow(id=notification.id, tenant_id=notification.tenant, user_id=notification.user_id,
                                   category=notification.category, type=notification.type, title=notification.title,
                                   body=notification.body, agent_id=notification.agent_id,
@@ -1346,3 +1640,324 @@ class SqlPendingInviteStore:
                 return False
             await s.delete(row)
             return True
+
+
+# --- Legal consent and pending signups -------------------------------------------------------
+
+
+def _consent_from_row(row: ConsentRecordRow) -> ConsentRecord:
+    return ConsentRecord(
+        id=row.id,
+        decision_id=row.decision_id,
+        revision=row.revision,
+        client_revision=row.client_revision,
+        key_version=row.key_version,
+        subject_hmac=row.subject_hmac,
+        preferences=row.preferences,
+        analytics=row.analytics,
+        marketing=row.marketing,
+        source=row.source,
+        action=row.action,
+        terms_release_id=row.terms_release_id,
+        privacy_release_id=row.privacy_release_id,
+        cookies_release_id=row.cookies_release_id,
+        created_at=_aware(row.created_at),
+    )
+
+
+@dataclass
+class SqlConsentStore:
+    """Append-only consent store. Its public API deliberately has no mutation or deletion method."""
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def add(self, record: ConsentRecord) -> ConsentRecord:
+        existing = await self.get(record.decision_id)
+        if existing is not None:
+            if not same_consent_decision(existing, record):
+                raise ValueError("consent decision id conflict")
+            return existing
+        async with self.sessionmaker() as session, session.begin():
+            session.add(ConsentRecordRow(
+                id=record.id,
+                decision_id=record.decision_id,
+                revision=record.revision,
+                client_revision=record.client_revision,
+                key_version=record.key_version,
+                subject_hmac=record.subject_hmac,
+                preferences=record.preferences,
+                analytics=record.analytics,
+                marketing=record.marketing,
+                source=record.source,
+                action=record.action,
+                terms_release_id=record.terms_release_id,
+                privacy_release_id=record.privacy_release_id,
+                cookies_release_id=record.cookies_release_id,
+                created_at=record.created_at,
+            ))
+        return record
+
+    async def get(self, decision_id: str) -> ConsentRecord | None:
+        async with self.sessionmaker() as session:
+            row = (await session.execute(select(ConsentRecordRow).where(
+                ConsentRecordRow.decision_id == decision_id))).scalar_one_or_none()
+            return _consent_from_row(row) if row is not None else None
+
+    async def record_decision(
+        self, *, subject_hmac: str, subject_hmacs: list[str], key_version: str,
+        decision_id: str, client_revision: int, choices: ConsentChoices, source: ConsentSource,
+        terms_release_id: str, privacy_release_id: str, cookies_release_id: str,
+    ) -> ConsentRecord:
+        async with self.sessionmaker() as session, session.begin():
+            if session.bind.dialect.name == "postgresql":
+                for lock_key in sorted({decision_id, *subject_hmacs}):
+                    await session.execute(
+                        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": lock_key})
+            existing_row = (await session.execute(select(ConsentRecordRow).where(
+                ConsentRecordRow.decision_id == decision_id))).scalar_one_or_none()
+            if existing_row is not None:
+                existing = _consent_from_row(existing_row)
+                same_request = (
+                    existing.subject_hmac in subject_hmacs
+                    and existing.client_revision == client_revision
+                    and existing.preferences == choices.preferences
+                    and existing.analytics == choices.analytics
+                    and existing.marketing == choices.marketing
+                    and existing.source == source
+                    and existing.terms_release_id == terms_release_id
+                    and existing.privacy_release_id == privacy_release_id
+                    and existing.cookies_release_id == cookies_release_id
+                )
+                if not same_request:
+                    raise ValueError("consent decision id conflict")
+                return existing
+            previous_row = (await session.execute(
+                select(ConsentRecordRow)
+                .where(ConsentRecordRow.subject_hmac.in_(subject_hmacs))
+                .order_by(ConsentRecordRow.revision.desc())
+                .limit(1)
+            )).scalar_one_or_none()
+            previous = _consent_from_row(previous_row) if previous_row is not None else None
+            if previous is not None and client_revision < previous.client_revision:
+                raise ValueError("stale consent decision")
+            if previous is not None and client_revision == previous.client_revision:
+                merged = ConsentChoices(
+                    previous.preferences and choices.preferences,
+                    previous.analytics and choices.analytics,
+                    previous.marketing and choices.marketing)
+                if (merged.preferences, merged.analytics, merged.marketing) == (
+                        previous.preferences, previous.analytics, previous.marketing):
+                    raise ValueError("stale consent decision")
+                choices = merged
+            revision = previous.revision + 1 if previous else 1
+            action = "accept" if source == "signup" else derive_action(previous, choices)
+            record = ConsentRecord(
+                id=uuid.uuid4().hex, decision_id=decision_id, revision=revision,
+                client_revision=client_revision, key_version=key_version, subject_hmac=subject_hmac,
+                preferences=choices.preferences, analytics=choices.analytics,
+                marketing=choices.marketing, source=source, action=action,
+                terms_release_id=terms_release_id, privacy_release_id=privacy_release_id,
+                cookies_release_id=cookies_release_id, created_at=datetime.now(timezone.utc))
+            session.add(ConsentRecordRow(
+                id=record.id, decision_id=record.decision_id, revision=record.revision,
+                client_revision=record.client_revision, key_version=record.key_version, subject_hmac=record.subject_hmac,
+                preferences=record.preferences, analytics=record.analytics,
+                marketing=record.marketing, source=record.source, action=record.action,
+                terms_release_id=record.terms_release_id,
+                privacy_release_id=record.privacy_release_id,
+                cookies_release_id=record.cookies_release_id, created_at=record.created_at))
+            await session.flush()
+            return record
+
+    async def latest(self, subject_hmac: str) -> ConsentRecord | None:
+        async with self.sessionmaker() as session:
+            row = (await session.execute(
+                select(ConsentRecordRow)
+                .where(ConsentRecordRow.subject_hmac == subject_hmac)
+                .order_by(ConsentRecordRow.revision.desc(), ConsentRecordRow.id.desc())
+                .limit(1)
+            )).scalar_one_or_none()
+            return _consent_from_row(row) if row is not None else None
+
+    async def list_policy_releases(self) -> list[PolicyRelease]:
+        async with self.sessionmaker() as session:
+            rows = (await session.execute(
+                select(PolicyReleaseRow).order_by(PolicyReleaseRow.effective_at, PolicyReleaseRow.id)
+            )).scalars().all()
+            return [PolicyRelease(
+                id=row.id,
+                policy_type=row.policy_type,
+                content_sha256=row.content_sha256,
+                effective_at=_aware(row.effective_at),
+            ) for row in rows]
+
+
+@dataclass
+class SqlPendingSignupStore:
+    """Durable pending signup store with hashed, expiring, atomically consumed verification codes."""
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    @staticmethod
+    def _to_domain(row: PendingSignupRow) -> PendingSignup:
+        return PendingSignup(
+            user_id=row.user_id,
+            email=row.email,
+            password_hash=row.password_hash,
+            tenant=row.tenant_id,
+            role=Role(row.role),
+            code_hash=row.code_hash,
+            expires_at=_aware(row.expires_at),
+            terms_release_id=row.terms_release_id,
+            privacy_release_id=row.privacy_release_id,
+            cookies_release_id=row.cookies_release_id,
+            invite_version=row.invite_version,
+            attempts_remaining=row.attempts_remaining,
+            completed_at=_aware(row.completed_at) if row.completed_at else None,
+            completed_team_id=row.completed_team_id,
+            created_at=_aware(row.created_at),
+        )
+
+    async def put(self, signup: PendingSignup) -> bool:
+        async with self.sessionmaker() as session, session.begin():
+            row = await session.get(PendingSignupRow, signup.email.lower())
+            values = {
+                "user_id": signup.user_id,
+                "password_hash": signup.password_hash,
+                "tenant_id": signup.tenant,
+                "role": signup.role.value,
+                "code_hash": signup.code_hash,
+                "expires_at": signup.expires_at,
+                "terms_release_id": signup.terms_release_id,
+                "privacy_release_id": signup.privacy_release_id,
+                "cookies_release_id": signup.cookies_release_id,
+                "invite_version": signup.invite_version,
+                "attempts_remaining": signup.attempts_remaining,
+                "completed_at": signup.completed_at,
+                "completed_team_id": signup.completed_team_id,
+                "created_at": signup.created_at,
+            }
+            if row is not None and _aware(row.expires_at) > datetime.now(timezone.utc):
+                return False
+            if row is not None:
+                await session.delete(row)
+                await session.flush()
+            session.add(PendingSignupRow(email=signup.email.lower(), **values))
+            return True
+
+    async def get(self, email: str) -> PendingSignup | None:
+        async with self.sessionmaker() as session, session.begin():
+            row = await session.get(PendingSignupRow, email.lower())
+            if row is None:
+                return None
+            if _aware(row.expires_at) <= datetime.now(timezone.utc):
+                await session.delete(row)
+                return None
+            return self._to_domain(row)
+
+    async def consume(self, email: str, code: str) -> PendingSignup | None:
+        async with self.sessionmaker() as session, session.begin():
+            row = (await session.execute(
+                select(PendingSignupRow)
+                .where(PendingSignupRow.email == email.lower())
+                .with_for_update()
+            )).scalar_one_or_none()
+            if row is None:
+                return None
+            if _aware(row.expires_at) <= datetime.now(timezone.utc):
+                await session.delete(row)
+                return None
+            if not secrets.compare_digest(row.code_hash, hash_signup_code(code)):
+                row.attempts_remaining -= 1
+                if row.attempts_remaining <= 0:
+                    await session.delete(row)
+                return None
+            return self._to_domain(row)
+
+    async def finalize_signup(self, email: str, code: str, password_hash: str,
+                              terms_release_id: str, privacy_release_id: str,
+                              cookies_release_id: str) -> tuple[PendingSignup, bool] | None:
+        async with self.sessionmaker() as session, session.begin():
+            row = (await session.execute(
+                select(PendingSignupRow).where(PendingSignupRow.email == email.lower()).with_for_update()
+            )).scalar_one_or_none()
+            if row is None:
+                return None
+            now = datetime.now(timezone.utc)
+            if _aware(row.expires_at) <= now:
+                await session.delete(row)
+                return None
+            if not secrets.compare_digest(row.code_hash, hash_signup_code(code)):
+                row.attempts_remaining -= 1
+                if row.attempts_remaining <= 0:
+                    await session.delete(row)
+                return None
+            if row.completed_at is not None:
+                return self._to_domain(row), False
+            existing_user = (await session.execute(select(UserRow).where(UserRow.email == row.email))).scalar_one_or_none()
+            if await session.get(UserRow, row.user_id) is not None or existing_user is not None:
+                return None
+
+            team_id = None
+            if row.invite_version is None:
+                if await session.get(TenantRow, row.tenant_id) is None:
+                    session.add(TenantRow(id=row.tenant_id, name=row.tenant_id))
+                team_id = uuid.uuid4().hex[:12]
+                session.add(TeamRow(id=team_id, tenant_id=row.tenant_id))
+                session.add(TeamMemberRow(team_id=team_id, user_id=row.email, role=Role.owner.value))
+            else:
+                invite = (await session.execute(
+                    select(PendingTeamInviteRow)
+                    .where(PendingTeamInviteRow.tenant_id == row.tenant_id,
+                           PendingTeamInviteRow.email == row.email)
+                    .with_for_update()
+                )).scalar_one_or_none()
+                if (invite is None or invite.role != row.role
+                        or int(_aware(invite.invited_at).timestamp() * 1_000_000) != row.invite_version):
+                    return None
+                await session.delete(invite)
+
+            accepted_at = datetime.now(timezone.utc)
+            revision = int(accepted_at.timestamp() * 1000)
+            key_version = active_pseudonym_version()
+            session.add(ConsentRecordRow(
+                id=uuid.uuid4().hex,
+                decision_id=f"signup:{row.user_id}",
+                revision=revision,
+                client_revision=revision,
+                key_version=key_version,
+                subject_hmac=pseudonymous_subject("user", row.user_id, key_version),
+                preferences=False,
+                analytics=False,
+                marketing=False,
+                source="signup",
+                action="accept",
+                terms_release_id=terms_release_id,
+                privacy_release_id=privacy_release_id,
+                cookies_release_id=cookies_release_id,
+                created_at=accepted_at,
+            ))
+            session.add(UserRow(
+                id=row.user_id,
+                email=row.email,
+                password_hash=password_hash,
+                tenant_id=row.tenant_id,
+                role=row.role,
+            ))
+            row.completed_at = now
+            row.completed_team_id = team_id
+            row.expires_at = now + timedelta(minutes=10)
+            await session.flush()
+            return self._to_domain(row), True
+
+    async def delete(self, email: str) -> None:
+        async with self.sessionmaker() as session, session.begin():
+            row = await session.get(PendingSignupRow, email.lower())
+            if row is not None:
+                await session.delete(row)
+
+    async def purge_expired(self) -> int:
+        async with self.sessionmaker() as session, session.begin():
+            result = await session.execute(delete(PendingSignupRow).where(
+                PendingSignupRow.expires_at <= datetime.now(timezone.utc)))
+            return result.rowcount

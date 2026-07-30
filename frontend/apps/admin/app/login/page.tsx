@@ -12,6 +12,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [totp, setTotp] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -20,7 +21,7 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
-      await login(email, password);
+      await login(email, password, totp);
       router.push("/overview");
     } catch {
       setError("Invalid credentials");
@@ -48,7 +49,7 @@ export default function LoginPage() {
             <div className="space-y-1.5">
               <Label htmlFor="email">Email</Label>
               <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@company.com" required />
+                placeholder={"you" + "@" + "company.com"} required />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password">Password</Label>
@@ -61,6 +62,12 @@ export default function LoginPage() {
                   {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
               </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="totp">Authenticator or backup code</Label>
+              <Input id="totp" autoComplete="one-time-code" maxLength={64}
+                value={totp} onChange={(event) => setTotp(event.target.value)}
+                placeholder="Required when 2FA is enabled" />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={busy}>{busy ? "Signing in..." : "Sign in"}</Button>

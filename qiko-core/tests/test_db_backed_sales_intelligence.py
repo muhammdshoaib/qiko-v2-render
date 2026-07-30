@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.crypto import decrypt, encrypt
 from app.db.base import Base
+from app.db.models import Agent as AgentRow
+from app.db.models import Tenant
 from app.db.stores import (
     SqlActivityLogStore,
     SqlIngestionSourceStore,
@@ -23,7 +25,14 @@ async def _sessionmaker(path: str):
     engine = create_async_engine(f"sqlite+aiosqlite:///{path}")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    return async_sessionmaker(engine, expire_on_commit=False), engine
+    sm = async_sessionmaker(engine, expire_on_commit=False)
+    async with sm() as session, session.begin():
+        if await session.get(Tenant, "acme") is None:
+            session.add(Tenant(id="acme", name="Acme"))
+            session.add(Tenant(id="beta", name="Beta"))
+            session.add(AgentRow(id="ag1", tenant_id="acme", name="Agent 1", enabled=True))
+            session.add(AgentRow(id="ag-beta", tenant_id="beta", name="Beta Agent", enabled=True))
+    return sm, engine
 
 
 @pytest.fixture
@@ -135,7 +144,7 @@ async def test_opportunity_list_with_deadline_is_cross_tenant_and_excludes_archi
     soon = datetime.now(timezone.utc) + timedelta(days=2)
     # two live opportunities with deadlines, in DIFFERENT tenants (the scheduler sweeps globally)
     await store.add(_opp(id="d1", tenant="acme", external_id="e1", deadline_at=soon))
-    await store.add(_opp(id="d2", tenant="beta", external_id="e2", deadline_at=soon))
+    await store.add(_opp(id="d2", tenant="beta", agent_id="ag-beta", external_id="e2", deadline_at=soon))
     # excluded: no deadline / archived / soft-deleted
     await store.add(_opp(id="d3", external_id="e3", deadline_at=None))
     archived = _opp(id="d4", external_id="e4", deadline_at=soon)
@@ -156,7 +165,7 @@ async def test_activity_log_add_list_filters_order_and_scope(db_path):
                                 opportunity_id="op1", tone="success", metadata={"source_key": "ungm"}))
     await store.add(ActivityLog(id="l2", tenant="acme", agent_id="ag1", action="ungm_scan_completed",
                                 metadata={"source_key": "ungm"}))
-    await store.add(ActivityLog(id="l3", tenant="beta", agent_id="ag1", action="opportunity_ingested"))
+    await store.add(ActivityLog(id="l3", tenant="beta", agent_id="ag-beta", action="opportunity_ingested"))
 
     all_acme = await store.list_for_agent("acme", "ag1")
     assert {log.id for log in all_acme} == {"l1", "l2"}  # tenant scoped
@@ -199,4 +208,4 @@ async def test_salesforce_connection_tokens_encrypted_at_rest_and_persist(db_pat
     assert decrypt(reloaded.access_token) == "SECRET-ACCESS"
     assert decrypt(reloaded.refresh_token) == "SECRET-REFRESH"
     # tenant + agent scoped: a different key starts fresh (disconnected)
-    assert (await SqlSalesforceConnectionStore(sm2).get_or_create("beta", "ag1")).access_token is None
+    assert (await SqlSalesforceConnectionStore(sm2).get_or_create("beta", "ag-beta")).access_token is None

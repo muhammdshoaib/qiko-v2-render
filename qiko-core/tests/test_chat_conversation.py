@@ -1,9 +1,21 @@
-from app.modules.ai.gateway import StubProvider
+import pytest
+
+from app.modules.ai.gateway import LLMResponse
 from app.modules.chat.service import ChatService
 from app.modules.workers.config import WorkerConfig
 from app.modules.workers.worker import build_worker
 
 from tests.helpers import auth_cookies
+
+
+class _Provider:
+    def generate(self, prompt, **_kwargs):
+        return LLMResponse(text=prompt, model="test", stub=False)
+
+
+@pytest.fixture(autouse=True)
+def _non_stub_provider(monkeypatch):
+    monkeypatch.setattr("app.modules.agentcore.generator.get_provider", _Provider)
 
 
 async def test_find_or_create_is_deterministic_per_user_agent():
@@ -41,7 +53,7 @@ async def test_ask_with_a_never_created_conversation_id_still_attributes_the_rea
     recorded under a generic "public" agent -- meaning it could never be found by anything
     that looks a worker's own conversations up by its real agent id (the CRM pipeline)."""
     chat = ChatService()
-    worker = build_worker(WorkerConfig(name="Pre Sales Writer Worker", tenant="acme"), provider=StubProvider())
+    worker = build_worker(WorkerConfig(name="Pre Sales Writer Worker", tenant="acme"), provider=_Provider())
     await chat.ask(worker, "client-minted-conv-id", "hello", agent_id="agent-real-id")
     assert len(await chat.list_for_agent("acme", "agent-real-id")) == 1
     assert len(await chat.list_for_agent("acme", "public")) == 0
@@ -51,8 +63,11 @@ def test_ask_endpoint_attributes_conversation_to_the_real_agent_id(client):
     import asyncio
 
     c = auth_cookies("chatco", "owner")
+    agent_id = client.post(
+        "/api/v1/agents", cookies=c, json={"name": "Dashboard"}
+    ).json()["id"]
     r = client.post("/api/v1/chat/ask", cookies=c,
-                    json={"conversation_id": "test-123", "agent_id": "agent-dash", "question": "hi"})
+                    json={"conversation_id": "test-123", "agent_id": agent_id, "question": "hi"})
     assert r.status_code == 200
-    found = asyncio.run(client.app.state.chat.list_for_agent("chatco", "agent-dash"))
+    found = asyncio.run(client.app.state.chat.list_for_agent("chatco", agent_id))
     assert len(found) == 1

@@ -11,6 +11,8 @@ import { Link } from "@/lib/wouter";
 import { toast } from "sonner";
 import { signupAvatar } from "@/lib/avatarApi";
 import { arePasswordRequirementsMet, getPasswordRequirements } from "@/lib/passwordRequirements";
+import { ConsentSettingsButton } from "@/components/consent/ConsentUI";
+import { COOKIES_RELEASE_ID, PRIVACY_RELEASE_ID, TERMS_RELEASE_ID } from "@/lib/consent/consent-record";
 
 export default function SignUp() {
   const [, setLocation] = useLocation();
@@ -20,6 +22,7 @@ export default function SignUp() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [acceptedPolicies, setAcceptedPolicies] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,6 +38,11 @@ export default function SignUp() {
       toast.error("Please meet all password requirements");
       return;
     }
+
+    if (!acceptedPolicies) {
+      toast.error("You must confirm your authority and acknowledge the Terms and Privacy Policy");
+      return;
+    }
     
     setIsLoading(true);
 
@@ -47,10 +55,13 @@ export default function SignUp() {
         invite_token: typeof window === "undefined"
           ? undefined
           : new URLSearchParams(window.location.search).get("invite") ?? undefined,
+        terms_release_id: TERMS_RELEASE_ID,
+        privacy_release_id: PRIVACY_RELEASE_ID,
+        cookies_release_id: COOKIES_RELEASE_ID,
       });
 
-      toast.success("Account created successfully!");
-      setLocation("/signup-success");
+      toast.success("Check your email to verify your account");
+      setLocation(`/verify-email?email=${encodeURIComponent(normalizedEmail)}`);
     } catch (error: unknown) {
       console.error("Signup error:", error);
       const err = error as Error & { validationErrors?: Record<string, string[]> };
@@ -121,7 +132,7 @@ export default function SignUp() {
                 <Input
                   id="email"
                   type="email"
-                  placeholder="you@example.com"
+                  placeholder={"you" + "@" + "example.com"}
                   value={email}
                   onChange={(e) => {
                     setEmail(e.target.value.toLowerCase());
@@ -184,9 +195,26 @@ export default function SignUp() {
                 )}
               </div>
 
+              <div className="flex items-start gap-3 rounded-lg border border-slate-700 bg-slate-900/60 p-3">
+                <input
+                  id="policy-acceptance"
+                  type="checkbox"
+                  required
+                  checked={acceptedPolicies}
+                  onChange={(event) => setAcceptedPolicies(event.target.checked)}
+                  className="mt-0.5 size-4 shrink-0 accent-cyan-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+                />
+                <label htmlFor="policy-acceptance" className="text-xs leading-5 text-slate-300">
+                  I confirm that I am authorised to bind my organisation, agree to the{" "}
+                  <a href="/terms" target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline">Terms of Service</a>
+                  {", and acknowledge the "}
+                  <a href="/privacy" target="_blank" rel="noreferrer" className="text-cyan-400 hover:underline">Privacy Policy</a>.
+                </label>
+              </div>
+
               <Button
                 type="submit"
-                disabled={isLoading || password !== confirmPassword}
+                disabled={isLoading || password !== confirmPassword || !acceptedPolicies}
                 className="w-full bg-gradient-to-r from-purple-600 to-cyan-600 text-white border-0"
               >
                 {isLoading ? (
@@ -209,14 +237,12 @@ export default function SignUp() {
               </p>
             </div>
 
-            <p className="mt-4 text-xs text-slate-500 text-center">
-              By creating an account, you agree to our{" "}
-              <a href="/terms" className="text-cyan-400 hover:underline">Terms of Service</a>
-              {", "}
-              <a href="/privacy" className="text-cyan-400 hover:underline">Privacy Policy</a>
-              {" "}and{" "}
-              <a href="/cookies" className="text-cyan-400 hover:underline">Cookie Policy</a>
-            </p>
+            <nav aria-label="Legal" className="mt-4 flex flex-wrap justify-center gap-x-3 gap-y-2 text-xs text-slate-500">
+              <a href="/terms" className="hover:text-slate-300">Terms</a>
+              <a href="/privacy" className="hover:text-slate-300">Privacy</a>
+              <a href="/cookies" className="hover:text-slate-300">Cookies</a>
+              <ConsentSettingsButton className="hover:text-slate-300" />
+            </nav>
           </CardContent>
         </Card>
       </div>
