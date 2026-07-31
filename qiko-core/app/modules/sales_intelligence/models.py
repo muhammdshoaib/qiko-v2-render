@@ -431,3 +431,18 @@ class InMemoryIngestFilterSettingStore:
     async def update(self, setting: IngestFilterSetting) -> IngestFilterSetting:
         self._by_key[(setting.tenant, setting.agent_id)] = setting
         return setting
+
+
+def merge_ingest_filter(requested: dict, setting: IngestFilterSetting) -> dict:
+    """Fill scan filters from the persisted per-agent ingest filter where the request omits them:
+    the saved keyword (when query search is enabled) and the two allowlist bypasses ("*"). An
+    explicit request value always wins. Used by both the manual scan endpoints and the scheduled
+    sweep so automated and manual ingestion apply the same saved configuration."""
+    merged = dict(requested)
+    if "query" not in merged and setting.query_enabled and setting.query_keyword:
+        merged["query"] = setting.query_keyword
+    if "country_allowlist" not in merged and setting.all_countries:
+        merged["country_allowlist"] = "*"
+    if "category_allowlist" not in merged and setting.all_categories:
+        merged["category_allowlist"] = "*"
+    return merged

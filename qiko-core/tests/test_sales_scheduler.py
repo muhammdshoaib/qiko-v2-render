@@ -202,3 +202,28 @@ async def test_deadline_reminder_no_opportunities_is_clean():
     svc, _ = _build()
     summary = await scheduler.send_deadline_reminders(svc, agents=svc.agents)
     assert summary == {"with_deadline": 0, "considered": 0, "reminded": 0, "deduped": 0, "skipped": 0}
+
+
+async def test_scan_due_sources_applies_saved_ingest_filter(monkeypatch):
+    """REQ-5: the scheduled sweep applies the persisted per-agent ingest filter (saved keyword +
+    allowlist bypasses), matching the manual scan path -- not an empty filter."""
+    from app.modules.sales_intelligence.models import IngestFilterSetting, InMemoryIngestFilterSettingStore
+    svc, _ = _build()
+    await svc.update_source_status("acme", "agent-1", "ted", "active")
+    captured: dict = {}
+
+    def _search(filters=None):
+        captured.update(filters or {})
+        return _ted_notice()
+
+    monkeypatch.setattr(svc.ted, "search", _search)
+    store = InMemoryIngestFilterSettingStore()
+    await store.update(IngestFilterSetting(tenant="acme", agent_id="agent-1", query_enabled=True,
+                                           query_keyword="guarding", all_countries=True, all_categories=True))
+
+    summary = await scheduler.scan_due_sources(svc, ingest_filters=store)
+
+    assert summary["scanned"] == 1
+    assert captured.get("query") == "guarding"
+    assert captured.get("country_allowlist") == "*"
+    assert captured.get("category_allowlist") == "*"

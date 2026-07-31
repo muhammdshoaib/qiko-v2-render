@@ -1033,15 +1033,14 @@ def test_ingest_filters_are_tenant_scoped(client):
 
 
 def test_merge_ingest_filter_fills_defaults_and_respects_explicit():
-    from app.modules.sales_intelligence.models import IngestFilterSetting
-    from app.modules.sales_intelligence.router import _merge_ingest_filter
+    from app.modules.sales_intelligence.models import IngestFilterSetting, merge_ingest_filter
     setting = IngestFilterSetting(tenant="acme", agent_id="a", query_enabled=True,
                                   query_keyword="security", all_countries=True, all_categories=True)
     # Empty request -> saved keyword + both allowlist bypasses applied.
-    m = _merge_ingest_filter({}, setting)
+    m = merge_ingest_filter({}, setting)
     assert m == {"query": "security", "country_allowlist": "*", "category_allowlist": "*"}
     # Explicit request values win; disabled query + no bypass adds nothing.
     off = IngestFilterSetting(tenant="acme", agent_id="a", query_enabled=False, query_keyword="x",
                               all_countries=False, all_categories=False)
-    m2 = _merge_ingest_filter({"query": "explicit", "country_allowlist": "RO"}, off)
+    m2 = merge_ingest_filter({"query": "explicit", "country_allowlist": "RO"}, off)
     assert m2 == {"query": "explicit", "country_allowlist": "RO"}

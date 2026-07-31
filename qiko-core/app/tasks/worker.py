@@ -36,6 +36,7 @@ def _build_sales_runtime(sessionmaker):
     from app.db.stores import (
         SqlActivityLogStore,
         SqlAgentStore,
+        SqlIngestFilterSettingStore,
         SqlIngestionSourceStore,
         SqlNotificationStore,
         SqlOpportunityStore,
@@ -55,12 +56,13 @@ def _build_sales_runtime(sessionmaker):
         notifier=notifier,
         agents=agents,
     )
-    return service, agents
+    ingest_filters = SqlIngestFilterSettingStore(sessionmaker)
+    return service, agents, ingest_filters
 
 
 async def scan_due_sources(ctx):  # pragma: no cover - invoked by the arq cron runtime
-    service, agents = _build_sales_runtime(ctx["sessionmaker"])
-    return await sales_scheduler.scan_due_sources(service, agents=agents)
+    service, agents, ingest_filters = _build_sales_runtime(ctx["sessionmaker"])
+    return await sales_scheduler.scan_due_sources(service, agents=agents, ingest_filters=ingest_filters)
 
 
 async def purge_expired_signups(ctx):  # pragma: no cover - invoked by the arq cron runtime
@@ -69,7 +71,7 @@ async def purge_expired_signups(ctx):  # pragma: no cover - invoked by the arq c
 
 
 async def send_deadline_reminders(ctx):  # pragma: no cover - invoked by the arq cron runtime
-    service, agents = _build_sales_runtime(ctx["sessionmaker"])
+    service, agents, _ingest_filters = _build_sales_runtime(ctx["sessionmaker"])
     return await sales_scheduler.send_deadline_reminders(service, agents=agents)
 
 

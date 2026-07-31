@@ -23,7 +23,12 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from app.core.deps import WorkerUnavailable, require_available_worker
-from app.modules.sales_intelligence.models import IngestionSource, Opportunity, cadence_to_minutes
+from app.modules.sales_intelligence.models import (
+    IngestionSource,
+    Opportunity,
+    cadence_to_minutes,
+    merge_ingest_filter,
+)
 from app.modules.sales_intelligence.service import OpportunityService, SalesIntelligenceError
 
 logger = logging.getLogger(__name__)
@@ -67,7 +72,7 @@ def _is_source_due(source: IngestionSource, *, interval_minutes: int, now: datet
 
 
 async def scan_due_sources(service: OpportunityService, *, now: datetime | None = None,
-                           interval_minutes: int | None = None, agents=None) -> dict:
+                           interval_minutes: int | None = None, agents=None, ingest_filters=None) -> dict:
     """Scan every ENABLED ingestion source (across all tenants/agents) whose cadence is due.
 
     Reuses `OpportunityService.scan_ungm`/`scan_ted`, so the existing notification triggers fire
@@ -79,6 +84,7 @@ async def scan_due_sources(service: OpportunityService, *, now: datetime | None 
     now = now or _now()
     interval_minutes = interval_minutes if interval_minutes is not None else service.scan_interval_minutes
     agents = agents if agents is not None else getattr(service, "agents", None)
+    ingest_filters = ingest_filters if ingest_filters is not None else getattr(service, "ingest_filters", None)
 
     sources = await service.sources.list_active()  # tenant=None -> all tenants
     scanned = skipped = failed = 0
@@ -100,9 +106,13 @@ async def scan_due_sources(service: OpportunityService, *, now: datetime | None 
             agent = await require_available_worker(
                 agents=agents, tenant=source.tenant, agent_id=source.agent_id)
             agent_config = getattr(agent, "config", None)
-            # empty filters == the manual "scan now"
+            # Apply the persisted per-agent ingest filter (saved keyword + allowlist bypasses) so
+            # scheduled sweeps match the manual "scan now" and the saved config. No store -> {}.
+            scan_filters: dict = {}
+            if ingest_filters is not None:
+                scan_filters = merge_ingest_filter({}, await ingest_filters.get_or_create(source.tenant, source.agent_id))
             await scan(
-                source.tenant, source.agent_id, {}, agent_config=agent_config,
+                source.tenant, source.agent_id, scan_filters, agent_config=agent_config,
                 recheck_worker=recheck)
             scanned += 1
         except SalesIntelligenceError as exc:

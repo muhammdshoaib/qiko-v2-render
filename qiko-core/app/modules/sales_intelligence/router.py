@@ -29,6 +29,7 @@ from app.modules.sales_intelligence.models import (
     SOURCE_KEYS,
     SOURCE_STATUSES,
     STAGES,
+    merge_ingest_filter,
 )
 from app.modules.sales_intelligence.salesforce import SalesforceError, SalesforceNotConfiguredError
 from app.modules.sales_intelligence.service import InvalidStageTransitionError, SourceInactiveError
@@ -243,21 +244,6 @@ class ScanBody(BaseModel):
     category_allowlist: str | None = None
 
 
-def _merge_ingest_filter(requested: dict, setting) -> dict:
-    """Fill scan filters from the persisted per-agent ingest filter where the request omits them:
-    the saved keyword (when query search is enabled) and the two allowlist bypasses ("*"). An
-    explicit request value always wins. Also reconciles the FE all_countries/all_categories intent
-    (which ScanBody does not carry) into the country_allowlist/category_allowlist the scanner reads."""
-    merged = dict(requested)
-    if "query" not in merged and setting.query_enabled and setting.query_keyword:
-        merged["query"] = setting.query_keyword
-    if "country_allowlist" not in merged and setting.all_countries:
-        merged["country_allowlist"] = "*"
-    if "category_allowlist" not in merged and setting.all_categories:
-        merged["category_allowlist"] = "*"
-    return merged
-
-
 @router.post("/{agent_id}/scan/ungm")
 async def scan_ungm(agent_id: str, body: ScanBody, request: Request, tenant: str = Depends(authed_tenant),
                     claims: dict = Depends(require_role(Role.editor)), svc=Depends(get_sales_intel),
@@ -266,7 +252,7 @@ async def scan_ungm(agent_id: str, body: ScanBody, request: Request, tenant: str
     setting = await filters_store.get_or_create(tenant, agent_id)
     try:
         result = await svc.scan_ungm(
-            tenant, agent_id, _merge_ingest_filter(body.model_dump(exclude_none=True), setting), _actor_user_id(claims),
+            tenant, agent_id, merge_ingest_filter(body.model_dump(exclude_none=True), setting), _actor_user_id(claims),
             agent_config=await _agent_config(request, tenant, agent_id),
             recheck_worker=recheck)
     except SourceInactiveError as e:
@@ -292,7 +278,7 @@ async def scan_ted(agent_id: str, body: ScanBody, request: Request, tenant: str 
     setting = await filters_store.get_or_create(tenant, agent_id)
     try:
         result = await svc.scan_ted(
-            tenant, agent_id, _merge_ingest_filter(body.model_dump(exclude_none=True), setting), _actor_user_id(claims),
+            tenant, agent_id, merge_ingest_filter(body.model_dump(exclude_none=True), setting), _actor_user_id(claims),
             agent_config=await _agent_config(request, tenant, agent_id),
             recheck_worker=recheck)
     except SourceInactiveError as e:
