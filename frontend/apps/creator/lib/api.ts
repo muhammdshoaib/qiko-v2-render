@@ -821,7 +821,7 @@ export const getSalesActivityLogs = (
     `/sales-intelligence/${agentId}/activity-logs${query ? `?${query}` : ""}`,
   );
 };
-export const getSalesScanHistory = (agentId: string, params: { source_key?: string; per_page?: number } = {}) =>
+export const getSalesScanHistory = (agentId: string, params: { source_key?: string; status?: string; limit?: number } = {}) =>
   request<{ history: SalesScanHistoryEntry[] }>(`/sales-intelligence/${agentId}/scan-history${siQuery(params)}`);
 
 // Canonical review decisions match the backend REVIEW_DECISIONS enum (approved/rejected/

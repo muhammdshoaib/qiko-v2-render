@@ -4,15 +4,15 @@ import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, Archive, ArrowLeft, Check, ExternalLink, HelpCircle, Loader2, Pencil, Rocket,
+  Activity, AlertTriangle, Archive, ArrowLeft, Check, ExternalLink, HelpCircle, Loader2, Pencil, Rocket,
   RotateCcw, Sparkles, Trash2, X,
 } from "lucide-react";
 import { cn } from "@qiko/ui";
 import {
-  archiveSalesOpportunity, deleteSalesOpportunity, getSalesOpportunity, listAgents,
+  archiveSalesOpportunity, deleteSalesOpportunity, getSalesOpportunity, getSalesOpportunityHistory, listAgents,
   pushOpportunityToSalesforce, restoreSalesOpportunity, reviewSalesOpportunity,
   saveSalesOpportunityNotes, transitionSalesOpportunity, updateSalesOpportunity,
-  type OpportunityDetail, type ReviewDecision,
+  type OpportunityDetail, type ReviewDecision, type SalesActivityLog,
 } from "@/lib/api";
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
 import { AssignReviewerControl } from "@/components/sales-intelligence/assign-reviewer-control";
@@ -26,7 +26,7 @@ import {
   stageBadgeClass, STAGE_LABELS,
 } from "@/components/sales-intelligence/utils";
 
-const TABS = ["Overview", "Summary", "Qualification", "Reviewer", "Notes", "Status"] as const;
+const TABS = ["Overview", "Summary", "Qualification", "Reviewer", "Activity", "Notes", "Status"] as const;
 
 export default function OpportunityDetailPage() {
   const { id: agentId, oppId } = useParams<{ id: string; oppId: string }>();
@@ -239,6 +239,7 @@ export default function OpportunityDetailPage() {
                 <DecisionHistoryView agentId={agentId} opportunityId={oppId} />
               </div>
             )}
+            {tab === "Activity" && <ActivityTab agentId={agentId} oppId={oppId} />}
             {tab === "Notes" && <NotesTab agentId={agentId} oppId={oppId} detail={detail} onSaved={invalidate} />}
             {tab === "Status" && <StatusTab opp={opp} detail={detail} />}
           </>
@@ -257,6 +258,41 @@ function Field({ label, value, tooltip }: { label: string; value: React.ReactNod
       </p>
       <p className="mt-1.5 text-[14px] text-white">{value ?? "-"}</p>
     </div>
+  );
+}
+
+function ActivityTab({ agentId, oppId }: { agentId: string; oppId: string }) {
+  const q = useQuery({
+    queryKey: ["sales-opportunity-history", agentId, oppId],
+    queryFn: () => getSalesOpportunityHistory(agentId, oppId),
+    retry: false,
+  });
+  const entries: SalesActivityLog[] = q.data?.history ?? [];
+  const toneClass = (t: string) =>
+    t === "success" ? "bg-emerald-400" : t === "error" ? "bg-red-400" : t === "warning" ? "bg-amber-400" : "bg-slate-400";
+  const actionLabel = (v: string) =>
+    v.split("_").filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") || "Activity";
+  if (q.isLoading) return <p className="text-sm text-slate-500">Loading activity{"\u2026"}</p>;
+  if (q.isError) return <p className="text-sm text-red-400">Couldn&apos;t load activity. Try refreshing.</p>;
+  if (entries.length === 0) {
+    return <p className="flex items-center gap-2 text-sm text-slate-500"><Activity className="size-4" aria-hidden="true" /> No activity recorded yet.</p>;
+  }
+  return (
+    <ol className="space-y-4" aria-label="Opportunity activity timeline">
+      {entries.map((e) => (
+        <li key={e.id} className="flex gap-3 pl-1">
+          <span aria-hidden="true" className={cn("mt-1.5 size-2.5 shrink-0 rounded-full", toneClass(e.tone))} />
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <p className="text-[13px] font-medium text-white">{actionLabel(e.action)}</p>
+              <time dateTime={e.createdAt} className="text-[11px] text-slate-500">{formatDate(e.createdAt, true)}</time>
+              {e.actor?.userName && <span className="text-[11px] text-slate-500">{"\u00b7"} {e.actor.userName}</span>}
+            </div>
+            {e.detail && <p className="mt-0.5 text-[12px] text-slate-400">{e.detail}</p>}
+          </div>
+        </li>
+      ))}
+    </ol>
   );
 }
 
