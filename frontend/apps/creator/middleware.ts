@@ -9,7 +9,7 @@ export function middleware(req: NextRequest) {
   const hasAccess = req.cookies.has("qiko_access");
   const hasSession = hasAccess || req.cookies.has("qiko_refresh");
   const { pathname } = req.nextUrl;
-  const isPublic = pathname === "/" || pathname.startsWith("/labs") || pathname.startsWith("/login") || pathname.startsWith("/signup") || pathname.startsWith("/onboarding") || pathname.startsWith("/forgot-password") || pathname.startsWith("/reset-password") || pathname.startsWith("/verify-email") || pathname.startsWith("/terms") || pathname.startsWith("/privacy") || pathname.startsWith("/cookies");
+  const isPublic = pathname === "/" || pathname === "/.well-known/security.txt" || pathname.startsWith("/labs") || pathname.startsWith("/login") || pathname.startsWith("/signup") || pathname.startsWith("/onboarding") || pathname.startsWith("/forgot-password") || pathname.startsWith("/reset-password") || pathname.startsWith("/verify-email") || pathname.startsWith("/terms") || pathname.startsWith("/privacy") || pathname.startsWith("/cookies");
   if (!hasSession && !isPublic) return NextResponse.redirect(new URL("/login", req.url));
   // Always allow the login page. Cookie presence does not prove validity, and redirecting based on
   // a stale cookie can trap the browser in a login/dashboard loop when refresh is revoked.

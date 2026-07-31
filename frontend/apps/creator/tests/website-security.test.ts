@@ -24,7 +24,9 @@ test("Signal keeps its existing actions and shows a Coming Soon badge on desktop
 test("Next hides framework disclosure and publishes security.txt", () => {
   const config = source("next.config.mjs");
   const securityPath = resolve(appRoot, "public/.well-known/security.txt");
+  const middleware = source("middleware.ts");
   assert.match(config, /poweredByHeader:\s*false/);
+  assert.match(middleware, /pathname === "\/\.well-known\/security\.txt"/);
   assert.equal(existsSync(securityPath), true);
   const security = readFileSync(securityPath, "utf8");
   assert.match(security, /Contact: mailto:support@qiko\.ai/);
