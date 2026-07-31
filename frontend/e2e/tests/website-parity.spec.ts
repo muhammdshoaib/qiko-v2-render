@@ -14,7 +14,7 @@ async function mockPublicApi(page: Page) {
 }
 
 for (const viewport of [{ name: "desktop", width: 1440, height: 900 }, { name: "mobile", width: 390, height: 844 }]) {
-  test(`Signal Coming Soon badge preserves navigation on ${viewport.name}`, async ({ page }, testInfo) => {
+  test(`Signal navigation remains unchanged on ${viewport.name}`, async ({ page }, testInfo) => {
     const analyticsRequests: string[] = [];
     const consoleErrors: string[] = [];
     const pageErrors: string[] = [];
@@ -32,9 +32,9 @@ for (const viewport of [{ name: "desktop", width: 1440, height: 900 }, { name: "
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
     if (viewport.name === "desktop") {
-      const signalMenu = page.getByRole("button", { name: /Signal Coming Soon/ });
+      const signalMenu = page.locator("header").getByRole("button", { name: /^Signal/ }).first();
       await expect(signalMenu).toBeVisible();
-      await expect(page.getByLabel("Coming Soon")).toBeVisible();
+      await expect(page.getByText("Coming Soon", { exact: true })).toHaveCount(0);
       await signalMenu.focus();
       const overview = page.getByRole("button", { name: "Overview" }).first();
       await overview.focus();
@@ -50,13 +50,13 @@ for (const viewport of [{ name: "desktop", width: 1440, height: 900 }, { name: "
       await expect(labsMenu).toHaveAttribute("aria-expanded", "false");
     } else {
       await page.getByRole("button", { name: "Menu" }).click();
-      await expect(page.getByLabel("Coming Soon").last()).toBeVisible();
-      for (const name of [/^Home$/, /Signal Coming Soon/, /^Labs$/, /^About$/, /^Sign in$/, /Get started/]) {
+      await expect(page.getByText("Coming Soon", { exact: true })).toHaveCount(0);
+      for (const name of [/^Home$/, /^Signal$/, /^Labs$/, /^About$/, /^Sign in$/, /Get started/]) {
         const control = page.locator("header").getByRole("button", { name }).last();
         const box = await control.boundingBox();
         expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
       }
-      const mobileSignal = page.getByRole("button", { name: /Signal Coming Soon/ });
+      const mobileSignal = page.locator("header").getByRole("button", { name: "Signal", exact: true }).last();
       await mobileSignal.focus();
       const popupPromise = page.waitForEvent("popup");
       await mobileSignal.press("Enter");

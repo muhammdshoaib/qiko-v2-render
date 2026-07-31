@@ -9,18 +9,6 @@ const dropdownItem: React.CSSProperties = {
   background: "transparent", textAlign: "left",
 };
 
-function SignalComingSoonBadge() {
-  return (
-    <span aria-label="Coming Soon" style={{
-      display: "inline-flex", alignItems: "center", border: "1px solid rgba(124,140,255,.45)",
-      borderRadius: 999, padding: "2px 6px", color: "#aeb9ff", fontSize: 9,
-      fontFamily: "'Geist Mono',monospace", letterSpacing: ".04em", pointerEvents: "none",
-    }}>
-      Coming Soon
-    </span>
-  );
-}
-
 export type SiteChromeActions = {
   onHome: () => void; onSignal: () => void; onLabs: () => void; onAbout: () => void;
   onSignIn: () => void; onGetStarted: () => void;
@@ -62,7 +50,7 @@ export function QikoNav({
             <button type="button" aria-haspopup="menu" aria-expanded={menu === "signal"}
               onFocus={() => setMenu("signal")} onKeyDown={(event) => { if (event.key === "Escape") setMenu(null); }}
               style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 14.5, fontWeight: 500, color: "#9aa6b8", padding: "8px 14px", borderRadius: 999, userSelect: "none", border: 0, background: "transparent", cursor: "pointer" }}>
-              Signal <SignalComingSoonBadge /> <span style={{ fontSize: 8, opacity: 0.65 }}>&#9660;</span>
+              Signal <span style={{ fontSize: 8, opacity: 0.65 }}>&#9660;</span>
             </button>
             {menu === "signal" && (
               <div style={{ position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)", paddingTop: 11, zIndex: 90 }}>
@@ -119,7 +107,7 @@ export function QikoNav({
       {mobileOpen && (
         <div style={{ maxWidth: 1200, margin: "10px auto 0", background: "rgba(13,18,32,.97)", backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)", border: "1px solid #1a2336", borderRadius: 18, padding: 10, boxShadow: "0 24px 48px -18px rgba(0,0,0,.7)" }}>
           <button type="button" onClick={closeMobileAnd(onHome)} style={{ display: "block", width: "100%", minHeight: 44, padding: "12px 14px", borderRadius: 10, border: 0, background: "transparent", fontSize: 15, fontWeight: 500, color: "#E6ECF5", textAlign: "left", cursor: "pointer" }}>Home</button>
-          <button type="button" onClick={closeMobileAnd(onSignal)} style={{ display: "flex", width: "100%", minHeight: 44, alignItems: "center", gap: 8, padding: "12px 14px", borderRadius: 10, border: 0, background: "transparent", fontSize: 15, fontWeight: 500, color: "#E6ECF5", textAlign: "left", cursor: "pointer" }}>Signal <SignalComingSoonBadge /></button>
+          <button type="button" onClick={closeMobileAnd(onSignal)} style={{ display: "flex", width: "100%", minHeight: 44, alignItems: "center", gap: 8, padding: "12px 14px", borderRadius: 10, border: 0, background: "transparent", fontSize: 15, fontWeight: 500, color: "#E6ECF5", textAlign: "left", cursor: "pointer" }}>Signal</button>
           <button type="button" onClick={closeMobileAnd(onLabs)} style={{ display: "block", width: "100%", minHeight: 44, padding: "12px 14px", borderRadius: 10, border: 0, background: "transparent", fontSize: 15, fontWeight: 500, color: "#E6ECF5", textAlign: "left", cursor: "pointer" }}>Labs</button>
           <button type="button" onClick={closeMobileAnd(onAbout)} style={{ display: "block", width: "100%", minHeight: 44, padding: "12px 14px", borderRadius: 10, border: 0, background: "transparent", fontSize: 15, fontWeight: 500, color: "#E6ECF5", textAlign: "left", cursor: "pointer" }}>About</button>
           <div style={{ height: 1, background: "#1a2336", margin: "8px 6px" }} />
