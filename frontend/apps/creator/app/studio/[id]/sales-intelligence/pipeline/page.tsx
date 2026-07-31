@@ -265,7 +265,7 @@ function RejectedRail({ items, renderCard }: {
             {tabs.map((tab) => (
               <button key={tab.id} type="button" role="tab" aria-selected={filter === tab.id}
                 onClick={() => { setFilter(tab.id); setPage(0); }}
-                className={cn("rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
+                className={cn("inline-flex min-h-11 items-center rounded-md px-3 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
                   filter === tab.id ? "bg-indigo-500/20 text-white" : "text-slate-400 hover:text-white")}>
                 {tab.label} <span className="text-slate-500">({tab.count})</span>
               </button>
@@ -277,7 +277,7 @@ function RejectedRail({ items, renderCard }: {
             <input type="search" value={query}
               onChange={(e) => { setQuery(e.target.value); setPage(0); }}
               placeholder="Search title, buyer or source…"
-              className="w-56 rounded-lg border border-white/[0.08] bg-white/[0.03] py-1.5 pl-8 pr-3 text-[12px] text-slate-200 placeholder:text-slate-600 outline-none focus:border-indigo-500/40" />
+              className="min-h-11 w-56 rounded-lg border border-white/[0.08] bg-white/[0.03] py-1.5 pl-8 pr-3 text-[12px] text-slate-200 placeholder:text-slate-600 outline-none focus:border-indigo-500/40" />
           </label>
         </div>
       </div>
@@ -297,13 +297,13 @@ function RejectedRail({ items, renderCard }: {
               <div className="flex items-center gap-1.5">
                 <button type="button" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={safePage === 0}
                   aria-label="Previous page"
-                  className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
+                  className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
                   <ChevronLeft className="size-3.5" /> Prev
                 </button>
                 <span className="text-[11px] text-slate-500">Page {safePage + 1} of {pageCount}</span>
                 <button type="button" onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1}
                   aria-label="Next page"
-                  className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
+                  className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
                   Next <ChevronRight className="size-3.5" />
                 </button>
               </div>
