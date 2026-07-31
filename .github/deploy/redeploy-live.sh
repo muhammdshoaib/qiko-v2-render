@@ -199,6 +199,10 @@ if [ "$migrated" -ne 1 ]; then
 fi
 
 # Only after migrations succeed do we recreate the public API, worker and web applications.
+if ! $C rm -sf caddy worker qiko-core creator admin; then
+  echo "FATAL: docker compose could not remove the previous stateless containers" >&2
+  exit 1
+fi
 if ! $C up -d --force-recreate qiko-core worker creator admin caddy; then
   echo "FATAL: docker compose could not recreate the live application stack" >&2
   exit 1
