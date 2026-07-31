@@ -34,6 +34,7 @@ from app.modules.sales_intelligence.models import (
 )
 from app.modules.sales_intelligence import source_catalog
 from app.modules.sales_intelligence.salesforce import SalesforceError, SalesforceNotConfiguredError
+from app.modules.sales_intelligence.ssrf import SsrfError
 from app.modules.sales_intelligence.service import (
     InvalidStageTransitionError,
     OpportunityNotFoundError,
@@ -349,6 +350,37 @@ async def scan_ted(agent_id: str, body: ScanBody, request: Request, tenant: str 
             agent_config=await _agent_config(request, tenant, agent_id),
             recheck_worker=recheck)
     except SourceInactiveError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except WorkerUnavailable:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    await recheck()
+    return {
+        "source": _source_out(result["source"], scan_interval_minutes=svc.scan_interval_minutes),
+        "opportunities": [_opportunity_out(o) for o in result["opportunities"]],
+        "summary": {"created": result["created"], "updated": result["updated"],
+                    "totalReturned": len(result["opportunities"])},
+    }
+
+
+@router.post("/{agent_id}/scan/{source_key}")
+async def scan_source(agent_id: str, source_key: str, body: ScanBody, request: Request,
+                      tenant: str = Depends(authed_tenant), claims: dict = Depends(require_role(Role.editor)),
+                      svc=Depends(get_sales_intel), filters_store=Depends(get_ingest_filters)) -> dict:
+    """Scan an attached source by key, dispatching to its connector (generic HTTP for custom sources).
+    The static /scan/ted and /scan/ungm routes take precedence for the built-ins."""
+    key = _norm_source_key(source_key)
+    recheck = await _resolve_worker(request, tenant, agent_id)
+    setting = await filters_store.get_or_create(tenant, agent_id)
+    try:
+        result = await svc.scan_source(
+            tenant, agent_id, key, merge_ingest_filter(body.model_dump(exclude_none=True), setting),
+            _actor_user_id(claims), agent_config=await _agent_config(request, tenant, agent_id),
+            recheck_worker=recheck)
+    except OpportunityNotFoundError as e:
+        raise HTTPException(status_code=404, detail="source not attached") from e
+    except (SourceInactiveError, SsrfError) as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except WorkerUnavailable:
         raise

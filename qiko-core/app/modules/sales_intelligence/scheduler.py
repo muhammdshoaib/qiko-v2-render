@@ -23,6 +23,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from app.core.deps import WorkerUnavailable, require_available_worker
+from app.modules.sales_intelligence import source_catalog
 from app.modules.sales_intelligence.models import (
     IngestionSource,
     Opportunity,
@@ -32,9 +33,6 @@ from app.modules.sales_intelligence.models import (
 from app.modules.sales_intelligence.service import OpportunityService, SalesIntelligenceError
 
 logger = logging.getLogger(__name__)
-
-# source_key -> the OpportunityService scan method (reuses the manual-endpoint code path exactly).
-_SCAN_METHODS = {"ungm": "scan_ungm", "ted": "scan_ted"}
 
 # Stages past which a submission-deadline reminder is pointless (already pushed to CRM or rejected).
 TERMINAL_STAGES = frozenset({"pushed", "rejected"})
@@ -90,11 +88,11 @@ async def scan_due_sources(service: OpportunityService, *, now: datetime | None 
     scanned = skipped = failed = 0
 
     for source in sources:
-        method_name = _SCAN_METHODS.get(source.source_key)
-        if method_name is None or not _is_source_due(source, interval_minutes=interval_minutes, now=now):
+        connector = str((source.config or {}).get("connector") or source_catalog.connector_key(source.source_key))
+        scannable = connector in source_catalog.CONNECTOR_KEYS
+        if not scannable or not _is_source_due(source, interval_minutes=interval_minutes, now=now):
             skipped += 1
             continue
-        scan = getattr(service, method_name)
         try:
             if agents is None:
                 raise WorkerUnavailable
@@ -111,9 +109,9 @@ async def scan_due_sources(service: OpportunityService, *, now: datetime | None 
             scan_filters: dict = {}
             if ingest_filters is not None:
                 scan_filters = merge_ingest_filter({}, await ingest_filters.get_or_create(source.tenant, source.agent_id))
-            await scan(
-                source.tenant, source.agent_id, scan_filters, agent_config=agent_config,
-                recheck_worker=recheck)
+            await service.scan_source(
+                source.tenant, source.agent_id, source.source_key, scan_filters,
+                agent_config=agent_config, recheck_worker=recheck)
             scanned += 1
         except SalesIntelligenceError as exc:
             # Includes SourceInactiveError (source disabled mid-sweep) and re-raised scan failures --

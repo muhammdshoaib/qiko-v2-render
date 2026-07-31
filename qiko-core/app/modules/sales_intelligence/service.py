@@ -13,7 +13,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from app.modules.sales_intelligence import source_catalog
-from app.modules.sales_intelligence.connectors import TedNoticeConnector, UngmNoticeConnector
+from app.modules.sales_intelligence.connectors import (
+    GenericHttpNoticeConnector,
+    TedNoticeConnector,
+    UngmNoticeConnector,
+)
 from app.modules.sales_intelligence.models import (
     ActivityLog,
     ActivityLogStore,
@@ -98,6 +102,7 @@ def _default_source_cadence(scan_interval_minutes: int) -> str:
 class OpportunityService:
     ungm: UngmNoticeConnector = field(default_factory=UngmNoticeConnector)
     ted: TedNoticeConnector = field(default_factory=TedNoticeConnector)
+    generic: GenericHttpNoticeConnector = field(default_factory=GenericHttpNoticeConnector)
     qualification: QualificationService = field(default_factory=QualificationService)
     sources: IngestionSourceStore = None  # type: ignore[assignment]
     opportunities: OpportunityStore = None  # type: ignore[assignment]
@@ -157,7 +162,7 @@ class OpportunityService:
             config = dict(config_input or {})
             if not str(config.get("url") or "").strip():
                 raise SalesIntelligenceError("config.url is required for a custom source.")
-            connector, auth_status, source_type, scannable = "generic", None, "portal", False
+            connector, auth_status, source_type, scannable = "generic", None, "portal", True
         else:
             display_name = (name or "").strip() or definition["name"]
             config = {**(definition.get("config") or {}), **(config_input or {})}
@@ -245,6 +250,26 @@ class OpportunityService:
             tenant, agent_id, "ted", "TED - EU Tenders",
             lambda: self.ted.search(filters), actor_user_id, agent_config, recheck_worker)
 
+    async def scan_source(self, tenant: str, agent_id: str, source_key: str, filters: dict,
+                          actor_user_id: str | None = None, agent_config: dict | None = None,
+                          recheck_worker=None) -> dict:
+        """Scan any attached source, dispatching to the connector for its key: the built-in ted/ungm
+        connectors, or the generic HTTP connector for a custom source (config.connector == generic)."""
+        if source_key == "ted":
+            return await self.scan_ted(tenant, agent_id, filters, actor_user_id, agent_config, recheck_worker)
+        if source_key == "ungm":
+            return await self.scan_ungm(tenant, agent_id, filters, actor_user_id, agent_config, recheck_worker)
+        source = await self.sources.get(tenant, agent_id, source_key)
+        if source is None:
+            raise OpportunityNotFoundError(f"source not attached: {source_key}")
+        connector = str((source.config or {}).get("connector") or source_catalog.connector_key(source_key))
+        if connector != "generic":
+            raise SourceInactiveError(f"{source_key} is not scannable.")
+        cfg = source.config or {}
+        return await self._scan_source(
+            tenant, agent_id, source_key, source.name,
+            lambda: self.generic.search(filters, cfg), actor_user_id, agent_config, recheck_worker)
+
     async def _resolve_scorer(self, tenant: str, agent_id: str,
                               agent_config: dict | None) -> QualificationService:
         """Build the per-agent qualification scorer. Uses an explicitly-passed agent_config (from
@@ -265,8 +290,14 @@ class OpportunityService:
                 await recheck_worker()
 
         await recheck()
-        source = await (self.ensure_ted_source(tenant, agent_id) if source_key == "ted"
-                        else self.ensure_ungm_source(tenant, agent_id))
+        if source_key == "ted":
+            source = await self.ensure_ted_source(tenant, agent_id)
+        elif source_key == "ungm":
+            source = await self.ensure_ungm_source(tenant, agent_id)
+        else:
+            source = await self.sources.get(tenant, agent_id, source_key)
+            if source is None:
+                raise OpportunityNotFoundError(f"source not attached: {source_key}")
         self.assert_source_active(source)
         source.last_scan_status = "running"
         source.last_error = None

@@ -1102,7 +1102,8 @@ def test_attach_custom_source_requires_name_and_url(client):
     assert r3.status_code == 200, r3.text
     src = r3.json()["source"]
     assert src["sourceKey"] == "acme-portal" and src["config"]["connector"] == "generic"
-    assert src["config"]["scannable"] is False
+    # 5b: the generic connector ships, so a custom source is scannable.
+    assert src["config"]["scannable"] is True
     # It shows in the source list (not the first-party catalog).
     sources = client.get(f"/api/v1/sales-intelligence/{agent}/sources", cookies=cookies).json()["sources"]
     assert any(s["sourceKey"] == "acme-portal" for s in sources)
