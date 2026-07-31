@@ -489,6 +489,21 @@ class SalesIntelSalesforceConnection(Base):
     connected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class SalesIntelIngestFilter(Base):
+    """Persisted per-worker ingest filter (ported from idg_sales config.ingest_filters). One row
+    per (tenant, agent): the portal keyword toggle + keyword, and the two allowlist-bypass flags
+    (all_countries / all_categories). Applied to manual and scheduled scans when the request does
+    not override them. Defaults mirror deployed Staging (query on, keyword 'security', bypass on)."""
+    __tablename__ = "sales_intel_ingest_filters"
+    tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    agent_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    query_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    query_keyword: Mapped[str] = mapped_column(String(255), default="security")
+    all_countries: Mapped[bool] = mapped_column(Boolean, default=True)
+    all_categories: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Notification(Base):
     """A generic in-app notification for one tenant (app.modules.notifications), ported from the
     qiko-backend origin/idg-sales `notifications` table. Reusable across verticals (Sales

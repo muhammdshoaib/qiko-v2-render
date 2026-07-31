@@ -987,3 +987,60 @@ def test_sales_intelligence_manual_mutations_are_tenant_scoped(client):
                        cookies=beta).status_code == 404
     assert client.delete(f"/api/v1/sales-intelligence/{agent}/opportunities/{opp_id}",
                         cookies=beta).status_code == 404
+
+
+# --- R2: persisted ingest filters (per-agent) --------------------------------------------------
+
+def test_ingest_filters_default_and_round_trip(client):
+    cookies = auth_cookies(tenant="acme")
+    agent = "agent-si-ingest-1"
+    # Defaults for a fresh agent match deployed Staging (query on, keyword "security", allowlists bypassed).
+    got = client.get(f"/api/v1/sales-intelligence/{agent}/ingest-filters", cookies=cookies)
+    assert got.status_code == 200, got.text
+    body = got.json()
+    assert body["queryEnabled"] is True
+    assert body["queryKeyword"] == "security"
+    assert body["allCountries"] is True
+    assert body["allCategories"] is True
+    # Persist a change and read it back.
+    patched = client.patch(f"/api/v1/sales-intelligence/{agent}/ingest-filters", cookies=cookies,
+                           json={"query_enabled": False, "query_keyword": "guard services",
+                                 "all_countries": False, "all_categories": False})
+    assert patched.status_code == 200, patched.text
+    p = patched.json()
+    assert p["queryEnabled"] is False and p["queryKeyword"] == "guard services"
+    assert p["allCountries"] is False and p["allCategories"] is False
+    again = client.get(f"/api/v1/sales-intelligence/{agent}/ingest-filters", cookies=cookies).json()
+    assert again["queryEnabled"] is False and again["queryKeyword"] == "guard services"
+    assert again["allCountries"] is False and again["allCategories"] is False
+
+
+def test_ingest_filters_patch_requires_editor_role(client):
+    viewer = auth_cookies(tenant="acme", role="viewer")
+    resp = client.patch("/api/v1/sales-intelligence/agent-si-ingest-rbac/ingest-filters",
+                         cookies=viewer, json={"query_keyword": "x"})
+    assert resp.status_code == 403, resp.text
+
+
+def test_ingest_filters_are_tenant_scoped(client):
+    agent = "agent-si-ingest-iso"
+    client.patch(f"/api/v1/sales-intelligence/{agent}/ingest-filters", cookies=auth_cookies(tenant="acme"),
+                 json={"query_keyword": "acme-only"})
+    other = client.get(f"/api/v1/sales-intelligence/{agent}/ingest-filters",
+                       cookies=auth_cookies(tenant="globex")).json()
+    # A different tenant must not see acme's saved keyword (fresh default instead).
+    assert other["queryKeyword"] == "security"
+
+
+def test_merge_ingest_filter_fills_defaults_and_respects_explicit():
+    from app.modules.sales_intelligence.models import IngestFilterSetting, merge_ingest_filter
+    setting = IngestFilterSetting(tenant="acme", agent_id="a", query_enabled=True,
+                                  query_keyword="security", all_countries=True, all_categories=True)
+    # Empty request -> saved keyword + both allowlist bypasses applied.
+    m = merge_ingest_filter({}, setting)
+    assert m == {"query": "security", "country_allowlist": "*", "category_allowlist": "*"}
+    # Explicit request values win; disabled query + no bypass adds nothing.
+    off = IngestFilterSetting(tenant="acme", agent_id="a", query_enabled=False, query_keyword="x",
+                              all_countries=False, all_categories=False)
+    m2 = merge_ingest_filter({"query": "explicit", "country_allowlist": "RO"}, off)
+    assert m2 == {"query": "explicit", "country_allowlist": "RO"}

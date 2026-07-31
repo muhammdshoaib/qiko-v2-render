@@ -135,6 +135,7 @@ async def lifespan(app: FastAPI):
             SqlContactStore,
             SqlFinanceChatStore,
             SqlFinanceFileStore,
+            SqlIngestFilterSettingStore,
             SqlIngestionSourceStore,
             SqlLeadStore,
             SqlNotificationStore,
@@ -180,6 +181,7 @@ async def lifespan(app: FastAPI):
             notifier=sales_notifier)
         app.state.sales_intel_mutation = OpportunityMutationService(
             opportunities=si_opportunities, activity_logs=si_activity_logs, notifier=sales_notifier)
+        app.state.sales_intel_ingest_filters = SqlIngestFilterSettingStore(sm)
         app.state.salesforce_auth = SalesforceAuthService(
             connections=si_connections, activity_logs=si_activity_logs)
         app.state.salesforce_push = SalesforcePushService(
@@ -331,6 +333,8 @@ def create_app() -> FastAPI:
     app.state.sales_intel_mutation = OpportunityMutationService(opportunities=app.state.sales_intel.opportunities,
                                                                  activity_logs=app.state.sales_intel.activity_logs,
                                                                  notifier=app.state.sales_notifier)
+    from app.modules.sales_intelligence.models import InMemoryIngestFilterSettingStore
+    app.state.sales_intel_ingest_filters = InMemoryIngestFilterSettingStore()
     app.state.salesforce_auth = SalesforceAuthService()
     app.state.salesforce_push = SalesforcePushService(auth=app.state.salesforce_auth,
                                                       notifier=app.state.sales_notifier,

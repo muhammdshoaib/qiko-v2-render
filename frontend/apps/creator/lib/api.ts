@@ -824,6 +824,16 @@ export const getSalesActivityLogs = (
 export const getSalesScanHistory = (agentId: string, params: { source_key?: string; status?: string; limit?: number } = {}) =>
   request<{ history: SalesScanHistoryEntry[] }>(`/sales-intelligence/${agentId}/scan-history${siQuery(params)}`);
 
+export type SalesIngestFilter = {
+  agentId: string | null; queryEnabled: boolean; queryKeyword: string;
+  allCountries: boolean; allCategories: boolean; updatedAt: string | null;
+};
+export const getSalesIngestFilter = (agentId: string) =>
+  request<SalesIngestFilter>(`/sales-intelligence/${agentId}/ingest-filters`);
+export const updateSalesIngestFilter = (agentId: string, body: {
+  query_enabled?: boolean; query_keyword?: string; all_countries?: boolean; all_categories?: boolean;
+}) => request<SalesIngestFilter>(`/sales-intelligence/${agentId}/ingest-filters`, { method: "PATCH", body: JSON.stringify(body) });
+
 // Canonical review decisions match the backend REVIEW_DECISIONS enum (approved/rejected/
 // needs_review); sending "approve"/"reject" here previously 422'd every review.
 export type ReviewDecision = "approved" | "rejected" | "needs_review";

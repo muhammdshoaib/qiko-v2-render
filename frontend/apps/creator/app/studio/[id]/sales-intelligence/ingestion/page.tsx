@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Layers, Loader2, RadioTower, RefreshCw, Search, Sparkles } from "lucide-react";
+import { Check, ChevronDown, Layers, Loader2, RadioTower, RefreshCw, Search, Sparkles } from "lucide-react";
 import { cn } from "@qiko/ui";
 import {
-  listAgents, listSalesOpportunities, listSalesSources, scanTedSource, scanUngmSource, updateSalesSource,
+  getSalesIngestFilter, listAgents, listSalesOpportunities, listSalesSources, scanTedSource, scanUngmSource,
+  updateSalesIngestFilter, updateSalesSource,
   type SalesIntelSource, type SalesScanCadence,
 } from "@/lib/api";
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
@@ -53,6 +54,25 @@ export default function SalesIntelligenceIngestionPage() {
 
   const oppsQ = useQuery({ queryKey: ["sales-opportunities", agentId], queryFn: () => listSalesOpportunities(agentId, { limit: "all" }), retry: false });
   const opps = oppsQ.data?.opportunities ?? [];
+
+  // Load the persisted ingest filter and seed the controls once (so the saved keyword + allowlist
+  // bypasses survive a reload, matching deployed Staging). Local edits after seeding are the user's.
+  const ingestFilterQ = useQuery({ queryKey: ["sales-ingest-filter", agentId], queryFn: () => getSalesIngestFilter(agentId), retry: false });
+  const seeded = useRef(false);
+  useEffect(() => {
+    if (seeded.current || !ingestFilterQ.data) return;
+    seeded.current = true;
+    setQuery(ingestFilterQ.data.queryKeyword ?? "security");
+    setUseQuery(ingestFilterQ.data.queryEnabled);
+    setAllCountries(ingestFilterQ.data.allCountries);
+    setAllCategories(ingestFilterQ.data.allCategories);
+  }, [ingestFilterQ.data]);
+  const saveFilter = useMutation({
+    mutationFn: () => updateSalesIngestFilter(agentId, {
+      query_enabled: useQuery_, query_keyword: query, all_countries: allCountries, all_categories: allCategories,
+    }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sales-ingest-filter", agentId] }),
+  });
 
   // Scan payload: the keyword (when enabled) plus the two allowlist-bypass toggles, so the
   // "All countries" / "All categories" switches actually reach the portal scan instead of being
@@ -132,9 +152,16 @@ export default function SalesIntelligenceIngestionPage() {
         </div>
 
         <div>
-          <p className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-400">
-            <Sparkles className="size-3.5" /> INGEST FILTERS
-          </p>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-400">
+              <Sparkles className="size-3.5" /> INGEST FILTERS
+            </p>
+            <button type="button" onClick={() => saveFilter.mutate()} disabled={saveFilter.isPending}
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-1.5 text-[12px] font-semibold text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+              {saveFilter.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Check className="size-3.5" aria-hidden="true" />}
+              {saveFilter.isPending ? "Saving\u2026" : saveFilter.isSuccess ? "Saved" : "Save filters"}
+            </button>
+          </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <FilterCard icon={<Search className="size-4" />} title="Portal query"
               description="Keyword for TED notice titles and UNGM descriptions. Toggle off for an open portal search."

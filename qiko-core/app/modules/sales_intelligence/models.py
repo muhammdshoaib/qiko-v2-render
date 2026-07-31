@@ -233,6 +233,19 @@ class SalesforceConnection:
         return self.status == "connected" and bool(self.access_token) and bool(self.instance_url)
 
 
+@dataclass
+class IngestFilterSetting:
+    """Persisted per-(tenant, agent) ingest filter. Defaults mirror deployed Staging: portal
+    keyword search on with keyword 'security', and both allowlist bypasses on (scan everything)."""
+    tenant: str
+    agent_id: str
+    query_enabled: bool = True
+    query_keyword: str = "security"
+    all_countries: bool = True
+    all_categories: bool = True
+    updated_at: datetime | None = None
+
+
 class IngestionSourceStore(Protocol):
     async def get_or_create(self, tenant: str, agent_id: str, source_key: str, defaults: dict) -> IngestionSource: ...
     async def get(self, tenant: str, agent_id: str, source_key: str) -> IngestionSource | None: ...
@@ -261,6 +274,11 @@ class ActivityLogStore(Protocol):
 class SalesforceConnectionStore(Protocol):
     async def get_or_create(self, tenant: str, agent_id: str) -> SalesforceConnection: ...
     async def update(self, conn: SalesforceConnection) -> SalesforceConnection: ...
+
+
+class IngestFilterSettingStore(Protocol):
+    async def get_or_create(self, tenant: str, agent_id: str) -> IngestFilterSetting: ...
+    async def update(self, setting: IngestFilterSetting) -> IngestFilterSetting: ...
 
 
 @dataclass
@@ -398,3 +416,33 @@ class InMemorySalesforceConnectionStore:
     async def update(self, conn: SalesforceConnection) -> SalesforceConnection:
         self._by_key[(conn.tenant, conn.agent_id)] = conn
         return conn
+
+
+@dataclass
+class InMemoryIngestFilterSettingStore:
+    _by_key: dict[tuple[str, str], IngestFilterSetting] = field(default_factory=dict)
+
+    async def get_or_create(self, tenant: str, agent_id: str) -> IngestFilterSetting:
+        key = (tenant, agent_id)
+        if key not in self._by_key:
+            self._by_key[key] = IngestFilterSetting(tenant=tenant, agent_id=agent_id)
+        return self._by_key[key]
+
+    async def update(self, setting: IngestFilterSetting) -> IngestFilterSetting:
+        self._by_key[(setting.tenant, setting.agent_id)] = setting
+        return setting
+
+
+def merge_ingest_filter(requested: dict, setting: IngestFilterSetting) -> dict:
+    """Fill scan filters from the persisted per-agent ingest filter where the request omits them:
+    the saved keyword (when query search is enabled) and the two allowlist bypasses ("*"). An
+    explicit request value always wins. Used by both the manual scan endpoints and the scheduled
+    sweep so automated and manual ingestion apply the same saved configuration."""
+    merged = dict(requested)
+    if "query" not in merged and setting.query_enabled and setting.query_keyword:
+        merged["query"] = setting.query_keyword
+    if "country_allowlist" not in merged and setting.all_countries:
+        merged["country_allowlist"] = "*"
+    if "category_allowlist" not in merged and setting.all_categories:
+        merged["category_allowlist"] = "*"
+    return merged
