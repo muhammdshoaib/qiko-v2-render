@@ -36,7 +36,7 @@ function FilterTabs<T extends string>({ label, options, value, onChange }: {
     <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.02] p-0.5" role="group" aria-label={label}>
       {options.map((o) => (
         <button key={o.id} type="button" aria-pressed={value === o.id} onClick={() => onChange(o.id)}
-          className={cn("inline-flex min-h-11 items-center rounded-md px-3 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
+          className={cn("inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-3 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
             value === o.id ? "bg-indigo-500/20 text-white" : "text-slate-400 hover:text-white")}>
           {o.label}
         </button>
@@ -88,12 +88,12 @@ export default function SalesScanHistoryPage() {
             <table className="w-full text-left text-[13px]">
               <thead>
                 <tr className="border-b border-white/[0.06] text-[11px] uppercase tracking-wider text-slate-500">
-                  <th className="px-4 py-3">Source</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Found</th>
-                  <th className="px-4 py-3">Started</th>
-                  <th className="px-4 py-3">Finished</th>
-                  <th className="px-4 py-3">Error</th>
+                  <th scope="col" className="px-4 py-3">Source</th>
+                  <th scope="col" className="px-4 py-3">Status</th>
+                  <th scope="col" className="px-4 py-3">Found</th>
+                  <th scope="col" className="px-4 py-3">Started</th>
+                  <th scope="col" className="px-4 py-3">Finished</th>
+                  <th scope="col" className="px-4 py-3">Error</th>
                 </tr>
               </thead>
               <tbody>
