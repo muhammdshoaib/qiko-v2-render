@@ -10,9 +10,9 @@ function source(path: string): string {
   return readFileSync(resolve(appRoot, path), "utf8");
 }
 
-test("Signal keeps its existing actions and shows a Coming Soon badge on desktop and mobile", () => {
+test("Signal keeps its existing actions without a Coming Soon badge", () => {
   const chrome = source("components/QikoSiteChrome.tsx");
-  assert.ok((chrome.match(/Coming Soon/g) ?? []).length >= 2);
+  assert.equal((chrome.match(/Coming Soon/g) ?? []).length, 0);
   assert.match(chrome, /onClick=\{onSignal\}/);
   assert.match(chrome, /closeMobileAnd\(onSignal\)/);
   assert.doesNotMatch(chrome, /coming-soon|disabled=|aria-disabled/);
