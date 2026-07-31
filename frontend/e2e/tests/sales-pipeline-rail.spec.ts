@@ -67,14 +67,17 @@ test("Rejected & Push Failed rail supports tab filter, search and pagination", a
   await expect(page.getByRole("tab", { name: /All/ })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByText(/Showing 1\u20136 of 11/)).toBeVisible();
 
-  // Pagination: next page shows the remaining 5.
+  // Pagination: Prev disabled on the first page, next page shows the remaining 5.
+  await expect(page.getByRole("button", { name: "Previous page" })).toBeDisabled();
   await page.getByRole("button", { name: "Next page" }).click();
   await expect(page.getByText(/Showing 7\u201311 of 11/)).toBeVisible();
   await expect(page.getByRole("button", { name: "Next page" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Previous page" })).toBeEnabled();
 
-  // Rejected tab: 8 items, pagination resets to page 1.
+  // Rejected tab: 8 items, pagination clamps/resets to page 1 (was on page 2 above).
   await page.getByRole("tab", { name: /Rejected/ }).click();
   await expect(page.getByText(/Showing 1\u20136 of 8/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Previous page" })).toBeDisabled();
 
   // Search narrows client-side (2 rejected items have buyer "Ministry of Testing").
   await page.getByPlaceholder("Search title, buyer or source\u2026").fill("Ministry");
