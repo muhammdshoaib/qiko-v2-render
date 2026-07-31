@@ -214,7 +214,6 @@ async def test_salesforce_connection_tokens_encrypted_at_rest_and_persist(db_pat
 @pytest.mark.asyncio
 async def test_sql_ingest_filter_store_defaults_persist_and_scope(db_path):
     from app.db.stores import SqlIngestFilterSettingStore
-    from app.modules.sales_intelligence.models import IngestFilterSetting
     sm, engine = await _sessionmaker(db_path)
     try:
         store = SqlIngestFilterSettingStore(sm)
