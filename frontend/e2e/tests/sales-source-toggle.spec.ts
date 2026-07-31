@@ -35,12 +35,17 @@ test("Source cards expose an enable/disable toggle that PATCHes the source statu
   page.on("pageerror", (e) => pageErrors.push(e.message));
   await mockIngestion(page);
 
-  // Capture the status PATCH triggered by the toggle.
+  // Capture the status PATCH triggered by each toggle (disable TED, enable UNGM).
   const patched: { url: string; body: string }[] = [];
   await page.route("**/api/v1/sales-intelligence/*/sources/ted", (route) => {
     const req = route.request();
     if (req.method() === "PATCH") patched.push({ url: req.url(), body: req.postData() ?? "" });
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ source: source("ted", "inactive") }) });
+  });
+  await page.route("**/api/v1/sales-intelligence/*/sources/ungm", (route) => {
+    const req = route.request();
+    if (req.method() === "PATCH") patched.push({ url: req.url(), body: req.postData() ?? "" });
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ source: source("ungm", "active") }) });
   });
 
   await page.goto(`/studio/${AGENT_ID}/sales-intelligence/ingestion`);
@@ -55,9 +60,13 @@ test("Source cards expose an enable/disable toggle that PATCHes the source statu
 
   // Toggling TED off issues a PATCH with status inactive.
   await tedSwitch.click();
-  await expect.poll(() => patched.length).toBeGreaterThan(0);
-  expect(patched[0].url).toMatch(/\/sales-intelligence\/[^/]+\/sources\/ted$/);
-  expect(JSON.parse(patched[0].body)).toMatchObject({ status: "inactive" });
+  await expect.poll(() => patched.filter((p) => /\/sources\/ted$/.test(p.url)).length).toBeGreaterThan(0);
+  expect(JSON.parse(patched.find((p) => /\/sources\/ted$/.test(p.url))!.body)).toMatchObject({ status: "inactive" });
+
+  // Toggling UNGM on issues a PATCH with status active (enable path).
+  await ungmSwitch.click();
+  await expect.poll(() => patched.filter((p) => /\/sources\/ungm$/.test(p.url)).length).toBeGreaterThan(0);
+  expect(JSON.parse(patched.find((p) => /\/sources\/ungm$/.test(p.url))!.body)).toMatchObject({ status: "active" });
 
   expect(pageErrors).toEqual([]);
 });

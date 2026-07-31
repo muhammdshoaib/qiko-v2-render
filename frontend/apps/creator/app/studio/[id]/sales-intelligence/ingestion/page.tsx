@@ -182,11 +182,10 @@ function SourceCard({ icon, name, sourceKey, fullName, source, onScan, scanning,
             active ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-slate-500/30 bg-slate-500/10 text-slate-400")}>
             <RadioTower className="size-3" /> {active ? "ACTIVE" : "INACTIVE"}
           </span>
-          {statusUpdating
-            ? <Loader2 aria-hidden="true" className="size-4 animate-spin text-slate-400" />
-            : <Switch checked={active} disabled={!source?.sourceKey}
-                onCheckedChange={() => onToggleActive(!active)}
-                label={`${active ? "Disable" : "Enable"} ${name} ingestion`} />}
+          {statusUpdating && <Loader2 aria-hidden="true" className="size-4 animate-spin text-slate-400" />}
+          <Switch checked={active} disabled={statusUpdating || !source?.sourceKey} aria-busy={statusUpdating}
+            onCheckedChange={() => onToggleActive(!active)}
+            label={`${active ? "Disable" : "Enable"} ${name} ingestion`} />
         </div>
       </div>
       <p className="mt-2 text-[12px] text-slate-400">{fullName}</p>
