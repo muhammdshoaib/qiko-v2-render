@@ -70,6 +70,13 @@ for (const viewport of [{ name: "desktop", width: 1440, height: 900 }, { name: "
   });
 }
 
+test("security.txt is publicly accessible without authentication", async ({ page }) => {
+  const response = await page.goto("/.well-known/security.txt");
+  expect(response?.status()).toBe(200);
+  await expect(page.locator("body")).toContainText("Contact: mailto:support" + "@" + "qiko.ai");
+  await expect(page).toHaveURL(/\/\.well-known\/security\.txt$/);
+});
+
 test("required public routes render without browser errors", async ({ page }) => {
   const consoleErrors: string[] = [];
   const pageErrors: string[] = [];
