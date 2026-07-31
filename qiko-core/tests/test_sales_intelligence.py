@@ -1044,3 +1044,97 @@ def test_merge_ingest_filter_fills_defaults_and_respects_explicit():
                               all_countries=False, all_categories=False)
     m2 = merge_ingest_filter({"query": "explicit", "country_allowlist": "RO"}, off)
     assert m2 == {"query": "explicit", "country_allowlist": "RO"}
+
+
+# --- R2 Leg 5a: source catalog -----------------------------------------------------------------
+
+def test_sources_catalog_lists_first_party_portals(client):
+    cookies = auth_cookies(tenant="acme")
+    agent = "agent-si-catalog-1"
+    resp = client.get(f"/api/v1/sales-intelligence/{agent}/sources/catalog", cookies=cookies)
+    assert resp.status_code == 200, resp.text
+    catalog = resp.json()["catalog"]
+    keys = [c["key"] for c in catalog]
+    assert keys == ["ted", "ungm"]
+    ted = next(c for c in catalog if c["key"] == "ted")
+    assert ted["scannable"] is True
+    assert ted["name"] == "TED - EU Tenders"
+    assert ted["defaultConfig"]["apiUrl"] == "https://api.ted.europa.eu/v3/notices/search"
+    # A fresh agent has not added anything yet.
+    assert all(c["alreadyAdded"] is False for c in catalog)
+
+
+def test_sources_catalog_marks_already_added(client):
+    cookies = auth_cookies(tenant="acme")
+    agent = "agent-si-catalog-2"
+    # GET /sources seeds ted+ungm today (ensure_sources), so both should show as already added.
+    client.get(f"/api/v1/sales-intelligence/{agent}/sources", cookies=cookies)
+    catalog = client.get(f"/api/v1/sales-intelligence/{agent}/sources/catalog", cookies=cookies).json()["catalog"]
+    assert all(c["alreadyAdded"] is True for c in catalog)
+
+
+def test_attach_catalog_source_marks_added(client):
+    cookies = auth_cookies(tenant="acme")
+    agent = "agent-si-attach-1"
+    resp = client.post(f"/api/v1/sales-intelligence/{agent}/sources", cookies=cookies,
+                       json={"source_key": "ted"})
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["source"]["sourceKey"] == "ted"
+    catalog = client.get(f"/api/v1/sales-intelligence/{agent}/sources/catalog", cookies=cookies).json()["catalog"]
+    assert next(c for c in catalog if c["key"] == "ted")["alreadyAdded"] is True
+
+
+def test_attach_custom_source_requires_name_and_url(client):
+    cookies = auth_cookies(tenant="acme")
+    agent = "agent-si-attach-2"
+    # Missing name -> 422.
+    r1 = client.post(f"/api/v1/sales-intelligence/{agent}/sources", cookies=cookies,
+                     json={"source_key": "acme-portal", "config": {"url": "https://acme.example/search"}})
+    assert r1.status_code == 422, r1.text
+    # Missing url -> 422.
+    r2 = client.post(f"/api/v1/sales-intelligence/{agent}/sources", cookies=cookies,
+                     json={"source_key": "acme-portal", "name": "Acme Portal"})
+    assert r2.status_code == 422, r2.text
+    # Valid custom source -> attached with generic connector, not yet scannable.
+    r3 = client.post(f"/api/v1/sales-intelligence/{agent}/sources", cookies=cookies,
+                     json={"source_key": "acme-portal", "name": "Acme Portal",
+                           "config": {"url": "https://acme.example/search"}})
+    assert r3.status_code == 200, r3.text
+    src = r3.json()["source"]
+    assert src["sourceKey"] == "acme-portal" and src["config"]["connector"] == "generic"
+    assert src["config"]["scannable"] is False
+    # It shows in the source list (not the first-party catalog).
+    sources = client.get(f"/api/v1/sales-intelligence/{agent}/sources", cookies=cookies).json()["sources"]
+    assert any(s["sourceKey"] == "acme-portal" for s in sources)
+
+
+def test_toggle_and_delete_custom_source(client):
+    cookies = auth_cookies(tenant="acme")
+    agent = "agent-si-attach-3"
+    client.post(f"/api/v1/sales-intelligence/{agent}/sources", cookies=cookies,
+                json={"source_key": "acme-portal", "name": "Acme Portal",
+                      "config": {"url": "https://acme.example/search"}})
+    # Relaxed key gating: a custom (non-ted/ungm) source can be toggled active.
+    patched = client.patch(f"/api/v1/sales-intelligence/{agent}/sources/acme-portal", cookies=cookies,
+                           json={"status": "active"})
+    assert patched.status_code == 200 and patched.json()["source"]["status"] == "active"
+    # Delete it.
+    deleted = client.delete(f"/api/v1/sales-intelligence/{agent}/sources/acme-portal", cookies=cookies)
+    assert deleted.status_code == 200 and deleted.json()["ok"] is True
+    sources = client.get(f"/api/v1/sales-intelligence/{agent}/sources", cookies=cookies).json()["sources"]
+    assert not any(s["sourceKey"] == "acme-portal" for s in sources)
+    # Deleting an unattached source -> 404.
+    assert client.delete(f"/api/v1/sales-intelligence/{agent}/sources/acme-portal", cookies=cookies).status_code == 404
+
+
+def test_store_and_delete_source_require_editor(client):
+    viewer = auth_cookies(tenant="acme", role="viewer")
+    assert client.post("/api/v1/sales-intelligence/agent-si-rbac/sources", cookies=viewer,
+                       json={"source_key": "ted"}).status_code == 403
+    assert client.delete("/api/v1/sales-intelligence/agent-si-rbac/sources/ted", cookies=viewer).status_code == 403
+
+
+def test_invalid_source_key_rejected(client):
+    cookies = auth_cookies(tenant="acme")
+    assert client.post("/api/v1/sales-intelligence/agent-si-badkey/sources", cookies=cookies,
+                       json={"source_key": "1bad key!"}).status_code == 422

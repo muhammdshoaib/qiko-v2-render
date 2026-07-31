@@ -12,6 +12,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from app.modules.sales_intelligence import source_catalog
 from app.modules.sales_intelligence.connectors import TedNoticeConnector, UngmNoticeConnector
 from app.modules.sales_intelligence.models import (
     ActivityLog,
@@ -27,7 +28,6 @@ from app.modules.sales_intelligence.models import (
     Opportunity,
     OpportunityStore,
     SCAN_CADENCES,
-    SOURCE_KEYS,
     SOURCE_STATUSES,
 )
 from app.core.deps import WorkerUnavailable
@@ -143,13 +143,58 @@ class OpportunityService:
             "config": {"url": "https://ted.europa.eu/en/", "api_url": "https://api.ted.europa.eu/v3/notices/search"},
         })
 
+    async def attach_source(self, tenant: str, agent_id: str, source_key: str, name: str | None = None,
+                            config_input: dict | None = None, actor_user_id: str | None = None) -> IngestionSource:
+        """Attach a first-party catalog portal (ted/ungm) or a custom source to the agent. Idempotent:
+        re-attaching returns the existing source. Custom sources (not in the catalog) require a display
+        name and a config.url, and use the `generic` connector; they are not scannable until the
+        generic connector ships (config.scannable=False), mirroring Staging's catalog `scannable` flag."""
+        definition = source_catalog.definition(source_key)
+        if definition is None:
+            display_name = (name or "").strip()
+            if not display_name:
+                raise SalesIntelligenceError("name is required when adding a custom source (not in the built-in catalog).")
+            config = dict(config_input or {})
+            if not str(config.get("url") or "").strip():
+                raise SalesIntelligenceError("config.url is required for a custom source.")
+            connector, auth_status, source_type, scannable = "generic", None, "portal", False
+        else:
+            display_name = (name or "").strip() or definition["name"]
+            config = {**(definition.get("config") or {}), **(config_input or {})}
+            connector = definition["connector"]
+            auth_status = definition["auth_status"]
+            source_type = definition["type"]
+            scannable = bool(definition["scannable"])
+        config["connector"] = connector
+        config["scannable"] = scannable
+        source = await self.sources.get_or_create(tenant, agent_id, source_key, {
+            "name": display_name, "type": source_type, "status": "inactive", "auth_status": auth_status,
+            "scan_cadence": _default_source_cadence(self.scan_interval_minutes), "config": config,
+        })
+        await self._log(tenant, agent_id, "source_added", f"{display_name} added to this agent.",
+                        tone="success", actor_user_id=actor_user_id,
+                        metadata={"source_key": source_key, "connector": connector, "custom": definition is None})
+        return source
+
+    async def detach_source(self, tenant: str, agent_id: str, source_key: str,
+                            actor_user_id: str | None = None) -> None:
+        """Remove an attached source from the agent. Opportunities keep their source_key (plain string,
+        no FK), so no rows are orphaned; re-attaching from the catalog recreates the source."""
+        source = await self.sources.get(tenant, agent_id, source_key)
+        if source is None:
+            raise OpportunityNotFoundError(f"source not attached: {source_key}")
+        await self.sources.delete(tenant, agent_id, source_key)
+        await self._log(tenant, agent_id, "source_removed", f"{source.name} removed from this agent.",
+                        tone="info", actor_user_id=actor_user_id, metadata={"source_key": source_key})
+
     async def update_source_status(self, tenant: str, agent_id: str, source_key: str, status: str,
                                    actor_user_id: str | None = None) -> IngestionSource:
-        if source_key not in SOURCE_KEYS:
-            raise SalesIntelligenceError(f"invalid source_key: {source_key}")
         if status not in SOURCE_STATUSES:
             raise SalesIntelligenceError(f"invalid status: {status}")
-        await self.ensure_sources(tenant, agent_id)
+        # A first-party catalog key (ted/ungm) is seeded on demand; any other key must already be an
+        # attached (custom) source, otherwise it is unknown.
+        if source_catalog.is_valid_key(source_key):
+            await self.ensure_sources(tenant, agent_id)
         source = await self.sources.get(tenant, agent_id, source_key)
         if source is None:
             raise OpportunityNotFoundError(f"source not found: {source_key}")
@@ -167,11 +212,10 @@ class OpportunityService:
                                     actor_user_id: str | None = None) -> IngestionSource:
         """Set a portal source's scheduled scan cadence (minutely/hourly/daily/weekly/manual). The
         scheduler derives each source's due interval from this, so "manual" turns off auto-scans."""
-        if source_key not in SOURCE_KEYS:
-            raise SalesIntelligenceError(f"invalid source_key: {source_key}")
         if cadence not in SCAN_CADENCES:
             raise SalesIntelligenceError(f"invalid scan_cadence: {cadence}")
-        await self.ensure_sources(tenant, agent_id)
+        if source_catalog.is_valid_key(source_key):
+            await self.ensure_sources(tenant, agent_id)
         source = await self.sources.get(tenant, agent_id, source_key)
         if source is None:
             raise OpportunityNotFoundError(f"source not found: {source_key}")

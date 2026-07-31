@@ -1182,6 +1182,18 @@ class SqlIngestionSourceStore:
                 row.config, row.updated_at = source.config, source.updated_at
         return source
 
+    async def delete(self, tenant: str, agent_id: str, source_key: str) -> bool:
+        async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, tenant, agent_id)
+            row = (await s.execute(select(SalesIntelIngestionSourceRow).where(
+                SalesIntelIngestionSourceRow.tenant_id == tenant,
+                SalesIntelIngestionSourceRow.agent_id == agent_id,
+                SalesIntelIngestionSourceRow.source_key == source_key))).scalars().first()
+            if row is None:
+                return False
+            await s.delete(row)
+            return True
+
 
 def _opportunity_from_row(r: SalesIntelOpportunityRow) -> Opportunity:
     return Opportunity(
