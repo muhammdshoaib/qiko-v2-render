@@ -1138,3 +1138,44 @@ def test_invalid_source_key_rejected(client):
     cookies = auth_cookies(tenant="acme")
     assert client.post("/api/v1/sales-intelligence/agent-si-badkey/sources", cookies=cookies,
                        json={"source_key": "1bad key!"}).status_code == 422
+
+
+def test_patch_source_unknown_and_malformed_keys(client):
+    cookies = auth_cookies(tenant="acme")
+    agent = "agent-si-patch-branches"
+    # Valid format but not attached (and not a catalog key) -> 404.
+    r404 = client.patch(f"/api/v1/sales-intelligence/{agent}/sources/never-added", cookies=cookies,
+                        json={"status": "active"})
+    assert r404.status_code == 404, r404.text
+    # Malformed key -> 422.
+    r422 = client.patch(f"/api/v1/sales-intelligence/{agent}/sources/BAD_KEY!", cookies=cookies,
+                        json={"status": "active"})
+    assert r422.status_code == 422, r422.text
+
+
+def test_source_catalog_and_delete_are_tenant_isolated(client):
+    agent = "agent-si-tenant-iso"
+    # Attach ted for acme.
+    client.post(f"/api/v1/sales-intelligence/{agent}/sources", cookies=auth_cookies(tenant="acme"),
+                json={"source_key": "ted"})
+    # Attach a custom source for acme.
+    client.post(f"/api/v1/sales-intelligence/{agent}/sources", cookies=auth_cookies(tenant="acme"),
+                json={"source_key": "acme-only", "name": "Acme Only", "config": {"url": "https://acme.example/s"}})
+    beta = auth_cookies(tenant="globex")
+    # Beta's catalog for the same agent id shows ted NOT already added (isolation).
+    beta_catalog = client.get(f"/api/v1/sales-intelligence/{agent}/sources/catalog", cookies=beta).json()["catalog"]
+    assert next(c for c in beta_catalog if c["key"] == "ted")["alreadyAdded"] is False
+    # Beta cannot see acme's custom source, and deleting it as beta -> 404.
+    beta_sources = client.get(f"/api/v1/sales-intelligence/{agent}/sources", cookies=beta).json()["sources"]
+    assert not any(s["sourceKey"] == "acme-only" for s in beta_sources)
+    assert client.delete(f"/api/v1/sales-intelligence/{agent}/sources/acme-only", cookies=beta).status_code == 404
+
+
+def test_attach_source_is_idempotent_and_preserves_config(client):
+    cookies = auth_cookies(tenant="acme")
+    agent = "agent-si-idempotent"
+    client.post(f"/api/v1/sales-intelligence/{agent}/sources", cookies=cookies, json={"source_key": "ted"})
+    client.patch(f"/api/v1/sales-intelligence/{agent}/sources/ted", cookies=cookies, json={"status": "active"})
+    # Re-attaching an already-added source must not reset it.
+    again = client.post(f"/api/v1/sales-intelligence/{agent}/sources", cookies=cookies, json={"source_key": "ted"})
+    assert again.status_code == 200 and again.json()["source"]["status"] == "active"
