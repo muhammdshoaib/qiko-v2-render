@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Archive, CalendarClock, GripVertical, Plus, RotateCcw } from "lucide-react";
+import { Archive, CalendarClock, ChevronLeft, ChevronRight, GripVertical, Plus, RotateCcw, Search } from "lucide-react";
 import { cn } from "@qiko/ui";
 import {
   listAgents, listSalesOpportunities, pushOpportunityToSalesforce, restoreSalesOpportunity,
@@ -24,6 +24,10 @@ const TERMINAL_STAGES: OpportunityStage[] = ["rejected", "push_failed"];
 // is a Salesforce-driven system state, not a manual target, so it is excluded. Moving to `pushed`
 // routes through the real push-to-salesforce action; the rest use the stage-transition endpoint.
 const MOVE_TARGETS: OpportunityStage[] = [...KANBAN_COLUMNS, "rejected"];
+
+// Rejected & failed rail: client-side tab filter + search + pagination (Staging parity).
+const REJECTED_PAGE_SIZE = 6;
+type RejectedFilter = "all" | "rejected" | "push_failed";
 
 export default function SalesIntelligencePipelinePage() {
   const { id: agentId } = useParams<{ id: string }>();
@@ -156,18 +160,12 @@ export default function SalesIntelligencePipelinePage() {
               ))}
             </div>
 
-            <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
-              <h3 className="mb-3 text-[13px] font-semibold text-white">Rejected &amp; Push Failed</h3>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {TERMINAL_STAGES.flatMap((stage) => byStage.get(stage) ?? []).map((o) => (
-                  <OpportunityCard key={o.id} opp={o} agentId={agentId} onMove={onMove} moving={moveStage.isPending}
-                    onDragStart={() => setDraggingId(o.id)} onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline/${o.id}`)} />
-                ))}
-                {TERMINAL_STAGES.flatMap((stage) => byStage.get(stage) ?? []).length === 0 && (
-                  <p className="text-[12px] text-slate-600">Nothing rejected or failed to push.</p>
-                )}
-              </div>
-            </div>
+            <RejectedRail
+              items={TERMINAL_STAGES.flatMap((stage) => byStage.get(stage) ?? [])}
+              renderCard={(o) => (
+                <OpportunityCard key={o.id} opp={o} agentId={agentId} onMove={onMove} moving={moveStage.isPending}
+                  onDragStart={() => setDraggingId(o.id)} onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline/${o.id}`)} />
+              )} />
           </div>
         ) : (
           <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
@@ -217,6 +215,103 @@ export default function SalesIntelligencePipelinePage() {
         )}
       </div>
     </CockpitShell>
+  );
+}
+
+// Rejected & failed rail with a tab filter, client-side search and pagination. Mirrors the
+// deployed Staging behavior: the full opportunity list is already loaded, so this section
+// narrows the terminal-stage cards entirely on the client.
+function RejectedRail({ items, renderCard }: {
+  items: SalesOpportunity[]; renderCard: (opp: SalesOpportunity) => ReactNode;
+}) {
+  const [filter, setFilter] = useState<RejectedFilter>("all");
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
+
+  const rejectedCount = items.filter((o) => o.stage === "rejected").length;
+  const failedCount = items.filter((o) => o.stage === "push_failed").length;
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return items.filter((o) => {
+      if (filter === "rejected" && o.stage !== "rejected") return false;
+      if (filter === "push_failed" && o.stage !== "push_failed") return false;
+      if (!q) return true;
+      return (o.title ?? "").toLowerCase().includes(q)
+        || (o.buyer ?? "").toLowerCase().includes(q)
+        || (o.source ?? "").toLowerCase().includes(q)
+        || sourceLabel(o.sourceKey).toLowerCase().includes(q);
+    });
+  }, [items, filter, query]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / REJECTED_PAGE_SIZE));
+  const safePage = Math.min(page, pageCount - 1);
+  const pageItems = filtered.slice(safePage * REJECTED_PAGE_SIZE, safePage * REJECTED_PAGE_SIZE + REJECTED_PAGE_SIZE);
+  const rangeStart = filtered.length === 0 ? 0 : safePage * REJECTED_PAGE_SIZE + 1;
+  const rangeEnd = Math.min(filtered.length, (safePage + 1) * REJECTED_PAGE_SIZE);
+
+  const tabs = [
+    { id: "all" as const, label: "All", count: items.length },
+    { id: "rejected" as const, label: "Rejected", count: rejectedCount },
+    { id: "push_failed" as const, label: "Push failed", count: failedCount },
+  ];
+
+  return (
+    <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <h3 className="text-[13px] font-semibold text-white">Rejected &amp; Push Failed</h3>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.02] p-0.5" role="tablist" aria-label="Filter rejected and push failed">
+            {tabs.map((tab) => (
+              <button key={tab.id} type="button" role="tab" aria-selected={filter === tab.id}
+                onClick={() => { setFilter(tab.id); setPage(0); }}
+                className={cn("rounded-md px-2.5 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
+                  filter === tab.id ? "bg-indigo-500/20 text-white" : "text-slate-400 hover:text-white")}>
+                {tab.label} <span className="text-slate-500">({tab.count})</span>
+              </button>
+            ))}
+          </div>
+          <label className="relative block">
+            <span className="sr-only">Search rejected and push failed opportunities</span>
+            <Search aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-500" />
+            <input type="search" value={query}
+              onChange={(e) => { setQuery(e.target.value); setPage(0); }}
+              placeholder="Search title, buyer or source…"
+              className="w-56 rounded-lg border border-white/[0.08] bg-white/[0.03] py-1.5 pl-8 pr-3 text-[12px] text-slate-200 placeholder:text-slate-600 outline-none focus:border-indigo-500/40" />
+          </label>
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <p className="text-[12px] text-slate-600">
+          {items.length === 0 ? "Nothing rejected or failed to push." : "No matches. Try another filter or clear the search."}
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {pageItems.map((o) => renderCard(o))}
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <p className="text-[11px] text-slate-500" aria-live="polite">Showing {rangeStart}&ndash;{rangeEnd} of {filtered.length}</p>
+            {pageCount > 1 && (
+              <div className="flex items-center gap-1.5">
+                <button type="button" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={safePage === 0}
+                  aria-label="Previous page"
+                  className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
+                  <ChevronLeft className="size-3.5" /> Prev
+                </button>
+                <span className="text-[11px] text-slate-500">Page {safePage + 1} of {pageCount}</span>
+                <button type="button" onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1}
+                  aria-label="Next page"
+                  className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
+                  Next <ChevronRight className="size-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 
