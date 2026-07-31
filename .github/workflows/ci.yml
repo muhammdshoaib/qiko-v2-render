@@ -60,6 +60,7 @@ jobs:
       - run: docker compose -f docker-compose.yml -f docker-compose.preprod.yml config --quiet
       - run: docker compose -f docker-compose.yml -f docker-compose.live.yml config --quiet
       - run: bash -n .github/deploy/redeploy-preprod.sh .github/deploy/redeploy-live.sh
+      - run: python3 .github/deploy/verify-stateless-recreate.py
       - run: docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile
       - run: docker run --rm -v "$PWD/Caddyfile.live:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile
 

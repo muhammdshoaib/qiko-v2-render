@@ -168,6 +168,10 @@ if [ "$migrated" -ne 1 ]; then
 fi
 
 # Only expose the newly built application after migrations succeed.
+if ! $C rm -sf caddy worker qiko-core creator admin; then
+  echo "FATAL: docker compose could not remove the previous stateless containers" >&2
+  exit 1
+fi
 if ! $C up -d --force-recreate qiko-core worker creator admin caddy; then
   echo "FATAL: docker compose could not recreate the preprod application stack" >&2
   exit 1
