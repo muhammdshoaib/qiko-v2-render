@@ -380,7 +380,11 @@ async def scan_source(agent_id: str, source_key: str, body: ScanBody, request: R
             recheck_worker=recheck)
     except OpportunityNotFoundError as e:
         raise HTTPException(status_code=404, detail="source not attached") from e
-    except (SourceInactiveError, SsrfError) as e:
+    except SsrfError as e:
+        # Do not echo the resolved internal address back to the client; keep detail generic.
+        raise HTTPException(status_code=422,
+                            detail="source URL is not allowed (must be a public http(s) endpoint)") from e
+    except SourceInactiveError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except WorkerUnavailable:
         raise

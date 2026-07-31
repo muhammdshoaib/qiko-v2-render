@@ -170,3 +170,30 @@ async def test_scan_source_rejects_ssrf_target():
     from app.modules.sales_intelligence.service import SalesIntelligenceError
     with pytest.raises((SsrfError, SalesIntelligenceError)):
         await svc.scan_source("acme", "ag1", "evil", {"country_allowlist": "*", "category_allowlist": "*"})
+
+
+@pytest.mark.asyncio
+async def test_scheduler_scans_active_custom_source():
+    from app.modules.agents.service import Agent
+    from app.modules.sales_intelligence import scheduler
+
+    def handler(request):
+        return httpx.Response(200, headers={"content-type": "application/json"},
+                              json=[{"title": "Security guarding tender", "url": "https://portal.example/n/1"}])
+    svc = _build_service_with_generic(handler)
+
+    class _Agents:
+        async def get(self, tenant, agent_id):
+            return Agent(id=agent_id, tenant=tenant, name="Sales", enabled=True)
+
+    await svc.attach_source("acme", "ag1", "acme-portal", name="Acme Portal",
+                            config_input={"url": "https://portal.example/search"})
+    await svc.update_source_status("acme", "ag1", "acme-portal", "active")  # last_scan_at None -> due
+    # Default IngestFilterSetting bypasses the country/category allowlists (all_*=True) and
+    # sets the "security" keyword, which the notice title matches.
+    from app.modules.sales_intelligence.models import InMemoryIngestFilterSettingStore
+    summary = await scheduler.scan_due_sources(svc, agents=_Agents(),
+                                               ingest_filters=InMemoryIngestFilterSettingStore())
+    assert summary["scanned"] == 1
+    opps = await svc.opportunities.list_for_agent("acme", "ag1")
+    assert len(opps) == 1 and opps[0].source_key == "acme-portal"

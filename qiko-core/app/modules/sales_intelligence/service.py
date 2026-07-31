@@ -152,8 +152,8 @@ class OpportunityService:
                             config_input: dict | None = None, actor_user_id: str | None = None) -> IngestionSource:
         """Attach a first-party catalog portal (ted/ungm) or a custom source to the agent. Idempotent:
         re-attaching returns the existing source. Custom sources (not in the catalog) require a display
-        name and a config.url, and use the `generic` connector; they are not scannable until the
-        generic connector ships (config.scannable=False), mirroring Staging's catalog `scannable` flag."""
+        name and a config.url, and use the `generic` connector (config.scannable=True, scanned via
+        the SSRF-guarded GenericHttpNoticeConnector), mirroring Staging's catalog `scannable` flag."""
         definition = source_catalog.definition(source_key)
         if definition is None:
             display_name = (name or "").strip()

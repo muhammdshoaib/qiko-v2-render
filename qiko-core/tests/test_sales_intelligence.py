@@ -1180,3 +1180,44 @@ def test_attach_source_is_idempotent_and_preserves_config(client):
     # Re-attaching an already-added source must not reset it.
     again = client.post(f"/api/v1/sales-intelligence/{agent}/sources", cookies=cookies, json={"source_key": "ted"})
     assert again.status_code == 200 and again.json()["source"]["status"] == "active"
+
+
+def test_scan_route_dispatches_custom_generic_source(client):
+    """POST /scan/{source_key} routes a custom key to the generic connector; unattached -> 404,
+    malformed -> 422. Static /scan/ted + /scan/ungm keep precedence (declared earlier)."""
+    import socket
+
+    import httpx as _httpx
+
+    from app.modules.sales_intelligence.connectors import GenericHttpNoticeConnector
+
+    def _handler(request):
+        return _httpx.Response(200, headers={"content-type": "application/json"},
+                               json=[{"title": "Security guarding services", "url": "https://portal.example/n/1"}])
+
+    def _resolver(host, port, *a, **k):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", port))]
+
+    mock_client = _httpx.Client(transport=_httpx.MockTransport(_handler), follow_redirects=False)
+    client.app.state.sales_intel.generic = GenericHttpNoticeConnector(client=mock_client, resolver=_resolver)
+
+    import asyncio as _asyncio
+
+    from app.modules.agents.service import Agent as _Agent
+
+    cookies = auth_cookies(tenant="acme")
+    agent = "agent-si-scan-route"
+    # A scan resolves the tenant worker first, so the agent must exist + be enabled.
+    _asyncio.run(client.app.state.agents.store.add(
+        _Agent(id=agent, tenant="acme", name="SI Worker", enabled=True)))
+    client.post(f"/api/v1/sales-intelligence/{agent}/sources", cookies=cookies,
+                json={"source_key": "acme-portal", "name": "Acme Portal",
+                      "config": {"url": "https://portal.example/search"}})
+    client.patch(f"/api/v1/sales-intelligence/{agent}/sources/acme-portal", cookies=cookies,
+                 json={"status": "active"})
+    scanned = client.post(f"/api/v1/sales-intelligence/{agent}/scan/acme-portal", cookies=cookies, json={})
+    assert scanned.status_code == 200, scanned.text
+    assert scanned.json()["summary"]["created"] == 1
+    # Unattached custom key -> 404; malformed -> 422.
+    assert client.post(f"/api/v1/sales-intelligence/{agent}/scan/never-added", cookies=cookies, json={}).status_code == 404
+    assert client.post(f"/api/v1/sales-intelligence/{agent}/scan/BAD_KEY!", cookies=cookies, json={}).status_code == 422

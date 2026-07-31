@@ -12,6 +12,7 @@ mirroring the PHP `Http::timeout(...)`.
 """
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import re
@@ -651,18 +652,27 @@ class GenericHttpNoticeConnector:
             "Accept-Language": "en-US,en;q=0.9",
         }
 
-    def _fetch(self, url: str) -> httpx.Response:
-        """SSRF-guarded GET with manual, re-validated redirect handling."""
+    def _fetch(self, url: str) -> tuple[int, str, str, bytes]:
+        """SSRF-guarded GET with manual, re-validated redirect handling. Streams the body and stops
+        at _GENERIC_MAX_BYTES so a hostile upstream cannot exhaust memory (the cap bounds the network
+        read, not just parsing). Returns (status, content_type, encoding, body)."""
         client = self._http()
         current = url
         kwargs = {"resolver": self.resolver} if self.resolver is not None else {}
         for _ in range(_GENERIC_MAX_REDIRECTS + 1):
             assert_public_url(current, **kwargs)
-            resp = client.get(current, headers=self._browser_headers())
-            if resp.is_redirect and resp.headers.get("location"):
-                current = urljoin(current, resp.headers["location"])
-                continue
-            return resp
+            with client.stream("GET", current, headers=self._browser_headers()) as resp:
+                if resp.is_redirect and resp.headers.get("location"):
+                    current = urljoin(current, resp.headers["location"])
+                    continue
+                chunks, total = [], 0
+                for chunk in resp.iter_bytes():
+                    chunks.append(chunk)
+                    total += len(chunk)
+                    if total >= _GENERIC_MAX_BYTES:
+                        break
+                body = b"".join(chunks)[:_GENERIC_MAX_BYTES]
+                return resp.status_code, (resp.headers.get("content-type") or ""), (resp.encoding or "utf-8"), body
         raise SsrfError("too many redirects")
 
     def search(self, filters: dict | None = None, config: dict | None = None) -> dict:
@@ -676,16 +686,15 @@ class GenericHttpNoticeConnector:
         # assert_public_url also runs inside _fetch; call once up front for a clean error message.
         assert_public_url(search_url, **({"resolver": self.resolver} if self.resolver is not None else {}))
 
-        resp = self._fetch(search_url)
-        if resp.status_code >= 400:
+        status, content_type, encoding, body = self._fetch(search_url)
+        if status >= 400:
             hint = {401: " Site blocked automated access.", 403: " Site blocked automated access.",
                     404: " Search URL not found -- check config.url.",
-                    405: " Endpoint does not allow GET."}.get(resp.status_code, "")
-            raise RuntimeError(f"Generic portal fetch failed with status {resp.status_code} for {search_url}.{hint}")
+                    405: " Endpoint does not allow GET."}.get(status, "")
+            raise RuntimeError(f"Generic portal fetch failed with status {status} for {search_url}.{hint}")
 
-        body = resp.content[:_GENERIC_MAX_BYTES]
-        text = body.decode(resp.encoding or "utf-8", errors="replace")
-        content_type = (resp.headers.get("content-type") or "").lower()
+        text = body.decode(encoding, errors="replace")
+        content_type = content_type.lower()
 
         if self._looks_like_json(content_type, text):
             raw = self._parse_json_notices(text, search_url)
@@ -775,7 +784,7 @@ class GenericHttpNoticeConnector:
             return None
         source_url = urljoin(base_url, link) if link else base_url
         external_id = (self._first(item, ("id", "external_id", "reference", "guid"))
-                       or __import__("hashlib").sha1(((link or title) + "|json").encode()).hexdigest())
+                       or hashlib.sha1(((link or title) + "|json").encode()).hexdigest())
         return {
             "external_id": str(external_id), "title": title or "Untitled notice", "source_url": source_url,
             "buyer": self._first(item, ("buyer", "company", "organization", "organisation", "agency", "employer")),
@@ -793,7 +802,6 @@ class GenericHttpNoticeConnector:
             root = lxml_etree.fromstring(body, parser=parser)
         except lxml_etree.XMLSyntaxError:
             return []
-        import hashlib
 
         def _tag(el):
             return lxml_etree.QName(el).localname if el.tag is not lxml_etree.Comment else ""
@@ -823,7 +831,6 @@ class GenericHttpNoticeConnector:
         return out
 
     def _parse_html_notices(self, text: str, base_url: str) -> list[dict]:
-        import hashlib
         try:
             doc = lxml_html.fromstring(text)
         except (ValueError, lxml_etree.ParserError):

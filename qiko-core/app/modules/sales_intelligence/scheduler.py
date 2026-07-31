@@ -73,8 +73,9 @@ async def scan_due_sources(service: OpportunityService, *, now: datetime | None 
                            interval_minutes: int | None = None, agents=None, ingest_filters=None) -> dict:
     """Scan every ENABLED ingestion source (across all tenants/agents) whose cadence is due.
 
-    Reuses `OpportunityService.scan_ungm`/`scan_ted`, so the existing notification triggers fire
-    (new awaiting_review -> review-required; failure -> scan-failed). Returns a structured summary.
+    Dispatches via `OpportunityService.scan_source` (ted/ungm/generic connectors), so the existing
+    notification triggers fire (new awaiting_review -> review-required; failure -> scan-failed) and
+    active custom (generic) sources are swept too. Returns a structured summary.
 
     `agents` (an AgentService/AgentStore with async get(tenant, agent_id)) is optional: when given
     (or set on `service.agents`), each source is scored with its own agent's si_* config; otherwise
