@@ -80,6 +80,15 @@ export default function SalesIntelligenceIngestionPage() {
   });
   const updatingCadenceKey = cadenceMut.isPending ? cadenceMut.variables?.sourceKey : null;
 
+  // Per-source enable/disable. Sends the documented "active"/"inactive" status; the backend
+  // rejects scans of an inactive source, so this is the on/off switch for scheduled ingestion.
+  const statusMut = useMutation({
+    mutationFn: ({ sourceKey, active }: { sourceKey: "ted" | "ungm"; active: boolean }) =>
+      updateSalesSource(agentId, sourceKey, { status: active ? "active" : "inactive" }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["sales-sources", agentId] }),
+  });
+  const updatingStatusKey = statusMut.isPending ? statusMut.variables?.sourceKey : null;
+
   const activeSources = sources.filter((s) => s.status === "active").length;
   const newFromLastScan = useMemo(() => opps.filter((o) => o.stage === "ingested").length, [opps]);
 
@@ -113,10 +122,12 @@ export default function SalesIntelligenceIngestionPage() {
           <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <SourceCard icon={<Layers className="size-5" />} name="TED - EU Tenders" sourceKey="TED" fullName="EU Tenders Electronic Daily"
               source={ted} onScan={() => scanTed.mutate()} scanning={scanTed.isPending} error={scanTed.isError}
-              onCadenceChange={(cadence) => cadenceMut.mutate({ sourceKey: "ted", cadence })} cadenceUpdating={updatingCadenceKey === "ted"} />
+              onCadenceChange={(cadence) => cadenceMut.mutate({ sourceKey: "ted", cadence })} cadenceUpdating={updatingCadenceKey === "ted"}
+              onToggleActive={(active) => statusMut.mutate({ sourceKey: "ted", active })} statusUpdating={updatingStatusKey === "ted"} />
             <SourceCard icon={<RadioTower className="size-5" />} name="UNGM Public Notices" sourceKey="UNGM" fullName="UN Global Marketplace"
               source={ungm} onScan={() => scanUngm.mutate()} scanning={scanUngm.isPending} error={scanUngm.isError}
-              onCadenceChange={(cadence) => cadenceMut.mutate({ sourceKey: "ungm", cadence })} cadenceUpdating={updatingCadenceKey === "ungm"} />
+              onCadenceChange={(cadence) => cadenceMut.mutate({ sourceKey: "ungm", cadence })} cadenceUpdating={updatingCadenceKey === "ungm"}
+              onToggleActive={(active) => statusMut.mutate({ sourceKey: "ungm", active })} statusUpdating={updatingStatusKey === "ungm"} />
           </div>
         </div>
 
@@ -147,10 +158,11 @@ export default function SalesIntelligenceIngestionPage() {
   );
 }
 
-function SourceCard({ icon, name, sourceKey, fullName, source, onScan, scanning, error, onCadenceChange, cadenceUpdating }: {
+function SourceCard({ icon, name, sourceKey, fullName, source, onScan, scanning, error, onCadenceChange, cadenceUpdating, onToggleActive, statusUpdating }: {
   icon: React.ReactNode; name: string; sourceKey: string; fullName: string;
   source?: SalesIntelSource; onScan: () => void; scanning: boolean; error?: boolean;
   onCadenceChange: (cadence: SalesScanCadence) => void; cadenceUpdating: boolean;
+  onToggleActive: (active: boolean) => void; statusUpdating: boolean;
 }) {
   const active = (source?.status ?? "active") === "active";
   const cadence = cadenceValue(source?.scanCadence);
@@ -165,10 +177,17 @@ function SourceCard({ icon, name, sourceKey, fullName, source, onScan, scanning,
             <p className="text-[10px] uppercase tracking-wide text-slate-500">PORTAL &middot; {sourceKey}</p>
           </div>
         </div>
-        <span className={cn("flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase",
-          active ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-slate-500/30 bg-slate-500/10 text-slate-400")}>
-          <RadioTower className="size-3" /> {active ? "ACTIVE" : "INACTIVE"}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className={cn("flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase",
+            active ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-slate-500/30 bg-slate-500/10 text-slate-400")}>
+            <RadioTower className="size-3" /> {active ? "ACTIVE" : "INACTIVE"}
+          </span>
+          {statusUpdating
+            ? <Loader2 aria-hidden="true" className="size-4 animate-spin text-slate-400" />
+            : <Switch checked={active} disabled={!source?.sourceKey}
+                onCheckedChange={() => onToggleActive(!active)}
+                label={`${active ? "Disable" : "Enable"} ${name} ingestion`} />}
+        </div>
       </div>
       <p className="mt-2 text-[12px] text-slate-400">{fullName}</p>
 
