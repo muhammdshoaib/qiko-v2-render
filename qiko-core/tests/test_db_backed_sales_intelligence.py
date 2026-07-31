@@ -209,3 +209,28 @@ async def test_salesforce_connection_tokens_encrypted_at_rest_and_persist(db_pat
     assert decrypt(reloaded.refresh_token) == "SECRET-REFRESH"
     # tenant + agent scoped: a different key starts fresh (disconnected)
     assert (await SqlSalesforceConnectionStore(sm2).get_or_create("beta", "ag-beta")).access_token is None
+
+
+@pytest.mark.asyncio
+async def test_sql_ingest_filter_store_defaults_persist_and_scope(db_path):
+    from app.db.stores import SqlIngestFilterSettingStore
+    from app.modules.sales_intelligence.models import IngestFilterSetting
+    sm, engine = await _sessionmaker(db_path)
+    try:
+        store = SqlIngestFilterSettingStore(sm)
+        # Fresh agent -> Staging-matching defaults.
+        s = await store.get_or_create("acme", "ag1")
+        assert s.query_enabled is True and s.query_keyword == "security"
+        assert s.all_countries is True and s.all_categories is True
+        # Persist a change and read it back (new store instance = simulated restart).
+        s.query_enabled, s.query_keyword, s.all_countries, s.all_categories = False, "guard", False, False
+        await store.update(s)
+        again = await SqlIngestFilterSettingStore(sm).get_or_create("acme", "ag1")
+        assert again.query_enabled is False and again.query_keyword == "guard"
+        assert again.all_countries is False and again.all_categories is False
+        assert again.updated_at is not None
+        # Tenant isolation: a different tenant's agent is independent (fresh defaults).
+        other = await store.get_or_create("beta", "ag-beta")
+        assert other.query_keyword == "security" and other.all_countries is True
+    finally:
+        await engine.dispose()

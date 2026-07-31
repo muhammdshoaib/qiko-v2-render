@@ -52,6 +52,10 @@ def get_salesforce_auth(request: Request):
     return request.app.state.salesforce_auth
 
 
+def get_ingest_filters(request: Request):
+    return request.app.state.sales_intel_ingest_filters
+
+
 def get_salesforce_push(request: Request):
     return request.app.state.salesforce_push
 
@@ -158,6 +162,48 @@ async def sources(agent_id: str, tenant: str = Depends(authed_tenant), svc=Depen
     return {"sources": [_source_out(s, scan_interval_minutes=svc.scan_interval_minutes) for s in items]}
 
 
+def _ingest_filter_out(setting) -> dict:
+    return {
+        "agentId": setting.agent_id,
+        "queryEnabled": setting.query_enabled,
+        "queryKeyword": setting.query_keyword,
+        "allCountries": setting.all_countries,
+        "allCategories": setting.all_categories,
+        "updatedAt": setting.updated_at.isoformat() if setting.updated_at else None,
+    }
+
+
+class IngestFilterBody(BaseModel):
+    # All optional so the FE can patch any subset. Mirrors Staging config.ingest_filters.
+    query_enabled: bool | None = None
+    query_keyword: str | None = Field(default=None, max_length=255)
+    all_countries: bool | None = None
+    all_categories: bool | None = None
+
+
+@router.get("/{agent_id}/ingest-filters")
+async def ingest_filters(agent_id: str, tenant: str = Depends(authed_tenant),
+                         store=Depends(get_ingest_filters)) -> dict:
+    return _ingest_filter_out(await store.get_or_create(tenant, agent_id))
+
+
+@router.patch("/{agent_id}/ingest-filters")
+async def update_ingest_filters(agent_id: str, body: IngestFilterBody, tenant: str = Depends(authed_tenant),
+                                claims: dict = Depends(require_role(Role.editor)),
+                                store=Depends(get_ingest_filters)) -> dict:
+    setting = await store.get_or_create(tenant, agent_id)
+    data = body.model_dump(exclude_none=True)
+    if "query_enabled" in data:
+        setting.query_enabled = data["query_enabled"]
+    if "query_keyword" in data:
+        setting.query_keyword = data["query_keyword"]
+    if "all_countries" in data:
+        setting.all_countries = data["all_countries"]
+    if "all_categories" in data:
+        setting.all_categories = data["all_categories"]
+    return _ingest_filter_out(await store.update(setting))
+
+
 class UpdateSourceBody(BaseModel):
     # Both optional so the FE can patch either the on/off status or the scheduled scan cadence
     # independently (mirrors Ali's UpdateIdgSalesSourcePayload). At least one must be supplied.
@@ -197,13 +243,30 @@ class ScanBody(BaseModel):
     category_allowlist: str | None = None
 
 
+def _merge_ingest_filter(requested: dict, setting) -> dict:
+    """Fill scan filters from the persisted per-agent ingest filter where the request omits them:
+    the saved keyword (when query search is enabled) and the two allowlist bypasses ("*"). An
+    explicit request value always wins. Also reconciles the FE all_countries/all_categories intent
+    (which ScanBody does not carry) into the country_allowlist/category_allowlist the scanner reads."""
+    merged = dict(requested)
+    if "query" not in merged and setting.query_enabled and setting.query_keyword:
+        merged["query"] = setting.query_keyword
+    if "country_allowlist" not in merged and setting.all_countries:
+        merged["country_allowlist"] = "*"
+    if "category_allowlist" not in merged and setting.all_categories:
+        merged["category_allowlist"] = "*"
+    return merged
+
+
 @router.post("/{agent_id}/scan/ungm")
 async def scan_ungm(agent_id: str, body: ScanBody, request: Request, tenant: str = Depends(authed_tenant),
-                    claims: dict = Depends(require_role(Role.editor)), svc=Depends(get_sales_intel)) -> dict:
+                    claims: dict = Depends(require_role(Role.editor)), svc=Depends(get_sales_intel),
+                    filters_store=Depends(get_ingest_filters)) -> dict:
     recheck = await _resolve_worker(request, tenant, agent_id)
+    setting = await filters_store.get_or_create(tenant, agent_id)
     try:
         result = await svc.scan_ungm(
-            tenant, agent_id, body.model_dump(exclude_none=True), _actor_user_id(claims),
+            tenant, agent_id, _merge_ingest_filter(body.model_dump(exclude_none=True), setting), _actor_user_id(claims),
             agent_config=await _agent_config(request, tenant, agent_id),
             recheck_worker=recheck)
     except SourceInactiveError as e:
@@ -223,11 +286,13 @@ async def scan_ungm(agent_id: str, body: ScanBody, request: Request, tenant: str
 
 @router.post("/{agent_id}/scan/ted")
 async def scan_ted(agent_id: str, body: ScanBody, request: Request, tenant: str = Depends(authed_tenant),
-                   claims: dict = Depends(require_role(Role.editor)), svc=Depends(get_sales_intel)) -> dict:
+                   claims: dict = Depends(require_role(Role.editor)), svc=Depends(get_sales_intel),
+                   filters_store=Depends(get_ingest_filters)) -> dict:
     recheck = await _resolve_worker(request, tenant, agent_id)
+    setting = await filters_store.get_or_create(tenant, agent_id)
     try:
         result = await svc.scan_ted(
-            tenant, agent_id, body.model_dump(exclude_none=True), _actor_user_id(claims),
+            tenant, agent_id, _merge_ingest_filter(body.model_dump(exclude_none=True), setting), _actor_user_id(claims),
             agent_config=await _agent_config(request, tenant, agent_id),
             recheck_worker=recheck)
     except SourceInactiveError as e:

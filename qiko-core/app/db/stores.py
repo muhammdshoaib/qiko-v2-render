@@ -43,6 +43,7 @@ from app.db.models import RfpPack as RfpPackRow
 from app.db.models import SalesIntelActivityLog as SalesIntelActivityLogRow
 from app.db.models import SalesIntelIngestionSource as SalesIntelIngestionSourceRow
 from app.db.models import SalesIntelOpportunity as SalesIntelOpportunityRow
+from app.db.models import SalesIntelIngestFilter as SalesIntelIngestFilterRow
 from app.db.models import SalesIntelSalesforceConnection as SalesIntelSalesforceConnectionRow
 from app.db.models import Team as TeamRow
 from app.db.models import TeamMember as TeamMemberRow
@@ -84,6 +85,7 @@ from app.modules.rfp.tree import (
 )
 from app.modules.sales_intelligence.models import (
     ActivityLog,
+    IngestFilterSetting,
     IngestionSource,
     Opportunity,
     SalesforceConnection,
@@ -1369,6 +1371,43 @@ class SqlSalesforceConnectionStore:
             row.connected_by_user_id, row.last_error = conn.connected_by_user_id, conn.last_error
             row.connected_at = conn.connected_at
         return conn
+
+
+@dataclass
+class SqlIngestFilterSettingStore:
+    """Persists the per-(tenant, agent) ingest filter (query toggle/keyword + allowlist bypass
+    flags). One row per worker, tenant-scoped and BOLA-guarded exactly like the salesforce store."""
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    def _to_domain(self, r: SalesIntelIngestFilterRow) -> IngestFilterSetting:
+        return IngestFilterSetting(tenant=r.tenant_id, agent_id=r.agent_id, query_enabled=r.query_enabled,
+                                   query_keyword=r.query_keyword, all_countries=r.all_countries,
+                                   all_categories=r.all_categories, updated_at=r.updated_at)
+
+    async def get_or_create(self, tenant: str, agent_id: str) -> IngestFilterSetting:
+        async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, tenant, agent_id)
+            row = await s.get(SalesIntelIngestFilterRow, (tenant, agent_id))
+            if row is None:
+                row = SalesIntelIngestFilterRow(tenant_id=tenant, agent_id=agent_id)
+                s.add(row)
+                await s.flush()
+            return self._to_domain(row)
+
+    async def update(self, setting: IngestFilterSetting) -> IngestFilterSetting:
+        async with self.sessionmaker() as s, s.begin():
+            await _lock_enabled_agent(s, setting.tenant, setting.agent_id)
+            row = await s.get(SalesIntelIngestFilterRow, (setting.tenant, setting.agent_id))
+            if row is None:
+                row = SalesIntelIngestFilterRow(tenant_id=setting.tenant, agent_id=setting.agent_id)
+                s.add(row)
+            row.query_enabled = setting.query_enabled
+            row.query_keyword = setting.query_keyword
+            row.all_countries = setting.all_countries
+            row.all_categories = setting.all_categories
+            row.updated_at = datetime.now(timezone.utc)
+            await s.flush()
+            return self._to_domain(row)
 
 
 # --- Finance vertical (app.modules.finance) --------------------------------------------------
