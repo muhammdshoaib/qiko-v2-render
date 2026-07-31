@@ -9,6 +9,8 @@ async function mockPublicApi(page: Page) {
   });
   await page.route("**/api/v1/billing/plans", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: "[]" }));
+  await page.context().route(/^https:\/\/qiko\.ai\/signal(?:\/|$|\?)/, (route) =>
+    route.fulfill({ status: 200, contentType: "text/html", body: "<title>Qiko Signal</title>" }));
 }
 
 for (const viewport of [{ name: "desktop", width: 1440, height: 900 }, { name: "mobile", width: 390, height: 844 }]) {
