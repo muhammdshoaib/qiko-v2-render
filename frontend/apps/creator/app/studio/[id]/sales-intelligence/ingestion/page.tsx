@@ -135,7 +135,7 @@ export default function SalesIntelligenceIngestionPage() {
     <CockpitShell agentId={agentId} workerName={worker?.name ?? "IDG - Sales Intelligence"} active="ingestion">
       <div className="space-y-6">
         <OutcomesStrip title="INGESTION" tiles={[
-          { value: String(activeSources), label: "Active Sources", caption: "UNGM \u00b7 TED portals", trend: "up" },
+          { value: String(activeSources), label: "Active Sources", caption: "ingestion portals", trend: "up" },
           { value: String(opps.length), label: "Opportunities Ingested", caption: "all time", trend: "up" },
           { value: String(newFromLastScan), label: "New from Last Scan", caption: "ready to qualify", trend: "up" },
         ]} />
@@ -151,7 +151,7 @@ export default function SalesIntelligenceIngestionPage() {
             </div>
             <div className="shrink-0 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-2.5 text-center">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Active Sources</p>
-              <p className="mt-0.5 text-[15px] font-bold text-white">{activeSources} / {sources.length || 2}</p>
+              <p className="mt-0.5 text-[15px] font-bold text-white">{activeSources} / {sources.length}</p>
             </div>
           </div>
 
@@ -243,7 +243,7 @@ function SourceCard({ icon, name, sourceKey, fullName, source, scannable = true,
             label={`${active ? "Disable" : "Enable"} ${name} ingestion`} />
           {onDelete && (
             <button type="button" onClick={onDelete} disabled={deleting} aria-label={`Remove ${name}`}
-              className="flex size-8 items-center justify-center rounded-lg border border-white/10 text-slate-400 hover:border-red-500/40 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-50">
+              className="flex size-11 items-center justify-center rounded-lg border border-white/10 text-slate-400 hover:border-red-500/40 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-50">
               {deleting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Trash2 className="size-4" aria-hidden="true" />}
             </button>
           )}

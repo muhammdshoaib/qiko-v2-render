@@ -47,8 +47,10 @@ async function mock(page: Page, posted: string[], deleted: string[]) {
       deleted.push(url);
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, sourceKey: "ted" }) });
     }
-    // GET list
-    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ sources: [tedSource()] }) });
+    // GET list (TED scannable + a non-scannable custom source to exercise the scan gate)
+    const custom = { ...tedSource(), id: "src-legacy", sourceKey: "legacy-portal", name: "Legacy Portal",
+      config: { url: "https://legacy.example", connector: "generic", scannable: false } };
+    return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ sources: [tedSource(), custom] }) });
   });
 }
 
@@ -64,6 +66,8 @@ test("Ingestion catalog UI: dynamic list, catalog add, custom add, delete", asyn
 
   // Dynamic list renders the attached TED source card.
   await expect(page.getByText("TED - EU Tenders").first()).toBeVisible();
+  // A non-scannable custom source shows the gating hint (its Run Scan is disabled).
+  await expect(page.getByText("This source is not yet scannable.")).toBeVisible();
 
   // Catalog add: UNGM is not-yet-added -> an Add button issues POST {source_key:"ungm"}.
   await page.getByRole("button", { name: /UNGM Public Notices/ }).click();

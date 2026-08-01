@@ -618,7 +618,7 @@ export type OpportunityStage = (typeof OPPORTUNITY_STAGES)[number];
 export type Recommendation = "Bid" | "Review" | "No Bid";
 
 export type SalesIntelSource = {
-  id: number; agentId: string; sourceKey: "ted" | "ungm"; name: string; type: string;
+  id: number; agentId: string; sourceKey: string; name: string; type: string;
   status: "active" | "inactive" | "paused" | string; authStatus: string | null;
   scanCadence: string; scanIntervalMinutes: number; lastScanStatus: string | null;
   lastScanAt: string | null; nextScanAt: string | null; opportunitiesFound: number;
