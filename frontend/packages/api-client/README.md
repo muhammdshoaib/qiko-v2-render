@@ -4,11 +4,16 @@ Typed TypeScript client generated from the qiko-core OpenAPI spec. FastAPI serve
 app root, `/openapi.json` (the API routers are mounted under `/api/v1`, but the schema document
 itself is at the root path).
 
+From the repository root, one file-based command synchronizes both checked-in OpenAPI JSON files
+and regenerates `src/schema.d.ts` from `qiko-core/openapi.json`:
+
 ```bash
-# regenerate the types against a running backend (schema change).
-# Default target is http://localhost:8000/openapi.json; override with OPENAPI_URL.
-pnpm --filter @qiko/api-client generate
+qiko-core/.venv/bin/python scripts/sync_openapi.py
 ```
+
+Use the same command with `--check` to verify all three artifacts without modifying them. The
+command uses the locally installed, lockfile-resolved `openapi-typescript` CLI and requires no
+backend process or network access.
 
 `makeClient(baseUrl)` returns a fully typed client (openapi-fetch) that sends the httpOnly auth
 cookies.

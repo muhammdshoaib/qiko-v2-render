@@ -2920,6 +2920,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sales-intelligence/{agent_id}/ingest-filters": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ingest Filters */
+        get: operations["ingest_filters_api_v1_sales_intelligence__agent_id__ingest_filters_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Ingest Filters */
+        patch: operations["update_ingest_filters_api_v1_sales_intelligence__agent_id__ingest_filters_patch"];
+        trace?: never;
+    };
     "/api/v1/sales-intelligence/{agent_id}/opportunities": {
         parameters: {
             query?: never;
@@ -4074,6 +4092,17 @@ export interface components {
             doc_id: string;
             /** Text */
             text: string;
+        };
+        /** IngestFilterBody */
+        IngestFilterBody: {
+            /** All Categories */
+            all_categories?: boolean | null;
+            /** All Countries */
+            all_countries?: boolean | null;
+            /** Query Enabled */
+            query_enabled?: boolean | null;
+            /** Query Keyword */
+            query_keyword?: string | null;
         };
         /** LabsContactBody */
         LabsContactBody: {
@@ -10847,6 +10876,76 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    ingest_filters_api_v1_sales_intelligence__agent_id__ingest_filters_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_ingest_filters_api_v1_sales_intelligence__agent_id__ingest_filters_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IngestFilterBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

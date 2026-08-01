@@ -35,7 +35,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md bg-card/90 border-border/50">
         <CardHeader className="text-center">
           <img
-            src="https://qiko.ai/qiko-logo-email.png"
+            src="/qiko-logo.webp"
             alt="Qiko"
             width={120}
             height={48}

@@ -1,0 +1,43 @@
+{
+	auto_https off
+}
+
+http://qiko.localhost:8080 {
+	request_body {
+		max_size 10MB
+	}
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), geolocation=(), microphone=(self)"
+	}
+	@backend path /api/* /health /docs* /openapi.json
+	handle @backend {
+		reverse_proxy qiko-core:8000
+	}
+	handle {
+		reverse_proxy {$CREATOR_UPSTREAM}
+	}
+}
+
+http://admin.qiko.localhost:8080 {
+	request_body {
+		max_size 10MB
+	}
+	header {
+		-Server
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Permissions-Policy "camera=(), geolocation=(), microphone=()"
+	}
+	@backend path /api/* /health /docs* /openapi.json
+	handle @backend {
+		reverse_proxy qiko-core:8000
+	}
+	handle {
+		reverse_proxy {$ADMIN_UPSTREAM}
+	}
+}

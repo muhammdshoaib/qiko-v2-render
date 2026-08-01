@@ -16,5 +16,13 @@ frontend/
 ```
 
 Both `apps/creator` and `apps/admin` are fully built out (not scaffolding) and are what is
-deployed to preprod/live. See `../README.md` for setup/test/deploy instructions and
-`../docs/creating-a-worker.md` for how a worker is created and how a new Studio cockpit is added.
+deployed to preprod/live.
+
+For local work, use the canonical guide rather than starting either app with a custom API URL:
+
+- [Host frontend development](../docs/playbooks/dev.md#normal-host-development) runs both Next.js
+  development servers on the host behind local Caddy and provides hot reload.
+- [Container parity mode](../docs/playbooks/dev.md#container-parity-mode) builds both apps with the
+  repository Dockerfiles and checks the complete local stack.
+
+See `../docs/creating-a-worker.md` for how a worker is created and how a new Studio cockpit is added.

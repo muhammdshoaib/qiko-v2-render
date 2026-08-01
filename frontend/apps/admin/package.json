@@ -3,10 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3001",
+    "dev": "next dev --hostname 0.0.0.0 --port ${QIKO_DEV_ADMIN_PORT:-3001}",
     "build": "next build",
     "start": "next start -p 3001",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "node scripts/run-node-tests.cjs"
   },
   "dependencies": {
     "@qiko/ui": "workspace:*",

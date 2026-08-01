@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "esModuleInterop": true,
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "outDir": "../.node-test-build",
+    "resolveJsonModule": true,
+    "rootDir": "..",
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ES2020"
+  },
+  "include": [
+    "*.test.ts",
+    "../lib/origins.ts"
+  ]
+}
