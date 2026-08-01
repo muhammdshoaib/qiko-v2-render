@@ -30,13 +30,28 @@ jobs:
           filters: |
             backend:
               - 'qiko-core/**'
+              - 'scripts/check_local_contract.py'
+              - 'scripts/sync_openapi.py'
+              - 'frontend/packages/api-client/openapi.json'
+              - '.github/workflows/ci.yml'
             frontend:
               - 'frontend/**'
+              - 'scripts/dev.sh'
+              - 'scripts/check_local_contract.py'
+              - 'scripts/sync_openapi.py'
+              - 'Caddyfile.dev'
+              - 'docker-compose.dev.yml'
+              - 'docker-compose.dev.parity.yml'
+              - '.env.example'
+              - 'docs/playbooks/dev.md'
+              - 'README.md'
+              - '.github/workflows/ci.yml'
             compose:
               - 'docker-compose*.yml'
               - '.env*.example'
               - 'qiko-core/Dockerfile'
               - 'Caddyfile*'
+              - 'scripts/dev.sh'
               - '.github/deploy/**'
               - '.github/workflows/ci.yml'
               - '.github/workflows/deploy-preprod.yml'
@@ -57,9 +72,12 @@ jobs:
             'POSTGRES_DB=qiko' \
             'SESSION_SECRET=ci-placeholder-not-a-secret' > .env
           chmod 600 .env
+      - run: docker compose --env-file .env -p qiko-dev -f docker-compose.yml -f docker-compose.dev.yml config --quiet
+      - run: docker compose --env-file .env -p qiko-dev -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.dev.parity.yml config --quiet
+      - run: docker run --rm -e CREATOR_UPSTREAM=creator:3000 -e ADMIN_UPSTREAM=admin:3001 -v "$PWD/Caddyfile.dev:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile
       - run: docker compose -f docker-compose.yml -f docker-compose.preprod.yml config --quiet
       - run: docker compose -f docker-compose.yml -f docker-compose.live.yml config --quiet
-      - run: bash -n .github/deploy/redeploy-preprod.sh .github/deploy/redeploy-live.sh
+      - run: bash -n scripts/dev.sh .github/deploy/redeploy-preprod.sh .github/deploy/redeploy-live.sh
       - run: python3 .github/deploy/verify-stateless-recreate.py
       - run: docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile
       - run: docker run --rm -v "$PWD/Caddyfile.live:/etc/caddy/Caddyfile:ro" caddy:2 caddy validate --config /etc/caddy/Caddyfile
@@ -82,7 +100,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: qiko-core/uv.lock
       - run: uv sync --frozen --extra dev
-      - run: uv run ruff check .
+      - run: uv run ruff check . ../scripts/check_local_contract.py ../scripts/sync_openapi.py
       - run: uv run pytest   # enforces --cov-fail-under=80 from pyproject.toml
 
   frontend:
@@ -95,10 +113,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with: {version: 9}
+        with: {version: 9.12.0}
       - uses: actions/setup-node@v4
         with: {node-version: "20", cache: pnpm, cache-dependency-path: frontend/pnpm-lock.yaml}
       - run: pnpm install --frozen-lockfile
       - run: pnpm -r lint
       - run: pnpm --filter creator test
+      - run: pnpm --filter admin test
+      - run: pnpm --filter @qiko/api-client generate
+      - run: git diff --exit-code -- ../qiko-core/openapi.json packages/api-client/openapi.json packages/api-client/src/schema.d.ts
       - run: pnpm -r build   # typecheck + Next production build for creator + admin

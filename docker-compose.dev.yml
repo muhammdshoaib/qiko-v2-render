@@ -1,18 +1,47 @@
-# Dev (local). Exposes ports for convenience; hot iteration.
-# Run: COMPOSE_PROJECT_NAME=qiko-dev docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 services:
   qiko-core:
     environment:
       - ENVIRONMENT=dev
       - LOG_LEVEL=DEBUG
-      - USE_DB_STORES=false   # dev runs in-memory for fast iteration
-      - TASK_BACKEND=eager    # dev runs tasks inline (no separate worker needed)
-    ports: ["8000:8000"]
-  creator:
-    ports: ["3000:3000"]
-  admin:
-    ports: ["3001:3001"]
-  db:
-    ports: ["5432:5432"]
-  redis:
-    ports: ["6379:6379"]
+      - USE_DB_STORES=true
+      - TASK_BACKEND=arq
+      - FORWARDED_ALLOW_IPS=172.28.30.2
+      - 'CORS_ALLOW_ORIGINS=["http://qiko.localhost:${QIKO_DEV_HTTP_PORT:-8080}","http://admin.qiko.localhost:${QIKO_DEV_HTTP_PORT:-8080}"]'
+      - PUBLIC_BASE_URL=http://qiko.localhost:${QIKO_DEV_HTTP_PORT:-8080}
+      - COOKIE_DOMAIN=.qiko.localhost
+      - LEGACY_COOKIE_DOMAIN=
+    ports:
+      - "127.0.0.1:${QIKO_DEV_API_PORT:-8000}:8000"
+
+  worker:
+    environment:
+      - ENVIRONMENT=dev
+      - LOG_LEVEL=DEBUG
+      - USE_DB_STORES=true
+      - TASK_BACKEND=arq
+
+  caddy:
+    image: caddy:2
+    environment:
+      - CREATOR_UPSTREAM=host.docker.internal:${QIKO_DEV_CREATOR_PORT:-3000}
+      - ADMIN_UPSTREAM=host.docker.internal:${QIKO_DEV_ADMIN_PORT:-3001}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    ports:
+      - "127.0.0.1:${QIKO_DEV_HTTP_PORT:-8080}:8080"
+    volumes:
+      - ./Caddyfile.dev:/etc/caddy/Caddyfile:ro
+    depends_on:
+      - qiko-core
+    restart: unless-stopped
+    networks:
+      proxy-net:
+        ipv4_address: 172.28.30.2
+
+networks:
+  proxy-net:
+    ipam:
+      config:
+        - subnet: 172.28.30.0/24
+          ip_range: 172.28.30.128/25
+          gateway: 172.28.30.1

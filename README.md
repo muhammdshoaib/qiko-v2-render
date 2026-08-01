@@ -7,7 +7,8 @@ AI-first, agentic, dockerised platform. Two deployables, two languages.
 | `qiko-core/` | Python 3.11 · FastAPI · SQLAlchemy 2 (async) · Postgres/pgvector · Redis · arq | Modular monolith: identity/auth, agents (workers), agentcore, AI gateway, knowledge/RAG, chat/embed, RFP/tenders, sales intelligence, finance, CRM, teams, billing, channels, voice, admin, leads, signal, notifications |
 | `frontend/` | Next.js 15 (App Router) · React 19 · Tailwind · TanStack Query · pnpm/Turborepo | `apps/creator` (Creator/Studio) · `apps/admin` (Admin console) · shared `packages/ui` + `packages/api-client` |
 
-Everything runs in Docker, behind Caddy, with secrets in AWS SSM per environment.
+The container stack runs behind Caddy. Local host mode keeps the backend services in Docker and
+runs the two Next.js apps on the host for hot reload.
 
 ## Architecture in one minute
 
@@ -42,7 +43,7 @@ Everything runs in Docker, behind Caddy, with secrets in AWS SSM per environment
   change.
 - **Secure by default.** httpOnly cookie auth plus CSRF, RBAC on every endpoint, rate limiting,
   security headers, signature-verified webhooks, encrypted-at-rest secrets.
-- **Fail closed.** A non-dev deploy refuses to boot on an insecure or in-memory configuration
+- **Fail closed.** A non-dev deploy refuses to boot on insecure or non-persistent configuration
   (see the startup guard below).
 
 ## Repository layout
@@ -64,7 +65,8 @@ platform/
 │   ├── apps/admin            # Admin console
 │   └── packages/{ui,api-client}
 ├── docker-compose.yml        # base services (qiko-core, worker, creator, admin, db, redis)
-├── docker-compose.dev.yml    # dev overlay (ports, in-memory stores, eager tasks)
+├── docker-compose.dev.yml    # local persistence, arq worker, loopback ports, and Caddy
+├── docker-compose.dev.parity.yml # containerized Creator/Admin parity overlay
 ├── docker-compose.preprod.yml
 ├── docker-compose.live.yml
 ├── loadtest/                 # k6 load test + SLO/OWASP checklist
@@ -77,7 +79,7 @@ platform/
 
 | Env | Purpose | Compose files |
 |---|---|---|
-| **dev** | Local development, identical stack for every engineer | `docker-compose.yml` + `docker-compose.dev.yml` |
+| **dev** | Host frontend development or full container parity | `docker-compose.yml` + `docker-compose.dev.yml` (+ `docker-compose.dev.parity.yml` for parity) |
 | **preprod** | Client-facing staging for validation | `docker-compose.yml` + `docker-compose.preprod.yml` |
 | **live** | Production | `docker-compose.yml` + `docker-compose.live.yml` |
 
@@ -88,45 +90,26 @@ Each environment has its own database, secrets and region profile. See the playb
 
 ## Quick start (dev)
 
-```bash
-cd platform
-cp .env.example .env                       # dev defaults; never commit .env
-COMPOSE_PROJECT_NAME=qiko-dev \
-  docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
-
-# apply migrations
-docker compose -f docker-compose.yml -f docker-compose.dev.yml exec -T qiko-core alembic upgrade head
-
-# verify
-curl -s localhost:8000/health            # {"status":"ok","environment":"dev",...}
-```
-
-The dev overlay sets `USE_DB_STORES=false` and `TASK_BACKEND=eager`, so tasks run inline and no
-separate worker container is needed for local iteration.
-
-Frontend:
+The complete setup, host frontend, parity, authentication, testing, reset, and troubleshooting
+instructions are in the [canonical local development guide](docs/playbooks/dev.md).
 
 ```bash
-cd platform/frontend
-pnpm install
-NEXT_PUBLIC_API_BASE=http://localhost:8000/api/v1 pnpm --filter creator dev   # http://localhost:3000
-NEXT_PUBLIC_API_BASE=http://localhost:8000/api/v1 pnpm --filter admin  dev   # http://localhost:3001
+./scripts/dev.sh setup
+./scripts/dev.sh up
+# In a second terminal:
+./scripts/dev.sh frontend
 ```
+
+Open Creator at `http://qiko.localhost:8080` and Admin at
+`http://admin.qiko.localhost:8080`. Local development uses Postgres, Redis, and the arq worker. Run
+`./scripts/dev.sh parity` to build and check the full container stack.
 
 ## Testing and quality
 
-```bash
-cd platform/qiko-core
-python -m pytest            # functional tests, fails under 80% coverage
-ruff check .                # lint
-
-cd platform/frontend
-pnpm -r lint                                                # eslint across the workspace
-pnpm --filter creator build && pnpm --filter admin build   # typecheck + Next production build
-```
-
-CI (`.github/workflows/ci.yml`) runs change-detection, then ruff plus pytest (coverage gate) on the
-backend and `pnpm -r lint` plus `pnpm -r build` on the frontend.
+Use the exact local commands in the
+[local development testing section](docs/playbooks/dev.md#tests-and-quality-checks). CI
+(`.github/workflows/ci.yml`) runs change detection, backend lint and pytest with the coverage
+gate, OpenAPI drift checks, frontend lint and tests, API client generation, and frontend builds.
 
 ## Configuration and secrets
 
@@ -135,23 +118,25 @@ in the cloud they come from AWS SSM per environment. Key flags:
 
 | Env var | Purpose | Default |
 |---|---|---|
-| `ENVIRONMENT` | `dev` \| `preprod` \| `live`. Only `dev` exposes `/docs` and debug errors. | `dev` |
+| `ENVIRONMENT` | `dev` \| `preprod` \| `live`. Only `dev` exposes `/docs`. | `dev` |
 | `SESSION_SECRET` | Signs session/access tokens. Required in non-dev; a non-dev deploy refuses to boot on the insecure local default. | `change-me-locally` (dev only) |
-| `ENCRYPTION_KEY` | Dedicated key for secrets at rest (channel tokens, Vapi/Salesforce secrets). Kept separate from `SESSION_SECRET` so the two rotate independently. If unset, the key is derived from `SESSION_SECRET` (legacy fallback, still decryptable after you set a dedicated key). | derived from `SESSION_SECRET` |
-| `USE_DB_STORES` | `true` uses the Postgres-backed stores (data survives a restart); `false` uses in-memory dev stores. Must be `true` in non-dev. | `false` (dev) |
-| `TASK_BACKEND` | `arq` runs jobs on the worker tier; `eager` runs them inline in-process. Must be `arq` in non-dev. | `eager` (dev) |
+| `ENCRYPTION_KEY` | Dedicated key for secrets at rest (channel tokens, Vapi/Salesforce secrets). It must be strong and distinct from `SESSION_SECRET` in non-dev. Deriving it from `SESSION_SECRET` is a legacy/dev-only compatibility fallback and is rejected in non-dev. | derived from `SESSION_SECRET` in legacy/dev only |
+| `USE_DB_STORES` | `true` uses the Postgres-backed stores so local data survives restarts. The supported local workflow requires `true`. | `true` in `.env.example` |
+| `TASK_BACKEND` | `arq` runs jobs on the worker tier. The supported local workflow requires `arq` and starts the worker. | `arq` in `.env.example` |
 
-**Startup guard (fail closed).** On boot, a non-dev environment refuses to start unless
-`SESSION_SECRET` is set to a real value AND `USE_DB_STORES=true` AND `TASK_BACKEND=arq`. This stops
-a misconfigured production deploy from silently dropping all data on restart or running a 30-minute
-generation inline. See `Settings.assert_secrets_set` in `app/core/config.py`, called from the app
-lifespan in `app/main.py`. dev is unaffected.
+**Startup guard (fail closed).** Before serving traffic, every non-dev environment validates strong
+and distinct session and encryption secrets, the complete consent pseudonym keyring, persistent
+Postgres stores, the arq worker backend, explicit trusted proxy networks, and deliverable SMTP
+configuration with a non-placeholder sender. `Settings.assert_secrets_set` in
+`qiko-core/app/core/config.py` is the authoritative requirement list and is called from the app
+lifespan. Dev is exempt from this non-dev guard.
 
 ## API surface
 
-All endpoints are under `/api/v1`, authenticated by the `qiko_access` httpOnly cookie and
-RBAC-gated (the tenant is derived from the verified token, never a client header). The routers
-mounted in `app/main.py` include:
+Protected application endpoints are under `/api/v1`, authenticated by the `qiko_access` httpOnly
+cookie, and RBAC-gated (the tenant is derived from the verified token, never a client header).
+Public exceptions include health, pre-auth identity and onboarding flows, explicitly enabled public
+chat/embed routes, and signature-verified webhooks. The routers mounted in `app/main.py` include:
 
 - Identity and auth: `/auth/*` (login, signup, refresh, forgot/reset password), `/users/*`,
   `/auth/2fa/*` (TOTP), onboarding, plus the platform-admin org endpoints.
@@ -170,7 +155,7 @@ mounted in `app/main.py` include:
 - Public, signature-verified webhooks: `/billing/webhook/stripe`, `/channels/whatsapp/webhook`.
 
 Interactive docs are served at `/docs` in dev only. The full, always-current contract is the
-generated OpenAPI schema at `/api/v1/openapi.json`.
+generated OpenAPI schema at `/openapi.json`.
 
 **Intentionally locked for the current client release:** Pricing/Billing and CRM are built but not
 exposed in the Creator navigation for now (the CRM tab on a worker is present but disabled, and the
@@ -179,25 +164,26 @@ gated in the UI until the client release enables them.
 
 ## Deploy and ops
 
-Deploys are Docker Compose per environment, behind Caddy, with secrets from AWS SSM. The automated
-pipeline is currently wired for **preprod**:
+Deployments use Docker Compose behind Caddy, with environment configuration injected separately
+from application artifacts. The automated preprod pipeline follows this release history:
 
-1. A push to `main` runs `.github/workflows/deploy-preprod.yml`.
-2. CI builds a clean `git archive` tarball (tracked files only, no `.git`/`node_modules`) and
-   uploads it to S3, keeping the prior artifact as `deploy-previous.tar.gz` for rollback.
-3. CI triggers the on-box script `.github/deploy/redeploy-preprod.sh` via **AWS SSM Run Command**
-   (the SSM-managed boxes do not git-pull; port 22 is closed).
-4. The script downloads and atomically swaps the code, preserves the live `.env`, runs
-   `docker compose build`, `up -d --force-recreate`, then `alembic upgrade head` (with retries).
-5. It then **auto-reclaims disk**: it prunes unused images and the build cache so a cluttered disk
-   can no longer hit ENOSPC. It never touches named volumes, so Postgres data is safe.
-6. CI health-checks `https://preprod.qiko.ai/api/v1/health` and, on failure, restores
-   `deploy-previous.tar.gz` and redeploys.
+1. A push to `main` runs `.github/workflows/deploy-preprod.yml` for that exact commit SHA.
+2. CI creates a tracked-files-only `git archive`, computes its SHA-256 checksum, and publishes both
+   under immutable, commit-SHA-addressed artifact names.
+3. The deployment receives the release SHA and checksum, fetches that exact artifact, verifies its
+   checksum, and atomically activates the extracted release while preserving environment config.
+4. It validates Compose, builds the images, and runs the non-dev configuration and email preflight
+   before changing the running application tier.
+5. It requires Postgres and Redis to be healthy, then runs `alembic upgrade head` from the newly
+   built qiko-core image before replacing the stateless API, worker, and frontend services.
+6. CI health-checks the release and records the verified preprod SHA only after success.
 
-Migrations run with `alembic upgrade head` inside the `qiko-core` container. Rollback is a redeploy
-of the previous artifact; data is safe because it lives in named volumes. Secrets are loaded from
-AWS SSM per environment, never baked into images or committed. See the playbooks for the exact
-per-environment procedures.
+A failed deployment does not trigger an automatic rollback. Rollback requires an explicit review of
+the selected immutable SHA-addressed artifact, the terminal deployment result, current schema, and
+migration compatibility. The reviewer must decide whether a forward fix, a reviewed downgrade, or
+a data recovery step is required before executing a rollback and re-verifying health. Named volumes
+preserve database files across container recreation, but they do not make application or schema
+rollback automatically safe. See the environment playbooks for reviewed release procedures.
 
 ## Creating a worker
 

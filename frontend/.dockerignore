@@ -1,0 +1,29 @@
+# Host dependencies
+node_modules/
+**/node_modules/
+
+# Generated build and test output
+.next/
+**/.next/
+.turbo/
+**/.turbo/
+dist/
+**/dist/
+build/
+**/build/
+.node-test-build/
+**/.node-test-build/
+coverage/
+**/coverage/
+e2e/test-results/
+e2e/playwright-report/
+e2e/blob-report/
+e2e/.auth/
+
+# Local environments and secrets
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example

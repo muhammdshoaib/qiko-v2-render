@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Label } from "@qiko/ui";
 import { forgotPassword } from "@/lib/api";
+import { resolveCreatorOrigin } from "@/lib/origins";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -17,7 +18,10 @@ export default function ForgotPasswordPage() {
     try {
       const normalisedEmail = email.trim().toLowerCase();
       await forgotPassword(normalisedEmail);
-      const creatorOrigin = window.location.origin.replace("://admin.", "://");
+      const creatorOrigin = resolveCreatorOrigin(
+        window.location.origin,
+        process.env.NEXT_PUBLIC_CREATOR_BASE_URL,
+      );
       window.location.assign(`${creatorOrigin}/reset-password?email=${encodeURIComponent(normalisedEmail)}`);
     } catch {
       setMessage("Something went wrong. Please try again.");
@@ -31,7 +35,7 @@ export default function ForgotPasswordPage() {
       <Card className="w-full max-w-md bg-card/90 border-border/50">
         <CardHeader className="text-center">
           <img
-            src="https://qiko.ai/qiko-logo-email.png"
+            src="/qiko-logo.webp"
             alt="Qiko"
             width={120}
             height={48}

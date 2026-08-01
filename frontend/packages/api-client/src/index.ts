@@ -1,5 +1,5 @@
 // Typed Qiko API client, generated from the qiko-core OpenAPI spec.
-// Run `pnpm --filter @qiko/api-client generate` (CI regenerates on schema change) to refresh
+// Run `pnpm --filter @qiko/api-client generate` to refresh
 // src/schema.d.ts, then import the typed client here. This replaces the hand-rolled clients
 // and the dead tRPC code in the old SPAs.
 import createClient from "openapi-fetch";
