@@ -3239,6 +3239,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/sales-intelligence/{agent_id}/scan/{source_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Scan Source
+         * @description Scan an attached source by key, dispatching to its connector (generic HTTP for custom sources).
+         *     The static /scan/ted and /scan/ungm routes take precedence for the built-ins.
+         */
+        post: operations["scan_source_api_v1_sales_intelligence__agent_id__scan__source_key__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/sales-intelligence/{agent_id}/sources": {
         parameters: {
             query?: never;
@@ -3248,6 +3269,28 @@ export interface paths {
         };
         /** Sources */
         get: operations["sources_api_v1_sales_intelligence__agent_id__sources_get"];
+        put?: never;
+        /** Store Source */
+        post: operations["store_source_api_v1_sales_intelligence__agent_id__sources_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/sales-intelligence/{agent_id}/sources/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sources Catalog
+         * @description First-party portal catalog (TED/UNGM) annotated with whether the agent already has each
+         *     source attached. Custom sources are not part of the catalog; they appear in GET /sources.
+         */
+        get: operations["sources_catalog_api_v1_sales_intelligence__agent_id__sources_catalog_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3266,7 +3309,8 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Source */
+        delete: operations["delete_source_api_v1_sales_intelligence__agent_id__sources__source_key__delete"];
         options?: never;
         head?: never;
         /** Update Source */
@@ -4628,6 +4672,17 @@ export interface components {
         StageBody: {
             /** Stage */
             stage: string;
+        };
+        /** StoreSourceBody */
+        StoreSourceBody: {
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            } | null;
+            /** Name */
+            name?: string | null;
+            /** Source Key */
+            source_key: string;
         };
         /** StudioBody */
         StudioBody: {
@@ -11691,12 +11746,154 @@ export interface operations {
             };
         };
     };
+    scan_source_api_v1_sales_intelligence__agent_id__scan__source_key__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                source_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["app__modules__sales_intelligence__router__ScanBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     sources_api_v1_sales_intelligence__agent_id__sources_get: {
         parameters: {
             query?: never;
             header?: never;
             path: {
                 agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    store_source_api_v1_sales_intelligence__agent_id__sources_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StoreSourceBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sources_catalog_api_v1_sales_intelligence__agent_id__sources_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_source_api_v1_sales_intelligence__agent_id__sources__source_key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                source_key: string;
             };
             cookie?: never;
         };

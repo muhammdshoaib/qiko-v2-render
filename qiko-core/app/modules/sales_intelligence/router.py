@@ -8,6 +8,8 @@ Route shape follows qiko-core's existing per-agent module convention (see app.mo
 """
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
@@ -26,13 +28,19 @@ from app.modules.sales_intelligence.models import (
     RECOMMENDATIONS,
     REVIEW_DECISIONS,
     SCAN_CADENCES,
-    SOURCE_KEYS,
     SOURCE_STATUSES,
     STAGES,
     merge_ingest_filter,
 )
+from app.modules.sales_intelligence import source_catalog
 from app.modules.sales_intelligence.salesforce import SalesforceError, SalesforceNotConfiguredError
-from app.modules.sales_intelligence.service import InvalidStageTransitionError, SourceInactiveError
+from app.modules.sales_intelligence.ssrf import SsrfError
+from app.modules.sales_intelligence.service import (
+    InvalidStageTransitionError,
+    OpportunityNotFoundError,
+    SalesIntelligenceError,
+    SourceInactiveError,
+)
 
 # Upper bound on an opportunities-list page. `limit=all` (or any oversized value) is clamped to
 # this so the "show all" views work without an unbounded query that could be abused.
@@ -205,6 +213,37 @@ async def update_ingest_filters(agent_id: str, body: IngestFilterBody, tenant: s
     return _ingest_filter_out(await store.update(setting))
 
 
+@router.get("/{agent_id}/sources/catalog")
+async def sources_catalog(agent_id: str, tenant: str = Depends(authed_tenant),
+                          svc=Depends(get_sales_intel)) -> dict:
+    """First-party portal catalog (TED/UNGM) annotated with whether the agent already has each
+    source attached. Custom sources are not part of the catalog; they appear in GET /sources."""
+    attached = {s.source_key for s in await svc.sources.list_for_agent(tenant, agent_id)}
+    return {"catalog": [source_catalog.catalog_item_out(d, already_added=d["key"] in attached)
+                        for d in source_catalog.DEFINITIONS]}
+
+
+# Source key format (mirrors Staging storeSource): a letter then letters/digits/_/-, 2-64 chars.
+# Normalised to lowercase. Custom keys are allowed as long as the format is valid and (for PATCH/
+# DELETE) the source is actually attached; the service rejects unknown/unattached keys.
+_SOURCE_KEY_RE = re.compile(r"^[a-z][a-z0-9_-]{1,63}$")
+
+
+def _norm_source_key(source_key: str) -> str:
+    key = (source_key or "").strip().lower()
+    if not _SOURCE_KEY_RE.match(key):
+        raise HTTPException(status_code=422, detail="invalid source_key")
+    return key
+
+
+class StoreSourceBody(BaseModel):
+    # Attach a catalog portal (ted/ungm) or a custom source. `name` is required for custom sources;
+    # `config.url` is required for custom sources (the portal/search URL to scan).
+    source_key: str = Field(min_length=2, max_length=64)
+    name: str | None = Field(default=None, max_length=255)
+    config: dict | None = None
+
+
 class UpdateSourceBody(BaseModel):
     # Both optional so the FE can patch either the on/off status or the scheduled scan cadence
     # independently (mirrors Ali's UpdateIdgSalesSourcePayload). At least one must be supplied.
@@ -212,12 +251,36 @@ class UpdateSourceBody(BaseModel):
     scan_cadence: str | None = None
 
 
+@router.post("/{agent_id}/sources")
+async def store_source(agent_id: str, body: StoreSourceBody, tenant: str = Depends(authed_tenant),
+                       claims: dict = Depends(require_role(Role.editor)), svc=Depends(get_sales_intel)) -> dict:
+    source_key = _norm_source_key(body.source_key)
+    try:
+        source = await svc.attach_source(tenant, agent_id, source_key, name=body.name,
+                                         config_input=body.config, actor_user_id=_actor_user_id(claims))
+    except SalesIntelligenceError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return {"source": _source_out(source, scan_interval_minutes=svc.scan_interval_minutes)}
+
+
+@router.delete("/{agent_id}/sources/{source_key}")
+async def delete_source(agent_id: str, source_key: str, tenant: str = Depends(authed_tenant),
+                        claims: dict = Depends(require_role(Role.editor)), svc=Depends(get_sales_intel)) -> dict:
+    key = _norm_source_key(source_key)
+    try:
+        await svc.detach_source(tenant, agent_id, key, actor_user_id=_actor_user_id(claims))
+    except OpportunityNotFoundError as e:
+        raise HTTPException(status_code=404, detail="source not attached") from e
+    except SalesIntelligenceError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return {"ok": True, "sourceKey": key}
+
+
 @router.patch("/{agent_id}/sources/{source_key}")
 async def update_source(agent_id: str, source_key: str, body: UpdateSourceBody,
                         tenant: str = Depends(authed_tenant), claims: dict = Depends(require_role(Role.editor)),
                         svc=Depends(get_sales_intel)) -> dict:
-    if source_key not in SOURCE_KEYS:
-        raise HTTPException(status_code=422, detail="invalid source_key")
+    key = _norm_source_key(source_key)
     if body.status is None and body.scan_cadence is None:
         raise HTTPException(status_code=422, detail="status or scan_cadence is required")
     if body.status is not None and body.status not in SOURCE_STATUSES:
@@ -226,10 +289,15 @@ async def update_source(agent_id: str, source_key: str, body: UpdateSourceBody,
         raise HTTPException(status_code=422, detail="invalid scan_cadence")
     actor = _actor_user_id(claims)
     source = None
-    if body.status is not None:
-        source = await svc.update_source_status(tenant, agent_id, source_key, body.status, actor)
-    if body.scan_cadence is not None:
-        source = await svc.update_source_cadence(tenant, agent_id, source_key, body.scan_cadence, actor)
+    try:
+        if body.status is not None:
+            source = await svc.update_source_status(tenant, agent_id, key, body.status, actor)
+        if body.scan_cadence is not None:
+            source = await svc.update_source_cadence(tenant, agent_id, key, body.scan_cadence, actor)
+    except OpportunityNotFoundError as e:
+        raise HTTPException(status_code=404, detail="source not attached") from e
+    except SalesIntelligenceError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
     return {"source": _source_out(source, scan_interval_minutes=svc.scan_interval_minutes)}
 
 
@@ -281,6 +349,41 @@ async def scan_ted(agent_id: str, body: ScanBody, request: Request, tenant: str 
             tenant, agent_id, merge_ingest_filter(body.model_dump(exclude_none=True), setting), _actor_user_id(claims),
             agent_config=await _agent_config(request, tenant, agent_id),
             recheck_worker=recheck)
+    except SourceInactiveError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except WorkerUnavailable:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+    await recheck()
+    return {
+        "source": _source_out(result["source"], scan_interval_minutes=svc.scan_interval_minutes),
+        "opportunities": [_opportunity_out(o) for o in result["opportunities"]],
+        "summary": {"created": result["created"], "updated": result["updated"],
+                    "totalReturned": len(result["opportunities"])},
+    }
+
+
+@router.post("/{agent_id}/scan/{source_key}")
+async def scan_source(agent_id: str, source_key: str, body: ScanBody, request: Request,
+                      tenant: str = Depends(authed_tenant), claims: dict = Depends(require_role(Role.editor)),
+                      svc=Depends(get_sales_intel), filters_store=Depends(get_ingest_filters)) -> dict:
+    """Scan an attached source by key, dispatching to its connector (generic HTTP for custom sources).
+    The static /scan/ted and /scan/ungm routes take precedence for the built-ins."""
+    key = _norm_source_key(source_key)
+    recheck = await _resolve_worker(request, tenant, agent_id)
+    setting = await filters_store.get_or_create(tenant, agent_id)
+    try:
+        result = await svc.scan_source(
+            tenant, agent_id, key, merge_ingest_filter(body.model_dump(exclude_none=True), setting),
+            _actor_user_id(claims), agent_config=await _agent_config(request, tenant, agent_id),
+            recheck_worker=recheck)
+    except OpportunityNotFoundError as e:
+        raise HTTPException(status_code=404, detail="source not attached") from e
+    except SsrfError as e:
+        # Do not echo the resolved internal address back to the client; keep detail generic.
+        raise HTTPException(status_code=422,
+                            detail="source URL is not allowed (must be a public http(s) endpoint)") from e
     except SourceInactiveError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     except WorkerUnavailable:

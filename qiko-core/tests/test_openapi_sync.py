@@ -324,7 +324,14 @@ def test_typescript_generation_timeout_cleans_temporary_home(sync_openapi, monke
     assert temporary_homes and all(not path.exists() for path in temporary_homes)
 
 
-def test_tracked_artifact_check_preserves_bytes_and_mtimes(sync_openapi, capsys):
+def test_tracked_artifact_check_preserves_bytes_and_mtimes(
+    sync_openapi, capsys, monkeypatch
+):
+    monkeypatch.setattr(
+        sync_openapi,
+        "_typescript_declarations",
+        lambda: TYPESCRIPT_ARTIFACT.read_text(encoding="utf-8"),
+    )
     before = [(artifact.read_bytes(), artifact.stat().st_mtime_ns) for artifact in OPENAPI_ARTIFACTS]
 
     assert sync_openapi.main(["--check"]) == 0
