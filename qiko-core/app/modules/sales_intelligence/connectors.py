@@ -12,16 +12,20 @@ mirroring the PHP `Http::timeout(...)`.
 """
 from __future__ import annotations
 
+import hashlib
 import html
+import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from urllib.parse import quote
+from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlparse, urlunparse
 
 import httpx
+from lxml import etree as lxml_etree
 from lxml import html as lxml_html
 
 from app.modules.sales_intelligence.ingest_filter import IngestFilter
+from app.modules.sales_intelligence.ssrf import SsrfError, assert_public_url
 
 _WHITESPACE_RE = re.compile(r"\s+")
 
@@ -565,3 +569,290 @@ class UngmNoticeConnector:
         if href.startswith("http://") or href.startswith("https://"):
             return href
         return UNGM_BASE_URL.rstrip("/") + "/" + href.lstrip("/")
+
+
+# --- Generic HTTP connector (custom sources) -------------------------------------------------
+# Best-effort scanner for an arbitrary portal / search URL supplied by the user as a custom source
+# (config.url). Detects JSON / RSS-Atom / HTML and extracts a bounded list of notices. Every fetch
+# (and every redirect hop) is SSRF-guarded via app.modules.sales_intelligence.ssrf, and automatic
+# redirects are disabled so each hop is re-validated. Ported/condensed from the Staging
+# GenericHttpNoticeConnector (job-board host presets omitted as out of scope for tender portals).
+
+_GENERIC_MAX_NOTICES = 50
+_GENERIC_MAX_BYTES = 5 * 1024 * 1024  # cap response body to 5 MB
+_GENERIC_MAX_REDIRECTS = 3
+_QUERY_PARAM_KEYS = ("q", "query", "keyword", "keywords", "search", "s")
+
+
+@dataclass
+class GenericHttpNoticeConnector:
+    client: httpx.Client | None = None
+    ingest_filter: IngestFilter = field(default_factory=IngestFilter)
+    resolver: object = None  # injectable getaddrinfo for tests
+
+    def _http(self) -> httpx.Client:
+        # follow_redirects stays OFF so every hop is SSRF-revalidated by _fetch.
+        return self.client or httpx.Client(timeout=45.0, follow_redirects=False)
+
+    @staticmethod
+    def _resolve_query(filters: dict, config: dict) -> str:
+        q = str((filters or {}).get("query") or "").strip()
+        if q:
+            return q
+        q = str((config or {}).get("default_query") or "").strip()
+        if q:
+            return q
+        ingest = (config or {}).get("ingest_filters") or {}
+        if ingest.get("query_enabled"):
+            return str(ingest.get("query_keyword") or "").strip()
+        return ""
+
+    @staticmethod
+    def _resolve_base_url(config: dict) -> str:
+        url = str((config or {}).get("url") or "").strip()
+        if url:
+            return url
+        api_url = str((config or {}).get("api_url") or "").strip()
+        # A TED-style POST-only API is not usable by a generic GET.
+        if api_url and "api.ted.europa" not in api_url.lower():
+            return api_url
+        return ""
+
+    @staticmethod
+    def _inject_query(base_url: str, query: str) -> str:
+        if "{query}" in base_url:
+            return base_url.replace("{query}", quote(query, safe=""))
+        if not query:
+            return base_url
+        parts = urlparse(base_url)
+        params = dict(parse_qsl(parts.query, keep_blank_values=True))
+        injected = False
+        for key in _QUERY_PARAM_KEYS:
+            if key in params:
+                params[key] = query
+                injected = True
+                break
+        if not injected and re.search(r"/(search|jobs|find|results)/?", parts.path or "", re.I):
+            params["q"] = query
+            injected = True
+        if not injected:
+            return base_url
+        return urlunparse(parts._replace(query=urlencode(params)))
+
+    def _build_search_url(self, base_url: str, query: str) -> str:
+        return self._inject_query(base_url, query)
+
+    @staticmethod
+    def _browser_headers() -> dict:
+        return {
+            "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                           "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"),
+            "Accept": ("text/html,application/xhtml+xml,application/xml;q=0.9,application/json,"
+                       "application/rss+xml,*/*;q=0.8"),
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+
+    def _fetch(self, url: str) -> tuple[int, str, str, bytes]:
+        """SSRF-guarded GET with manual, re-validated redirect handling. Streams the body and stops
+        at _GENERIC_MAX_BYTES so a hostile upstream cannot exhaust memory (the cap bounds the network
+        read, not just parsing). Returns (status, content_type, encoding, body)."""
+        client = self._http()
+        current = url
+        kwargs = {"resolver": self.resolver} if self.resolver is not None else {}
+        for _ in range(_GENERIC_MAX_REDIRECTS + 1):
+            assert_public_url(current, **kwargs)
+            with client.stream("GET", current, headers=self._browser_headers()) as resp:
+                if resp.is_redirect and resp.headers.get("location"):
+                    current = urljoin(current, resp.headers["location"])
+                    continue
+                chunks, total = [], 0
+                for chunk in resp.iter_bytes():
+                    chunks.append(chunk)
+                    total += len(chunk)
+                    if total >= _GENERIC_MAX_BYTES:
+                        break
+                body = b"".join(chunks)[:_GENERIC_MAX_BYTES]
+                return resp.status_code, (resp.headers.get("content-type") or ""), (resp.encoding or "utf-8"), body
+        raise SsrfError("too many redirects")
+
+    def search(self, filters: dict | None = None, config: dict | None = None) -> dict:
+        filters = filters or {}
+        config = config or {}
+        query = self._resolve_query(filters, config)
+        base_url = self._resolve_base_url(config)
+        if not base_url:
+            raise ValueError("Generic scan requires a valid config.url (search page URL).")
+        search_url = self._build_search_url(base_url, query)
+        # assert_public_url also runs inside _fetch; call once up front for a clean error message.
+        assert_public_url(search_url, **({"resolver": self.resolver} if self.resolver is not None else {}))
+
+        status, content_type, encoding, body = self._fetch(search_url)
+        if status >= 400:
+            hint = {401: " Site blocked automated access.", 403: " Site blocked automated access.",
+                    404: " Search URL not found -- check config.url.",
+                    405: " Endpoint does not allow GET."}.get(status, "")
+            raise RuntimeError(f"Generic portal fetch failed with status {status} for {search_url}.{hint}")
+
+        text = body.decode(encoding, errors="replace")
+        content_type = content_type.lower()
+
+        if self._looks_like_json(content_type, text):
+            raw = self._parse_json_notices(text, search_url)
+            parser = "json"
+        elif self._looks_like_feed(content_type, text):
+            raw = self._parse_feed_notices(body, search_url)
+            parser = "feed"
+        else:
+            raw = self._parse_html_notices(text, search_url)
+            parser = "html"
+
+        # Keyword filter titles unless the keyword was already applied in the URL.
+        query_in_url = bool(query) and (quote(query, safe="").lower() in search_url.lower()
+                                        or query.lower() in search_url.lower())
+        if query and not query_in_url:
+            needle = query.lower()
+            raw = [n for n in raw
+                   if not (f"{n.get('title', '')} {n.get('buyer') or ''} {n.get('category') or ''}".strip())
+                   or needle in f"{n.get('title', '')} {n.get('buyer') or ''} {n.get('category') or ''}".lower()]
+
+        raw = raw[:_GENERIC_MAX_NOTICES]
+        notices, skipped = [], 0
+        for notice in raw:
+            if self.ingest_filter.passes(notice, filters):
+                notices.append(notice)
+            else:
+                skipped += 1
+        return {"payload": {"url": search_url, "parser": parser, "raw_found": len(raw),
+                            "query": query or None}, "notices": notices, "skipped": skipped}
+
+    # -- format detection --
+    @staticmethod
+    def _looks_like_json(content_type: str, text: str) -> bool:
+        if "json" in content_type:
+            return True
+        stripped = text.lstrip()
+        return stripped.startswith("{") or stripped.startswith("[")
+
+    @staticmethod
+    def _looks_like_feed(content_type: str, text: str) -> bool:
+        if any(t in content_type for t in ("rss", "atom", "xml")):
+            return True
+        head = text.lstrip()[:512].lower()
+        return "<rss" in head or "<feed" in head
+
+    # -- parsers --
+    def _parse_json_notices(self, text: str, base_url: str) -> list[dict]:
+        try:
+            decoded = json.loads(text)
+        except ValueError:
+            return []
+        items = self._find_json_item_list(decoded)
+        out = []
+        for item in items:
+            if isinstance(item, dict):
+                n = self._normalize_json_item(item, base_url)
+                if n:
+                    out.append(n)
+        return out
+
+    @staticmethod
+    def _find_json_item_list(decoded) -> list:
+        if isinstance(decoded, list):
+            return decoded
+        if isinstance(decoded, dict):
+            for key in ("results", "items", "data", "notices", "hits", "records", "jobs"):
+                val = decoded.get(key)
+                if isinstance(val, list):
+                    return val
+            for val in decoded.values():  # first list-of-dicts value
+                if isinstance(val, list) and val and isinstance(val[0], dict):
+                    return val
+        return []
+
+    @staticmethod
+    def _first(item: dict, keys: tuple) -> str | None:
+        for k in keys:
+            v = item.get(k)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+        return None
+
+    def _normalize_json_item(self, item: dict, base_url: str) -> dict | None:
+        title = self._first(item, ("title", "name", "jobTitle", "headline", "subject"))
+        link = self._first(item, ("url", "link", "href", "detailUrl", "detail_url", "permalink"))
+        if not title and not link:
+            return None
+        source_url = urljoin(base_url, link) if link else base_url
+        external_id = (self._first(item, ("id", "external_id", "reference", "guid"))
+                       or hashlib.sha1(((link or title) + "|json").encode()).hexdigest())
+        return {
+            "external_id": str(external_id), "title": title or "Untitled notice", "source_url": source_url,
+            "buyer": self._first(item, ("buyer", "company", "organization", "organisation", "agency", "employer")),
+            "country": self._first(item, ("country", "countryCode", "location_country")),
+            "category": self._first(item, ("category", "type", "sector")),
+            "estimated_value": None, "currency": None, "published_at": None, "deadline_at": None,
+            "raw": {"format": "json", "item": item},
+        }
+
+    def _parse_feed_notices(self, body: bytes, base_url: str) -> list[dict]:
+        # Hardened XML parser: no network, no entity resolution (blocks XXE / billion-laughs).
+        parser = lxml_etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False,
+                                       dtd_validation=False, huge_tree=False)
+        try:
+            root = lxml_etree.fromstring(body, parser=parser)
+        except lxml_etree.XMLSyntaxError:
+            return []
+
+        def _tag(el):
+            return lxml_etree.QName(el).localname if el.tag is not lxml_etree.Comment else ""
+
+        out = []
+        for el in root.iter():
+            name = _tag(el)
+            if name not in ("item", "entry"):
+                continue
+            title, link = "", ""
+            for child in el:
+                cname = _tag(child)
+                if cname == "title" and not title:
+                    title = (child.text or "").strip()
+                elif cname == "link" and not link:
+                    link = (child.get("href") or child.text or "").strip()
+            if not title and not link:
+                continue
+            fmt = "atom" if name == "entry" else "rss"
+            out.append({
+                "external_id": hashlib.sha1(((link or title) + "|" + fmt).encode()).hexdigest(),
+                "title": title or "Untitled notice", "source_url": urljoin(base_url, link) if link else base_url,
+                "buyer": None, "country": None, "category": None, "estimated_value": None,
+                "currency": None, "published_at": None, "deadline_at": None,
+                "raw": {"format": fmt, "title": title, "link": link},
+            })
+        return out
+
+    def _parse_html_notices(self, text: str, base_url: str) -> list[dict]:
+        try:
+            doc = lxml_html.fromstring(text)
+        except (ValueError, lxml_etree.ParserError):
+            return []
+        seen, out = set(), []
+        for a in doc.xpath("//a[@href]"):
+            title = " ".join(a.text_content().split()).strip()
+            href = (a.get("href") or "").strip()
+            if len(title) < 12 or not href or href.startswith(("#", "javascript:", "mailto:")):
+                continue
+            source_url = urljoin(base_url, href)
+            key = source_url + "|" + title.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append({
+                "external_id": hashlib.sha1((source_url + "|html").encode()).hexdigest(),
+                "title": title, "source_url": source_url, "buyer": None, "country": None,
+                "category": None, "estimated_value": None, "currency": None,
+                "published_at": None, "deadline_at": None,
+                "raw": {"format": "html", "title": title, "href": href},
+            })
+            if len(out) >= _GENERIC_MAX_NOTICES:
+                break
+        return out

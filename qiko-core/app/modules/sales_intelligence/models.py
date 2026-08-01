@@ -252,6 +252,7 @@ class IngestionSourceStore(Protocol):
     async def list_for_agent(self, tenant: str, agent_id: str) -> list[IngestionSource]: ...
     async def list_active(self, tenant: str | None = None) -> list[IngestionSource]: ...
     async def update(self, source: IngestionSource) -> IngestionSource: ...
+    async def delete(self, tenant: str, agent_id: str, source_key: str) -> bool: ...
 
 
 class OpportunityStore(Protocol):
@@ -306,6 +307,9 @@ class InMemoryIngestionSourceStore:
     async def update(self, source: IngestionSource) -> IngestionSource:
         self._by_key[(source.tenant, source.agent_id, source.source_key)] = source
         return source
+
+    async def delete(self, tenant: str, agent_id: str, source_key: str) -> bool:
+        return self._by_key.pop((tenant, agent_id, source_key), None) is not None
 
 
 @dataclass
