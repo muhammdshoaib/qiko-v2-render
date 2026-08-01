@@ -3,12 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronDown, Layers, Loader2, RadioTower, RefreshCw, Search, Sparkles } from "lucide-react";
+import { Check, ChevronDown, Globe, Layers, Loader2, Plus, RadioTower, RefreshCw, Search, Sparkles, Trash2 } from "lucide-react";
 import { cn } from "@qiko/ui";
 import {
-  getSalesIngestFilter, listAgents, listSalesOpportunities, listSalesSources, scanTedSource, scanUngmSource,
-  updateSalesIngestFilter, updateSalesSource,
-  type SalesIntelSource, type SalesScanCadence,
+  createSalesSource, deleteSalesSource, getSalesIngestFilter, getSalesSourcesCatalog, listAgents,
+  listSalesOpportunities, listSalesSources, scanSalesSource, updateSalesIngestFilter, updateSalesSource,
+  type SalesIntelSource, type SalesScanCadence, type SalesSourceCatalogItem,
 } from "@/lib/api";
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
 import { OutcomesStrip } from "@/components/sales-intelligence/outcomes-strip";
@@ -82,19 +82,24 @@ export default function SalesIntelligenceIngestionPage() {
     all_countries: allCountries,
     all_categories: allCategories,
   });
-  const scanTed = useMutation({
-    mutationFn: () => scanTedSource(agentId, scanBody()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-sources", agentId] }); qc.invalidateQueries({ queryKey: ["sales-opportunities", agentId] }); },
+  const invalidateSources = () => {
+    qc.invalidateQueries({ queryKey: ["sales-sources", agentId] });
+    qc.invalidateQueries({ queryKey: ["sales-sources-catalog", agentId] });
+    qc.invalidateQueries({ queryKey: ["sales-opportunities", agentId] });
+  };
+
+  // Scan a source by key: built-in ted/ungm and custom (generic) sources all go through the
+  // generic scan route (the server keeps /scan/ted + /scan/ungm precedence for the built-ins).
+  const scanMut = useMutation({
+    mutationFn: (sourceKey: string) => scanSalesSource(agentId, sourceKey, scanBody()),
+    onSuccess: invalidateSources,
   });
-  const scanUngm = useMutation({
-    mutationFn: () => scanUngmSource(agentId, scanBody()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["sales-sources", agentId] }); qc.invalidateQueries({ queryKey: ["sales-opportunities", agentId] }); },
-  });
+  const scanningKey = scanMut.isPending ? scanMut.variables : null;
 
   // Per-source scan-cadence change. Tracks the in-flight source key so only that card shows a
   // loading state while the mutation settles.
   const cadenceMut = useMutation({
-    mutationFn: ({ sourceKey, cadence }: { sourceKey: "ted" | "ungm"; cadence: SalesScanCadence }) =>
+    mutationFn: ({ sourceKey, cadence }: { sourceKey: string; cadence: SalesScanCadence }) =>
       updateSalesSource(agentId, sourceKey, { scan_cadence: cadence }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["sales-sources", agentId] }),
   });
@@ -103,23 +108,34 @@ export default function SalesIntelligenceIngestionPage() {
   // Per-source enable/disable. Sends the documented "active"/"inactive" status; the backend
   // rejects scans of an inactive source, so this is the on/off switch for scheduled ingestion.
   const statusMut = useMutation({
-    mutationFn: ({ sourceKey, active }: { sourceKey: "ted" | "ungm"; active: boolean }) =>
+    mutationFn: ({ sourceKey, active }: { sourceKey: string; active: boolean }) =>
       updateSalesSource(agentId, sourceKey, { status: active ? "active" : "inactive" }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["sales-sources", agentId] }),
   });
   const updatingStatusKey = statusMut.isPending ? statusMut.variables?.sourceKey : null;
 
+  // Remove an attached source (built-in or custom); opportunities keep their source_key server-side.
+  const deleteMut = useMutation({
+    mutationFn: (sourceKey: string) => deleteSalesSource(agentId, sourceKey),
+    onSuccess: invalidateSources,
+  });
+  const deletingKey = deleteMut.isPending ? deleteMut.variables : null;
+
+  // Add-source: catalog list + attach (catalog portal or custom URL).
+  const catalogQ = useQuery({ queryKey: ["sales-sources-catalog", agentId], queryFn: () => getSalesSourcesCatalog(agentId), retry: false });
+  const createMut = useMutation({
+    mutationFn: (body: { source_key: string; name?: string; config?: { url?: string } }) => createSalesSource(agentId, body),
+    onSuccess: invalidateSources,
+  });
+
   const activeSources = sources.filter((s) => s.status === "active").length;
   const newFromLastScan = useMemo(() => opps.filter((o) => o.stage === "ingested").length, [opps]);
-
-  const ted = sources.find((s) => s.sourceKey === "ted");
-  const ungm = sources.find((s) => s.sourceKey === "ungm");
 
   return (
     <CockpitShell agentId={agentId} workerName={worker?.name ?? "IDG - Sales Intelligence"} active="ingestion">
       <div className="space-y-6">
         <OutcomesStrip title="INGESTION" tiles={[
-          { value: String(activeSources), label: "Active Sources", caption: "UNGM \u00b7 TED portals", trend: "up" },
+          { value: String(activeSources), label: "Active Sources", caption: "ingestion portals", trend: "up" },
           { value: String(opps.length), label: "Opportunities Ingested", caption: "all time", trend: "up" },
           { value: String(newFromLastScan), label: "New from Last Scan", caption: "ready to qualify", trend: "up" },
         ]} />
@@ -135,20 +151,31 @@ export default function SalesIntelligenceIngestionPage() {
             </div>
             <div className="shrink-0 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-2.5 text-center">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Active Sources</p>
-              <p className="mt-0.5 text-[15px] font-bold text-white">{activeSources} / {sources.length || 2}</p>
+              <p className="mt-0.5 text-[15px] font-bold text-white">{activeSources} / {sources.length}</p>
             </div>
           </div>
 
+          {sources.length === 0 && !sourcesQ.isLoading && (
+            <p className="mt-5 text-[13px] text-slate-500">No sources yet. Add a portal from the catalog or a custom source below.</p>
+          )}
           <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <SourceCard icon={<Layers className="size-5" />} name="TED - EU Tenders" sourceKey="TED" fullName="EU Tenders Electronic Daily"
-              source={ted} onScan={() => scanTed.mutate()} scanning={scanTed.isPending} error={scanTed.isError}
-              onCadenceChange={(cadence) => cadenceMut.mutate({ sourceKey: "ted", cadence })} cadenceUpdating={updatingCadenceKey === "ted"}
-              onToggleActive={(active) => statusMut.mutate({ sourceKey: "ted", active })} statusUpdating={updatingStatusKey === "ted"} />
-            <SourceCard icon={<RadioTower className="size-5" />} name="UNGM Public Notices" sourceKey="UNGM" fullName="UN Global Marketplace"
-              source={ungm} onScan={() => scanUngm.mutate()} scanning={scanUngm.isPending} error={scanUngm.isError}
-              onCadenceChange={(cadence) => cadenceMut.mutate({ sourceKey: "ungm", cadence })} cadenceUpdating={updatingCadenceKey === "ungm"}
-              onToggleActive={(active) => statusMut.mutate({ sourceKey: "ungm", active })} statusUpdating={updatingStatusKey === "ungm"} />
+            {sources.map((s) => (
+              <SourceCard key={s.sourceKey} icon={sourceIcon(s.sourceKey)} name={s.name} sourceKey={s.sourceKey.toUpperCase()}
+                fullName={(s.config?.url as string) || s.type} source={s}
+                scannable={s.config?.scannable !== false}
+                onScan={() => scanMut.mutate(s.sourceKey)} scanning={scanningKey === s.sourceKey} error={scanMut.isError && scanMut.variables === s.sourceKey}
+                onCadenceChange={(cadence) => cadenceMut.mutate({ sourceKey: s.sourceKey, cadence })} cadenceUpdating={updatingCadenceKey === s.sourceKey}
+                onToggleActive={(active) => statusMut.mutate({ sourceKey: s.sourceKey, active })} statusUpdating={updatingStatusKey === s.sourceKey}
+                onDelete={() => deleteMut.mutate(s.sourceKey)} deleting={deletingKey === s.sourceKey} />
+            ))}
           </div>
+
+          <AddSourcePanel
+            catalog={catalogQ.data?.catalog ?? []}
+            onAddCatalog={(key) => createMut.mutate({ source_key: key })}
+            onAddCustom={(sourceKey, name, url) => createMut.mutate({ source_key: sourceKey, name, config: { url } })}
+            pending={createMut.isPending}
+            error={createMut.isError ? "Couldn't add the source. Check the key/URL and try again." : null} />
         </div>
 
         <div>
@@ -185,11 +212,12 @@ export default function SalesIntelligenceIngestionPage() {
   );
 }
 
-function SourceCard({ icon, name, sourceKey, fullName, source, onScan, scanning, error, onCadenceChange, cadenceUpdating, onToggleActive, statusUpdating }: {
+function SourceCard({ icon, name, sourceKey, fullName, source, scannable = true, onScan, scanning, error, onCadenceChange, cadenceUpdating, onToggleActive, statusUpdating, onDelete, deleting }: {
   icon: React.ReactNode; name: string; sourceKey: string; fullName: string;
-  source?: SalesIntelSource; onScan: () => void; scanning: boolean; error?: boolean;
+  source?: SalesIntelSource; scannable?: boolean; onScan: () => void; scanning: boolean; error?: boolean;
   onCadenceChange: (cadence: SalesScanCadence) => void; cadenceUpdating: boolean;
   onToggleActive: (active: boolean) => void; statusUpdating: boolean;
+  onDelete?: () => void; deleting?: boolean;
 }) {
   const active = (source?.status ?? "active") === "active";
   const cadence = cadenceValue(source?.scanCadence);
@@ -213,6 +241,12 @@ function SourceCard({ icon, name, sourceKey, fullName, source, onScan, scanning,
           <Switch checked={active} disabled={statusUpdating || !source?.sourceKey} aria-busy={statusUpdating}
             onCheckedChange={() => onToggleActive(!active)}
             label={`${active ? "Disable" : "Enable"} ${name} ingestion`} />
+          {onDelete && (
+            <button type="button" onClick={onDelete} disabled={deleting} aria-label={`Remove ${name}`}
+              className="flex size-11 items-center justify-center rounded-lg border border-white/10 text-slate-400 hover:border-red-500/40 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-50">
+              {deleting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Trash2 className="size-4" aria-hidden="true" />}
+            </button>
+          )}
         </div>
       </div>
       <p className="mt-2 text-[12px] text-slate-400">{fullName}</p>
@@ -257,11 +291,64 @@ function SourceCard({ icon, name, sourceKey, fullName, source, onScan, scanning,
         </p>
       </div>
 
-      <button onClick={onScan} disabled={scanning}
+      <button onClick={onScan} disabled={scanning || !scannable}
         className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-500 py-2.5 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
         <RefreshCw className={cn("size-4", scanning && "animate-spin")} /> {scanning ? "Scanning\u2026" : "Run Scan"}
       </button>
+      {!scannable && <p className="mt-2 text-[10px] text-slate-500">This source is not yet scannable.</p>}
       {error && <p className="mt-2 text-[11px] text-red-400">Couldn&apos;t run the scan. Please try again.</p>}
+    </div>
+  );
+}
+
+function sourceIcon(key: string): React.ReactNode {
+  if (key === "ted") return <Layers className="size-5" />;
+  if (key === "ungm") return <RadioTower className="size-5" />;
+  return <Globe className="size-5" />;
+}
+
+function AddSourcePanel({ catalog, onAddCatalog, onAddCustom, pending, error }: {
+  catalog: SalesSourceCatalogItem[]; onAddCatalog: (key: string) => void;
+  onAddCustom: (sourceKey: string, name: string, url: string) => void; pending: boolean; error: string | null;
+}) {
+  const [name, setName] = useState("");
+  const [url, setUrl] = useState("");
+  const available = catalog.filter((c) => !c.alreadyAdded);
+  // Slugify the name into a valid source_key (^[a-z][a-z0-9_-]{1,63}$).
+  const customKey = name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
+  const canAddCustom = name.trim().length > 0 && customKey.length >= 2 && /^[a-z]/.test(customKey) && /^https?:\/\//i.test(url.trim());
+  return (
+    <div className="mt-6 rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+      <p className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-400">
+        <Plus className="size-3.5" aria-hidden="true" /> ADD SOURCE
+      </p>
+      {available.length > 0 && (
+        <div className="mb-4">
+          <p className="mb-2 text-[11px] text-slate-400">From catalog</p>
+          <div className="flex flex-wrap gap-2">
+            {available.map((c) => (
+              <button key={c.key} type="button" onClick={() => onAddCatalog(c.key)} disabled={pending}
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+                <Plus className="size-3.5" aria-hidden="true" /> {c.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div>
+        <p className="mb-2 text-[11px] text-slate-400">Custom source</p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Source name" aria-label="Custom source name" />
+          <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://portal.example/search" aria-label="Custom source URL" />
+          <button type="button" disabled={!canAddCustom || pending}
+            onClick={() => { onAddCustom(customKey, name.trim(), url.trim()); setName(""); setUrl(""); }}
+            className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-indigo-500 px-4 text-[12px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
+            {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Plus className="size-3.5" aria-hidden="true" />} Add
+          </button>
+        </div>
+        <p className="mt-1.5 text-[10px] text-slate-500">Custom sources are scanned via the generic connector (public http(s) URL only).</p>
+      </div>
+      {error && <p className="mt-2 text-[11px] text-red-400">{error}</p>}
     </div>
   );
 }

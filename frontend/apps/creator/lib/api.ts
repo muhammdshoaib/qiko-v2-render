@@ -618,7 +618,7 @@ export type OpportunityStage = (typeof OPPORTUNITY_STAGES)[number];
 export type Recommendation = "Bid" | "Review" | "No Bid";
 
 export type SalesIntelSource = {
-  id: number; agentId: string; sourceKey: "ted" | "ungm"; name: string; type: string;
+  id: number; agentId: string; sourceKey: string; name: string; type: string;
   status: "active" | "inactive" | "paused" | string; authStatus: string | null;
   scanCadence: string; scanIntervalMinutes: number; lastScanStatus: string | null;
   lastScanAt: string | null; nextScanAt: string | null; opportunitiesFound: number;
@@ -704,8 +704,9 @@ export const listSalesSources = (agentId: string) =>
 // auto-scanning; the operator runs the source on demand via the scan endpoints.
 export type SalesScanCadence = "minutely" | "hourly" | "daily" | "weekly" | "manual";
 // PATCH accepts either the on/off status or the scan cadence (or both) -- at least one is required.
+// sourceKey is any attached key (built-in ted/ungm or a custom source added from the catalog).
 export const updateSalesSource = (
-  agentId: string, sourceKey: "ted" | "ungm", body: { status?: string; scan_cadence?: SalesScanCadence },
+  agentId: string, sourceKey: string, body: { status?: string; scan_cadence?: SalesScanCadence },
 ) =>
   request<{ source: SalesIntelSource }>(`/sales-intelligence/${agentId}/sources/${sourceKey}`, {
     method: "PATCH", body: JSON.stringify(body),
@@ -717,6 +718,28 @@ export const scanTedSource = (agentId: string, body: Record<string, unknown> = {
 export const scanUngmSource = (agentId: string, body: Record<string, unknown> = {}) =>
   request<{ scanned: boolean; found: number }>(`/sales-intelligence/${agentId}/scan/ungm`, {
     method: "POST", body: JSON.stringify(body),
+  });
+// Generic scan by source key (built-in routes /scan/ted + /scan/ungm still take precedence server-side).
+export const scanSalesSource = (agentId: string, sourceKey: string, body: Record<string, unknown> = {}) =>
+  request(`/sales-intelligence/${agentId}/scan/${sourceKey}`, { method: "POST", body: JSON.stringify(body) });
+
+// --- Source catalog + custom sources (R2 Leg 5) ---
+export type SalesSourceCatalogItem = {
+  key: string; name: string; description: string | null; type: string;
+  authStatus: string | null; scannable: boolean; alreadyAdded: boolean;
+  defaultConfig: { url: string | null; apiUrl: string | null; defaultQuery: string; ingestFilters: unknown };
+};
+export const getSalesSourcesCatalog = (agentId: string) =>
+  request<{ catalog: SalesSourceCatalogItem[] }>(`/sales-intelligence/${agentId}/sources/catalog`);
+// Attach a catalog portal (source_key only) or a custom source (name + config.url required).
+export const createSalesSource = (agentId: string, body: {
+  source_key: string; name?: string; config?: { url?: string; api_url?: string };
+}) => request<{ source: SalesIntelSource }>(`/sales-intelligence/${agentId}/sources`, {
+  method: "POST", body: JSON.stringify(body),
+});
+export const deleteSalesSource = (agentId: string, sourceKey: string) =>
+  request<{ ok: boolean; sourceKey: string }>(`/sales-intelligence/${agentId}/sources/${sourceKey}`, {
+    method: "DELETE",
   });
 
 export type SalesOpportunityFilters = {
