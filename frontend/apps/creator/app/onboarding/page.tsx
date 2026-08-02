@@ -257,7 +257,7 @@ function TrainingSection({
 
 export default function Onboarding() {
   const [, setLocation] = useLocation();
-  const { isAuthenticated, refresh } = useAuth();
+  const { isAuthenticated, loading: authLoading, refresh } = useAuth();
   const isLoggedIn = !!isAuthenticated;
   const subscription = useAppSelector((state) => state?.auth?.subscription);
   const subscribed = subscription?.subscribed;
@@ -395,6 +395,10 @@ export default function Onboarding() {
 
   const handleSelectPlan = async (plan: SubscriptionType) => {
     setSelectedPlan(plan);
+
+    // Wait for the session to resolve before deciding; otherwise an already authenticated user could
+    // be wrongly sent to the email/password step while GET /auth/me is still in flight (QIK-305).
+    if (authLoading) return;
 
     if (!isLoggedIn) {
       setAccount((prev) => ({ ...prev, fullName: prev.fullName || wizardData.fullName || "" }));
