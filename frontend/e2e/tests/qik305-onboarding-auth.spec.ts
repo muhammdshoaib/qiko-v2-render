@@ -17,7 +17,7 @@ test("anonymous can open onboarding without being redirected to login", async ({
   await dismissConsent(page);
   // Stays on onboarding (not kicked to /login) and step 1 renders.
   await expect(page).toHaveURL(/\/onboarding/);
-  await expect(page.getByPlaceholder("e.g., Qiko")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Choose your industry" })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
