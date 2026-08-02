@@ -79,3 +79,127 @@ select:-webkit-autofill {
   caret-color: #e2e8f0;
   transition: background-color 9999s ease-in-out 0s;
 }
+
+@media (max-width: 900px) {
+  .qiko-landing-1to1 .q-hero {
+    grid-template-columns: 1fr !important;
+    gap: 36px !important;
+  }
+
+  .qiko-landing-1to1 .q-2col,
+  .qiko-landing-1to1 .q-frow,
+  .qiko-landing-1to1 #lb-contact > div:last-child {
+    grid-template-columns: 1fr !important;
+  }
+
+  .qiko-landing-1to1 .q-3col,
+  .qiko-landing-1to1 .q-4col {
+    display: flex !important;
+    grid-template-columns: none !important;
+    gap: 14px !important;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 12px;
+  }
+
+  .qiko-landing-1to1 .q-3col > *,
+  .qiko-landing-1to1 .q-4col > * {
+    flex: 0 0 82% !important;
+    scroll-snap-align: start;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .qiko-landing-1to1 .q-journey {
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 12px;
+  }
+
+  .qiko-landing-1to1 .q-journey > * {
+    flex: 0 0 74% !important;
+    scroll-snap-align: start;
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  .qiko-landing-1to1 .q-3col::-webkit-scrollbar,
+  .qiko-landing-1to1 .q-4col::-webkit-scrollbar,
+  .qiko-landing-1to1 .q-journey::-webkit-scrollbar {
+    height: 5px;
+  }
+
+  .qiko-landing-1to1 .q-3col::-webkit-scrollbar-thumb,
+  .qiko-landing-1to1 .q-4col::-webkit-scrollbar-thumb,
+  .qiko-landing-1to1 .q-journey::-webkit-scrollbar-thumb {
+    background: #233048;
+    border-radius: 3px;
+  }
+}
+
+@media (max-width: 600px) {
+  .qiko-landing-1to1 main > section {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  .qiko-landing-1to1 main > section:first-child {
+    padding-top: 40px !important;
+    padding-bottom: 40px !important;
+  }
+
+  .qiko-landing-1to1 main > section:last-child {
+    padding-bottom: 64px !important;
+  }
+
+  .qiko-landing-1to1 main a[data-action][role="button"],
+  .qiko-landing-1to1 main[data-labs-page] a[href^="#"] {
+    display: flex !important;
+    width: 100%;
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
+    padding: 14px 18px !important;
+    font-size: 14.5px !important;
+    line-height: 1.35;
+    text-align: center;
+    white-space: normal;
+  }
+
+  .qiko-landing-1to1 .q-hero > div:nth-child(2) > div:last-child {
+    padding: 18px !important;
+  }
+
+  .qiko-landing-1to1 .q-hero > div:nth-child(2) > div:last-child > div:nth-child(2) {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+
+  .qiko-landing-1to1 .q-hero > div:nth-child(2) > div:last-child > div:nth-child(2) > div {
+    width: 100% !important;
+    box-sizing: border-box;
+    padding: 12px !important;
+    gap: 10px !important;
+  }
+
+  .qiko-landing-1to1 .q-hero > div:first-child > div[style*="flex-wrap"],
+  .qiko-landing-1to1 main div[style*="justify-content:center"][style*="flex-wrap"] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+  }
+}
+
+@media (max-width: 380px) {
+  .qiko-landing-1to1 main a[data-action][role="button"],
+  .qiko-landing-1to1 main[data-labs-page] a[href^="#"] {
+    padding: 13px 14px !important;
+    font-size: 13.5px !important;
+  }
+}
