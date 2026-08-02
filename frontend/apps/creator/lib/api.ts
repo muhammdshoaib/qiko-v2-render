@@ -125,6 +125,24 @@ export const me = async () => {
   const res = await request<{ user: { id: string; email: string; role: string } }>("/auth/me");
   return res.user;
 };
+// Non-redirecting session probe for client-side UI gating, including on public pages
+// (onboarding/forgot-password/reset-password). Unlike me()/request(), a 401 here returns null instead
+// of redirecting to /login, so anonymous visitors are simply treated as logged out. Mirrors
+// getAuthenticatedConsent: refresh once on 401, then give up quietly.
+export async function probeSession(): Promise<{ id: string; email: string; role: string } | null> {
+  try {
+    let response = await doFetch("/auth/me", { method: "GET" });
+    if (response.status === 401 && (await refreshSession())) {
+      response = await doFetch("/auth/me", { method: "GET" });
+    }
+    if (response.ok) {
+      return ((await response.json()) as { user: { id: string; email: string; role: string } }).user;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
 
 // Agents (workers)
 export type Agent = { id: string; tenant: string; name: string; status: string; atype: string; enabled: boolean; config: Record<string, unknown>; created_at: string };

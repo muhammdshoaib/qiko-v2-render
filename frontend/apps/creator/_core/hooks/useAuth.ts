@@ -4,7 +4,7 @@
 // Previously this was a stub that hard-coded isAuthenticated:false, which wrongly bounced already
 // authenticated users to the email/password step in onboarding (QIK-305).
 import { useCallback, useEffect, useState } from "react";
-import { logout as apiLogout, me } from "@/lib/api";
+import { logout as apiLogout, probeSession } from "@/lib/api";
 
 type AuthUser = { id: string; email: string; name?: string };
 
@@ -15,10 +15,10 @@ export function useAuth() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const u = await me(); // { id, email, role } or throws when unauthenticated
+      const u = await probeSession(); // { id, email, role } or null when anonymous (never redirects)
       setUser(u ? { id: u.id, email: u.email } : null);
     } catch {
-      setUser(null); // 401 / not signed in
+      setUser(null); // treat any failure as signed out
     } finally {
       setLoading(false);
     }
