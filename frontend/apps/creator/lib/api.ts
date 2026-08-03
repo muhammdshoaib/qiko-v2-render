@@ -122,9 +122,14 @@ export const login = (email: string, password: string) =>
   request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
 export const logout = () => request("/auth/logout", { method: "POST" });
 export const me = async () => {
-  const res = await request<{ user: { id: string; email: string; role: string } }>("/auth/me");
+  const res = await request<{ user: { id: string; email: string; name: string | null; role: string } }>("/auth/me");
   return res.user;
 };
+// Update the current user's own profile (display name). CSRF header is auto-added by request().
+export const updateProfile = (name: string) =>
+  request<{ user: { id: string; email: string; name: string | null; role: string } }>("/auth/me", {
+    method: "PATCH", body: JSON.stringify({ name }),
+  });
 // Non-redirecting session probe for client-side UI gating, including on public pages
 // (onboarding/forgot-password/reset-password). Unlike me()/request(), a 401 here returns null instead
 // of redirecting to /login, so anonymous visitors are simply treated as logged out. Mirrors

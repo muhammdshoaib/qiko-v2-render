@@ -2,17 +2,20 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Cookie, CreditCard, KeyRound, Lock, Search, Settings2, Trash2, User, UserPlus, Users } from "lucide-react";
+import { ArrowRight, Cookie, CreditCard, KeyRound, Link2, Search, Settings2, Trash2, User, UserPlus, Users } from "lucide-react";
 import { Badge, Button, Input, Label, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import {
   ASSIGNABLE_ROLES,
   ROLE_LABELS,
   cancelInvite,
+  getTeamsWebhookStatus,
   inviteUser,
   listTenantUsers,
   me,
   removeUser,
+  subscriptionStatus,
+  updateProfile,
   updateUserRole,
   type TenantRole,
   type TenantUser,
@@ -77,26 +80,14 @@ export default function SettingsPage() {
                 <p className="mt-1 text-slate-400">Manage your account and preferences.</p>
               </div>
 
-              <SettingsCard icon={User} iconColor="text-[#6366F1]" title="Profile">
-                <div className="space-y-4">
-                  <div>
-                    <label className="text-sm text-slate-400">Name</label>
-                    <p className="text-white">{account.data?.email?.split("@")[0] ?? "-"}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm text-slate-400">Email</label>
-                    <p className="text-white">{account.data?.email ?? "-"}</p>
-                  </div>
-                </div>
-              </SettingsCard>
+              {account.data && (
+                <ProfilePanel key={account.data.id} email={account.data.email}
+                  initialName={account.data.name ?? account.data.email.split("@")[0]} />
+              )}
 
-              <SettingsCard icon={CreditCard} iconColor="text-emerald-400" title="Billing">
-                <p className="mb-4 text-sm text-slate-400">Manage your subscription and payment methods</p>
-                <Button disabled aria-disabled="true" title="Locked"
-                  className="w-full cursor-not-allowed border-0 bg-gradient-to-r from-emerald-600 to-cyan-600 text-white opacity-60 shadow-lg shadow-emerald-900/30">
-                  <Lock className="size-4" /> View Plans
-                </Button>
-              </SettingsCard>
+              <BillingCard />
+
+              <IntegrationsCard />
 
               <SettingsCard icon={KeyRound} iconColor="text-amber-400" title="Change Password">
                 <p className="mb-4 text-sm text-slate-400">Update your account password securely.</p>
@@ -117,6 +108,80 @@ export default function SettingsPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+function ProfilePanel({ email, initialName }: { email: string; initialName: string }) {
+  const qc = useQueryClient();
+  const [name, setName] = useState(initialName);
+  const save = useMutation({
+    mutationFn: () => updateProfile(name.trim()),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
+  });
+  const unchanged = name.trim() === initialName.trim() || name.trim().length === 0;
+  return (
+    <SettingsCard icon={User} iconColor="text-[#6366F1]" title="Profile">
+      <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); if (!unchanged) save.mutate(); }}>
+        <div>
+          <Label htmlFor="profile-name" className="text-sm text-slate-400">Name</Label>
+          <Input id="profile-name" value={name} maxLength={255} placeholder="Your name"
+            onChange={(e) => setName(e.target.value)} className="mt-1" />
+        </div>
+        <div>
+          <Label className="text-sm text-slate-400">Email</Label>
+          <p className="mt-1 text-white">{email}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button type="submit" disabled={unchanged || save.isPending}
+            className="border-0 bg-gradient-to-r from-indigo-600 to-cyan-600 text-white shadow-lg shadow-indigo-900/30 disabled:opacity-50">
+            {save.isPending ? "Saving\u2026" : "Save changes"}
+          </Button>
+          {save.isSuccess && <span className="text-xs text-emerald-400">Saved</span>}
+          {save.isError && <span className="text-xs text-red-400">Couldn&apos;t save. Please try again.</span>}
+        </div>
+      </form>
+    </SettingsCard>
+  );
+}
+
+function BillingCard() {
+  const sub = useQuery({ queryKey: ["subscription"], queryFn: subscriptionStatus, retry: false });
+  const planLabel = sub.data?.plan
+    ? sub.data.plan.charAt(0).toUpperCase() + sub.data.plan.slice(1)
+    : sub.data?.status === "active" ? "Active" : "Basic";
+  return (
+    <SettingsCard icon={CreditCard} iconColor="text-emerald-400" title="Billing">
+      <p className="mb-3 text-sm text-slate-400">Manage your subscription and payment methods.</p>
+      <div className="mb-4 flex items-center gap-2 text-sm text-slate-300">
+        Current plan: <Badge variant="success">{sub.isLoading ? "\u2026" : planLabel}</Badge>
+        {sub.data?.cancel_at_period_end && <span className="text-xs text-amber-400">(cancels at period end)</span>}
+      </div>
+      <Button onClick={() => (window.location.href = "/billing")}
+        className="w-full border-0 bg-gradient-to-r from-emerald-600 to-cyan-600 text-white shadow-lg shadow-emerald-900/30 hover:shadow-emerald-800/50">
+        <CreditCard className="size-4" /> Manage billing <ArrowRight className="size-4" />
+      </Button>
+    </SettingsCard>
+  );
+}
+
+function IntegrationsCard() {
+  const teams = useQuery({ queryKey: ["teams-webhook"], queryFn: getTeamsWebhookStatus, retry: false });
+  return (
+    <SettingsCard icon={Link2} iconColor="text-cyan-400" title="Integrations">
+      <p className="mb-4 text-sm text-slate-400">
+        Connect Qiko to your tools. Per-worker connections (voice, Calendly, Salesforce) live in each worker&apos;s Connections tab.
+      </p>
+      <div className="mb-4 flex items-center justify-between rounded-lg border border-white/10 bg-white/[0.02] px-3 py-2.5">
+        <span className="text-sm text-slate-200">Microsoft Teams notifications</span>
+        <Badge variant={teams.data?.connected ? "success" : "muted"}>
+          {teams.isLoading ? "\u2026" : teams.data?.connected ? "Connected" : "Not connected"}
+        </Badge>
+      </div>
+      <Button onClick={() => (window.location.href = "/workers")}
+        className="w-full border-0 bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-lg shadow-cyan-900/30 hover:shadow-cyan-800/50">
+        <Link2 className="size-4" /> Manage worker connections <ArrowRight className="size-4" />
+      </Button>
+    </SettingsCard>
   );
 }
 

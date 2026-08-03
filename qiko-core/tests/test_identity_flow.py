@@ -38,6 +38,24 @@ def test_login_sets_cookies_and_me_works(client):
     assert me.status_code == 200 and me.json()["user"]["role"] == "owner"
 
 
+def test_update_profile_name(client):
+    _login(client)
+    # Name starts unset (email-derived on the client); PATCH persists a real display name.
+    assert client.get("/api/v1/auth/me").json()["user"]["name"] is None
+    token = client.cookies["qiko_csrf"]
+    r = client.patch("/api/v1/auth/me", json={"name": "  Ronan Bolger  "}, headers={"x-csrf-token": token})
+    assert r.status_code == 200 and r.json()["user"]["name"] == "Ronan Bolger"  # trimmed
+    assert client.get("/api/v1/auth/me").json()["user"]["name"] == "Ronan Bolger"  # persisted
+    # Blank clears back to null (falls back to email-derived on the client).
+    assert client.patch("/api/v1/auth/me", json={"name": "  "}, headers={"x-csrf-token": token}).json()["user"]["name"] is None
+
+
+def test_update_profile_requires_csrf_and_auth(client):
+    assert client.patch("/api/v1/auth/me", json={"name": "X"}).status_code == 401  # not signed in
+    _login(client)
+    assert client.patch("/api/v1/auth/me", json={"name": "X"}).status_code == 403  # missing CSRF
+
+
 def test_login_wrong_password(client):
     assert _login(client, password="nope").status_code == 401
 

@@ -113,7 +113,8 @@ class SqlUserStore:
             # check-then-insert so this works on both Postgres (prod) and SQLite (tests).
             if await s.get(TenantRow, user.tenant) is None:
                 s.add(TenantRow(id=user.tenant, name=user.tenant))
-            s.add(UserRow(id=user.id, email=user.email.lower(), password_hash=user.password_hash,
+            s.add(UserRow(id=user.id, email=user.email.lower(), name=user.name,
+                          password_hash=user.password_hash,
                           tenant_id=user.tenant, role=user.role.value, twofa_enabled=user.twofa_enabled,
                           totp_secret=_encrypt_totp(user.totp_secret), current_sid=user.current_sid))
         return user
@@ -124,7 +125,7 @@ class SqlUserStore:
         return User(id=row.id, email=row.email, password_hash=row.password_hash, tenant=row.tenant_id,
                     role=Role(row.role), twofa_enabled=row.twofa_enabled,
                     totp_secret=_decrypt_totp(row.totp_secret),
-                    current_sid=row.current_sid)
+                    current_sid=row.current_sid, name=row.name)
 
     async def get_by_email(self, email: str) -> User | None:
         async with self.sessionmaker() as s:
@@ -177,6 +178,12 @@ class SqlUserStore:
             row = await s.get(UserRow, user_id)
             if row:
                 row.password_hash = password_hash
+
+    async def set_name(self, user_id: str, name: str | None) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(UserRow, user_id)
+            if row:
+                row.name = name
 
     async def set_role(self, user_id: str, role: Role) -> None:
         async with self.sessionmaker() as s, s.begin():

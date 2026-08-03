@@ -20,6 +20,7 @@ class User:
     twofa_enabled: bool = False
     totp_secret: str | None = None
     current_sid: str | None = None
+    name: str | None = None
 
 
 class UserStore(Protocol):
@@ -32,6 +33,7 @@ class UserStore(Protocol):
                            backup_code_hashes: dict[str, str] | None = None) -> None: ...
     async def consume_backup_code(self, user_id: str, code: str) -> bool: ...
     async def set_password(self, user_id: str, password_hash: str) -> None: ...
+    async def set_name(self, user_id: str, name: str | None) -> None: ...
     async def set_role(self, user_id: str, role: Role) -> None: ...
     async def delete(self, user_id: str) -> None: ...
 
@@ -83,6 +85,11 @@ class InMemoryUserStore:
         user = self._by_id.get(user_id)
         if user:
             user.password_hash = password_hash
+
+    async def set_name(self, user_id: str, name: str | None) -> None:
+        user = self._by_id.get(user_id)
+        if user:
+            user.name = name
 
     async def set_role(self, user_id: str, role: Role) -> None:
         user = self._by_id.get(user_id)

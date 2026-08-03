@@ -37,7 +37,7 @@ class LoginRequest(BaseModel):
 
 
 def _public_user(u: User) -> dict:
-    return {"id": u.id, "email": u.email, "tenant": u.tenant, "role": u.role.value,
+    return {"id": u.id, "email": u.email, "name": u.name, "tenant": u.tenant, "role": u.role.value,
             "twofa_enabled": u.twofa_enabled}
 
 
@@ -128,4 +128,22 @@ def require_role(minimum: Role):
 
 @router.get("/me")
 def me(user: User = Depends(current_user)) -> dict:
+    return {"user": _public_user(user)}
+
+
+class ProfileUpdate(BaseModel):
+    name: str | None = None
+
+
+@router.patch("/me")
+async def update_me(body: ProfileUpdate, request: Request,
+                    user: User = Depends(current_user), store: UserStore = Depends(get_store)) -> dict:
+    """Update the current user's own profile (display name). CSRF-guarded like other state-changing
+    auth endpoints; a user may only edit themself (subject comes from the verified access cookie)."""
+    _require_csrf(request)
+    name = (body.name or "").strip() or None
+    if name is not None and len(name) > 255:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "name must be 255 characters or fewer")
+    await store.set_name(user.id, name)
+    user.name = name
     return {"user": _public_user(user)}
