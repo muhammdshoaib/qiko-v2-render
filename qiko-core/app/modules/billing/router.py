@@ -74,6 +74,8 @@ def activate(body: ActivateBody, tenant: str = Depends(authed_tenant),
 
 class CheckoutBody(BaseModel):
     plan: str = "pro"
+    # Ignored server-side (retained for backward-compat with existing clients that still send it):
+    # the real Stripe price is resolved from config by plan, so a client cannot pick the price.
     price_id: str = "price_default"
     promo: str | None = None
 

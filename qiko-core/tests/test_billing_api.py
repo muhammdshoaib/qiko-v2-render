@@ -49,6 +49,14 @@ def test_checkout_uses_configured_price_outside_dev(client, monkeypatch):
     res = client.post("/api/v1/billing/checkout", json={"plan": "pro"}, cookies=C)
     assert res.status_code == 200 and "url" in res.json()
 
+    # Price tampering is prevented: a client-supplied price_id is ignored; the server-configured
+    # price is used (the stub checkout URL reflects the price it was given).
+    tampered = client.post("/api/v1/billing/checkout",
+                           json={"plan": "pro", "price_id": "price_attacker"}, cookies=C)
+    assert tampered.status_code == 200
+    url = tampered.json()["url"]
+    assert "price_live_123" in url and "price_attacker" not in url
+
     # Enterprise is contact-sales: not self-serve checkout even when Stripe is configured.
     assert client.post("/api/v1/billing/checkout", json={"plan": "enterprise"}, cookies=C).status_code == 503
 
