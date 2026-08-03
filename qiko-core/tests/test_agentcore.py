@@ -145,13 +145,20 @@ def test_generate_structured_prefills_json_and_parses_prefilled_object():
     assert out.answer == "We hold ISO 9001." and out.confidence == 0.42
 
 
-def test_generate_structured_does_not_prefill_for_custom_system_prompt():
-    # A worker with a custom (prose) system prompt is not asked for JSON, so no "{" is forced.
+def test_generate_structured_prefills_json_even_for_custom_persona():
+    # QIK-315: the output contract is enforced for EVERY worker, so a custom persona still gets the
+    # "{" prefill; if the model returns prose anyway we fall back gracefully (confidence unset).
     provider = _PrefillProvider("just prose")
     gen = Generator(provider=provider, system_prompt="Write warmly.")
     out = gen.generate_structured(Requirement(id="B1", text="Q", context=ISO_EVIDENCE))
-    assert provider.seen_prefill is None
-    assert out.answer == "just prose" and out.confidence is None
+    assert provider.seen_prefill == "{"  # contract enforced for the persona worker too
+    assert "just prose" in out.answer and out.confidence is None  # graceful prose fallback
+
+
+def test_custom_persona_system_prompt_appends_output_contract():
+    from app.modules.agentcore.generator import _OUTPUT_CONTRACT
+    gen = Generator(provider=_PrefillProvider("x"), system_prompt="You are Ava.")
+    assert gen.system.startswith("You are Ava.") and _OUTPUT_CONTRACT in gen.system
 
 
 async def test_runtime_confidence_distinct_from_grounding():

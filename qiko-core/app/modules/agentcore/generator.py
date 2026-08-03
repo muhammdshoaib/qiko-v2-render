@@ -26,20 +26,33 @@ from dataclasses import dataclass
 from app.modules.ai.gateway import LLMProvider, LLMResponse, get_provider
 from app.modules.agentcore.models import Requirement
 
-SYSTEM = (
+# The default IDENTITY (who the worker is + the grounding rule). A worker with its own persona
+# (WorkerConfig.system_prompt, synthesized from the Train wizard's config) replaces ONLY this part,
+# so e.g. a customer-support worker no longer answers in the generic bid-writer voice -- QIK-315.
+_IDENTITY_DEFAULT = (
     "You are a bid-response writer. Answer the requirement using ONLY the supplied evidence. "
-    "Do not invent facts, dates, names, or figures. If the evidence is insufficient, say so. "
+    "Do not invent facts, dates, names, or figures. If the evidence is insufficient, say so."
+)
+
+# The OUTPUT CONTRACT (JSON shape + no-scaffolding). This is ALWAYS enforced, for every worker,
+# whether or not it has a custom persona -- so a per-worker persona never costs us the structured
+# confidence/gaps signal the gate relies on.
+_OUTPUT_CONTRACT = (
     "Return ONLY a single JSON object and nothing else: no markdown, no prose outside the JSON, "
     "no code fences, no leading or trailing text. The object must have exactly these keys: "
     '"answer" (string), "confidence" (a number 0..1), and "gaps" (string). '
-    'The "answer" value is the final bid response text only: clean, professional prose in short '
+    'The "answer" value is the final response text only: clean, professional prose in short '
     "paragraphs, with light structure at most. It must NOT contain any meta scaffolding: no "
     "'## Answer' heading, no '## Available Evidence' section, no 'Based on the evidence provided' "
     "preamble, no leading markdown title (no '# ...' or '## ...' first line), and no 'GSS Response:' "
-    "or 'IDG Response:' style labels. Write it as the words you would submit to the buyer. "
+    "or 'IDG Response:' style labels. Write it as the words you would send to the recipient. "
     '"confidence" is your own read of how well the evidence lets you answer. '
     '"gaps" is a short note of what the evidence did not let you support, or "" if none.'
 )
+
+# Unchanged default prompt (byte-identical to the previous SYSTEM): identity + " " + contract, so a
+# worker with no custom persona behaves exactly as before.
+SYSTEM = f"{_IDENTITY_DEFAULT} {_OUTPUT_CONTRACT}"
 
 # Seed the assistant turn with an opening brace so a prefill-capable provider is forced to return a
 # JSON object (and no markdown preamble). Providers that cannot prefill ignore it; the strengthened
@@ -149,6 +162,15 @@ class Generator:
         if self.provider is None:
             self.provider = get_provider()
 
+    @property
+    def system(self) -> str:
+        """The full SYSTEM prompt: the worker's persona (or the default identity) followed by the
+        ALWAYS-enforced output contract. A custom persona replaces only the identity, so every
+        worker keeps the structured JSON (confidence/gaps) the gate relies on -- QIK-315."""
+        if self.system_prompt:
+            return f"{self.system_prompt}\n\n{_OUTPUT_CONTRACT}"
+        return SYSTEM
+
     def build_prompt(self, req: Requirement, verified: list[str] | None = None) -> str:
         evidence = list(req.context) + list(verified or [])
         capped = [e[:_MAX_EVIDENCE_CHARS] + ("…" if len(e) > _MAX_EVIDENCE_CHARS else "") for e in evidence]
@@ -160,7 +182,7 @@ class Generator:
         """Full provider response (carries the `stub` flag) for callers that must know whether the
         text is a real grounded draft or a StubProvider fallback -- see AgentCore.run."""
         prompt = self.build_prompt(req, verified)
-        return self.provider.generate(prompt, system=self.system_prompt or SYSTEM, prefill=prefill)
+        return self.provider.generate(prompt, system=self.system, prefill=prefill)
 
     def generate(self, req: Requirement, verified: list[str] | None = None) -> str:
         return self.generate_response(req, verified).text.strip()
@@ -172,10 +194,9 @@ class Generator:
         (confidence unset) only when the model still did not return the contract -- see
         parse_structured. Either way the answer is run through _clean_answer to strip any leading
         meta-scaffolding the model added."""
-        # Only prefill/expect JSON when using the default structured SYSTEM prompt. A worker with a
-        # custom (prose) system_prompt is not asked for JSON, so forcing "{" would corrupt its reply.
-        prefill = _JSON_PREFILL if not self.system_prompt else None
-        response = self.generate_response(req, verified, prefill=prefill)
+        # The output contract (JSON) is enforced for EVERY worker -- persona or not -- so we always
+        # prefill "{" to force a JSON object and keep confidence/gaps distinct from grounding.
+        response = self.generate_response(req, verified, prefill=_JSON_PREFILL)
         parsed = parse_structured(response.text)
         if parsed is None:
             return GenOutput(answer=_clean_answer(response.text), confidence=None, gaps="",
