@@ -415,6 +415,9 @@ export default function Onboarding() {
 
   const handleDemoMode = async (plan: SubscriptionType) => {
     setSelectedPlan(plan);
+    // Same session-still-resolving guard as handleSelectPlan (QIK-305): don't route an authenticated
+    // user to the email/password step while GET /auth/me is in flight.
+    if (authLoading) return;
     if (isLoggedIn) {
       await runCreateAvatarAndKnowledge(plan);
     } else {

@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     # Integrations. Empty = dev/stub; set per environment via SSM. Never commit real values.
     stripe_webhook_secret: str = ""
     stripe_secret_key: str = ""
+    # Real Stripe recurring price ID for the self-serve Premium ("pro") plan. Empty => self-serve
+    # checkout is unavailable (endpoint returns a clear 503) until provisioned in SSM. Enterprise is
+    # contact-sales and free is a trial, so neither is self-serve checkout.
+    stripe_price_pro: str = ""
     whatsapp_verify_token: str = ""
     whatsapp_access_token: str = ""
     whatsapp_phone_number_id: str = ""

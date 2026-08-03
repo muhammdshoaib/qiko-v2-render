@@ -26,7 +26,7 @@ from app.modules.email.sender import ConsoleEmailSender
 
 
 class _FakeStripe:
-    def create_checkout_session(self, *, customer_id, price_id, promo, client_reference_id=None):
+    def create_checkout_session(self, *, customer_id, price_id, promo, client_reference_id=None, plan=None):
         return f"https://checkout.stripe/{customer_id}/{price_id}"
 
     def billing_portal_url(self, *, customer_id):

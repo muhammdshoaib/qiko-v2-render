@@ -5,8 +5,9 @@ from __future__ import annotations
 
 class StubStripeGateway:
     def create_checkout_session(self, *, customer_id: str, price_id: str, promo: str | None = None,
-                                client_reference_id: str | None = None) -> str:
-        return f"https://checkout.stripe.test/{customer_id}/{price_id}"
+                                client_reference_id: str | None = None, plan: str | None = None) -> str:
+        suffix = f"?plan={plan}" if plan else ""
+        return f"https://checkout.stripe.test/{customer_id}/{price_id}{suffix}"
 
     def billing_portal_url(self, *, customer_id: str) -> str:
         return f"https://portal.stripe.test/{customer_id}"

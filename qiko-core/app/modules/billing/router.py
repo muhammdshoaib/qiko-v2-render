@@ -18,6 +18,7 @@ from app.core.deps import (
     require_platform_super_admin,
     require_role,
 )
+from app.modules.billing.subscriptions import CheckoutUnavailableError
 from app.modules.billing.team_billing import team_plan
 from app.modules.billing.webhook import verify_stripe_signature
 from app.modules.identity import csrf
@@ -73,6 +74,8 @@ def activate(body: ActivateBody, tenant: str = Depends(authed_tenant),
 
 class CheckoutBody(BaseModel):
     plan: str = "pro"
+    # Ignored server-side (retained for backward-compat with existing clients that still send it):
+    # the real Stripe price is resolved from config by plan, so a client cannot pick the price.
     price_id: str = "price_default"
     promo: str | None = None
 
@@ -99,12 +102,13 @@ def plans() -> list[dict]:
 
 @router.post("/checkout")
 def checkout(body: CheckoutBody, tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
-    # Price IDs and Stripe customer mapping are not production-wired yet. Keep the API fail-closed
-    # outside dev even if a caller bypasses the locked Pricing UI.
-    if not get_settings().debug:
-        raise HTTPException(status_code=404, detail="not found")
+    # The real Stripe price is resolved server-side from config (client-supplied price_id is ignored
+    # for security). When Stripe isn't provisioned for the plan, return a clear 503 instead of a 404
+    # or a broken redirect, so the UI can show "checkout unavailable" and a retry.
     try:
-        return {"url": subs.start_checkout(tenant, body.plan, price_id=body.price_id, promo=body.promo)}
+        return {"url": subs.start_checkout(tenant, body.plan, promo=body.promo)}
+    except CheckoutUnavailableError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail="payment provider error") from e
 
