@@ -50,8 +50,11 @@ _OUTPUT_CONTRACT = (
     '"gaps" is a short note of what the evidence did not let you support, or "" if none.'
 )
 
-# Unchanged default prompt (byte-identical to the previous SYSTEM): identity + " " + contract, so a
-# worker with no custom persona behaves exactly as before.
+# Default prompt = identity + " " + contract. The identity is unchanged (still the bid-response
+# writer). The contract wording was generalised from bid-specific ("bid response"/"buyer") to
+# worker-neutral ("response"/"recipient") so it reads correctly for persona workers too; the JSON
+# keys, object-only shape, and no-scaffolding rules are unchanged, so structured parsing/gating for
+# the default (bid/RFP) workers is functionally identical.
 SYSTEM = f"{_IDENTITY_DEFAULT} {_OUTPUT_CONTRACT}"
 
 # Seed the assistant turn with an opening brace so a prefill-capable provider is forced to return a

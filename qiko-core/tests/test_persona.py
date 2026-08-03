@@ -19,3 +19,8 @@ def test_builds_identity_from_fields():
 def test_partial_config_no_name():
     p = synthesize_persona({"expertise": "logistics"})
     assert p is not None and p.startswith("You are a helpful AI assistant.") and "logistics" in p
+
+
+def test_title_only_no_name_grammar():
+    p = synthesize_persona({"title": "Support Lead"})
+    assert p is not None and p.startswith("You are Support Lead.")  # no stray comma

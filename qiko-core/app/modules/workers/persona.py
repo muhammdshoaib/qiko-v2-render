@@ -24,11 +24,8 @@ def synthesize_persona(config: dict) -> str | None:
         return None
 
     parts: list[str] = []
-    if name or title:
-        who = "You are " + name + (f", {title}" if title else "")
-        parts.append(who.rstrip(", ") + ".")
-    else:
-        parts.append("You are a helpful AI assistant.")
+    who = ", ".join(p for p in (name, title) if p)
+    parts.append(f"You are {who}." if who else "You are a helpful AI assistant.")
     if expertise:
         parts.append(f"Your expertise is {expertise}.")
     if about:
