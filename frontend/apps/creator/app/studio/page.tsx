@@ -51,9 +51,13 @@ export default function StudioPage() {
   const agentsQ = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const workers = agentsQ.data ?? [];
 
-  // "Deployed" here means live/ready -- Creator is where workers are built and trained,
-  // Studio is where the deployed ones are operated day to day.
-  const deployed = useMemo(() => workers.filter((a) => a.status === "ready"), [workers]);
+  // Studio lists workers that are BOTH ready and explicitly pushed to Studio (config.studio_linked).
+  // Creator is where workers are built/trained; Studio is where pushed ones are operated day to day.
+  // (Existing ready workers were backfilled to studio_linked=true so nothing regressed.)
+  const deployed = useMemo(
+    () => workers.filter((a) => a.status === "ready" && (a.config as Record<string, unknown> | undefined)?.studio_linked === true),
+    [workers],
+  );
 
   const packsQ = useQueries({
     queries: deployed.map((a) => ({

@@ -932,6 +932,13 @@ function SettingsTab({ id, worker, onWorkerChange }: { id: string; worker?: Agen
     mutationFn: () => updateAgentConfig(id, { full_name: fullName, title, location, about }),
     onSuccess: onWorkerChange,
   });
+  // Studio membership is an explicit per-worker flag (config.studio_linked); Studio lists only
+  // ready workers that have been pushed. Uses the same config merge-patch as everything else.
+  const studioLinked = cfg.studio_linked === true;
+  const pushStudio = useMutation({
+    mutationFn: () => updateAgentConfig(id, { studio_linked: !studioLinked }),
+    onSuccess: onWorkerChange,
+  });
 
   return (
     <div className="space-y-6">
@@ -964,6 +971,32 @@ function SettingsTab({ id, worker, onWorkerChange }: { id: string; worker?: Agen
           <p className="text-xs text-muted-foreground">Reverting a ready worker back to training isn&apos;t supported yet.</p>
         )}
         {toggleStatus.isError && <p className="text-xs text-red-500">Couldn&apos;t update the worker status. Please try again.</p>}
+      </CardContent></Card>
+
+      <Card className="rounded-2xl"><CardContent className="space-y-4 pt-6">
+        <div>
+          <p className="text-sm font-semibold text-white">Studio</p>
+          <p className="text-xs text-muted-foreground">Push a ready worker to Studio to operate it day to day. Only ready workers can be pushed.</p>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium",
+            studioLinked ? "bg-cyan-500/15 text-cyan-300" : "bg-white/[0.06] text-slate-300")}>
+            <span className={cn("size-1.5 rounded-full", studioLinked ? "bg-cyan-400" : "bg-slate-400")} />
+            {studioLinked ? "In Studio" : "Not in Studio"}
+          </span>
+          <Button
+            variant={studioLinked ? "outline" : "default"}
+            disabled={(!ready && !studioLinked) || pushStudio.isPending}
+            title={!ready && !studioLinked ? "Make the worker Ready before pushing it to Studio" : undefined}
+            onClick={() => pushStudio.mutate()}
+          >
+            {pushStudio.isPending ? "Saving…" : studioLinked ? "Remove from Studio" : "Push to Studio"}
+          </Button>
+        </div>
+        {pushStudio.isSuccess && !pushStudio.isPending && (
+          <p className="text-xs text-emerald-400">{studioLinked ? "Worker pushed to Studio." : "Worker removed from Studio."}</p>
+        )}
+        {pushStudio.isError && <p className="text-xs text-red-500">Couldn&apos;t update Studio. Please try again.</p>}
       </CardContent></Card>
 
       <Card className="rounded-2xl"><CardContent className="space-y-4 pt-6">
