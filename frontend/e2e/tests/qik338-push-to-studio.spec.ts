@@ -47,11 +47,13 @@ async function mock(page: Page, put: string[], status = "ready") {
 }
 
 async function openSettings(page: Page) {
-  await page.goto(`/workers/${AGENT_ID}?tab=Settings`);
+  // domcontentloaded (not the default "load"): the heavy worker page keeps some resources pending on
+  // the mobile profile, so waiting for full "load" times out. We only need the interactive DOM.
+  // ?tab=Settings opens the Settings tab directly, so we do NOT click the tab (a bounded, best-effort
+  // consent dismissal only -- an unbounded click on the mobile profile can hang behind an overlay).
+  await page.goto(`/workers/${AGENT_ID}?tab=Settings`, { waitUntil: "domcontentloaded" });
   const reject = page.getByRole("button", { name: "Reject non-essential" });
-  if (await reject.count()) await reject.click().catch(() => {});
-  const settingsTab = page.getByRole("button", { name: "Settings" });
-  if (await settingsTab.count()) await settingsTab.first().click().catch(() => {});
+  if (await reject.count()) await reject.click({ timeout: 3000 }).catch(() => {});
 }
 
 test("Settings tab: push a ready worker to Studio", async ({ page }) => {
@@ -63,7 +65,9 @@ test("Settings tab: push a ready worker to Studio", async ({ page }) => {
   await expect(pushBtn).toBeVisible();
   await expect(page.getByText("Not in Studio")).toBeVisible();
 
-  await pushBtn.click();
+  // force: the button is asserted visible+enabled above; on the mobile profile the sticky blur header
+  // overlaps the button's top edge after scroll, so a normal click's hit-point lands on the header.
+  await pushBtn.click({ force: true });
   await expect.poll(() => put.some((b) => patchFlag(b) === true)).toBe(true);
   await expect(page.getByRole("button", { name: "Remove from Studio" })).toBeVisible();
 });
