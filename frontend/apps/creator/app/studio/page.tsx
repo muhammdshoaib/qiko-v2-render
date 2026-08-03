@@ -55,7 +55,7 @@ export default function StudioPage() {
   // Creator is where workers are built/trained; Studio is where pushed ones are operated day to day.
   // (Existing ready workers were backfilled to studio_linked=true so nothing regressed.)
   const deployed = useMemo(
-    () => workers.filter((a) => a.status === "ready" && (a.config as Record<string, unknown> | undefined)?.studio_linked === true),
+    () => workers.filter((a) => a.status === "ready" && a.config.studio_linked === true),
     [workers],
   );
 

@@ -56,3 +56,23 @@ test("Settings tab: push a ready worker to Studio", async ({ page }) => {
   // After the flag flips, the control reflects membership.
   await expect(page.getByRole("button", { name: "Remove from Studio" })).toBeVisible();
 });
+
+test("Push to Studio is disabled until the worker is ready", async ({ page }) => {
+  const put: string[] = [];
+  await mock(page, put);
+  // Override the agent list with a not-yet-ready worker.
+  await page.route(/\/api\/v1\/agents(\?.*)?$/, (r) => r.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify([{ id: AGENT_ID, tenant: "qa", name: "QA Studio Worker", status: "training", atype: "worker", enabled: true, config: {}, created_at: "2026-01-01T00:00:00Z" }]),
+  }));
+  await page.goto(`/workers/${AGENT_ID}?tab=Settings`);
+  const reject = page.getByRole("button", { name: "Reject non-essential" });
+  if (await reject.count()) await reject.click().catch(() => {});
+  const settingsTab = page.getByRole("button", { name: "Settings" });
+  if (await settingsTab.count()) await settingsTab.first().click().catch(() => {});
+
+  const pushBtn = page.getByRole("button", { name: "Push to Studio" });
+  await expect(pushBtn).toBeVisible();
+  await expect(pushBtn).toBeDisabled();
+  expect(put).toHaveLength(0);
+});
