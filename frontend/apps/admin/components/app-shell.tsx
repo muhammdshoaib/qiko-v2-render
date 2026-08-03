@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { LayoutDashboard, Users, BarChart3, Receipt, ShieldCheck, LogOut, Menu, X, UserCog, CreditCard } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { LayoutDashboard, Users, BarChart3, Receipt, ShieldCheck, ShieldAlert, LogOut, Menu, X, UserCog, CreditCard } from "lucide-react";
 import { Button, Logo, cn } from "@qiko/ui";
-import { logout } from "@/lib/api";
+import { adminMe, ApiError, logout } from "@/lib/api";
 
 const NAV = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
@@ -20,8 +20,20 @@ const NAV = [
 
 export function AppShell({ title, children }: { title: string; children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [mobileOpen, setMobileOpen] = useState(false);
+  // Detect the "logged in but no 2FA" state: the platform-admin gate returns 403 "platform admin MFA
+  // required" until the admin enrols 2FA. Instead of every page showing a generic "unavailable" error,
+  // send the admin straight into 2FA onboarding on /security. Deduped with pages' own ["admin-me"]
+  // queries; retry:false so a real 403 resolves immediately.
+  const me = useQuery({ queryKey: ["admin-me"], queryFn: adminMe, retry: false });
+  const mfaRequired =
+    me.error instanceof ApiError && me.error.status === 403 && /mfa/i.test(me.error.message);
+  const needsOnboarding = mfaRequired && !pathname.startsWith("/security");
+  useEffect(() => {
+    if (needsOnboarding) router.replace("/security");
+  }, [needsOnboarding, router]);
   const mobileDialog = useRef<HTMLDialogElement>(null);
   const menuButton = useRef<HTMLButtonElement>(null);
 
@@ -86,7 +98,22 @@ export function AppShell({ title, children }: { title: string; children: React.R
           <button ref={menuButton} type="button" className="inline-flex size-10 items-center justify-center rounded-md hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring md:hidden" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu className="size-5" /></button>
           <h1 className="text-sm font-semibold">{title}</h1>
         </header>
-        <main className="flex-1 overflow-y-auto p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-6">
+          {needsOnboarding ? (
+            <div role="status" className="mx-auto flex max-w-md items-start gap-3 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-200">
+              <ShieldAlert className="mt-0.5 size-5 shrink-0" />
+              <div>
+                <p className="font-medium">Two-factor authentication is required to use the admin.</p>
+                <p className="mt-0.5 text-amber-200/80">
+                  Taking you to set it up. If nothing happens, open{" "}
+                  <Link href="/security" className="font-medium underline">Security</Link>.
+                </p>
+              </div>
+            </div>
+          ) : (
+            children
+          )}
+        </main>
       </div>
     </div>
   );

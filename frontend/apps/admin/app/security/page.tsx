@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import QRCode from "qrcode";
 import { ShieldCheck } from "lucide-react";
@@ -19,6 +19,17 @@ export default function SecurityPage() {
   const enabled = me.data?.user.twofa_enabled === true;
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // The admin requires 2FA, so an admin arriving here without it (typically auto-redirected by
+  // AppShell) is auto-put into onboarding: kick off setup once so the QR is shown immediately.
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (me.data && !enabled && !autoStarted.current) {
+      autoStarted.current = true;
+      void start();
+    }
+    // start is a stable local function; the ref guard prevents re-invocation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me.data, enabled]);
 
   async function start() {
     setBusy(true); setError(null);
@@ -63,7 +74,9 @@ export default function SecurityPage() {
                   {enabled && <Badge variant="success">Enabled</Badge>}
                 </CardTitle>
                 <CardDescription className="mt-1">
-                  Scan the QR code with Google Authenticator, then enter the 6-digit code to finish setup.
+                  {enabled
+                    ? "Scan the QR code with Google Authenticator, then enter the 6-digit code to finish setup."
+                    : "Two-factor authentication is required to access the admin. Scan the QR code with Google Authenticator, enter the 6-digit code, then sign back in."}
                 </CardDescription>
               </div>
             </div>
