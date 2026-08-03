@@ -843,7 +843,12 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update Me
+         * @description Update the current user's own profile (display name). CSRF-guarded like other state-changing
+         *     auth endpoints; a user may only edit themself (subject comes from the verified access cookie).
+         */
+        patch: operations["update_me_api_v1_auth_me_patch"];
         trace?: never;
     };
     "/api/v1/auth/refresh": {
@@ -4333,6 +4338,11 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** ProfileUpdate */
+        ProfileUpdate: {
+            /** Name */
+            name?: string | null;
+        };
         /** PublicChatBody */
         PublicChatBody: {
             /** Question */
@@ -6702,6 +6712,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    update_me_api_v1_auth_me_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
