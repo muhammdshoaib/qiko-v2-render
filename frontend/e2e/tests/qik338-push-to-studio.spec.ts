@@ -21,9 +21,17 @@ const patchFlag = (body: string) => JSON.parse(body || "{}").patch?.studio_linke
 async function mock(page: Page, put: string[], status = "ready") {
   await page.context().addCookies([{ name: "qiko_refresh", value: "e2e", domain: new URL(BASE_URL).hostname, path: "/" }]);
   let linked = false;
+  // Playwright matches the LAST-registered route first, so register the broad catch-all FIRST and the
+  // specific routes AFTER (specifics win; the catch-all keeps the heavy worker page from hanging).
+  await page.route(/\/api\/v1\/.*/, (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    return route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
+  });
   await page.route("**/api/v1/auth/refresh", (r) => r.fulfill({ status: 200, contentType: "application/json", body: "{}" }));
   await page.route("**/api/v1/consent**", (r) => r.fulfill({ status: 204, body: "" }));
   await page.route("**/api/v1/auth/me", (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ user: { id: "u1", email: "qa@qiko.ai", name: null, role: "owner" } }) }));
+  await page.route(/\/api\/v1\/agents\/usage(\?.*)?$/, (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ used_count: 1, worker_limit: 3 }) }));
   await page.route(/\/api\/v1\/agents\/[^/]+\/config(\?.*)?$/, (route) => {
     if (route.request().method() === "PUT") {
       const body = route.request().postData() ?? "";
@@ -33,15 +41,9 @@ async function mock(page: Page, put: string[], status = "ready") {
     }
     return route.fallback();
   });
-  await page.route(/\/api\/v1\/agents\/usage(\?.*)?$/, (r) =>
-    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ used_count: 1, worker_limit: 3 }) }));
+  // Registered last => highest precedence for the plain agents-list endpoint.
   await page.route(/\/api\/v1\/agents(\?.*)?$/, (r) =>
     r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([makeWorker(status, linked)]) }));
-  // Any other API the shell/tabs touch: harmless empty defaults so the page never hangs on the network.
-  await page.route(/\/api\/v1\/.*/, (route) => {
-    if (route.request().method() !== "GET") return route.fallback();
-    return route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
-  });
 }
 
 async function openSettings(page: Page) {
