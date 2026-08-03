@@ -16,40 +16,48 @@ router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 _MAX_INGEST_TEXT = 2 * 1024 * 1024  # 2 MB of text
 
 
+# agent_id scopes knowledge to a single worker (QIK-315). Optional for backward-compat: when a
+# caller omits it the behaviour is the legacy tenant-wide corpus. It is always within the authed
+# tenant (team-shared), so it is a sub-partition, never a cross-tenant control.
 class IngestBody(BaseModel):
     doc_id: str = Field(min_length=1)
     text: str = Field(min_length=1, max_length=_MAX_INGEST_TEXT)
+    agent_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 class SearchBody(BaseModel):
     query: str = Field(min_length=1)
     k: int = Field(default=5, ge=1, le=50)
+    agent_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 @router.post("/ingest")
 async def ingest(body: IngestBody, tenant: str = Depends(authed_tenant),
                  _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_knowledge)) -> dict:
-    return {"doc_id": body.doc_id, "chunks": await svc.ingest(tenant, body.doc_id, body.text)}
+    return {"doc_id": body.doc_id,
+            "chunks": await svc.ingest(tenant, body.doc_id, body.text, agent_id=body.agent_id)}
 
 
 @router.post("/search")
 async def search(body: SearchBody, tenant: str = Depends(authed_tenant), svc=Depends(get_knowledge)) -> dict:
-    return {"results": [p.text for p in await svc.retrieve(tenant, body.query, k=body.k)]}
+    return {"results": [p.text for p in await svc.retrieve(tenant, body.query, k=body.k, agent_id=body.agent_id)]}
 
 
 @router.get("/documents")
-async def documents(tenant: str = Depends(authed_tenant), svc=Depends(get_knowledge)) -> list[dict]:
-    return await svc.list_documents(tenant)
+async def documents(tenant: str = Depends(authed_tenant), agent_id: str | None = None,
+                    svc=Depends(get_knowledge)) -> list[dict]:
+    return await svc.list_documents(tenant, agent_id=agent_id)
 
 
 @router.delete("/documents/{doc_id}")
-async def delete_document(doc_id: str, tenant: str = Depends(authed_tenant),
+async def delete_document(doc_id: str, tenant: str = Depends(authed_tenant), agent_id: str | None = None,
                           _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_knowledge)) -> dict:
-    return {"removed": await svc.delete_document(tenant, doc_id)}
+    return {"removed": await svc.delete_document(tenant, doc_id, agent_id=agent_id)}
 
 
 @router.post("/ingest-file")
 async def ingest_file(file: UploadFile = File(...), doc_id: str = Form(...),
+                      agent_id: str | None = Form(None),
                       tenant: str = Depends(authed_tenant),
                       _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_knowledge)) -> dict:
     # Read with a hard cap so a huge upload can't exhaust memory (defence beyond the global
@@ -57,7 +65,7 @@ async def ingest_file(file: UploadFile = File(...), doc_id: str = Form(...),
     data = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="file exceeds the 10MB limit")
-    chunks = await svc.ingest_file(tenant, doc_id, file.filename or doc_id, data)
+    chunks = await svc.ingest_file(tenant, doc_id, file.filename or doc_id, data, agent_id=agent_id)
     return {"doc_id": doc_id, "chunks": chunks}
 
 

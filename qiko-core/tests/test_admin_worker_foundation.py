@@ -240,7 +240,7 @@ def test_migration_is_single_head_with_enabled_backfill_and_audit_indexes():
     config = Config(str(root / "alembic.ini"))
     config.set_main_option("script_location", str(root / "alembic"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["0030_user_name"]
+    assert scripts.get_heads() == ["0031_passage_agent_id"]
 
     migration = root / "alembic/versions/0025_agent_enabled_audit.py"
     source = migration.read_text()

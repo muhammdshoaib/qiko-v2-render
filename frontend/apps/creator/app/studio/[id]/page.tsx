@@ -88,7 +88,7 @@ function WorkerOverview({ agentId, ready, onOpenChat, onOpenResearch, onOpenKnow
   agentId: string; ready: boolean; onOpenChat: () => void; onOpenResearch: () => void;
   onOpenKnowledge: () => void; onOpenConnections: () => void;
 }) {
-  const docs = useQuery({ queryKey: ["documents"], queryFn: listDocuments });
+  const docs = useQuery({ queryKey: ["documents", agentId], queryFn: () => listDocuments(agentId) });
   const sources = docs.data?.length ?? 0;
   const chunks = docs.data?.reduce((n, d) => n + d.chunks, 0) ?? 0;
 

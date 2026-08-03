@@ -83,7 +83,7 @@ export default function StudioPage() {
       retry: false,
     })),
   });
-  const docsQ = useQuery({ queryKey: ["documents"], queryFn: listDocuments });
+  const docsQ = useQuery({ queryKey: ["documents"], queryFn: () => listDocuments() });
   const dataVolume = knowledgeChunkCount(docsQ.data ?? []);
 
   const groups = useMemo(() => {

@@ -270,7 +270,8 @@ async def assemble_worker(*, sessionmaker, agents, knowledge, tenant: str, agent
         agent = await agents.get(tenant, agent_id)
         if agent is not None:
             cfg = agent.config
-    kwargs = {"name": f"w-{tenant}-{agent_id}" if agent_id else f"w-{tenant}", "tenant": tenant}
+    kwargs = {"name": f"w-{tenant}-{agent_id}" if agent_id else f"w-{tenant}", "tenant": tenant,
+              "agent_id": agent_id}
     if "gate_threshold" in cfg:
         kwargs["gate_threshold"] = cfg["gate_threshold"]
     if "retrieval_k" in cfg:

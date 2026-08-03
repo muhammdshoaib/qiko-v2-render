@@ -27,8 +27,9 @@ class KnowledgeSources:
 
     async def _upsert(self, tenant: str, agent: str, kind: str, source_id: str, text: str) -> str:
         doc_id = _doc_id(agent, kind, source_id)
-        await self.knowledge.delete_document(tenant, doc_id)  # re-ingest cleanly (idempotent update)
-        await self.knowledge.ingest(tenant, doc_id, text)
+        # Scope the source to its owning worker (QIK-315) so it is retrieved only in that worker's chat.
+        await self.knowledge.delete_document(tenant, doc_id, agent_id=agent)  # idempotent re-ingest
+        await self.knowledge.ingest(tenant, doc_id, text, agent_id=agent)
         return doc_id
 
     async def add_behavior(self, tenant: str, agent: str, source_id: str, behavior: str) -> str:
@@ -49,4 +50,4 @@ class KnowledgeSources:
         return await self._upsert(tenant, agent, "persona", "core", text)
 
     async def delete_source(self, tenant: str, agent: str, kind: str, source_id: str) -> int:
-        return await self.knowledge.delete_document(tenant, _doc_id(agent, kind, source_id))
+        return await self.knowledge.delete_document(tenant, _doc_id(agent, kind, source_id), agent_id=agent)

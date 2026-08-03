@@ -46,8 +46,8 @@ export default function WorkerDetailPage() {
   const [tab, setTab] = useState<Tab>(TABS.some((t) => t.id === initialTab && !t.locked) ? (initialTab as Tab) : "Overview");
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const worker = agents.data?.find((a) => a.id === id);
-  const docs = useQuery({ queryKey: ["documents"], queryFn: listDocuments, enabled: !!worker });
-  const refresh = () => qc.invalidateQueries({ queryKey: ["documents"] });
+  const docs = useQuery({ queryKey: ["documents", id], queryFn: () => listDocuments(id), enabled: !!worker });
+  const refresh = () => qc.invalidateQueries({ queryKey: ["documents", id] });
   const refreshAgents = () => qc.invalidateQueries({ queryKey: ["agents"] });
 
   if (agents.isLoading) {
@@ -771,7 +771,7 @@ function KnowledgeStep({ id, docs, loading, onChange }: { id: string; docs?: Doc
       </div>
 
       {view === "library" ? (
-        <DocumentLibrary docs={docs} loading={loading} onChange={onChange} />
+        <DocumentLibrary id={id} docs={docs} loading={loading} onChange={onChange} />
       ) : (
         <div className="space-y-3">
           {KNOWLEDGE_CARDS.map((c) => (
@@ -810,8 +810,8 @@ function KnowledgeStep({ id, docs, loading, onChange }: { id: string; docs?: Doc
 
 // The ingested-documents "Library": the SAME per-worker knowledge base the studio Sources tab reads
 // (both use listDocuments / deleteDocument), so a doc added in either place shows up in the other.
-function DocumentLibrary({ docs, loading, onChange }: { docs?: Doc[]; loading: boolean; onChange: () => void }) {
-  const remove = useMutation({ mutationFn: (docId: string) => deleteDocument(docId), onSuccess: onChange });
+function DocumentLibrary({ id, docs, loading, onChange }: { id: string; docs?: Doc[]; loading: boolean; onChange: () => void }) {
+  const remove = useMutation({ mutationFn: (docId: string) => deleteDocument(docId, id), onSuccess: onChange });
   return (
     <div className="space-y-2">
       {loading && [0, 1, 2].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
@@ -1039,11 +1039,11 @@ function SettingsTab({ id, worker, onWorkerChange }: { id: string; worker?: Agen
 function KnowledgeTab({ id, docs, loading, onChange }: { id: string; docs?: Doc[]; loading: boolean; onChange: () => void }) {
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
-  const add = useMutation({ mutationFn: () => ingest(`${id}-${Date.now()}`, text), onSuccess: () => { setText(""); onChange(); } });
-  const remove = useMutation({ mutationFn: (d: string) => deleteDocument(d), onSuccess: onChange });
+  const add = useMutation({ mutationFn: () => ingest(`${id}-${Date.now()}`, text, id), onSuccess: () => { setText(""); onChange(); } });
+  const remove = useMutation({ mutationFn: (d: string) => deleteDocument(d, id), onSuccess: onChange });
   const ingestDoc = useMutation({
     // doc_id is the filename without extension, mirroring the studio Sources ingest flow.
-    mutationFn: (f: File) => ingestFile(f.name.replace(/\.[^.]+$/, "") || f.name, f),
+    mutationFn: (f: File) => ingestFile(f.name.replace(/\.[^.]+$/, "") || f.name, f, id),
     onSuccess: () => { setFile(null); onChange(); },
   });
   return (

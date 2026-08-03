@@ -251,20 +251,24 @@ class SqlVectorStore:
 
     async def add(self, passage: Passage) -> None:
         async with self.sessionmaker() as s, s.begin():
-            s.add(PassageRow(id=passage.id, tenant_id=passage.tenant, doc_id=passage.doc_id,
-                             text=passage.text, embedding=passage.embedding))
+            s.add(PassageRow(id=passage.id, tenant_id=passage.tenant, agent_id=passage.agent_id,
+                             doc_id=passage.doc_id, text=passage.text, embedding=passage.embedding))
 
-    async def get(self, tenant: str) -> list[Passage]:
+    async def get(self, tenant: str, agent_id: str | None = None) -> list[Passage]:
         async with self.sessionmaker() as s:
-            rows = (await s.execute(
-                select(PassageRow).where(PassageRow.tenant_id == tenant))).scalars().all()
+            stmt = select(PassageRow).where(PassageRow.tenant_id == tenant)
+            if agent_id is not None:
+                stmt = stmt.where(PassageRow.agent_id == agent_id)
+            rows = (await s.execute(stmt)).scalars().all()
             return [Passage(id=r.id, tenant=r.tenant_id, doc_id=r.doc_id, text=r.text,
-                            embedding=list(r.embedding or [])) for r in rows]
+                            embedding=list(r.embedding or []), agent_id=r.agent_id) for r in rows]
 
-    async def delete_doc(self, tenant: str, doc_id: str) -> int:
+    async def delete_doc(self, tenant: str, doc_id: str, agent_id: str | None = None) -> int:
         async with self.sessionmaker() as s, s.begin():
-            result = await s.execute(
-                delete(PassageRow).where(PassageRow.tenant_id == tenant, PassageRow.doc_id == doc_id))
+            stmt = delete(PassageRow).where(PassageRow.tenant_id == tenant, PassageRow.doc_id == doc_id)
+            if agent_id is not None:
+                stmt = stmt.where(PassageRow.agent_id == agent_id)
+            result = await s.execute(stmt)
             return result.rowcount or 0
 
 

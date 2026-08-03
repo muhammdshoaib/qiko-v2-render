@@ -233,8 +233,10 @@ test("UI source pins reset copy, accessible metric tooltips and shared helper wi
     assert.ok(source.includes('label: "Data Volume"'));
     assert.ok(source.includes("`${dataVolume} chunks`"));
   }
-  assert.ok(studioSource.includes('queryKey: ["documents"], queryFn: listDocuments'));
-  assert.ok(landingSource.includes('queryKey: ["documents"], queryFn: listDocuments'));
+  // Studio landing keeps a tenant-wide docs summary; the pre-sales worker landing is now scoped to
+  // its own worker (agentId) so its knowledge stays its own (QIK-315 agent-scoped knowledge).
+  assert.ok(studioSource.includes('queryKey: ["documents"], queryFn: () => listDocuments()'));
+  assert.ok(landingSource.includes('queryKey: ["documents", agentId], queryFn: () => listDocuments(agentId)'));
   assert.match(tooltipSource, /Info/);
   assert.match(tooltipSource, /role="tooltip"/);
   assert.match(tooltipSource, /aria-describedby=/);

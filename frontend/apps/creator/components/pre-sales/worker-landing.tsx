@@ -102,7 +102,7 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
     [overviewQs],
   );
 
-  const docsQ = useQuery({ queryKey: ["documents"], queryFn: listDocuments });
+  const docsQ = useQuery({ queryKey: ["documents", agentId], queryFn: () => listDocuments(agentId) });
   const dataVolume = knowledgeChunkCount(docsQ.data ?? []);
   const aiDrafting = aiDraftingPercent(activePacks);
 
@@ -318,7 +318,7 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
                 )}
               </div>
             ) : view === "knowledge" ? (
-              <SourcesTab />
+              <SourcesTab agentId={agentId} />
             ) : (
               <SectionAssignment packs={packs} agentId={agentId} />
             )}

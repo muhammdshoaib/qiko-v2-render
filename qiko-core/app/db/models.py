@@ -304,6 +304,7 @@ class Passage(Base):
     __tablename__ = "passages"
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    agent_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     doc_id: Mapped[str] = mapped_column(String(128))
     text: Mapped[str] = mapped_column(String)
     embedding: Mapped[list] = mapped_column(JSON, default=list)
