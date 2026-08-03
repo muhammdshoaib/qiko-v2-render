@@ -56,3 +56,40 @@ async def test_build_tenant_worker_keeps_legacy_generic_fallback_for_internal_ca
     request = _fake_request(store)
     worker = await build_tenant_worker(request, "acme", agent_id="does-not-exist")
     assert worker.config.system_prompt is None
+
+
+async def test_worker_without_prompt_synthesizes_persona_from_train_config():
+    # The Train wizard writes expertise/tone/full_name but no system_prompt; the worker must still
+    # answer in its OWN voice, not the generic bid-writer default (QIK-315).
+    store = InMemoryAgentStore()
+    await store.add(Agent(id="support1", tenant="acme", name="Support Bot", config={
+        "full_name": "Ava", "title": "Customer Support Lead", "expertise": "billing and refunds",
+        "tone": "warm and concise",
+    }))
+    request = _fake_request(store)
+    worker = await build_tenant_worker(request, "acme", agent_id="support1")
+    sp = worker.config.system_prompt
+    assert sp and "Ava" in sp and "billing and refunds" in sp and "warm and concise" in sp
+    assert "bid-response writer" not in sp  # not the generic default identity
+
+
+async def test_explicit_system_prompt_wins_over_synthesis():
+    store = InMemoryAgentStore()
+    await store.add(Agent(id="x", tenant="acme", name="X", config={
+        "system_prompt": "You are X.", "expertise": "ignored when explicit prompt set",
+    }))
+    request = _fake_request(store)
+    worker = await build_tenant_worker(request, "acme", agent_id="x")
+    assert worker.config.system_prompt == "You are X."
+
+
+async def test_persona_worker_still_enforces_json_output_contract():
+    # A persona replaces only the identity; the JSON output contract is always appended, so the
+    # gate still gets structured confidence/gaps.
+    from app.modules.agentcore.generator import SYSTEM, _OUTPUT_CONTRACT, Generator
+
+    default = Generator(provider=object())
+    assert default.system == SYSTEM  # no persona -> unchanged default prompt
+    persona = Generator(provider=object(), system_prompt="You are Ava, a support agent.")
+    assert persona.system.startswith("You are Ava, a support agent.")
+    assert _OUTPUT_CONTRACT in persona.system  # contract always enforced
