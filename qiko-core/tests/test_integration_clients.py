@@ -38,6 +38,29 @@ def test_stripe_checkout_builds_subscription_session():
     assert "mode=subscription" in seen["body"] and "cus_1" in seen["body"] and "PROMO" in seen["body"]
 
 
+def test_stripe_checkout_omits_customer_when_not_real_and_links_via_reference():
+    seen = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["body"] = req.content.decode()
+        return httpx.Response(200, json={"url": "https://checkout.stripe.com/x"})
+
+    c = StripeClient(client=_client("https://api.stripe.com/v1", handler))
+    # customer_id is the tenant string (not a real cus_...): must NOT be sent as `customer` (Stripe
+    # 400s on an unknown customer). client_reference_id + metadata[plan] still link/activate correctly.
+    url = c.create_checkout_session(customer_id="acme", price_id="price_pro",
+                                    client_reference_id="acme", plan="pro")
+    assert url == "https://checkout.stripe.com/x"
+    body = seen["body"]
+    assert "customer=" not in body  # tenant string omitted
+    assert "client_reference_id=acme" in body
+    assert "metadata%5Bplan%5D=pro" in body or "metadata[plan]=pro" in body
+
+    # A real Stripe customer id IS forwarded.
+    c.create_checkout_session(customer_id="cus_real123", price_id="price_pro", client_reference_id="acme")
+    assert "customer=cus_real123" in seen["body"]
+
+
 def test_whatsapp_send_text_meta_shape():
     seen = {}
 

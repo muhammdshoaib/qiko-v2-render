@@ -25,9 +25,15 @@ class StripeClient:
     def create_checkout_session(self, *, customer_id: str, price_id: str, promo: str | None = None,
                                 client_reference_id: str | None = None, plan: str | None = None) -> str:
         base = get_settings().public_base_url
-        data = {"mode": "subscription", "customer": customer_id,
+        data = {"mode": "subscription",
                 "line_items[0][price]": price_id, "line_items[0][quantity]": "1",
                 "success_url": f"{base}/checkout/success", "cancel_url": f"{base}/checkout/cancel"}
+        # Only pass `customer` when it is a REAL Stripe customer id ("cus_..."). Our `customer_id` is
+        # the tenant string until a webhook links a real customer, and Stripe 400s on an unknown
+        # customer. When absent, Checkout creates the customer and collects the email itself, and
+        # `client_reference_id` still ties it back to our tenant on checkout.session.completed.
+        if customer_id and customer_id.startswith("cus_"):
+            data["customer"] = customer_id
         if promo:
             data["discounts[0][promotion_code]"] = promo
         if client_reference_id:
