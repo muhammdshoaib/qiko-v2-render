@@ -98,3 +98,32 @@ async def test_retrieve_is_relevant_and_tenant_scoped():
     all_acme = await svc.retrieve("acme", "pricing structure", k=5)
     assert all("Beta confidential" not in p.text for p in all_acme)
     assert await svc.retrieve("nobody", "anything") == []
+
+
+# --- QIK-315: per-worker (agent_id) knowledge scoping ---
+async def test_ingest_and_retrieve_are_agent_scoped():
+    svc = KnowledgeService(store=InMemoryVectorStore())
+    await svc.ingest("acme", "idg-doc", ISO, agent_id="idg")
+    await svc.ingest("acme", "hse-doc", HSE, agent_id="support")
+
+    idg_docs = {d["doc_id"] for d in await svc.list_documents("acme", agent_id="idg")}
+    support_docs = {d["doc_id"] for d in await svc.list_documents("acme", agent_id="support")}
+    assert idg_docs == {"idg-doc"} and support_docs == {"hse-doc"}  # no cross-worker bleed
+
+    # retrieval for the support worker never returns the IDG passage (QIK-315 core fix)
+    idg_hits = [p.doc_id for p in await svc.retrieve("acme", "ISO certification", agent_id="idg")]
+    support_hits = [p.doc_id for p in await svc.retrieve("acme", "ISO certification", agent_id="support")]
+    assert "idg-doc" in idg_hits and "idg-doc" not in support_hits
+
+    # tenant-wide (no agent_id) still sees everything (legacy/internal callers)
+    assert len(await svc.list_documents("acme")) == 2
+
+
+async def test_delete_is_agent_scoped():
+    svc = KnowledgeService(store=InMemoryVectorStore())
+    await svc.ingest("acme", "shared-name", ISO, agent_id="a1")
+    await svc.ingest("acme", "shared-name", HSE, agent_id="a2")  # same doc_id, different worker
+    removed = await svc.delete_document("acme", "shared-name", agent_id="a1")
+    assert removed >= 1
+    assert {d["doc_id"] for d in await svc.list_documents("acme", agent_id="a2")} == {"shared-name"}
+    assert await svc.list_documents("acme", agent_id="a1") == []

@@ -377,7 +377,8 @@ async def tender_chat(pack_id: str, body: AskBody, request: Request,
     /rfp/packs/{id}/chat/history reads back in order."""
     pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
     await recheck()
-    passages = await worker.knowledge.retrieve(tenant, body.question, k=worker.config.retrieval_k)
+    passages = await worker.knowledge.retrieve(tenant, body.question, k=worker.config.retrieval_k,
+                                               agent_id=worker.config.agent_id)
     await recheck()
     kb_block = "\n\n".join(f"[{i + 1}] {p.text}" for i, p in enumerate(passages)) or "(no matching company documents)"
 

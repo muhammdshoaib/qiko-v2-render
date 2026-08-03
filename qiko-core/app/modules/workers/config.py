@@ -18,6 +18,7 @@ from app.modules.agentcore.gate import DEFAULT_THRESHOLD
 class WorkerConfig:
     name: str
     tenant: str
+    agent_id: str | None = None  # scopes this worker's knowledge retrieval/ingest to its own corpus
     gate_threshold: float = DEFAULT_THRESHOLD
     retrieval_k: int = 5
     system_prompt: str | None = None

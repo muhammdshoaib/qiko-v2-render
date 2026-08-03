@@ -24,34 +24,38 @@ class KnowledgeService:
         if self.store is None:
             self.store = InMemoryVectorStore()
 
-    async def ingest(self, tenant: str, doc_id: str, text: str) -> int:
+    async def ingest(self, tenant: str, doc_id: str, text: str, *, agent_id: str | None = None) -> int:
         chunks = chunk_text(text)
         # Embedding can be a blocking network call (e.g. Titan via boto3) or CPU-bound; run it off
         # the event loop so one ingest can't freeze every other request this process is handling.
         embeddings = await asyncio.to_thread(lambda: [self.embeddings.embed(c) for c in chunks])
         for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-            pid = hashlib.sha1(f"{tenant}:{doc_id}:{i}".encode()).hexdigest()[:16]
+            # Include agent_id in the id seed so the same doc ingested for two workers doesn't collide.
+            pid = hashlib.sha1(f"{tenant}:{agent_id or ''}:{doc_id}:{i}".encode()).hexdigest()[:16]
             await self.store.add(Passage(id=pid, tenant=tenant, doc_id=doc_id, text=chunk,
-                                         embedding=embedding))
+                                         embedding=embedding, agent_id=agent_id))
         return len(chunks)
 
-    async def ingest_file(self, tenant: str, doc_id: str, filename: str, data: bytes) -> int:
+    async def ingest_file(self, tenant: str, doc_id: str, filename: str, data: bytes,
+                          *, agent_id: str | None = None) -> int:
         """Parse an uploaded file to text, then chunk/embed/store it under doc_id."""
-        return await self.ingest(tenant, doc_id, extract_text(filename, data))
+        return await self.ingest(tenant, doc_id, extract_text(filename, data), agent_id=agent_id)
 
-    async def list_documents(self, tenant: str) -> list[dict]:
-        """Distinct documents for a tenant with their chunk counts."""
+    async def list_documents(self, tenant: str, *, agent_id: str | None = None) -> list[dict]:
+        """Distinct documents for a tenant (optionally scoped to one worker) with chunk counts."""
         counts: dict[str, int] = {}
-        for p in await self.store.get(tenant):
+        for p in await self.store.get(tenant, agent_id):
             counts[p.doc_id] = counts.get(p.doc_id, 0) + 1
         return [{"doc_id": d, "chunks": c} for d, c in sorted(counts.items())]
 
-    async def delete_document(self, tenant: str, doc_id: str) -> int:
-        """Remove a document's vectors (cascade). Returns chunks removed."""
-        return await self.store.delete_doc(tenant, doc_id)
+    async def delete_document(self, tenant: str, doc_id: str, *, agent_id: str | None = None) -> int:
+        """Remove a document's vectors (cascade), scoped to one worker when agent_id is given.
+        Returns chunks removed."""
+        return await self.store.delete_doc(tenant, doc_id, agent_id)
 
-    async def retrieve(self, tenant: str, query: str, *, k: int = 5) -> list[Passage]:
-        passages = await self.store.get(tenant)  # tenant-scoped by construction
+    async def retrieve(self, tenant: str, query: str, *, k: int = 5,
+                       agent_id: str | None = None) -> list[Passage]:
+        passages = await self.store.get(tenant, agent_id)  # tenant- (and optionally agent-) scoped
         if not passages:
             return []
         # Query embedding + cosine/bm25 scoring are network-/CPU-bound pure Python; run them off

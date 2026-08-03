@@ -3775,6 +3775,8 @@ export interface components {
         };
         /** Body_ingest_file_api_v1_knowledge_ingest_file_post */
         Body_ingest_file_api_v1_knowledge_ingest_file_post: {
+            /** Agent Id */
+            agent_id?: string | null;
             /** Doc Id */
             doc_id: string;
             /**
@@ -4137,6 +4139,8 @@ export interface components {
         };
         /** IngestBody */
         IngestBody: {
+            /** Agent Id */
+            agent_id?: string | null;
             /** Doc Id */
             doc_id: string;
             /** Text */
@@ -4523,6 +4527,8 @@ export interface components {
         };
         /** SearchBody */
         SearchBody: {
+            /** Agent Id */
+            agent_id?: string | null;
             /**
              * K
              * @default 5
@@ -8993,7 +8999,9 @@ export interface operations {
     };
     documents_api_v1_knowledge_documents_get: {
         parameters: {
-            query?: never;
+            query?: {
+                agent_id?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -9011,11 +9019,22 @@ export interface operations {
                     }[];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     delete_document_api_v1_knowledge_documents__doc_id__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                agent_id?: string | null;
+            };
             header?: never;
             path: {
                 doc_id: string;

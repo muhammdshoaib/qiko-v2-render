@@ -47,7 +47,7 @@ class Worker:
         return self.config.name
 
     async def ingest(self, doc_id: str, text: str) -> int:
-        return await self.knowledge.ingest(self.config.tenant, doc_id, text)
+        return await self.knowledge.ingest(self.config.tenant, doc_id, text, agent_id=self.config.agent_id)
 
     async def answer(self, requirement_id: str, requirement_text: str, *,
                      topic: str | None = None,
@@ -56,7 +56,8 @@ class Worker:
         if recheck_worker is not None:
             await recheck_worker()
         passages = await self.knowledge.retrieve(
-            self.config.tenant, requirement_text, k=self.config.retrieval_k)
+            self.config.tenant, requirement_text, k=self.config.retrieval_k,
+            agent_id=self.config.agent_id)
         if recheck_worker is not None:
             await recheck_worker()
         req = Requirement(id=requirement_id, text=requirement_text,

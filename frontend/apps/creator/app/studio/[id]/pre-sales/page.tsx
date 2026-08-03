@@ -104,7 +104,7 @@ export default function PreSalesCockpitPage() {
       ) : tab === "overview" ? (
         <OverviewTab packId={requestedPackId} onOpenSections={() => setTab("sections")} onOpenBrief={() => setTab("brief")} />
       ) : tab === "sources" ? (
-        <SourcesTab />
+        <SourcesTab agentId={agentId} />
       ) : tab === "brief" ? (
         <BriefTab packId={requestedPackId} onOpenSources={() => setTab("sources")} />
       ) : tab === "sections" ? (

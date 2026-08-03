@@ -194,14 +194,19 @@ export const testTeamsWebhook = (workerId: string) =>
 
 // Knowledge + chat
 export type Doc = { doc_id: string; chunks: number };
-export const ingest = (doc_id: string, text: string) =>
+// agentId scopes knowledge to a single worker (QIK-315). Pass the worker id from the worker/studio
+// pages so a worker only ever ingests/lists/deletes/retrieves its own documents.
+export const ingest = (doc_id: string, text: string, agentId?: string) =>
   request<{ doc_id: string; chunks: number }>("/knowledge/ingest", {
     method: "POST",
-    body: JSON.stringify({ doc_id, text }),
+    body: JSON.stringify(agentId ? { doc_id, text, agent_id: agentId } : { doc_id, text }),
   });
-export const listDocuments = () => request<Doc[]>("/knowledge/documents");
-export const deleteDocument = (docId: string) =>
-  request<{ removed: number }>(`/knowledge/documents/${encodeURIComponent(docId)}`, { method: "DELETE" });
+export const listDocuments = (agentId?: string) =>
+  request<Doc[]>(`/knowledge/documents${agentId ? `?agent_id=${encodeURIComponent(agentId)}` : ""}`);
+export const deleteDocument = (docId: string, agentId?: string) =>
+  request<{ removed: number }>(
+    `/knowledge/documents/${encodeURIComponent(docId)}${agentId ? `?agent_id=${encodeURIComponent(agentId)}` : ""}`,
+    { method: "DELETE" });
 export const ask = (conversation_id: string, question: string, agent_id: string) =>
   request<{ role: string; text: string }>("/chat/ask", {
     method: "POST",
@@ -569,11 +574,12 @@ export async function exportPackBlob(packId: string, kind: "xlsx" | "docx-clean"
   return requestBlob(`/rfp/packs/${packId}/export/${kind}`);
 }
 
-export async function ingestFile(docId: string, file: File): Promise<{ chunks: number }> {
+export async function ingestFile(docId: string, file: File, agentId?: string): Promise<{ chunks: number }> {
   const csrf = document.cookie.match(/(?:^|; )qiko_csrf=([^;]+)/)?.[1];
   const form = new FormData();
   form.append("file", file);
   form.append("doc_id", docId);
+  if (agentId) form.append("agent_id", agentId);
   const res = await fetch(`${BASE}/knowledge/ingest-file`, {
     method: "POST", credentials: "include", body: form,
     headers: csrf ? { "x-csrf-token": csrf } : undefined,

@@ -6,22 +6,24 @@ import { AlertTriangle, Database, Library, Loader2, Trash2, Upload } from "lucid
 import { deleteDocument, ingestFile, listDocuments, type Doc } from "@/lib/api";
 import { OutcomesStrip, type OutcomeTile } from "@/components/cockpit/outcomes-strip";
 
-export function SourcesTab() {
+export function SourcesTab({ agentId }: { agentId: string }) {
   const qc = useQueryClient();
-  const docsQ = useQuery({ queryKey: ["documents"], queryFn: listDocuments });
+  const docsQ = useQuery({ queryKey: ["documents", agentId], queryFn: () => listDocuments(agentId) });
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["documents", agentId] });
 
   const ingest = useMutation({
-    // doc_id is the filename without extension, mirroring the validated idg ingest flow.
-    mutationFn: (f: File) => ingestFile(f.name.replace(/\.[^.]+$/, "") || f.name, f),
-    onSuccess: () => { setError(null); setFile(null); qc.invalidateQueries({ queryKey: ["documents"] }); },
+    // doc_id is the filename without extension, mirroring the validated idg ingest flow. Scoped to
+    // this worker (agentId) so its knowledge stays its own (QIK-315).
+    mutationFn: (f: File) => ingestFile(f.name.replace(/\.[^.]+$/, "") || f.name, f, agentId),
+    onSuccess: () => { setError(null); setFile(null); invalidate(); },
     onError: (e) => setError(e instanceof Error ? e.message : "Ingest failed"),
   });
 
   const remove = useMutation({
-    mutationFn: (docId: string) => deleteDocument(docId),
-    onSuccess: () => { setError(null); qc.invalidateQueries({ queryKey: ["documents"] }); },
+    mutationFn: (docId: string) => deleteDocument(docId, agentId),
+    onSuccess: () => { setError(null); invalidate(); },
     onError: (e) => setError(e instanceof Error ? e.message : "Couldn't remove that document"),
   });
 
