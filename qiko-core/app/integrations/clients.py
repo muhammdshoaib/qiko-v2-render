@@ -23,7 +23,7 @@ class StripeClient:
         self._c = _client("https://api.stripe.com/v1", {"Authorization": f"Bearer {key}"}, client)
 
     def create_checkout_session(self, *, customer_id: str, price_id: str, promo: str | None = None,
-                                client_reference_id: str | None = None) -> str:
+                                client_reference_id: str | None = None, plan: str | None = None) -> str:
         base = get_settings().public_base_url
         data = {"mode": "subscription", "customer": customer_id,
                 "line_items[0][price]": price_id, "line_items[0][quantity]": "1",
@@ -33,6 +33,11 @@ class StripeClient:
         if client_reference_id:
             # Ties the resulting Stripe customer back to our tenant on the webhook (server-side).
             data["client_reference_id"] = client_reference_id
+        if plan:
+            # Carry the internal plan on the session (and the resulting subscription) so the webhook
+            # activates the correct plan instead of defaulting to "pro".
+            data["metadata[plan]"] = plan
+            data["subscription_data[metadata][plan]"] = plan
         r = self._c.post("/checkout/sessions", data=data)
         r.raise_for_status()
         return r.json()["url"]

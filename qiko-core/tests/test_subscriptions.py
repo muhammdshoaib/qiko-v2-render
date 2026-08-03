@@ -1,10 +1,12 @@
 
-from app.modules.billing.subscriptions import SubscriptionService
+import pytest
+
+from app.modules.billing.subscriptions import CheckoutUnavailableError, SubscriptionService
 
 
 class FakeStripe:
-    def create_checkout_session(self, *, customer_id, price_id, promo, client_reference_id=None):
-        return f"https://checkout.stripe/{customer_id}/{price_id}?promo={promo}"
+    def create_checkout_session(self, *, customer_id, price_id, promo, client_reference_id=None, plan=None):
+        return f"https://checkout.stripe/{customer_id}/{price_id}?promo={promo}&plan={plan}"
 
     def billing_portal_url(self, *, customer_id):
         return f"https://portal.stripe/{customer_id}"
@@ -16,8 +18,9 @@ def _svc():
 
 def test_checkout_and_portal_urls():
     svc = _svc()
-    url = svc.start_checkout("cus_1", "pro", price_id="price_pro", promo="SAVE10")
-    assert "cus_1" in url and "price_pro" in url and "SAVE10" in url
+    # Price is resolved server-side (dev falls back to price_<plan>); the plan is carried for the webhook.
+    url = svc.start_checkout("cus_1", "pro", promo="SAVE10")
+    assert "cus_1" in url and "price_pro" in url and "SAVE10" in url and "plan=pro" in url
     assert svc.portal_url("cus_1") == "https://portal.stripe/cus_1"
 
 
@@ -36,6 +39,9 @@ def test_plan_defaults_to_free_without_subscription():
     assert _svc().plan_for("unknown").name == "free"
 
 
-def test_checkout_rejects_unknown_plan():
-    # get_plan falls back to free, so checkout still proceeds; unknown price is the caller's concern.
-    assert _svc().start_checkout("c", "enterprise", price_id="price_ent") is not None
+def test_checkout_rejects_non_self_serve_plan():
+    # Enterprise is contact-sales (and free is a trial): neither is self-serve checkout.
+    with pytest.raises(CheckoutUnavailableError):
+        _svc().start_checkout("c", "enterprise")
+    with pytest.raises(CheckoutUnavailableError):
+        _svc().start_checkout("c", "free")

@@ -30,12 +30,27 @@ def test_checkout_and_portal(client):
     assert "url" in client.get("/api/v1/billing/portal", cookies=C).json()
 
 
-def test_paid_activation_and_checkout_are_disabled_outside_dev(client, monkeypatch):
+def test_paid_activation_disabled_and_checkout_unavailable_outside_dev(client, monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "environment", Environment.preprod)
+    monkeypatch.setattr(settings, "stripe_price_pro", "")  # not provisioned
 
+    # Direct activate stays dev-only (404). Checkout no longer 404s: without a configured Stripe price
+    # it fails closed with a clear 503 (not a broken redirect) so the UI can show "unavailable".
     assert client.post("/api/v1/billing/subscription/activate", json={"plan": "pro"}, cookies=C).status_code == 404
-    assert client.post("/api/v1/billing/checkout", json={"plan": "pro"}, cookies=C).status_code == 404
+    assert client.post("/api/v1/billing/checkout", json={"plan": "pro"}, cookies=C).status_code == 503
+
+
+def test_checkout_uses_configured_price_outside_dev(client, monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "environment", Environment.preprod)
+    monkeypatch.setattr(settings, "stripe_price_pro", "price_live_123")  # provisioned in SSM
+
+    res = client.post("/api/v1/billing/checkout", json={"plan": "pro"}, cookies=C)
+    assert res.status_code == 200 and "url" in res.json()
+
+    # Enterprise is contact-sales: not self-serve checkout even when Stripe is configured.
+    assert client.post("/api/v1/billing/checkout", json={"plan": "enterprise"}, cookies=C).status_code == 503
 
 
 def test_billing_lifecycle_requires_tenant_admin_or_owner(client):

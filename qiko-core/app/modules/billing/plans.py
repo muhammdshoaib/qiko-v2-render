@@ -44,6 +44,19 @@ PLANS: dict[str, Plan] = {
 }
 
 
+# Plans a user can subscribe to via self-serve Stripe Checkout. "free" is a trial and "enterprise"
+# is contact-sales, so neither is checkout-able.
+SELF_SERVE_PLANS: tuple[str, ...] = ("pro",)
+
+
+def stripe_price_for(plan_name: str) -> str:
+    """Real Stripe recurring price ID for a self-serve plan, resolved from config (SSM in prod).
+    Returns "" when the plan is not self-serve or its price is not provisioned yet."""
+    from app.core.config import get_settings
+
+    return {"pro": get_settings().stripe_price_pro}.get(plan_name, "")
+
+
 def get_plan(name: str) -> Plan:
     return PLANS.get(name, PLANS["free"])
 

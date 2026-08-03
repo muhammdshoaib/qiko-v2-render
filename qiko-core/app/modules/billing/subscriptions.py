@@ -14,12 +14,17 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Protocol
 
-from app.modules.billing.plans import Plan, get_plan
+from app.modules.billing.plans import SELF_SERVE_PLANS, Plan, get_plan, stripe_price_for
+
+
+class CheckoutUnavailableError(Exception):
+    """Raised when a plan has no self-serve Stripe price configured (Stripe not provisioned yet, or
+    the plan is contact-sales/trial). The router maps this to a clear 503, never a 404 or a redirect."""
 
 
 class StripeGateway(Protocol):
     def create_checkout_session(self, *, customer_id: str, price_id: str, promo: str | None,
-                                client_reference_id: str | None = None) -> str: ...
+                                client_reference_id: str | None = None, plan: str | None = None) -> str: ...
     def billing_portal_url(self, *, customer_id: str) -> str: ...
 
 
@@ -82,13 +87,28 @@ class SubscriptionService:
         as a stable client-reference until a real Stripe customer exists for it."""
         return self.store.get_customer(tenant) or tenant
 
-    def start_checkout(self, tenant: str, plan_name: str, *, price_id: str, promo: str | None = None) -> str:
+    def start_checkout(self, tenant: str, plan_name: str, *, promo: str | None = None) -> str:
         get_plan(plan_name)  # validate plan exists
-        # `client_reference_id=tenant` lets the checkout.session.completed webhook tie the created
-        # Stripe customer back to our tenant (see webhook.py) -- the subject is never client input.
+        # Only self-serve plans can be checked out (free is a trial, enterprise is contact-sales).
+        if plan_name not in SELF_SERVE_PLANS:
+            raise CheckoutUnavailableError(f"plan '{plan_name}' is not available for self-serve checkout")
+        # The price is resolved SERVER-SIDE from config, never from client input, so a caller cannot
+        # check out against an arbitrary Stripe price. In dev/stub (debug) fall back to a placeholder
+        # so the flow is exercisable without real Stripe; in prod an empty price fails closed (503).
+        price_id = stripe_price_for(plan_name)
+        if not price_id:
+            from app.core.config import get_settings
+
+            if get_settings().debug:
+                price_id = f"price_{plan_name}"
+            else:
+                raise CheckoutUnavailableError(
+                    f"self-serve checkout is not available yet for plan '{plan_name}' (Stripe price not configured)")
+        # `client_reference_id=tenant` + metadata[plan] let the checkout.session.completed webhook tie
+        # the Stripe customer to our tenant and activate the CORRECT plan (see webhook.py).
         return self.gateway.create_checkout_session(
             customer_id=self.stripe_customer_ref(tenant), price_id=price_id, promo=promo,
-            client_reference_id=tenant)
+            client_reference_id=tenant, plan=plan_name)
 
     def activate(self, customer_id: str, plan_name: str) -> Subscription:
         """Called on checkout.session.completed (webhook) to mark the subscription active."""
