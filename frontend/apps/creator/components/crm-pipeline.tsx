@@ -118,13 +118,15 @@ function ContactRow({ contact, onClick }: { contact: CrmContact; onClick: () => 
   );
 }
 
-function ContactDetail({ contactId, onBack }: { contactId: string; onBack: () => void }) {
+// readOnly: a Viewer may read the pipeline but not change it (mutations are editor-gated server-side),
+// so the write controls are hidden rather than shown and silently 403'ing (QIK-307 convention).
+function ContactDetail({ contactId, onBack, readOnly }: { contactId: string; onBack: () => void; readOnly?: boolean }) {
   const qc = useQueryClient();
   const [isEditing, setIsEditing] = useState(false);
   const [editForm, setEditForm] = useState({ name: "", email: "", phone: "" });
   const [newAction, setNewAction] = useState("");
 
-  const { data, isLoading } = useQuery({ queryKey: ["crm-contact", contactId], queryFn: () => getCrmContact(contactId) });
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ["crm-contact", contactId], queryFn: () => getCrmContact(contactId) });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["crm-contact", contactId] });
   const updateContact = useMutation({
@@ -145,7 +147,20 @@ function ContactDetail({ contactId, onBack }: { contactId: string; onBack: () =>
   if (isLoading) {
     return <div className="flex items-center justify-center h-64"><Loader2 className="w-5 h-5 text-cyan-400 animate-spin" /></div>;
   }
-  if (!data) return null;
+  // A failed/404 contact fetch must show a clear message and a way back, never a blank panel (QIK-317).
+  if (isError || !data) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center px-6 py-12">
+        <XCircle className="w-10 h-10 text-red-400/70 mb-2" />
+        <h3 className="text-sm font-medium text-slate-400 mb-1">Couldn&apos;t load this contact</h3>
+        <p className="text-[11px] text-slate-600 max-w-xs mb-3">The contact may have been removed, or the request failed.</p>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetch()}>Try again</Button>
+          <Button variant="outline" size="sm" onClick={onBack}>Back to pipeline</Button>
+        </div>
+      </div>
+    );
+  }
 
   const { contact, timeline, actions, stats } = data;
   const pendingActions = actions.filter((a) => a.status === "pending");
@@ -166,15 +181,19 @@ function ContactDetail({ contactId, onBack }: { contactId: string; onBack: () =>
           <p className="text-[11px] text-slate-500 truncate">{[contact.email, contact.phone].filter(Boolean).join(" · ") || "No contact info yet"}</p>
         </div>
         {contact.estimatedValue > 0 && <span className="text-xs font-medium text-green-400 mr-1">{formatCurrency(contact.estimatedValue, contact.currency)}</span>}
-        <Button variant="ghost" size="sm" disabled={syncSalesforce.isPending} onClick={() => syncSalesforce.mutate()}
-          className="h-7 text-xs text-slate-400 hover:text-white" title="Push this contact to Salesforce as a Lead">
-          {syncSalesforce.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-        </Button>
-        <Button variant="ghost" size="sm"
-          onClick={() => { setEditForm({ name: contact.name || "", email: contact.email || "", phone: contact.phone || "" }); setIsEditing(true); }}
-          className="h-7 text-xs text-slate-400 hover:text-white">
-          <Edit3 className="w-3 h-3" />
-        </Button>
+        {!readOnly && (
+          <>
+            <Button variant="ghost" size="sm" disabled={syncSalesforce.isPending} onClick={() => syncSalesforce.mutate()}
+              className="h-7 text-xs text-slate-400 hover:text-white" title="Push this contact to Salesforce as a Lead">
+              {syncSalesforce.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+            </Button>
+            <Button variant="ghost" size="sm"
+              onClick={() => { setEditForm({ name: contact.name || "", email: contact.email || "", phone: contact.phone || "" }); setIsEditing(true); }}
+              className="h-7 text-xs text-slate-400 hover:text-white">
+              <Edit3 className="w-3 h-3" />
+            </Button>
+          </>
+        )}
       </div>
       {syncSalesforce.isSuccess && (
         <div className="px-5 py-1.5 bg-emerald-500/10 border-b border-emerald-500/20 text-[11px] text-emerald-400">
@@ -206,8 +225,9 @@ function ContactDetail({ contactId, onBack }: { contactId: string; onBack: () =>
         {/* Pipeline stage picker */}
         <div className="flex items-center gap-1.5 px-5 py-3 border-b border-white/[0.04] flex-wrap">
           {PIPELINE_STAGES.map((s) => (
-            <button key={s.id} onClick={() => updateContact.mutate({ status: s.id })}
+            <button key={s.id} onClick={() => updateContact.mutate({ status: s.id })} disabled={readOnly}
               className={cn("px-2 py-1 rounded-md text-[10px] font-medium transition-colors",
+                readOnly && "cursor-default",
                 contact.status === s.id ? cn(s.bgLight, s.textColor) : "text-slate-500 hover:text-slate-300 hover:bg-white/[0.03]")}>
               {s.label}
             </button>
@@ -217,10 +237,12 @@ function ContactDetail({ contactId, onBack }: { contactId: string; onBack: () =>
         <div className="px-5 py-4 border-b border-white/[0.04]">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5 text-primary" /><span className="text-xs font-medium text-slate-300">Intent & Summary</span></div>
-            <Button variant="ghost" size="sm" onClick={() => generateSummary.mutate()} disabled={generateSummary.isPending} className="h-6 text-[10px] text-slate-500 hover:text-white">
-              {generateSummary.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
-              {contact.aiSummary ? "Refresh" : "Generate"}
-            </Button>
+            {!readOnly && (
+              <Button variant="ghost" size="sm" onClick={() => generateSummary.mutate()} disabled={generateSummary.isPending} className="h-6 text-[10px] text-slate-500 hover:text-white">
+                {generateSummary.isPending ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3 mr-1" />}
+                {contact.aiSummary ? "Refresh" : "Generate"}
+              </Button>
+            )}
           </div>
           {contact.aiSummary ? (
             <div>
@@ -254,22 +276,26 @@ function ContactDetail({ contactId, onBack }: { contactId: string; onBack: () =>
             {pendingActions.map((action) => (
               <div key={action.id} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.06] group hover:border-white/10 transition-colors">
                 <span className="text-xs text-white flex-1 truncate">{action.title}</span>
-                <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button onClick={() => updateAction.mutate({ actionId: action.id, status: "done" })} className="p-1 rounded hover:bg-green-500/10 text-green-400" title="Done">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => updateAction.mutate({ actionId: action.id, status: "dismissed" })} className="p-1 rounded hover:bg-white/5 text-slate-500" title="Dismiss">
-                    <XCircle className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                {!readOnly && (
+                  <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button onClick={() => updateAction.mutate({ actionId: action.id, status: "done" })} className="p-1 rounded hover:bg-green-500/10 text-green-400" title="Done">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button onClick={() => updateAction.mutate({ actionId: action.id, status: "dismissed" })} className="p-1 rounded hover:bg-white/5 text-slate-500" title="Dismiss">
+                      <XCircle className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
               </div>
             ))}
             {pendingActions.length === 0 && <p className="text-[11px] text-slate-500 italic">No open actions.</p>}
           </div>
-          <form onSubmit={(e) => { e.preventDefault(); if (newAction.trim()) addAction.mutate(newAction.trim()); }} className="flex gap-1.5">
-            <Input value={newAction} onChange={(e) => setNewAction(e.target.value)} placeholder="Add a follow-up action…" className="h-7 text-xs flex-1" />
-            <Button type="submit" size="sm" disabled={!newAction.trim() || addAction.isPending} className="h-7 text-xs">Add</Button>
-          </form>
+          {!readOnly && (
+            <form onSubmit={(e) => { e.preventDefault(); if (newAction.trim()) addAction.mutate(newAction.trim()); }} className="flex gap-1.5">
+              <Input value={newAction} onChange={(e) => setNewAction(e.target.value)} placeholder="Add a follow-up action…" className="h-7 text-xs flex-1" />
+              <Button type="submit" size="sm" disabled={!newAction.trim() || addAction.isPending} className="h-7 text-xs">Add</Button>
+            </form>
+          )}
         </div>
 
         <div className="px-5 py-3">
@@ -306,7 +332,7 @@ function ContactDetail({ contactId, onBack }: { contactId: string; onBack: () =>
   );
 }
 
-export function CrmPipeline({ agentId }: { agentId: string }) {
+export function CrmPipeline({ agentId, readOnly }: { agentId: string; readOnly?: boolean }) {
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [stageFilter, setStageFilter] = useState<string | null>(null);
@@ -314,7 +340,7 @@ export function CrmPipeline({ agentId }: { agentId: string }) {
   const { data, isLoading, isError, refetch } = useQuery({ queryKey: ["crm-pipeline", agentId], queryFn: () => getCrmPipeline(agentId) });
 
   if (selectedContactId) {
-    return <ContactDetail contactId={selectedContactId} onBack={() => setSelectedContactId(null)} />;
+    return <ContactDetail contactId={selectedContactId} onBack={() => setSelectedContactId(null)} readOnly={readOnly} />;
   }
 
   const contacts = data?.contacts ?? [];
