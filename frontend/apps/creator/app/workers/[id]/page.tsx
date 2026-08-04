@@ -170,7 +170,7 @@ export default function WorkerDetailPage() {
             <TrainTab id={id} worker={worker} docs={docs.data} loading={docs.isLoading}
               onKnowledgeChange={refresh} onWorkerChange={refreshAgents} />
           )}
-          {tab === "CRM" && <CrmTab id={id} />}
+          {tab === "CRM" && <CrmTab id={id} readOnly={isViewer} />}
           {tab === "Connections" && !isViewer && <ConnectionsTab id={id} worker={worker} />}
           {tab === "Chat" && <ChatTab id={id} worker={worker} />}
           {tab === "Settings" && !isViewer && (
@@ -246,10 +246,10 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
   );
 }
 
-function CrmTab({ id }: { id: string }) {
+function CrmTab({ id, readOnly }: { id: string; readOnly?: boolean }) {
   return (
     <div className="h-[70vh]">
-      <CrmPipeline agentId={id} />
+      <CrmPipeline agentId={id} readOnly={readOnly} />
     </div>
   );
 }
