@@ -4297,10 +4297,30 @@ export interface components {
             filename: string;
             /** Fmt */
             fmt: string;
-            /** Spec */
-            spec: {
-                [key: string]: unknown;
-            };
+            spec: components["schemas"]["FileSpec"];
+        };
+        /** FileSpec */
+        FileSpec: {
+            /**
+             * Headers
+             * @default []
+             */
+            headers: string[];
+            /**
+             * Paragraphs
+             * @default []
+             */
+            paragraphs: string[];
+            /**
+             * Rows
+             * @default []
+             */
+            rows: (string | number)[][];
+            /**
+             * Title
+             * @default
+             */
+            title: string;
         };
         /** ForgotBody */
         ForgotBody: {
@@ -4604,12 +4624,31 @@ export interface components {
             /** Pack Id */
             pack_id: string;
         };
+        /** ReportAnalytics */
+        ReportAnalytics: {
+            /**
+             * Columns
+             * @default {}
+             */
+            columns: {
+                [key: string]: {
+                    [key: string]: string | number;
+                };
+            };
+            /**
+             * Rows
+             * @default []
+             */
+            rows: (string | number)[][];
+            /**
+             * Summary
+             * @default
+             */
+            summary: string;
+        };
         /** ReportBody */
         ReportBody: {
-            /** Analytics */
-            analytics: {
-                [key: string]: unknown;
-            };
+            analytics: components["schemas"]["ReportAnalytics"];
             /**
              * Fmt
              * @default xlsx

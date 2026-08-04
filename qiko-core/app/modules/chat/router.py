@@ -53,15 +53,24 @@ async def create_conversation(body: ConversationBody, request: Request,
     return {"conversation_id": conversation_id}
 
 
+class FileSpec(BaseModel):
+    title: str = ""
+    paragraphs: list[str] = []
+    rows: list[list[str | int | float]] = []
+    headers: list[str] = []
+
+
 class FileBody(BaseModel):
     fmt: str = Field(pattern="^(csv|xlsx|docx|pdf)$")
     filename: str = Field(min_length=1)
-    spec: dict
+    # Typed on purpose: an untyped dict let {"paragraphs": [1]} or {"paragraphs": 5} reach the
+    # generator and raise TypeError -> unhandled 500. Now malformed input is a clean 422.
+    spec: FileSpec
 
 
 @router.post("/files")
 def generate_file(body: FileBody, tenant: str = Depends(authed_tenant), gen=Depends(get_file_generator)) -> dict:
-    return {"key": gen.generate(tenant, body.fmt, body.filename, body.spec)}
+    return {"key": gen.generate(tenant, body.fmt, body.filename, body.spec.model_dump())}
 
 
 @router.get("/files/{key:path}")
