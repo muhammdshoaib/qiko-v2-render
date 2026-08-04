@@ -11,9 +11,8 @@ from app.core.config import get_settings
 from app.core.deps import (
     WorkerUnavailable,
     authed_tenant,
-    get_calendly,
+    get_agents,
     get_channel_sessions,
-    get_clickup,
     get_gmail,
     get_slack_links,
     get_slack_oauth,
@@ -122,27 +121,62 @@ async def slack_send(body: SlackSend, request: Request,
 
 
 class ClickUpTask(BaseModel):
-    list_id: str = Field(min_length=1)
+    list_id: str = Field(default="", max_length=64)  # falls back to the worker's default list
     name: str = Field(min_length=1)
     description: str = ""
     worker_id: str = Field(min_length=1)
 
 
+async def _worker_config(agents, tenant: str, worker_id: str) -> dict:
+    agent = await agents.get(tenant, worker_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="worker not found")
+    return agent.config
+
+
+def _tenant_clickup(cfg: dict):
+    """Build a ClickUp client from THIS worker's own stored token. There is no global fallback on
+    purpose: sending a customer's task into Qiko's own ClickUp would be worse than a clear 422."""
+    from app.core.crypto import decrypt
+    from app.integrations.clients import ClickUpClient
+
+    if not cfg.get("clickup_credentials_added"):
+        raise HTTPException(status_code=422, detail="this worker has no ClickUp connection configured")
+    return ClickUpClient(api_token=decrypt(cfg["clickup_api_token_encrypted"]))
+
+
+def _tenant_calendly(cfg: dict):
+    """Build a Calendly client from THIS worker's own stored token (no global fallback -- see above)."""
+    from app.core.crypto import decrypt
+    from app.integrations.clients import CalendlyClient
+
+    if not cfg.get("calendly_credentials_added"):
+        raise HTTPException(status_code=422, detail="this worker has no Calendly connection configured")
+    return CalendlyClient(token=decrypt(cfg["calendly_token_encrypted"]))
+
+
 @router.post("/clickup/task")
 async def clickup_task(body: ClickUpTask, request: Request,
                        tenant: str = Depends(authed_tenant), _role: dict = _editor,
-                       clickup=Depends(get_clickup)) -> dict:
+                       agents=Depends(get_agents)) -> dict:
+    cfg = await _worker_config(agents, tenant, body.worker_id)
+    clickup = _tenant_clickup(cfg)
     _worker, recheck = await resolve_tenant_worker(request, tenant, body.worker_id)
+    list_id = body.list_id or cfg.get("clickup_default_list_id") or ""
+    if not list_id:
+        raise HTTPException(status_code=422, detail="no ClickUp list configured for this worker")
     return await _external_call(
-        recheck, clickup.create_task, body.list_id, body.name, body.description)
+        recheck, clickup.create_task, list_id, body.name, body.description)
 
 
 # --- Calendly ---
 @router.get("/calendly/slots")
 async def calendly_slots(event_type: str, worker_id: str, request: Request,
-                         tenant: str = Depends(authed_tenant), cal=Depends(get_calendly)) -> dict:
+                         tenant: str = Depends(authed_tenant), agents=Depends(get_agents)) -> dict:
+    cfg = await _worker_config(agents, tenant, worker_id)
+    cal = _tenant_calendly(cfg)
     _worker, recheck = await resolve_tenant_worker(request, tenant, worker_id)
-    slots = await _external_call(recheck, cal.available_slots, event_type)
+    slots = await _external_call(recheck, cal.available_slots, event_type or cfg.get("calendly_event_type") or "")
     return {"slots": slots}
 
 
@@ -156,7 +190,9 @@ class CalendlyBook(BaseModel):
 @router.post("/calendly/book")
 async def calendly_book(body: CalendlyBook, request: Request,
                         tenant: str = Depends(authed_tenant), _role: dict = _editor,
-                        cal=Depends(get_calendly)) -> dict:
+                        agents=Depends(get_agents)) -> dict:
+    cfg = await _worker_config(agents, tenant, body.worker_id)
+    cal = _tenant_calendly(cfg)
     _worker, recheck = await resolve_tenant_worker(request, tenant, body.worker_id)
     return await _external_call(
         recheck, cal.create_booking, body.event_type, body.invitee_email, body.start)

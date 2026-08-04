@@ -111,6 +111,10 @@ class TeamsWebhookClient:
         r.raise_for_status()
 
 
+class ClickUpAuthError(Exception):
+    pass
+
+
 class ClickUpClient:
     """Implements ClickUpGateway (create task in a list)."""
 
@@ -122,6 +126,22 @@ class ClickUpClient:
         r = self._c.post(f"/list/{list_id}/task", json={"name": name, "description": description})
         r.raise_for_status()
         return r.json()
+
+    def test_connection(self) -> dict:
+        """Cheapest authenticated call: who owns this token. Used by the Connections UI."""
+        r = self._c.get("/user")
+        if r.status_code in (401, 403):
+            raise ClickUpAuthError("ClickUp rejected the API token")
+        try:
+            r.raise_for_status()
+        except httpx.HTTPError as e:
+            raise ClickUpAuthError("ClickUp connection failed") from e
+        user = (r.json() or {}).get("user") or {}
+        return {"ok": True, "user": user.get("username") or user.get("email") or ""}
+
+
+class CalendlyAuthError(Exception):
+    pass
 
 
 class CalendlyClient:
@@ -135,6 +155,18 @@ class CalendlyClient:
         r = self._c.get("/event_type_available_times", params={"event_type": event_type})
         r.raise_for_status()
         return [s["start_time"] for s in r.json().get("collection", [])]
+
+    def test_connection(self) -> dict:
+        """Cheapest authenticated call: the token's own user. Used by the Connections UI."""
+        r = self._c.get("/users/me")
+        if r.status_code in (401, 403):
+            raise CalendlyAuthError("Calendly rejected the access token")
+        try:
+            r.raise_for_status()
+        except httpx.HTTPError as e:
+            raise CalendlyAuthError("Calendly connection failed") from e
+        resource = (r.json() or {}).get("resource") or {}
+        return {"ok": True, "user": resource.get("name") or resource.get("email") or ""}
 
     def create_booking(self, event_type: str, invitee_email: str, start: str) -> dict:
         r = self._c.post("/scheduled_events",

@@ -169,6 +169,26 @@ export const saveVapiCredentials = (agentId: string, body: { vapi_assistant_id: 
 export const updateCalendlyEventType = (agentId: string, calendly_event_type: string) =>
   request<Agent>(`/agents/${agentId}/calendly-event-type`, { method: "PUT", body: JSON.stringify({ calendly_event_type }) });
 
+// Connections: Calendly + ClickUp. Each worker stores the TENANT'S OWN token (encrypted server-side,
+// only a masked preview comes back) -- there is no shared Qiko-owned account.
+export type CalendlyCredentials = { calendly_credentials_added: boolean; calendly_event_type: string; token_masked: string };
+export const getCalendlyCredentials = (agentId: string) => request<CalendlyCredentials>(`/agents/${agentId}/calendly-credentials`);
+export const saveCalendlyCredentials = (agentId: string, token: string) =>
+  request<CalendlyCredentials>(`/agents/${agentId}/calendly-credentials`, { method: "POST", body: JSON.stringify({ token }) });
+export const disconnectCalendly = (agentId: string) =>
+  request<{ disconnected: boolean }>(`/agents/${agentId}/calendly-credentials`, { method: "DELETE" });
+export const testCalendlyConnection = (agentId: string) =>
+  request<{ ok: boolean; user: string }>(`/agents/${agentId}/calendly-credentials/test`, { method: "POST" });
+
+export type ClickUpCredentials = { clickup_credentials_added: boolean; default_list_id: string; token_masked: string };
+export const getClickUpCredentials = (agentId: string) => request<ClickUpCredentials>(`/agents/${agentId}/clickup-credentials`);
+export const saveClickUpCredentials = (agentId: string, body: { api_token: string; default_list_id: string }) =>
+  request<ClickUpCredentials>(`/agents/${agentId}/clickup-credentials`, { method: "POST", body: JSON.stringify(body) });
+export const disconnectClickUp = (agentId: string) =>
+  request<{ disconnected: boolean }>(`/agents/${agentId}/clickup-credentials`, { method: "DELETE" });
+export const testClickUpConnection = (agentId: string) =>
+  request<{ ok: boolean; user: string }>(`/agents/${agentId}/clickup-credentials/test`, { method: "POST" });
+
 // Connections: Salesforce (client-credentials grant against the tenant's own Connected App --
 // reusable per-worker, same shape as Vapi, not customer-specific -- see integrations/clients.py)
 export type SalesforceCredentials = { salesforce_credentials_added: boolean; instance_url: string; client_id_masked: string };
