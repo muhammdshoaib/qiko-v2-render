@@ -317,7 +317,10 @@ def create_app() -> FastAPI:
                        strict_paths=("/api/v1/auth/login", "/api/v1/auth/refresh",
                                     "/api/v1/auth/2fa", "/api/v1/auth/signup",
                                     "/api/v1/auth/verify-email", "/api/v1/auth/forgot-password",
-                                    "/api/v1/auth/reset-password", "/api/v1/consent"))
+                                    "/api/v1/auth/reset-password", "/api/v1/consent",
+                                    # unauthenticated and sends mail to a human inbox: 120/min/IP
+                                    # was enough to flood it and burn sending reputation.
+                                    "/api/v1/marketing/labs-contact"))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allow_origins,

@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import base64
+import binascii
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core.deps import authed_tenant, get_voice, resolve_tenant_worker
@@ -21,8 +22,12 @@ class SpeakBody(BaseModel):
 @router.post("/speak")
 async def speak(body: SpeakBody, request: Request, tenant: str = Depends(authed_tenant), pipeline=Depends(get_voice)) -> dict:
     worker, recheck = await resolve_tenant_worker(request, tenant, body.agent_id)
+    try:
+        audio = base64.b64decode(body.audio_b64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="audio_b64 is not valid base64") from exc
     result = await pipeline.speak(
-        worker, body.conversation_id, base64.b64decode(body.audio_b64),
+        worker, body.conversation_id, audio,
         topic=body.topic, recheck_worker=recheck)
     await recheck()
     return {"transcript": result.transcript, "answer": result.answer,

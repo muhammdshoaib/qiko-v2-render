@@ -49,7 +49,9 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 source = ["app"]
-omit = ["app/main.py"]
+# app/main.py is deliberately NOT omitted: it holds create_app() and the production
+# wiring branch, which is exactly the code that regressed unnoticed (see tests/test_production_wiring.py).
+omit = []
 
 [tool.ruff]
 line-length = 110

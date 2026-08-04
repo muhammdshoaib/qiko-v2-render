@@ -2,16 +2,28 @@
 (measurement firewall). Engine client is a dev stub until the real HTTP client lands in SCRUM-59."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from app.core.config import get_settings
 from app.core.deps import authed_tenant
 
 router = APIRouter(prefix="/signal", tags=["signal"])
 
 
 def _engine(request: Request):
-    return request.app.state.signal_engine
+    """Return the Signal engine, or 503 rather than serving stub output as if it were real.
+
+    Outside dev the engine is only real when SIGNAL_ENGINE_URL is configured; otherwise
+    app.state.signal_engine is StubSignalEngine, which returns score 0, empty buckets and a
+    non-existent export path. Answering 200 with that is worse than an honest 503, because a
+    caller cannot tell fabricated zeros from a real result. Same pattern as public chat.
+    """
+    engine = request.app.state.signal_engine
+    settings = get_settings()
+    if not settings.debug and not settings.signal_engine_url:
+        raise HTTPException(status_code=503, detail="the Signal engine is not configured")
+    return engine
 
 
 class CreateProjectBody(BaseModel):

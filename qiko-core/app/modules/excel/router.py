@@ -36,12 +36,20 @@ def analytics(body: AnalyticsBody, _tenant: str = Depends(authed_tenant)) -> dic
     return compute_analytics(body.rows)
 
 
+class ReportAnalytics(BaseModel):
+    # Typed on purpose: an untyped dict let {"columns": "x"} reach analytics rendering and raise
+    # AttributeError -> unhandled 500.
+    columns: dict[str, dict[str, str | int | float]] = {}
+    rows: list[list[str | int | float]] = []
+    summary: str = ""
+
+
 class ReportBody(BaseModel):
     source: str = Field(min_length=1)
-    analytics: dict
+    analytics: ReportAnalytics
     fmt: str = "xlsx"
 
 
 @router.post("/report")
 def report(body: ReportBody, tenant: str = Depends(authed_tenant), gen=Depends(get_file_generator)) -> dict:
-    return {"key": export_report(gen, tenant, body.source, body.analytics, fmt=body.fmt)}
+    return {"key": export_report(gen, tenant, body.source, body.analytics.model_dump(), fmt=body.fmt)}
