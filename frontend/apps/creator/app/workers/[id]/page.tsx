@@ -844,20 +844,42 @@ function DocumentLibrary({ id, docs, loading, onChange }: { id: string; docs?: D
   );
 }
 
-// Shareable public chat link for a ready worker (QIK-334): {origin}/chat/{id}, opens the no-login
-// guest chat page.
-function CopyPublicChatLink({ id }: { id: string }) {
-  const [copied, setCopied] = useState(false);
-  const copy = async () => {
-    const url = `${window.location.origin}/chat/${id}`;
-    try { await navigator.clipboard.writeText(url); } catch { /* clipboard blocked; ignore */ }
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+// Share a ready worker publicly (QIK-334 public link + QIK-336 website widget embed). The link opens
+// the no-login guest chat at {origin}/chat/{id}; the embed snippet drops the floating chat widget
+// (public/widget.js -> iframe /embed/{tenant}/{worker}) onto any external website.
+function WorkerShare({ id, tenant }: { id: string; tenant: string }) {
+  const [copied, setCopied] = useState<"" | "link" | "embed">("");
+  const [showEmbed, setShowEmbed] = useState(false);
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+  const embedSnippet =
+    `<script src="${origin}/widget.js" data-tenant="${tenant}" data-worker="${id}" data-base="${origin}"></script>`;
+  const copy = async (what: "link" | "embed", text: string) => {
+    try { await navigator.clipboard.writeText(text); } catch { /* clipboard blocked; ignore */ }
+    setCopied(what);
+    setTimeout(() => setCopied(""), 1500);
   };
   return (
-    <Button type="button" variant="outline" size="sm" onClick={copy} className="gap-1.5">
-      <Share2 className="size-3.5" /> {copied ? "Link copied" : "Copy public link"}
-    </Button>
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        <Button type="button" variant="outline" size="sm" className="gap-1.5"
+          onClick={() => copy("link", `${origin}/chat/${id}`)}>
+          <Share2 className="size-3.5" /> {copied === "link" ? "Link copied" : "Copy public link"}
+        </Button>
+        <Button type="button" variant="outline" size="sm" className="gap-1.5"
+          aria-expanded={showEmbed} onClick={() => setShowEmbed((v) => !v)}>
+          <Share2 className="size-3.5" /> Embed on website
+        </Button>
+      </div>
+      {showEmbed && (
+        <div className="space-y-2 rounded-lg border border-border bg-white/[0.02] p-3">
+          <p className="text-xs text-muted-foreground">Paste this before the closing &lt;/body&gt; tag on your site to add a floating chat widget.</p>
+          <pre className="overflow-x-auto rounded bg-black/40 p-2 text-xs text-slate-200"><code>{embedSnippet}</code></pre>
+          <Button type="button" variant="outline" size="sm" onClick={() => copy("embed", embedSnippet)}>
+            {copied === "embed" ? "Embed code copied" : "Copy embed code"}
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -889,9 +911,9 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
   return (
     <Card>
       <CardContent className="pt-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="space-y-3">
           <p className="text-sm text-muted-foreground">Test how this worker answers, grounded in the knowledge you&apos;ve added.</p>
-          {worker?.status === "ready" && <CopyPublicChatLink id={id} />}
+          {worker?.status === "ready" && <WorkerShare id={id} tenant={worker.tenant} />}
         </div>
         {messages.length === 0 && quickPrompts.length > 0 && (
           <div className="flex flex-wrap gap-2">
