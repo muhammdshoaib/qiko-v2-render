@@ -157,3 +157,28 @@ def test_channel_sessions(client):
     client.post("/api/v1/channels/sessions/wa-155/worker", json={"worker": "w1"}, cookies=_cookies())
     s = client.get("/api/v1/channels/sessions/wa-155", cookies=_cookies()).json()
     assert s["selected_worker"] == "w1"
+
+
+def test_gmail_send_rejects_multi_recipient_or_header_injection(client, monkeypatch):
+    """smtplib takes the envelope recipients from the To header, so a comma or CRLF must be refused."""
+    class FakeGmail:
+        def __init__(self, **_kw):
+            pass
+
+        def send(self, to, subject, body):
+            return {"sent": True, "to": to}
+
+    monkeypatch.setattr("app.integrations.clients.GmailSmtpClient", FakeGmail)
+    _connect(client, "gmail-credentials", {"address": "s" + "@" + "acme.invalid", "app_password": "pw"})
+    for bad in ["a" + "@" + "x.invalid, b" + "@" + "y.invalid",
+                "a" + "@" + "x.invalid;b" + "@" + "y.invalid",
+                "a" + "@" + "x.invalid\nBcc: c" + "@" + "z.invalid",
+                "not-an-email"]:
+        r = client.post("/api/v1/channels/gmail/send",
+                        json={"to": bad, "subject": "S", "body": "B", "worker_id": "w1"},
+                        cookies=_cookies())
+        assert r.status_code == 422, bad
+    ok = client.post("/api/v1/channels/gmail/send",
+                     json={"to": "one" + "@" + "acme.invalid", "subject": "S", "body": "B", "worker_id": "w1"},
+                     cookies=_cookies())
+    assert ok.status_code == 200 and ok.json()["sent"] is True

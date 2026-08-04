@@ -89,6 +89,8 @@ def _customer_json(record) -> dict:
 _ADMIN_CONFIG_DISPLAY_FIELDS = frozenset({
     "archived", "expertise", "industry", "language", "tone",
     "vapi_credentials_added", "calendly_is_linked", "salesforce_credentials_added",
+    "calendly_credentials_added", "clickup_credentials_added", "slack_credentials_added",
+    "gmail_credentials_added",
 })
 
 

@@ -153,6 +153,8 @@ class GmailSmtpClient:
         try:
             with self._smtp() as smtp:
                 smtp.send_message(msg)
+        except smtplib.SMTPAuthenticationError as e:
+            raise GmailSmtpError("Gmail rejected the address or App Password; please reconnect") from e
         except (smtplib.SMTPException, OSError) as e:
             raise GmailSmtpError("Gmail rejected the message") from e
         return {"sent": True, "to": to}

@@ -5,7 +5,7 @@ import asyncio
 import json
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import get_settings
 from app.core.deps import (
@@ -80,10 +80,20 @@ async def whatsapp_send(body: SendText, request: Request,
 
 
 class GmailSend(BaseModel):
-    to: str = Field(min_length=1)
-    subject: str = Field(min_length=1)
+    to: str = Field(min_length=3, max_length=320)
+    subject: str = Field(min_length=1, max_length=998)
     body: str = Field(min_length=1)
     worker_id: str = Field(min_length=1)
+
+    @field_validator("to")
+    @classmethod
+    def _single_clean_recipient(cls, v: str) -> str:
+        """One recipient only. smtplib derives the envelope RCPT TO from the To header, so a comma or
+        an embedded newline would silently fan one API call out to many recipients."""
+        v = v.strip()
+        if any(ch in v for ch in (",", ";", "\r", "\n")) or "@" not in v.strip("@"):
+            raise ValueError("to must be a single email address")
+        return v
 
 
 def _tenant_gmail(cfg: dict):
