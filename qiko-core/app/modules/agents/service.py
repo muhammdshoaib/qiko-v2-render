@@ -54,6 +54,7 @@ class AgentStore(Protocol):
     async def list(self, tenant: str) -> list[Agent]: ...
     async def count(self, tenant: str) -> int: ...
     async def get(self, tenant: str, agent_id: str) -> Agent | None: ...
+    async def get_by_id(self, agent_id: str) -> Agent | None: ...
     async def mark_ready(self, tenant: str, agent_id: str) -> Agent: ...
     async def update_config(self, tenant: str, agent_id: str, patch: dict) -> Agent: ...
     async def set_enabled(self, tenant: str, agent_id: str, enabled: bool, *,
@@ -86,6 +87,15 @@ class InMemoryAgentStore:
 
     async def get(self, tenant: str, agent_id: str) -> Agent | None:
         return next((a for a in self._by_tenant.get(tenant, []) if a.id == agent_id), None)
+
+    async def get_by_id(self, agent_id: str) -> Agent | None:
+        # Global (tenant-agnostic) lookup for the PUBLIC chat path only (worker ids are globally
+        # unique). Callers must gate on status == "ready" and expose only public fields.
+        for agents in self._by_tenant.values():
+            for a in agents:
+                if a.id == agent_id:
+                    return a
+        return None
 
     async def mark_ready(self, tenant: str, agent_id: str) -> Agent:
         for a in self._by_tenant.get(tenant, []):
@@ -138,6 +148,9 @@ class AgentService:
 
     async def get(self, tenant: str, agent_id: str) -> Agent | None:
         return await self.store.get(tenant, agent_id)
+
+    async def get_by_id(self, agent_id: str) -> Agent | None:
+        return await self.store.get_by_id(agent_id)
 
     async def create(self, tenant: str, name: str, plan: Plan, *, atype: str = "worker",
                       config: dict | None = None) -> Agent:

@@ -844,6 +844,23 @@ function DocumentLibrary({ id, docs, loading, onChange }: { id: string; docs?: D
   );
 }
 
+// Shareable public chat link for a ready worker (QIK-334): {origin}/chat/{id}, opens the no-login
+// guest chat page.
+function CopyPublicChatLink({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    const url = `${window.location.origin}/chat/${id}`;
+    try { await navigator.clipboard.writeText(url); } catch { /* clipboard blocked; ignore */ }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <Button type="button" variant="outline" size="sm" onClick={copy} className="gap-1.5">
+      <Share2 className="size-3.5" /> {copied ? "Link copied" : "Copy public link"}
+    </Button>
+  );
+}
+
 function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
   const [conversationId] = useState(() => `test-${Date.now()}`);
   const [input, setInput] = useState("");
@@ -872,7 +889,10 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
   return (
     <Card>
       <CardContent className="pt-6 space-y-4">
-        <p className="text-sm text-muted-foreground">Test how this worker answers, grounded in the knowledge you&apos;ve added.</p>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm text-muted-foreground">Test how this worker answers, grounded in the knowledge you&apos;ve added.</p>
+          {worker?.status === "ready" && <CopyPublicChatLink id={id} />}
+        </div>
         {messages.length === 0 && quickPrompts.length > 0 && (
           <div className="flex flex-wrap gap-2">
             {quickPrompts.map((p) => (

@@ -59,3 +59,39 @@ def test_public_chat_403_when_not_ready(client):
     r = client.post("/api/v1/public/chat",
                     json={"tenant": "pubco2", "worker_id": agent["id"], "question": "hi"})
     assert r.status_code == 403  # worker not ready
+
+
+# --- QIK-334: public chat by worker ID (tenant resolved server-side) ---
+def test_public_worker_detail_returns_name_when_ready(client):
+    wid = _make_ready_worker(client)
+    r = client.get(f"/api/v1/public/worker/{wid}")  # no auth, no tenant
+    assert r.status_code == 200
+    body = r.json()
+    assert body["id"] == wid and body["name"] == "IDG" and "atype" in body
+
+
+def test_public_worker_detail_404_unknown(client):
+    assert client.get("/api/v1/public/worker/does-not-exist").status_code == 404
+
+
+def test_public_worker_detail_403_when_not_ready(client):
+    c = auth_cookies("pubco3", "owner")
+    agent = client.post("/api/v1/agents", json={"name": "Draft", "plan": "free"}, cookies=c).json()
+    assert client.get(f"/api/v1/public/worker/{agent['id']}").status_code == 403
+
+
+def test_public_chat_by_worker_id_without_tenant(client, monkeypatch):
+    class Provider:
+        def generate(self, prompt, **_kwargs):
+            return LLMResponse(text=prompt, model="test", stub=False)
+    monkeypatch.setattr("app.modules.agentcore.generator.get_provider", lambda: Provider())
+    wid = _make_ready_worker(client)
+    # tenant omitted entirely -> resolved from the (globally unique) worker id
+    r = client.post("/api/v1/public/chat", json={"worker_id": wid, "question": "Describe your ISO 9001 certification."})
+    assert r.status_code == 200 and "ISO 9001" in r.json()["text"]
+
+
+def test_public_chat_tenant_mismatch_is_404(client):
+    wid = _make_ready_worker(client)
+    assert client.post("/api/v1/public/chat", json={
+        "tenant": "someone-else", "worker_id": wid, "question": "hi"}).status_code == 404
