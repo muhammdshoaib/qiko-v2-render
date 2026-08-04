@@ -30,7 +30,7 @@ const TABS: { id: Tab; icon: LucideIcon; locked?: boolean }[] = [
   { id: "Overview", icon: Sparkles },
   { id: "Chat", icon: MessageSquare },
   { id: "Train", icon: GraduationCap },
-  { id: "CRM", icon: Users, locked: true },
+  { id: "CRM", icon: Users },
   { id: "Connections", icon: Link2 },
   { id: "Settings", icon: Settings },
 ];
