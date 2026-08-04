@@ -7,7 +7,7 @@ import { Plus } from "lucide-react";
 import { Badge, Button } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import { WorkerAvatar, workerTypeIcon } from "@/components/worker-avatar";
-import { createAgent, getAgentUsage, listAgents, type Agent } from "@/lib/api";
+import { createAgent, getAgentUsage, listAgents, me, type Agent } from "@/lib/api";
 import { workerTypeLabel } from "@/lib/stringUtils";
 
 // Per-type tint for the workers-list GROUP header icon (matches idg-sales.qiko.ai: a small coloured
@@ -43,6 +43,9 @@ export default function WorkersPage() {
   const usedCount = usage.data?.used_count;
   const unlimited = workerLimit === -1;
   const atLimit = workerLimit !== undefined && !unlimited && (usedCount ?? 0) >= workerLimit;
+  // Viewer role is read-only: cannot create workers (QIK-307). Backend also enforces this.
+  const account = useQuery({ queryKey: ["me"], queryFn: me });
+  const isViewer = account.data?.role === "viewer";
   const usageText = usage.isLoading
     ? "Checking plan usage..."
     : usage.isError
@@ -88,6 +91,9 @@ export default function WorkersPage() {
             {workers.length} active worker{workers.length === 1 ? "" : "s"} · {usageText}
           </p>
         </div>
+        {isViewer ? (
+          <p role="status" className="text-sm text-slate-400">View-only access - ask an admin to create or manage workers.</p>
+        ) : (
         <div className="flex w-full items-center justify-start gap-3 sm:w-auto sm:justify-end">
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New worker name..."
             aria-label="New worker name"
@@ -97,6 +103,7 @@ export default function WorkersPage() {
             <Plus className="size-4" /> Create Worker
           </Button>
         </div>
+        )}
       </div>
 
       <div className="p-4 sm:p-6 lg:p-8">

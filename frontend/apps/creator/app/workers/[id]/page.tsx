@@ -18,7 +18,7 @@ import { CrmPipeline } from "@/components/crm-pipeline";
 import {
   addFaq, addPolicy, addWebsite, ask, connectTeamsWebhook,
   deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, getSalesforceCredentials,
-  getTeamsWebhookStatus, getVapiCredentials, ingest, ingestFile, listAgents, listDocuments, markReady,
+  getTeamsWebhookStatus, getVapiCredentials, ingest, ingestFile, listAgents, listDocuments, markReady, me,
   saveSalesforceCredentials, saveVapiCredentials, testSalesforceConnection, testTeamsWebhook,
   updateAgentConfig, updateCalendlyEventType, type Agent, type Doc,
 } from "@/lib/api";
@@ -46,6 +46,16 @@ export default function WorkerDetailPage() {
   const [tab, setTab] = useState<Tab>(TABS.some((t) => t.id === initialTab && !t.locked) ? (initialTab as Tab) : "Overview");
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const worker = agents.data?.find((a) => a.id === id);
+  // Viewer role is read-only: management tabs (Train/Connections/Settings) are locked so a viewer
+  // cannot edit knowledge, connections or config. Backend already enforces these (require_role
+  // editor); this hides/blocks the actions client-side too (QIK-307). Overview + Chat stay viewable.
+  const account = useQuery({ queryKey: ["me"], queryFn: me });
+  const isViewer = account.data?.role === "viewer";
+  const MANAGE_TABS: Tab[] = ["Train", "Connections", "Settings"];
+  const tabLocked = (t: Tab) => !!TABS.find((x) => x.id === t)?.locked || (isViewer && MANAGE_TABS.includes(t));
+  useEffect(() => {
+    if (isViewer && MANAGE_TABS.includes(tab)) setTab("Overview");
+  }, [isViewer, tab]);
   const docs = useQuery({ queryKey: ["documents", id], queryFn: () => listDocuments(id), enabled: !!worker });
   const refresh = () => qc.invalidateQueries({ queryKey: ["documents", id] });
   const refreshAgents = () => qc.invalidateQueries({ queryKey: ["agents"] });
@@ -128,10 +138,10 @@ export default function WorkerDetailPage() {
           </div>
           <nav aria-label="Worker sections" className="overflow-x-auto px-4 py-2 sm:px-6">
             <div className="flex w-max items-center gap-2">
-              {TABS.map(({ id: t, icon: Icon, locked }) => {
-                if (locked) {
+              {TABS.map(({ id: t, icon: Icon }) => {
+                if (tabLocked(t)) {
                   return (
-                    <button key={t} type="button" disabled aria-disabled="true" title="Locked"
+                    <button key={t} type="button" disabled aria-disabled="true" title={isViewer && MANAGE_TABS.includes(t) ? "View-only role" : "Locked"}
                       className="inline-flex h-10 shrink-0 cursor-not-allowed items-center gap-2 whitespace-nowrap rounded-xl border border-transparent px-3 text-sm font-medium text-slate-500 opacity-60 sm:px-4">
                       <Icon className="size-4 shrink-0 text-slate-600" />
                       <span className="leading-none">{t}</span>
@@ -155,14 +165,14 @@ export default function WorkerDetailPage() {
 
         <div className="flex-1 overflow-auto p-6">
           {tab === "Overview" && <OverviewTab id={id} worker={worker} />}
-          {tab === "Train" && (
+          {tab === "Train" && !isViewer && (
             <TrainTab id={id} worker={worker} docs={docs.data} loading={docs.isLoading}
               onKnowledgeChange={refresh} onWorkerChange={refreshAgents} />
           )}
           {tab === "CRM" && <CrmTab id={id} />}
-          {tab === "Connections" && <ConnectionsTab id={id} worker={worker} />}
+          {tab === "Connections" && !isViewer && <ConnectionsTab id={id} worker={worker} />}
           {tab === "Chat" && <ChatTab id={id} worker={worker} />}
-          {tab === "Settings" && (
+          {tab === "Settings" && !isViewer && (
             <SettingsTab key={worker ? "loaded" : "loading"} id={id} worker={worker} onWorkerChange={refreshAgents} />
           )}
         </div>

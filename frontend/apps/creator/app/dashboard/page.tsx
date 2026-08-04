@@ -7,7 +7,7 @@ import { ArrowRight, Brain, Lightbulb, Plus, Sparkles, Star } from "lucide-react
 import { Badge, Button, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import { WorkerAvatar } from "@/components/worker-avatar";
-import { createAgent, getAgentUsage, listAgents } from "@/lib/api";
+import { createAgent, getAgentUsage, listAgents, me } from "@/lib/api";
 import { workerTypeLabel } from "@/lib/stringUtils";
 
 // Shared cockpit card surface (matches components/cockpit/* + outcomes-strip).
@@ -52,6 +52,8 @@ export default function DashboardPage() {
   const [atype, setAtype] = useState<"worker" | "pre_sales_writer" | "sales_intelligence" | "finance">("worker");
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const usage = useQuery({ queryKey: ["agent-usage"], queryFn: getAgentUsage });
+  const account = useQuery({ queryKey: ["me"], queryFn: me });
+  const isViewer = account.data?.role === "viewer";  // read-only: cannot create workers (QIK-307)
   const workers = agents.data ?? [];
   const readyWorkers = workers.filter((a) => a.status === "ready");
   const trainingWorkers = workers.filter((a) => a.status !== "ready");
@@ -60,7 +62,7 @@ export default function DashboardPage() {
   const usedCount = usage.data?.used_count;
   const unlimited = workerLimit === -1;
   const atLimit = workerLimit !== undefined && !unlimited && (usedCount ?? 0) >= workerLimit;
-  const creationBlocked = usage.isLoading || usage.isError || atLimit;
+  const creationBlocked = usage.isLoading || usage.isError || atLimit || isViewer;
 
   const create = useMutation({
     mutationFn: () => createAgent(name, atype),
