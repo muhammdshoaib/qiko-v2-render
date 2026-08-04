@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, ArrowLeft, Bot, BrainCircuit, Calendar, ChevronDown, ChevronUp, CircleCheck,
-  Database, ExternalLink, FileText, GraduationCap, HelpCircle, Library, Link2, Loader2, Lock, MessageCircle,
+  Database, ExternalLink, FileText, GraduationCap, HelpCircle, Library, Link2, ListChecks, Loader2, Lock, MessageCircle,
   MessageSquare, Phone, Plus, Search, SendHorizonal, Settings, Share2, Sparkles, Trash2, Upload, Users, Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -17,10 +17,12 @@ import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import { CrmPipeline } from "@/components/crm-pipeline";
 import { WorkerVoiceCall } from "@/components/worker-voice-call";
 import {
-  addFaq, addPolicy, addWebsite, ask, connectTeamsWebhook,
-  deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, getSalesforceCredentials,
+  addFaq, addPolicy, addWebsite, ask, connectTeamsWebhook, disconnectCalendly, disconnectClickUp,
+  deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, getCalendlyCredentials,
+  getClickUpCredentials, getSalesforceCredentials,
   getTeamsWebhookStatus, getVapiCredentials, ingest, ingestFile, listAgents, listDocuments, markReady, me,
-  saveSalesforceCredentials, saveVapiCredentials, testSalesforceConnection, testTeamsWebhook,
+  saveCalendlyCredentials, saveClickUpCredentials, saveSalesforceCredentials, saveVapiCredentials,
+  testCalendlyConnection, testClickUpConnection, testSalesforceConnection, testTeamsWebhook,
   updateAgentConfig, updateCalendlyEventType, type Agent, type Doc,
 } from "@/lib/api";
 import { workerTypeLabel } from "@/lib/stringUtils";
@@ -254,7 +256,11 @@ function CrmTab({ id, readOnly }: { id: string; readOnly?: boolean }) {
   );
 }
 
-const CONNECTIONS_SUBTABS = ["Voice", "Calendly", "Teams", "Salesforce"] as const;
+const CONNECTIONS_SUBTABS = ["Voice", "Calendly", "ClickUp", "Teams", "Salesforce"] as const;
+// Icon per connection (a map, not a nested ternary, so this stays readable as connections grow).
+const CONNECTION_ICONS: Record<(typeof CONNECTIONS_SUBTABS)[number], LucideIcon> = {
+  Voice: Phone, Calendly: Calendar, ClickUp: ListChecks, Teams: Users, Salesforce: Share2,
+};
 
 function ConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
   const [sub, setSub] = useState<(typeof CONNECTIONS_SUBTABS)[number]>("Voice");
@@ -265,12 +271,13 @@ function ConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
           <button key={s} onClick={() => setSub(s)}
             className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
               sub === s ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>
-            {s === "Voice" ? <Phone className="size-3.5" /> : s === "Calendly" ? <Calendar className="size-3.5" /> : s === "Teams" ? <Users className="size-3.5" /> : <Share2 className="size-3.5" />} {s}
+            {(() => { const Icon = CONNECTION_ICONS[s]; return <Icon className="size-3.5" />; })()} {s}
           </button>
         ))}
       </div>
       {sub === "Voice" && <VoiceSubTab id={id} />}
       {sub === "Calendly" && <CalendlySubTab id={id} worker={worker} />}
+      {sub === "ClickUp" && <ClickUpSubTab id={id} />}
       {sub === "Teams" && <TeamsSubTab id={id} />}
       {sub === "Salesforce" && <SalesforceSubTab id={id} />}
     </div>
@@ -517,6 +524,129 @@ function CalendlySubTab({ id, worker }: { id: string; worker?: Agent }) {
             {save.isPending ? "Saving..." : savedEventType ? "Change Calendly event" : "Connect Calendly"}
           </Button>
         </div>
+      </CardContent></Card>
+      <CalendlyTokenCard id={id} />
+    </div>
+  );
+}
+
+// The event type above is only the WHICH; scheduling and booking also need the tenant's own Calendly
+// access token (stored encrypted per worker, never shared with other tenants).
+function CalendlyTokenCard({ id }: { id: string }) {
+  const qc = useQueryClient();
+  const [token, setToken] = useState("");
+  const [testResult, setTestResult] = useState<"idle" | "ok" | "error">("idle");
+  const creds = useQuery({ queryKey: ["calendly-credentials", id], queryFn: () => getCalendlyCredentials(id) });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["calendly-credentials", id] });
+  const save = useMutation({
+    mutationFn: () => saveCalendlyCredentials(id, token),
+    onSuccess: () => { setToken(""); setTestResult("idle"); invalidate(); },
+  });
+  const disconnect = useMutation({ mutationFn: () => disconnectCalendly(id), onSuccess: () => { setTestResult("idle"); invalidate(); } });
+  const test = useMutation({
+    mutationFn: () => testCalendlyConnection(id),
+    onSuccess: () => setTestResult("ok"), onError: () => setTestResult("error"),
+  });
+  const connected = creds.data?.calendly_credentials_added;
+
+  return (
+    <Card><CardContent className="space-y-3 pt-6">
+      <p className="text-sm font-medium">Calendly access token</p>
+      {!connected && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+          <p className="font-medium">Needed for scheduling</p>
+          <p className="text-muted-foreground">In Calendly, go to Integrations {"\u2192"} API & webhooks {"\u2192"} generate a personal access token, then paste it here. It stays encrypted and is only used for this worker.</p>
+        </div>
+      )}
+      <p className="text-sm">Status: {connected ? <span className="text-emerald-600">Connected</span> : "Not connected"}</p>
+      {connected ? (
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" disabled={test.isPending} onClick={() => test.mutate()}>
+            {test.isPending ? "Testing..." : "Test connection"}
+          </Button>
+          <Button variant="outline" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>Disconnect</Button>
+        </div>
+      ) : (
+        <>
+          <div className="space-y-1.5">
+            <Label htmlFor="calendly-token">Personal access token</Label>
+            <Input id="calendly-token" type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="eyJ..." />
+          </div>
+          <div className="flex justify-end">
+            <Button disabled={!token || save.isPending} onClick={() => save.mutate()}>
+              {save.isPending ? "Connecting..." : "Connect"}
+            </Button>
+          </div>
+        </>
+      )}
+      {testResult === "ok" && <p className="text-xs text-emerald-600">Calendly connection works.</p>}
+      {testResult === "error" && <p className="text-xs text-red-500">Calendly rejected that token. Please check it and try again.</p>}
+      {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save that token. Please try again.</p>}
+    </CardContent></Card>
+  );
+}
+
+function ClickUpSubTab({ id }: { id: string }) {
+  const qc = useQueryClient();
+  const [apiToken, setApiToken] = useState("");
+  const [listId, setListId] = useState("");
+  const [testResult, setTestResult] = useState<"idle" | "ok" | "error">("idle");
+  const creds = useQuery({ queryKey: ["clickup-credentials", id], queryFn: () => getClickUpCredentials(id) });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["clickup-credentials", id] });
+  const save = useMutation({
+    mutationFn: () => saveClickUpCredentials(id, { api_token: apiToken, default_list_id: listId }),
+    onSuccess: () => { setApiToken(""); setTestResult("idle"); invalidate(); },
+  });
+  const disconnect = useMutation({ mutationFn: () => disconnectClickUp(id), onSuccess: () => { setTestResult("idle"); invalidate(); } });
+  const test = useMutation({
+    mutationFn: () => testClickUpConnection(id),
+    onSuccess: () => setTestResult("ok"), onError: () => setTestResult("error"),
+  });
+  const connected = creds.data?.clickup_credentials_added;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="font-medium">ClickUp</p>
+        <p className="text-sm text-muted-foreground">Let this worker create tasks in your own ClickUp workspace</p>
+      </div>
+      {!connected && (
+        <Card><CardContent className="pt-6 text-xs">
+          <p className="font-medium">ClickUp API token required</p>
+          <p className="text-muted-foreground">In ClickUp, open your avatar {"\u2192"} Settings {"\u2192"} Apps {"\u2192"} API token, then paste the token here. Add a default List ID so the worker knows where to create tasks. The token is encrypted and used only for this worker.</p>
+        </CardContent></Card>
+      )}
+      <Card><CardContent className="space-y-3 pt-6">
+        <p className="text-sm">Status: {connected
+          ? <span className="text-emerald-600">Connected{creds.data?.default_list_id ? ` (list ${creds.data.default_list_id})` : ""}</span>
+          : "Not connected"}</p>
+        {connected ? (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={test.isPending} onClick={() => test.mutate()}>
+              {test.isPending ? "Testing..." : "Test connection"}
+            </Button>
+            <Button variant="outline" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>Disconnect</Button>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="clickup-token">API token</Label>
+              <Input id="clickup-token" type="password" value={apiToken} onChange={(e) => setApiToken(e.target.value)} placeholder="pk_..." />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="clickup-list">Default List ID (optional)</Label>
+              <Input id="clickup-list" value={listId} onChange={(e) => setListId(e.target.value)} placeholder="901234567" />
+            </div>
+            <div className="flex justify-end">
+              <Button disabled={!apiToken || save.isPending} onClick={() => save.mutate()}>
+                {save.isPending ? "Connecting..." : "Connect"}
+              </Button>
+            </div>
+          </>
+        )}
+        {testResult === "ok" && <p className="text-xs text-emerald-600">ClickUp connection works.</p>}
+        {testResult === "error" && <p className="text-xs text-red-500">ClickUp rejected that token. Please check it and try again.</p>}
+        {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save that token. Please try again.</p>}
       </CardContent></Card>
     </div>
   );

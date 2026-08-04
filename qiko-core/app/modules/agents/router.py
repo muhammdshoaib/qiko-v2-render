@@ -10,7 +10,14 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.crypto import encrypt
-from app.core.deps import authed_tenant, get_agents, get_subscriptions, require_role, resolve_tenant_worker
+from app.core.deps import (
+    authed_tenant,
+    get_agents,
+    get_subscriptions,
+    require_role,
+    resolve_tenant_worker,
+    stored_credential,
+)
 from app.modules.agents.service import AGENT_TYPES, Agent, PlanLimitError
 from app.modules.billing.plans import get_plan
 from app.modules.identity.rbac import Role
@@ -23,7 +30,8 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 # endpoints returning the raw ciphertext blob is unnecessary exposure (OWASP sensitive data
 # exposure): no legitimate client need ever reads it from here, and it shouldn't be handed out
 # just because it happens to live in the same free-form config dict as everything else.
-_REDACTED_CONFIG_KEYS = ("vapi_api_key_encrypted", "salesforce_client_secret_encrypted")
+_REDACTED_CONFIG_KEYS = ("vapi_api_key_encrypted", "salesforce_client_secret_encrypted",
+                         "calendly_token_encrypted", "clickup_api_token_encrypted")
 
 
 def _redact(agent: Agent) -> Agent:
@@ -262,4 +270,167 @@ async def test_salesforce_credentials(agent_id: str, request: Request,
             await recheck()
         return result
     except SalesforceAuthError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+# --- Per-worker Calendly + ClickUp connections -------------------------------------------------
+# Native V2 shape (same as Salesforce/Vapi above): each tenant supplies its OWN token, encrypted at
+# rest and never returned in plaintext. Deliberately NOT a global Qiko-owned credential: a global
+# token would push every customer's bookings/tasks into Qiko's own Calendly/ClickUp account.
+
+class CalendlyCredentialsBody(BaseModel):
+    # No max_length: a Field constraint failure puts the submitted value in the 422 body.
+    token: str = Field(min_length=1)
+
+
+def _calendly_view(agent: Agent) -> dict:
+    cfg = agent.config
+    return {
+        "calendly_credentials_added": bool(cfg.get("calendly_credentials_added")),
+        "calendly_event_type": cfg.get("calendly_event_type") or "",
+        # The token IS the secret, so only its ciphertext is ever previewed (never _mask(decrypt(...))).
+        "token_masked": _mask(cfg.get("calendly_token_encrypted") or ""),
+    }
+
+
+@router.post("/{agent_id}/calendly-credentials")
+async def save_calendly_credentials(agent_id: str, body: CalendlyCredentialsBody,
+                                    tenant: str = Depends(authed_tenant),
+                                    _role: dict = Depends(require_role(Role.editor)),
+                                    svc=Depends(get_agents)) -> dict:
+    try:
+        agent = await svc.update_config(tenant, agent_id, {
+            "calendly_token_encrypted": encrypt(body.token),
+            "calendly_credentials_added": True,
+        })
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="agent not found") from e
+    return _calendly_view(agent)
+
+
+@router.get("/{agent_id}/calendly-credentials")
+async def get_calendly_credentials(agent_id: str, tenant: str = Depends(authed_tenant),
+                                   svc=Depends(get_agents)) -> dict:
+    agent = await svc.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    return _calendly_view(agent)
+
+
+@router.delete("/{agent_id}/calendly-credentials")
+async def disconnect_calendly(agent_id: str, tenant: str = Depends(authed_tenant),
+                              _role: dict = Depends(require_role(Role.editor)),
+                              svc=Depends(get_agents)) -> dict:
+    try:
+        await svc.update_config(tenant, agent_id, {
+            "calendly_token_encrypted": None, "calendly_credentials_added": False,
+        })
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="agent not found") from e
+    return {"disconnected": True}
+
+
+@router.post("/{agent_id}/calendly-credentials/test")
+async def test_calendly_credentials(agent_id: str, request: Request,
+                                    tenant: str = Depends(authed_tenant),
+                                    _role: dict = Depends(require_role(Role.editor)),
+                                    svc=Depends(get_agents)) -> dict:
+    import asyncio
+
+    from app.integrations.clients import CalendlyAuthError, CalendlyClient
+
+    agent = await svc.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+    cfg = agent.config
+    client = CalendlyClient(token=stored_credential(
+        cfg, flag="calendly_credentials_added", key="calendly_token_encrypted", label="Calendly"))
+    try:
+        try:
+            result = await asyncio.to_thread(client.test_connection)
+        finally:
+            await recheck()
+        return result
+    except CalendlyAuthError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+class ClickUpCredentialsBody(BaseModel):
+    api_token: str = Field(min_length=1)  # see CalendlyCredentialsBody: no max_length on secrets
+
+    default_list_id: str = Field(default="", max_length=64, pattern=r"^[A-Za-z0-9_-]*$")
+
+
+def _clickup_view(agent: Agent) -> dict:
+    cfg = agent.config
+    return {
+        "clickup_credentials_added": bool(cfg.get("clickup_credentials_added")),
+        "default_list_id": cfg.get("clickup_default_list_id") or "",
+        "token_masked": _mask(cfg.get("clickup_api_token_encrypted") or ""),
+    }
+
+
+@router.post("/{agent_id}/clickup-credentials")
+async def save_clickup_credentials(agent_id: str, body: ClickUpCredentialsBody,
+                                   tenant: str = Depends(authed_tenant),
+                                   _role: dict = Depends(require_role(Role.editor)),
+                                   svc=Depends(get_agents)) -> dict:
+    try:
+        agent = await svc.update_config(tenant, agent_id, {
+            "clickup_api_token_encrypted": encrypt(body.api_token),
+            "clickup_default_list_id": body.default_list_id or None,
+            "clickup_credentials_added": True,
+        })
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="agent not found") from e
+    return _clickup_view(agent)
+
+
+@router.get("/{agent_id}/clickup-credentials")
+async def get_clickup_credentials(agent_id: str, tenant: str = Depends(authed_tenant),
+                                  svc=Depends(get_agents)) -> dict:
+    agent = await svc.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    return _clickup_view(agent)
+
+
+@router.delete("/{agent_id}/clickup-credentials")
+async def disconnect_clickup(agent_id: str, tenant: str = Depends(authed_tenant),
+                             _role: dict = Depends(require_role(Role.editor)),
+                             svc=Depends(get_agents)) -> dict:
+    try:
+        await svc.update_config(tenant, agent_id, {
+            "clickup_api_token_encrypted": None, "clickup_default_list_id": None,
+            "clickup_credentials_added": False,
+        })
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="agent not found") from e
+    return {"disconnected": True}
+
+
+@router.post("/{agent_id}/clickup-credentials/test")
+async def test_clickup_credentials(agent_id: str, request: Request,
+                                   tenant: str = Depends(authed_tenant),
+                                   _role: dict = Depends(require_role(Role.editor)),
+                                   svc=Depends(get_agents)) -> dict:
+    import asyncio
+
+    from app.integrations.clients import ClickUpAuthError, ClickUpClient
+
+    agent = await svc.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+    cfg = agent.config
+    client = ClickUpClient(api_token=stored_credential(
+        cfg, flag="clickup_credentials_added", key="clickup_api_token_encrypted", label="ClickUp"))
+    try:
+        try:
+            result = await asyncio.to_thread(client.test_connection)
+        finally:
+            await recheck()
+        return result
+    except ClickUpAuthError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e

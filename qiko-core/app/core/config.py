@@ -72,8 +72,6 @@ class Settings(BaseSettings):
     slack_client_secret: str = ""
     slack_redirect_uri: str = ""
     slack_scopes: str = "chat:write,channels:read,im:history,commands"
-    clickup_api_token: str = ""
-    calendly_token: str = ""
     signal_engine_url: str = ""
     signal_engine_api_key: str = ""
     ga4_property_id: str = ""

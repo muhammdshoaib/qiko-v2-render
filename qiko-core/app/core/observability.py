@@ -48,7 +48,7 @@ def init_sentry() -> bool:  # pragma: no cover - requires the sentry SDK + DSN
         logger.warning("SENTRY_DSN is set but the sentry-sdk package isn't installed; skipping init")
         return False
 
-    sentry_sdk.init(dsn=dsn, traces_sample_rate=0.1)
+    sentry_sdk.init(dsn=dsn, traces_sample_rate=0.1, max_request_body_size="never")
     return True
 
 

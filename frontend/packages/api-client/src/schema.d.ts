@@ -342,6 +342,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agent_id}/calendly-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Calendly Credentials */
+        get: operations["get_calendly_credentials_api_v1_agents__agent_id__calendly_credentials_get"];
+        put?: never;
+        /** Save Calendly Credentials */
+        post: operations["save_calendly_credentials_api_v1_agents__agent_id__calendly_credentials_post"];
+        /** Disconnect Calendly */
+        delete: operations["disconnect_calendly_api_v1_agents__agent_id__calendly_credentials_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agent_id}/calendly-credentials/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Calendly Credentials */
+        post: operations["test_calendly_credentials_api_v1_agents__agent_id__calendly_credentials_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agent_id}/calendly-event-type": {
         parameters: {
             query?: never;
@@ -353,6 +389,42 @@ export interface paths {
         /** Update Calendly Event Type */
         put: operations["update_calendly_event_type_api_v1_agents__agent_id__calendly_event_type_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agent_id}/clickup-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Clickup Credentials */
+        get: operations["get_clickup_credentials_api_v1_agents__agent_id__clickup_credentials_get"];
+        put?: never;
+        /** Save Clickup Credentials */
+        post: operations["save_clickup_credentials_api_v1_agents__agent_id__clickup_credentials_post"];
+        /** Disconnect Clickup */
+        delete: operations["disconnect_clickup_api_v1_agents__agent_id__clickup_credentials_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agent_id}/clickup-credentials/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Clickup Credentials */
+        post: operations["test_clickup_credentials_api_v1_agents__agent_id__clickup_credentials_test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3860,6 +3932,11 @@ export interface components {
             /** Worker Id */
             worker_id: string;
         };
+        /** CalendlyCredentialsBody */
+        CalendlyCredentialsBody: {
+            /** Token */
+            token: string;
+        };
         /** CalendlyEventTypeBody */
         CalendlyEventTypeBody: {
             /** Calendly Event Type */
@@ -3885,6 +3962,16 @@ export interface components {
             /** Promo */
             promo?: string | null;
         };
+        /** ClickUpCredentialsBody */
+        ClickUpCredentialsBody: {
+            /** Api Token */
+            api_token: string;
+            /**
+             * Default List Id
+             * @default
+             */
+            default_list_id: string;
+        };
         /** ClickUpTask */
         ClickUpTask: {
             /**
@@ -3892,7 +3979,10 @@ export interface components {
              * @default
              */
             description: string;
-            /** List Id */
+            /**
+             * List Id
+             * @default
+             */
             list_id: string;
             /** Name */
             name: string;
@@ -5695,6 +5785,142 @@ export interface operations {
             };
         };
     };
+    get_calendly_credentials_api_v1_agents__agent_id__calendly_credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_calendly_credentials_api_v1_agents__agent_id__calendly_credentials_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CalendlyCredentialsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_calendly_api_v1_agents__agent_id__calendly_credentials_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_calendly_credentials_api_v1_agents__agent_id__calendly_credentials_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_calendly_event_type_api_v1_agents__agent_id__calendly_event_type_put: {
         parameters: {
             query?: never;
@@ -5717,6 +5943,142 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Agent"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_clickup_credentials_api_v1_agents__agent_id__clickup_credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_clickup_credentials_api_v1_agents__agent_id__clickup_credentials_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ClickUpCredentialsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_clickup_api_v1_agents__agent_id__clickup_credentials_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_clickup_credentials_api_v1_agents__agent_id__clickup_credentials_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -7325,8 +7687,8 @@ export interface operations {
     calendly_slots_api_v1_channels_calendly_slots_get: {
         parameters: {
             query: {
-                event_type: string;
                 worker_id: string;
+                event_type?: string;
             };
             header?: never;
             path?: never;

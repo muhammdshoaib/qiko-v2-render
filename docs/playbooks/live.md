@@ -69,7 +69,8 @@ Store as `/qiko/live/ENV` and/or place as `.env` on the box. Real values via SSM
 - Email: `EMAIL_BACKEND=smtp`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`.
 
 **Optional (set only those in use):** `STRIPE_SECRET_KEY`/`STRIPE_WEBHOOK_SECRET`, `WHATSAPP_*`,
-`SLACK_*`, `CLICKUP_API_TOKEN`, `CALENDLY_TOKEN`, `SIGNAL_ENGINE_URL`/`SIGNAL_ENGINE_API_KEY`,
+`SLACK_*`, `SIGNAL_ENGINE_URL`/`SIGNAL_ENGINE_API_KEY`,
+(Calendly and ClickUp are per-worker connections entered in the app, not global env credentials.)
 `GA4_*`, `SALESFORCE_*`, `SENTRY_DSN`, `OTEL_ENABLED`/`OTEL_EXPORTER_ENDPOINT`.
 
 ```bash
