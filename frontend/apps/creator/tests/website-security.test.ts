@@ -43,7 +43,9 @@ test("CI validates Caddy changes through the compose security job", () => {
 test("preprod and live expose one strict creator CSP without unsafe eval or broad HTTPS", () => {
   for (const filename of ["Caddyfile", "Caddyfile.live"]) {
     const caddy = readFileSync(resolve(repositoryRoot, filename), "utf8");
-    assert.equal((caddy.match(/Content-Security-Policy/g) ?? []).length, 2, filename);
+    // 3 CSPs per file: the strict app CSP + the public embed-surface CSP on the creator site
+    // (QIK-336: /embed + /widget.js are framable), plus the admin site's CSP.
+    assert.equal((caddy.match(/Content-Security-Policy/g) ?? []).length, 3, filename);
     assert.doesNotMatch(caddy, /unsafe-eval/, filename);
     assert.doesNotMatch(caddy, /connect-src[^\n]*\shttps:\s/, filename);
     assert.doesNotMatch(caddy, /cloudflareinsights/, filename);
@@ -53,6 +55,8 @@ test("preprod and live expose one strict creator CSP without unsafe eval or broa
     assert.match(caddy, /default-src 'self'/, filename);
     assert.match(caddy, /object-src 'none'/, filename);
     assert.match(caddy, /frame-ancestors 'self'/, filename);
+    // frame-ancestors * is allowed in exactly ONE CSP header value (the public embed surface).
+    assert.equal((caddy.match(/Content-Security-Policy "[^"]*frame-ancestors \*/g) ?? []).length, 1, filename);
   }
   const live = readFileSync(resolve(repositoryRoot, "Caddyfile.live"), "utf8");
   assert.match(live, /@www host www\.qiko\.ai/);

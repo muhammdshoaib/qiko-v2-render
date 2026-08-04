@@ -141,7 +141,7 @@ export default function WorkerDetailPage() {
               {TABS.map(({ id: t, icon: Icon }) => {
                 if (tabLocked(t)) {
                   return (
-                    <button key={t} type="button" disabled aria-disabled="true" title={isViewer ? "View-only role" : "Locked"}
+                    <button key={t} type="button" disabled aria-disabled="true" title={isViewer && MANAGE_TABS.includes(t) ? "View-only role" : "Locked"}
                       className="inline-flex h-10 shrink-0 cursor-not-allowed items-center gap-2 whitespace-nowrap rounded-xl border border-transparent px-3 text-sm font-medium text-slate-500 opacity-60 sm:px-4">
                       <Icon className="size-4 shrink-0 text-slate-600" />
                       <span className="leading-none">{t}</span>
