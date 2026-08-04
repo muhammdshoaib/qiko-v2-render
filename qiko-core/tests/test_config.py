@@ -109,3 +109,58 @@ def test_assert_secrets_set_requires_prod_safe_stores_and_backend_in_non_dev():
             _prod_settings(environment=env, task_backend="eager").assert_secrets_set()
         # a fully prod-safe config boots.
         _prod_settings(environment=env).assert_secrets_set()
+
+
+def test_validation_errors_never_echo_the_submitted_value(client):
+    """QIK-523: FastAPI's default 422 puts the whole submitted object in `input` for a `missing`
+    error, which leaked plaintext passwords and integration secrets. Assert it is gone."""
+    import json
+
+    secret = "SuperSecret-Password-123"
+    # login with `email` omitted: the default handler would echo the password back
+    r = client.post("/api/v1/auth/login", json={"password": secret})
+    assert r.status_code == 422
+    body = json.dumps(r.json())
+    assert secret not in body
+    assert "input" not in body
+    # the client still learns which field failed and why
+    detail = r.json()["detail"]
+    assert detail and detail[0]["loc"] and detail[0]["type"] and detail[0]["msg"]
+
+    # same for a signup body (6 required fields -> omitting one echoed all the others)
+    r = client.post("/api/v1/auth/signup", json={"email": "a@invalid", "password": secret})
+    assert r.status_code == 422 and secret not in json.dumps(r.json())
+
+
+def test_rate_limit_backend_failure_fails_open_instead_of_500():
+    """QIK-524: the limiter wraps EVERY route, so a Redis failure must fail open, not 500 the world."""
+    import asyncio
+
+    from starlette.applications import Starlette
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+    from starlette.testclient import TestClient as StarletteTestClient
+
+    from app.core.middleware import RateLimitMiddleware
+
+    class BrokenSync:
+        def allow(self, _key):
+            raise RuntimeError("redis unreachable")
+
+    class BrokenAsync:
+        async def allow(self, _key):
+            raise RuntimeError("redis unreachable")
+
+    # the helper itself fails open for both sync and async limiters
+    mw = RateLimitMiddleware(app=None, limiter=BrokenSync())
+    assert asyncio.run(mw._allowed(BrokenSync(), "k")) is True
+    assert asyncio.run(mw._allowed(BrokenAsync(), "k")) is True
+
+    # and end to end: a request still succeeds through the middleware
+    async def ok(_request):
+        return PlainTextResponse("ok")
+
+    app = Starlette(routes=[Route("/x", ok)])
+    app.add_middleware(RateLimitMiddleware, limiter=BrokenAsync(),
+                       strict_limiter=BrokenAsync(), strict_paths=("/x",))
+    assert StarletteTestClient(app).get("/x").status_code == 200

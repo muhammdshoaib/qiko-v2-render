@@ -2,12 +2,15 @@
 from __future__ import annotations
 
 import inspect
+import logging
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from app.core.ratelimit import RateLimiter
+
+logger = logging.getLogger(__name__)
 
 _SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
@@ -78,8 +81,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return f"{client}:{request.url.path}"
 
     async def _allowed(self, limiter: RateLimiter, key: str) -> bool:
-        result = limiter.allow(key)
-        return await result if inspect.isawaitable(result) else result
+        """Fail OPEN. Rate limiting is a protection, not a correctness requirement: if the backing
+        Redis is unreachable (restart, maxmemory under noeviction, AOF stall, partition) we must not
+        turn a limiter outage into a 500 on every request -- this middleware wraps every route,
+        including /health, so an exception here is a total outage."""
+        try:
+            result = limiter.allow(key)
+            return await result if inspect.isawaitable(result) else result
+        except Exception:  # noqa: BLE001 - any limiter/backend failure must not block traffic
+            logger.warning("rate_limit_backend_unavailable_failing_open")
+            return True
 
     async def dispatch(self, request: Request, call_next) -> Response:
         key = self._key(request)

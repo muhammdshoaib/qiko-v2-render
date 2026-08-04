@@ -7,6 +7,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -245,6 +246,25 @@ def create_app() -> FastAPI:
         redoc_url=None,
         lifespan=lifespan,
     )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_handler(
+        _request: Request, error: RequestValidationError
+    ) -> JSONResponse:
+        """Never echo the submitted value back.
+
+        FastAPI's default 422 body is `exc.errors()`, and each Pydantic v2 error carries an `input`
+        key. For a `missing` error that `input` is the WHOLE enclosing object, not just the offending
+        field -- so omitting one required field would return every other field, including plaintext
+        passwords on /auth/login, /auth/signup, /auth/reset-password and the integration secrets on
+        the *-credentials endpoints. We keep loc/type/msg so clients still know what failed.
+        """
+        return JSONResponse(status_code=422, content={"detail": [
+            {"loc": [str(part) for part in err.get("loc", ())],
+             "type": err.get("type", ""),
+             "msg": err.get("msg", "")}
+            for err in error.errors()
+        ]})
 
     @app.exception_handler(WorkerUnavailable)
     async def worker_unavailable_handler(
