@@ -968,6 +968,16 @@ export const publicChat = (tenant: string, workerId: string, question: string) =
     body: JSON.stringify({ tenant, worker_id: workerId, question }),
   });
 
+// Public chat by worker ID (no auth, no tenant -- resolved server-side). QIK-334.
+export type PublicWorker = { id: string; name: string; atype: string };
+export const publicWorkerDetail = (workerId: string) =>
+  request<PublicWorker>(`/public/worker/${encodeURIComponent(workerId)}`);
+export const publicChatById = (workerId: string, question: string, userEmail?: string) =>
+  request<{ role: string; text: string }>("/public/chat", {
+    method: "POST",
+    body: JSON.stringify({ worker_id: workerId, question, ...(userEmail ? { user_email: userEmail } : {}) }),
+  });
+
 // Public /labs contact form (no auth -- a prospect doesn't have a tenant yet)
 export type LabsContactBody = { name: string; work_email: string; company: string; company_size: string; build_request: string };
 export const submitLabsContact = (body: LabsContactBody) =>

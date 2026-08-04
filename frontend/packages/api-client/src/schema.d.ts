@@ -2139,6 +2139,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/worker/{worker_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Public Worker
+         * @description Public worker detail for the guest chat page: name + type for branding. Only a READY worker is
+         *     exposed (mirrors V1 getAgent: not-ready/invalid -> 403/404, no private fields).
+         */
+        get: operations["public_worker_api_v1_public_worker__worker_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/rfp/packs": {
         parameters: {
             query?: never;
@@ -4356,7 +4377,7 @@ export interface components {
                 [key: string]: unknown;
             } | null;
             /** Tenant */
-            tenant: string;
+            tenant?: string | null;
             /**
              * User Email
              * @default guest@public
@@ -9465,6 +9486,39 @@ export interface operations {
                 "application/json": components["schemas"]["PublicChatBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    public_worker_api_v1_public_worker__worker_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                worker_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

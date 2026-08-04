@@ -326,6 +326,13 @@ class SqlAgentStore:
                 return None
             return self._to_domain(row)
 
+    async def get_by_id(self, agent_id: str) -> Agent | None:
+        # Global (tenant-agnostic) lookup for the PUBLIC chat path only (agent ids are globally
+        # unique PKs). Callers must gate on status == "ready" and expose only public fields.
+        async with self.sessionmaker() as s:
+            row = await s.get(AgentRow, agent_id)
+            return self._to_domain(row) if row is not None else None
+
     async def mark_ready(self, tenant: str, agent_id: str) -> Agent:
         async with self.sessionmaker() as s, s.begin():
             row = await s.get(AgentRow, agent_id)
