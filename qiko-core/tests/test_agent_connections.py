@@ -252,3 +252,52 @@ def test_connection_writes_require_editor(client):
     assert client.post(f"/api/v1/agents/{aid}/clickup-credentials", cookies=viewer,
                        json={"api_token": "t"}).status_code == 403
     assert client.delete(f"/api/v1/agents/{aid}/calendly-credentials", cookies=viewer).status_code == 403
+
+
+def test_tokens_are_ciphertext_at_rest_not_plaintext(client):
+    """The masked view alone can't prove encryption (_mask hides the plaintext too), so assert the
+    stored value directly: it must differ from the token and decrypt back to it."""
+    import asyncio
+
+    from app.core.crypto import decrypt
+
+    c, aid = _agent(client, "atrest")
+    client.post(f"/api/v1/agents/{aid}/calendly-credentials", cookies=c, json={"token": "cal-plain"})
+    client.post(f"/api/v1/agents/{aid}/clickup-credentials", cookies=c, json={"api_token": "cu-plain"})
+    cfg = asyncio.run(client.app.state.agents.get("atrest", aid)).config
+    assert cfg["calendly_token_encrypted"] != "cal-plain"
+    assert cfg["clickup_api_token_encrypted"] != "cu-plain"
+    assert decrypt(cfg["calendly_token_encrypted"]) == "cal-plain"
+    assert decrypt(cfg["clickup_api_token_encrypted"]) == "cu-plain"
+
+
+def test_another_tenant_cannot_read_or_write_these_credentials(client):
+    c, aid = _agent(client, "tenantA")
+    client.post(f"/api/v1/agents/{aid}/calendly-credentials", cookies=c, json={"token": "secret-A"})
+    other = auth_cookies("tenantB", "owner")
+    for path in ("calendly-credentials", "clickup-credentials"):
+        assert client.get(f"/api/v1/agents/{aid}/{path}", cookies=other).status_code == 404
+        assert client.delete(f"/api/v1/agents/{aid}/{path}", cookies=other).status_code == 404
+        assert client.post(f"/api/v1/agents/{aid}/{path}/test", cookies=other).status_code == 404
+    assert client.post(f"/api/v1/agents/{aid}/calendly-credentials", cookies=other,
+                       json={"token": "x"}).status_code == 404
+
+
+def test_all_connection_writes_and_tests_require_editor(client):
+    owner = auth_cookies("roleco2", "owner")
+    aid = client.post("/api/v1/agents", json={"name": "W"}, cookies=owner).json()["id"]
+    viewer = auth_cookies("roleco2", "viewer")
+    assert client.delete(f"/api/v1/agents/{aid}/clickup-credentials", cookies=viewer).status_code == 403
+    assert client.post(f"/api/v1/agents/{aid}/calendly-credentials/test", cookies=viewer).status_code == 403
+    assert client.post(f"/api/v1/agents/{aid}/clickup-credentials/test", cookies=viewer).status_code == 403
+
+
+def test_undecryptable_credential_asks_for_a_reconnect_instead_of_500(client):
+    """After an encryption-key rotation the stored blob can't be read: fail closed with a 422."""
+    import asyncio
+
+    c, aid = _agent(client, "rotated")
+    client.post(f"/api/v1/agents/{aid}/calendly-credentials", cookies=c, json={"token": "cal-plain"})
+    asyncio.run(client.app.state.agents.update_config("rotated", aid, {"calendly_token_encrypted": "not-fernet"}))
+    r = client.post(f"/api/v1/agents/{aid}/calendly-credentials/test", cookies=c)
+    assert r.status_code == 422 and "reconnect" in r.json()["detail"]

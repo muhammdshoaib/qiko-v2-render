@@ -26,8 +26,6 @@ from app.core.observability import RequestContextMiddleware
 from app.core.ratelimit import InMemoryRateLimiter, RedisRateLimiter
 from app.core.redis import build_redis
 from app.core.dev_gateways import (
-    StubCalendlyGateway,
-    StubClickUpGateway,
     StubGA4Gateway,
     StubGmailGateway,
     StubSignalEngine,
@@ -38,8 +36,6 @@ from app.core.dev_gateways import (
 )
 from app.core.observability import init_sentry, init_tracing
 from app.integrations.clients import (
-    CalendlyClient,
-    ClickUpClient,
     GA4Client,
     SignalEngineClient,
     SlackClient,
@@ -372,10 +368,8 @@ def create_app() -> FastAPI:
     app.state.slack_links = WorkspaceLinkStore()
     app.state.file_generator = FileGenerator()
     app.state.task_queue = build_task_queue(task_registry)
-    app.state.calendly = CalendlyClient() if settings.calendly_token else StubCalendlyGateway()
     app.state.gmail = StubGmailGateway()
     app.state.slack = SlackClient() if settings.slack_bot_token else StubSlackGateway()
-    app.state.clickup = ClickUpClient() if settings.clickup_api_token else StubClickUpGateway()
 
     # Every request is tenant-scoped.
     app.include_router(health_router)

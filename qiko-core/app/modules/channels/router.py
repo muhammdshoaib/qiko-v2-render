@@ -20,6 +20,7 @@ from app.core.deps import (
     get_whatsapp,
     require_role,
     resolve_tenant_worker,
+    stored_credential,
 )
 from app.modules.channels.teams_integration import TeamsWebhookError
 from app.modules.channels.webhooks import verify_hmac_signature
@@ -121,7 +122,7 @@ async def slack_send(body: SlackSend, request: Request,
 
 
 class ClickUpTask(BaseModel):
-    list_id: str = Field(default="", max_length=64)  # falls back to the worker's default list
+    list_id: str = Field(default="", max_length=64, pattern=r"^[A-Za-z0-9_-]*$")  # else the worker default
     name: str = Field(min_length=1)
     description: str = ""
     worker_id: str = Field(min_length=1)
@@ -137,22 +138,20 @@ async def _worker_config(agents, tenant: str, worker_id: str) -> dict:
 def _tenant_clickup(cfg: dict):
     """Build a ClickUp client from THIS worker's own stored token. There is no global fallback on
     purpose: sending a customer's task into Qiko's own ClickUp would be worse than a clear 422."""
-    from app.core.crypto import decrypt
     from app.integrations.clients import ClickUpClient
 
-    if not cfg.get("clickup_credentials_added"):
-        raise HTTPException(status_code=422, detail="this worker has no ClickUp connection configured")
-    return ClickUpClient(api_token=decrypt(cfg["clickup_api_token_encrypted"]))
+    token = stored_credential(cfg, flag="clickup_credentials_added",
+                              key="clickup_api_token_encrypted", label="ClickUp")
+    return ClickUpClient(api_token=token)
 
 
 def _tenant_calendly(cfg: dict):
     """Build a Calendly client from THIS worker's own stored token (no global fallback -- see above)."""
-    from app.core.crypto import decrypt
     from app.integrations.clients import CalendlyClient
 
-    if not cfg.get("calendly_credentials_added"):
-        raise HTTPException(status_code=422, detail="this worker has no Calendly connection configured")
-    return CalendlyClient(token=decrypt(cfg["calendly_token_encrypted"]))
+    token = stored_credential(cfg, flag="calendly_credentials_added",
+                              key="calendly_token_encrypted", label="Calendly")
+    return CalendlyClient(token=token)
 
 
 @router.post("/clickup/task")
@@ -171,12 +170,15 @@ async def clickup_task(body: ClickUpTask, request: Request,
 
 # --- Calendly ---
 @router.get("/calendly/slots")
-async def calendly_slots(event_type: str, worker_id: str, request: Request,
+async def calendly_slots(worker_id: str, request: Request, event_type: str = "",
                          tenant: str = Depends(authed_tenant), agents=Depends(get_agents)) -> dict:
     cfg = await _worker_config(agents, tenant, worker_id)
     cal = _tenant_calendly(cfg)
+    resolved = event_type or cfg.get("calendly_event_type") or ""
+    if not resolved:
+        raise HTTPException(status_code=422, detail="no Calendly event type configured for this worker")
     _worker, recheck = await resolve_tenant_worker(request, tenant, worker_id)
-    slots = await _external_call(recheck, cal.available_slots, event_type or cfg.get("calendly_event_type") or "")
+    slots = await _external_call(recheck, cal.available_slots, resolved)
     return {"slots": slots}
 
 

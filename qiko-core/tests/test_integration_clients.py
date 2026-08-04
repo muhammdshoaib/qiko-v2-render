@@ -95,7 +95,7 @@ def test_clickup_create_task():
         assert str(req.url).endswith("/list/L1/task")
         return httpx.Response(200, json={"id": "task1"})
 
-    out = ClickUpClient(client=_client("https://api.clickup.com/api/v2", handler)).create_task("L1", "N", "D")
+    out = ClickUpClient("pk-test", client=_client("https://api.clickup.com/api/v2", handler)).create_task("L1", "N", "D")
     assert out["id"] == "task1"
 
 
@@ -103,7 +103,7 @@ def test_calendly_available_slots():
     def handler(req):
         return httpx.Response(200, json={"collection": [{"start_time": "2026-07-10T10:00:00Z"}]})
 
-    slots = CalendlyClient(client=_client("https://api.calendly.com", handler)).available_slots("et1")
+    slots = CalendlyClient("cal-test", client=_client("https://api.calendly.com", handler)).available_slots("et1")
     assert slots == ["2026-07-10T10:00:00Z"]
 
 

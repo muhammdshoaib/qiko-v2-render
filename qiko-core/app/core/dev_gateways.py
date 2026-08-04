@@ -16,13 +16,6 @@ class StubStripeGateway:
         return f"https://pay.stripe.test/{session_id}?amt={amount_cents}"
 
 
-class StubCalendlyGateway:
-    def available_slots(self, event_type: str) -> list[str]:
-        return ["2026-07-10T09:00:00Z", "2026-07-10T10:00:00Z"]
-
-    def create_booking(self, event_type: str, invitee_email: str, start: str) -> dict:
-        return {"booked": True, "event_type": event_type, "invitee": invitee_email, "start": start, "stub": True}
-
 
 class StubGmailGateway:
     def send(self, to: str, subject: str, body: str) -> dict:
@@ -33,10 +26,6 @@ class StubSlackGateway:
     def send_message(self, channel: str, text: str) -> dict:
         return {"ok": True, "channel": channel, "stub": True}
 
-
-class StubClickUpGateway:
-    def create_task(self, list_id: str, name: str, description: str) -> dict:
-        return {"id": "task_stub", "list_id": list_id, "name": name, "stub": True}
 
 
 class StubWhatsAppGateway:

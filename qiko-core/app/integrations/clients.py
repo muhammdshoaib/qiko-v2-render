@@ -118,9 +118,9 @@ class ClickUpAuthError(Exception):
 class ClickUpClient:
     """Implements ClickUpGateway (create task in a list)."""
 
-    def __init__(self, api_token: str | None = None, client: httpx.Client | None = None):
-        token = api_token or get_settings().clickup_api_token
-        self._c = _client("https://api.clickup.com/api/v2", {"Authorization": token}, client)
+    def __init__(self, api_token: str, client: httpx.Client | None = None):
+        # Required on purpose: there is no Qiko-owned ClickUp account to silently fall back to.
+        self._c = _client("https://api.clickup.com/api/v2", {"Authorization": api_token}, client)
 
     def create_task(self, list_id: str, name: str, description: str) -> dict:
         r = self._c.post(f"/list/{list_id}/task", json={"name": name, "description": description})
@@ -134,9 +134,9 @@ class ClickUpClient:
             raise ClickUpAuthError("ClickUp rejected the API token")
         try:
             r.raise_for_status()
-        except httpx.HTTPError as e:
+            user = (r.json() or {}).get("user") or {}
+        except (httpx.HTTPError, ValueError) as e:
             raise ClickUpAuthError("ClickUp connection failed") from e
-        user = (r.json() or {}).get("user") or {}
         return {"ok": True, "user": user.get("username") or user.get("email") or ""}
 
 
@@ -147,9 +147,9 @@ class CalendlyAuthError(Exception):
 class CalendlyClient:
     """Implements CalendlyGateway (Calendly API v2)."""
 
-    def __init__(self, token: str | None = None, client: httpx.Client | None = None):
-        tok = token or get_settings().calendly_token
-        self._c = _client("https://api.calendly.com", {"Authorization": f"Bearer {tok}"}, client)
+    def __init__(self, token: str, client: httpx.Client | None = None):
+        # Required on purpose: there is no Qiko-owned Calendly account to silently fall back to.
+        self._c = _client("https://api.calendly.com", {"Authorization": f"Bearer {token}"}, client)
 
     def available_slots(self, event_type: str) -> list[str]:
         r = self._c.get("/event_type_available_times", params={"event_type": event_type})
@@ -163,9 +163,9 @@ class CalendlyClient:
             raise CalendlyAuthError("Calendly rejected the access token")
         try:
             r.raise_for_status()
-        except httpx.HTTPError as e:
+            resource = (r.json() or {}).get("resource") or {}
+        except (httpx.HTTPError, ValueError) as e:
             raise CalendlyAuthError("Calendly connection failed") from e
-        resource = (r.json() or {}).get("resource") or {}
         return {"ok": True, "user": resource.get("name") or resource.get("email") or ""}
 
     def create_booking(self, event_type: str, invitee_email: str, start: str) -> dict:

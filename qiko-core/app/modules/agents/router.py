@@ -10,7 +10,14 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.crypto import encrypt
-from app.core.deps import authed_tenant, get_agents, get_subscriptions, require_role, resolve_tenant_worker
+from app.core.deps import (
+    authed_tenant,
+    get_agents,
+    get_subscriptions,
+    require_role,
+    resolve_tenant_worker,
+    stored_credential,
+)
 from app.modules.agents.service import AGENT_TYPES, Agent, PlanLimitError
 from app.modules.billing.plans import get_plan
 from app.modules.identity.rbac import Role
@@ -272,7 +279,8 @@ async def test_salesforce_credentials(agent_id: str, request: Request,
 # token would push every customer's bookings/tasks into Qiko's own Calendly/ClickUp account.
 
 class CalendlyCredentialsBody(BaseModel):
-    token: str = Field(min_length=1, max_length=512)
+    # No max_length: a Field constraint failure puts the submitted value in the 422 body.
+    token: str = Field(min_length=1)
 
 
 def _calendly_view(agent: Agent) -> dict:
@@ -329,7 +337,6 @@ async def test_calendly_credentials(agent_id: str, request: Request,
                                     svc=Depends(get_agents)) -> dict:
     import asyncio
 
-    from app.core.crypto import decrypt
     from app.integrations.clients import CalendlyAuthError, CalendlyClient
 
     agent = await svc.get(tenant, agent_id)
@@ -337,9 +344,8 @@ async def test_calendly_credentials(agent_id: str, request: Request,
         raise HTTPException(status_code=404, detail="agent not found")
     _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
     cfg = agent.config
-    if not cfg.get("calendly_credentials_added"):
-        raise HTTPException(status_code=422, detail="no Calendly connection configured for this worker")
-    client = CalendlyClient(token=decrypt(cfg["calendly_token_encrypted"]))
+    client = CalendlyClient(token=stored_credential(
+        cfg, flag="calendly_credentials_added", key="calendly_token_encrypted", label="Calendly"))
     try:
         try:
             result = await asyncio.to_thread(client.test_connection)
@@ -351,8 +357,9 @@ async def test_calendly_credentials(agent_id: str, request: Request,
 
 
 class ClickUpCredentialsBody(BaseModel):
-    api_token: str = Field(min_length=1, max_length=512)
-    default_list_id: str = Field(default="", max_length=64)
+    api_token: str = Field(min_length=1)  # see CalendlyCredentialsBody: no max_length on secrets
+
+    default_list_id: str = Field(default="", max_length=64, pattern=r"^[A-Za-z0-9_-]*$")
 
 
 def _clickup_view(agent: Agent) -> dict:
@@ -410,7 +417,6 @@ async def test_clickup_credentials(agent_id: str, request: Request,
                                    svc=Depends(get_agents)) -> dict:
     import asyncio
 
-    from app.core.crypto import decrypt
     from app.integrations.clients import ClickUpAuthError, ClickUpClient
 
     agent = await svc.get(tenant, agent_id)
@@ -418,9 +424,8 @@ async def test_clickup_credentials(agent_id: str, request: Request,
         raise HTTPException(status_code=404, detail="agent not found")
     _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
     cfg = agent.config
-    if not cfg.get("clickup_credentials_added"):
-        raise HTTPException(status_code=422, detail="no ClickUp connection configured for this worker")
-    client = ClickUpClient(api_token=decrypt(cfg["clickup_api_token_encrypted"]))
+    client = ClickUpClient(api_token=stored_credential(
+        cfg, flag="clickup_credentials_added", key="clickup_api_token_encrypted", label="ClickUp"))
     try:
         try:
             result = await asyncio.to_thread(client.test_connection)

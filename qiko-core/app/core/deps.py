@@ -223,20 +223,12 @@ def get_task_queue(request: Request):
     return request.app.state.task_queue
 
 
-def get_calendly(request: Request):
-    return request.app.state.calendly
-
-
 def get_gmail(request: Request):
     return request.app.state.gmail
 
 
 def get_slack(request: Request):
     return request.app.state.slack
-
-
-def get_clickup(request: Request):
-    return request.app.state.clickup
 
 
 async def assemble_worker(*, sessionmaker, agents, knowledge, tenant: str, agent_id: str | None = None):
@@ -320,3 +312,25 @@ async def build_tenant_worker(request: Request, tenant: str, agent_id: str | Non
         sessionmaker=getattr(request.app.state, "sessionmaker", None),
         agents=request.app.state.agents, knowledge=request.app.state.knowledge,
         tenant=tenant, agent_id=agent_id)
+
+
+def stored_credential(cfg: dict, *, flag: str, key: str, label: str) -> str:
+    """Decrypt a per-worker integration credential from an agent's config.
+
+    Fails CLOSED with an actionable 422 (never a 500) when the credential is missing or can no longer
+    be decrypted -- e.g. after an ENCRYPTION_KEY rotation, where the only safe answer is "reconnect".
+    """
+    from cryptography.fernet import InvalidToken
+
+    from app.core.crypto import decrypt
+
+    ciphertext = cfg.get(key)
+    if not cfg.get(flag) or not ciphertext:
+        raise HTTPException(status_code=422, detail=f"this worker has no {label} connection configured")
+    try:
+        return decrypt(ciphertext)
+    except (InvalidToken, ValueError) as e:
+        raise HTTPException(
+            status_code=422,
+            detail=f"the stored {label} credential can no longer be read; please reconnect it",
+        ) from e

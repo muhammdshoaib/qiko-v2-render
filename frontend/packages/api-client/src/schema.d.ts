@@ -7687,8 +7687,8 @@ export interface operations {
     calendly_slots_api_v1_channels_calendly_slots_get: {
         parameters: {
             query: {
-                event_type: string;
                 worker_id: string;
+                event_type?: string;
             };
             header?: never;
             path?: never;
