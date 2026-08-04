@@ -5,7 +5,7 @@ import asyncio
 import json
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import get_settings
 from app.core.deps import (
@@ -13,7 +13,6 @@ from app.core.deps import (
     authed_tenant,
     get_agents,
     get_channel_sessions,
-    get_gmail,
     get_slack_links,
     get_slack_oauth,
     get_teams_notifier,
@@ -81,44 +80,88 @@ async def whatsapp_send(body: SendText, request: Request,
 
 
 class GmailSend(BaseModel):
-    to: str = Field(min_length=1)
-    subject: str = Field(min_length=1)
+    to: str = Field(min_length=3, max_length=320)
+    subject: str = Field(min_length=1, max_length=998)
     body: str = Field(min_length=1)
     worker_id: str = Field(min_length=1)
+
+    @field_validator("to")
+    @classmethod
+    def _single_clean_recipient(cls, v: str) -> str:
+        """One recipient only. smtplib derives the envelope RCPT TO from the To header, so a comma or
+        an embedded newline would silently fan one API call out to many recipients."""
+        v = v.strip()
+        if any(ch in v for ch in (",", ";", "\r", "\n")) or "@" not in v.strip("@"):
+            raise ValueError("to must be a single email address")
+        return v
+
+
+def _tenant_gmail(cfg: dict):
+    """Build a Gmail sender from THIS worker's own address + App Password (no shared Qiko mailbox)."""
+    from app.integrations.clients import GmailSmtpClient
+
+    password = stored_credential(cfg, flag="gmail_credentials_added",
+                                 key="gmail_app_password_encrypted", label="Gmail")
+    return GmailSmtpClient(address=cfg.get("gmail_address") or "", app_password=password)
 
 
 @router.post("/gmail/send")
 async def gmail_send(body: GmailSend, request: Request,
                      tenant: str = Depends(authed_tenant), _role: dict = _editor,
-                     gmail=Depends(get_gmail)) -> dict:
+                     agents=Depends(get_agents)) -> dict:
+    from app.integrations.clients import GmailSmtpError
+
+    cfg = await _worker_config(agents, tenant, body.worker_id)
+    gmail = _tenant_gmail(cfg)
     _worker, recheck = await resolve_tenant_worker(request, tenant, body.worker_id)
-    return await _external_call(
-        recheck, gmail.send, body.to, body.subject, body.body)
+    try:
+        return await _external_call(recheck, gmail.send, body.to, body.subject, body.body)
+    except GmailSmtpError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
 
 class SlackSend(BaseModel):
-    team_id: str = Field(min_length=1)
-    slack_user_id: str = Field(min_length=1)
-    channel: str = Field(min_length=1)
+    # Two supported shapes: (a) worker_id -> the worker's own stored bot token, or (b) the linked
+    # workspace flow (team_id + slack_user_id -> that installation's bot token).
+    worker_id: str = Field(default="", max_length=128)
+    team_id: str = Field(default="", max_length=64)
+    slack_user_id: str = Field(default="", max_length=64)
+    channel: str = Field(default="", max_length=80)
     text: str = Field(min_length=1)
 
 
 @router.post("/slack/send")
 async def slack_send(body: SlackSend, request: Request,
                      tenant: str = Depends(authed_tenant), _role: dict = _editor,
+                     agents=Depends(get_agents),
                      links=Depends(get_slack_links), oauth=Depends(get_slack_oauth)) -> dict:
-    worker_id = links.resolve(tenant, body.team_id, body.slack_user_id)
-    if worker_id is None:
-        raise HTTPException(status_code=404, detail="Slack worker link not found")
-    _worker, recheck = await resolve_tenant_worker(request, tenant, worker_id)
-    installation = oauth.store.fetch(body.team_id, tenant=tenant)
-    if installation is None or installation.worker_id != worker_id:
-        raise HTTPException(status_code=404, detail="Slack installation not found")
-    from app.integrations.clients import SlackClient
+    from app.integrations.clients import SlackAuthError, SlackClient
 
-    slack = SlackClient(bot_token=installation.bot_token)
-    return await _external_call(
-        recheck, slack.send_message, body.channel, body.text)
+    if body.worker_id:
+        cfg = await _worker_config(agents, tenant, body.worker_id)
+        token = stored_credential(cfg, flag="slack_credentials_added",
+                                  key="slack_bot_token_encrypted", label="Slack")
+        channel = body.channel or cfg.get("slack_default_channel") or ""
+        if not channel:
+            raise HTTPException(status_code=422, detail="no Slack channel configured for this worker")
+        worker_id = body.worker_id
+    else:
+        if not (body.team_id and body.slack_user_id and body.channel):
+            raise HTTPException(status_code=422, detail="provide worker_id, or team_id + slack_user_id + channel")
+        worker_id = links.resolve(tenant, body.team_id, body.slack_user_id)
+        if worker_id is None:
+            raise HTTPException(status_code=404, detail="Slack worker link not found")
+        installation = oauth.store.fetch(body.team_id, tenant=tenant)
+        if installation is None or installation.worker_id != worker_id:
+            raise HTTPException(status_code=404, detail="Slack installation not found")
+        token, channel = installation.bot_token, body.channel
+
+    _worker, recheck = await resolve_tenant_worker(request, tenant, worker_id)
+    slack = SlackClient(bot_token=token)
+    try:
+        return await _external_call(recheck, slack.send_message, channel, body.text)
+    except SlackAuthError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
 
 
 class ClickUpTask(BaseModel):

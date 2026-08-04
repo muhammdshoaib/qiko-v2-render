@@ -80,14 +80,15 @@ def test_slack_post_message_and_error():
     def ok(req):
         return httpx.Response(200, json={"ok": True, "ts": "1.2"})
 
-    assert SlackClient(client=_client("https://slack.com/api", ok)).send_message("#c", "hi")["ok"] is True
+    assert SlackClient("xoxb-test", client=_client("https://slack.com/api", ok)).send_message("#c", "hi")["ok"] is True
 
     def bad(req):
         return httpx.Response(200, json={"ok": False, "error": "not_in_channel"})
 
     import pytest
-    with pytest.raises(RuntimeError):
-        SlackClient(client=_client("https://slack.com/api", bad)).send_message("#c", "hi")
+    from app.integrations.clients import SlackAuthError
+    with pytest.raises(SlackAuthError):
+        SlackClient("xoxb-test", client=_client("https://slack.com/api", bad)).send_message("#c", "hi")
 
 
 def test_clickup_create_task():
@@ -196,3 +197,94 @@ def test_salesforce_create_lead_raises_on_failure():
                          instance_url="https://acme.my.salesforce.com", client=_sf_mock(handler))
     with pytest.raises(SalesforceAuthError):
         c.create_lead(last_name="", company="Acme")
+
+
+def test_gmail_smtp_client_uses_verified_tls_before_login(monkeypatch):
+    """The App Password must only ever cross a certificate-verified TLS channel: assert starttls runs
+    BEFORE login, with a default (verifying) SSL context, and that the message is actually sent."""
+    import smtplib
+    import ssl
+
+    from app.integrations.clients import GmailSmtpClient
+
+    order: list[str] = []
+    seen: dict = {}
+
+    class Smtp:
+        def __init__(self, host, port, timeout=None):
+            seen["host"], seen["port"], seen["timeout"] = host, port, timeout
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_a):
+            return False
+
+        def starttls(self, context=None):
+            order.append("starttls")
+            seen["context"] = context
+
+        def login(self, user, password):
+            order.append("login")
+            seen["user"], seen["password"] = user, password
+
+        def send_message(self, message):
+            order.append("send")
+            seen["message"] = message
+
+        def noop(self):
+            order.append("noop")
+
+    monkeypatch.setattr("smtplib.SMTP", Smtp)
+    client = GmailSmtpClient(address="sales" + "@" + "acme.invalid", app_password="app-pw")
+    assert client.send("to" + "@" + "acme.invalid", "Subject", "Body") == {
+        "sent": True, "to": "to" + "@" + "acme.invalid"}
+    assert order == ["starttls", "login", "send"]          # never login before TLS
+    assert seen["host"] == "smtp.gmail.com" and seen["port"] == 587 and seen["timeout"]
+    assert isinstance(seen["context"], ssl.SSLContext)
+    assert seen["context"].verify_mode == ssl.CERT_REQUIRED
+    assert seen["context"].check_hostname is True
+    assert seen["user"] == "sales" + "@" + "acme.invalid" and seen["password"] == "app-pw"
+    assert client.test_connection()["ok"] is True
+
+    class BadAuth(Smtp):
+        def login(self, user, password):
+            raise smtplib.SMTPAuthenticationError(535, b"bad app password")
+
+    import pytest
+
+    from app.integrations.clients import GmailSmtpError
+
+    monkeypatch.setattr("smtplib.SMTP", BadAuth)
+    with pytest.raises(GmailSmtpError) as sent_err:
+        client.send("to" + "@" + "acme.invalid", "S", "B")
+    assert "reconnect" in str(sent_err.value)              # tells the operator what to do
+    with pytest.raises(GmailSmtpError):
+        client.test_connection()
+
+    class Unreachable(Smtp):
+        def __init__(self, host, port, timeout=None):
+            raise OSError("dns failure")
+
+    monkeypatch.setattr("smtplib.SMTP", Unreachable)
+    with pytest.raises(GmailSmtpError):
+        client.test_connection()
+
+
+def test_slack_test_connection_reports_team_and_rejects_a_bad_token():
+    import pytest
+
+    from app.integrations.clients import SlackAuthError, SlackClient
+
+    def ok(req):
+        assert str(req.url).endswith("/auth.test")
+        return httpx.Response(200, json={"ok": True, "team": "Acme", "user": "qiko-bot"})
+
+    out = SlackClient("xoxb-t", client=_client("https://slack.com/api", ok)).test_connection()
+    assert out == {"ok": True, "team": "Acme", "user": "qiko-bot"}
+
+    def bad(req):
+        return httpx.Response(200, json={"ok": False, "error": "invalid_auth"})
+
+    with pytest.raises(SlackAuthError):
+        SlackClient("xoxb-t", client=_client("https://slack.com/api", bad)).test_connection()

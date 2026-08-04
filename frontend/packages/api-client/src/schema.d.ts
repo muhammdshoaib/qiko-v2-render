@@ -451,6 +451,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agent_id}/gmail-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Gmail Credentials */
+        get: operations["get_gmail_credentials_api_v1_agents__agent_id__gmail_credentials_get"];
+        put?: never;
+        /**
+         * Save Gmail Credentials
+         * @description Gmail sending via SMTP + an App Password (Google account -> Security -> App passwords).
+         */
+        post: operations["save_gmail_credentials_api_v1_agents__agent_id__gmail_credentials_post"];
+        /** Disconnect Gmail */
+        delete: operations["disconnect_gmail_api_v1_agents__agent_id__gmail_credentials_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agent_id}/gmail-credentials/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Gmail Credentials */
+        post: operations["test_gmail_credentials_api_v1_agents__agent_id__gmail_credentials_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agent_id}/ready": {
         parameters: {
             query?: never;
@@ -502,6 +541,42 @@ export interface paths {
         put?: never;
         /** Test Salesforce Credentials */
         post: operations["test_salesforce_credentials_api_v1_agents__agent_id__salesforce_credentials_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agent_id}/slack-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Slack Credentials */
+        get: operations["get_slack_credentials_api_v1_agents__agent_id__slack_credentials_get"];
+        put?: never;
+        /** Save Slack Credentials */
+        post: operations["save_slack_credentials_api_v1_agents__agent_id__slack_credentials_post"];
+        /** Disconnect Slack */
+        delete: operations["disconnect_slack_api_v1_agents__agent_id__slack_credentials_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agent_id}/slack-credentials/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Slack Credentials */
+        post: operations["test_slack_credentials_api_v1_agents__agent_id__slack_credentials_test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4232,6 +4307,13 @@ export interface components {
             /** Email */
             email: string;
         };
+        /** GmailCredentialsBody */
+        GmailCredentialsBody: {
+            /** Address */
+            address: string;
+            /** App Password */
+            app_password: string;
+        };
         /** GmailSend */
         GmailSend: {
             /** Body */
@@ -4764,6 +4846,16 @@ export interface components {
              */
             terms_release_id: "terms-2026-07-24";
         };
+        /** SlackCredentialsBody */
+        SlackCredentialsBody: {
+            /** Bot Token */
+            bot_token: string;
+            /**
+             * Default Channel
+             * @default
+             */
+            default_channel: string;
+        };
         /** SlackLink */
         SlackLink: {
             /** Slack User Id */
@@ -4775,14 +4867,28 @@ export interface components {
         };
         /** SlackSend */
         SlackSend: {
-            /** Channel */
+            /**
+             * Channel
+             * @default
+             */
             channel: string;
-            /** Slack User Id */
+            /**
+             * Slack User Id
+             * @default
+             */
             slack_user_id: string;
-            /** Team Id */
+            /**
+             * Team Id
+             * @default
+             */
             team_id: string;
             /** Text */
             text: string;
+            /**
+             * Worker Id
+             * @default
+             */
+            worker_id: string;
         };
         /** SpeakBody */
         SpeakBody: {
@@ -6127,6 +6233,142 @@ export interface operations {
             };
         };
     };
+    get_gmail_credentials_api_v1_agents__agent_id__gmail_credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_gmail_credentials_api_v1_agents__agent_id__gmail_credentials_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GmailCredentialsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_gmail_api_v1_agents__agent_id__gmail_credentials_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_gmail_credentials_api_v1_agents__agent_id__gmail_credentials_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     mark_ready_api_v1_agents__agent_id__ready_post: {
         parameters: {
             query?: never;
@@ -6262,6 +6504,142 @@ export interface operations {
         };
     };
     test_salesforce_credentials_api_v1_agents__agent_id__salesforce_credentials_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_slack_credentials_api_v1_agents__agent_id__slack_credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_slack_credentials_api_v1_agents__agent_id__slack_credentials_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlackCredentialsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_slack_api_v1_agents__agent_id__slack_credentials_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_slack_credentials_api_v1_agents__agent_id__slack_credentials_test_post: {
         parameters: {
             query?: never;
             header?: never;

@@ -301,3 +301,64 @@ def test_undecryptable_credential_asks_for_a_reconnect_instead_of_500(client):
     asyncio.run(client.app.state.agents.update_config("rotated", aid, {"calendly_token_encrypted": "not-fernet"}))
     r = client.post(f"/api/v1/agents/{aid}/calendly-credentials/test", cookies=c)
     assert r.status_code == 422 and "reconnect" in r.json()["detail"]
+
+
+# --- Per-worker Slack + Gmail connections -------------------------------------------------------
+def test_slack_and_gmail_credentials_save_mask_and_disconnect(client):
+    import asyncio
+
+    from app.core.crypto import decrypt
+
+    c, aid = _agent(client, "sgco")
+    slack = client.post(f"/api/v1/agents/{aid}/slack-credentials", cookies=c,
+                        json={"bot_token": "xoxb-supersecret", "default_channel": "#sales"})
+    assert slack.status_code == 200
+    assert slack.json()["slack_credentials_added"] is True
+    assert slack.json()["default_channel"] == "#sales"
+    assert "xoxb-supersecret" not in slack.text and slack.json()["token_masked"]
+
+    gmail = client.post(f"/api/v1/agents/{aid}/gmail-credentials", cookies=c,
+                        json={"address": "sales@acme.invalid", "app_password": "abcd efgh ijkl mnop"})
+    assert gmail.status_code == 200
+    assert gmail.json()["gmail_credentials_added"] is True
+    assert gmail.json()["address"] == "sales@acme.invalid"
+    assert "abcd efgh ijkl mnop" not in gmail.text and gmail.json()["app_password_masked"]
+
+    # neither ciphertext may leak through the generic agent views
+    listed = client.get("/api/v1/agents", cookies=c).text
+    assert "slack_bot_token_encrypted" not in listed and "gmail_app_password_encrypted" not in listed
+
+    # and both are genuinely encrypted at rest
+    cfg = asyncio.run(client.app.state.agents.get("sgco", aid)).config
+    assert cfg["slack_bot_token_encrypted"] != "xoxb-supersecret"
+    assert decrypt(cfg["slack_bot_token_encrypted"]) == "xoxb-supersecret"
+    assert decrypt(cfg["gmail_app_password_encrypted"]) == "abcd efgh ijkl mnop"
+
+    for path in ("slack-credentials", "gmail-credentials"):
+        assert client.delete(f"/api/v1/agents/{aid}/{path}", cookies=c).json()["disconnected"] is True
+
+
+def test_gmail_credentials_reject_a_non_email_address(client):
+    c, aid = _agent(client, "sgco2")
+    r = client.post(f"/api/v1/agents/{aid}/gmail-credentials", cookies=c,
+                    json={"address": "not-an-email", "app_password": "pw"})
+    assert r.status_code == 422
+
+
+def test_slack_and_gmail_are_tenant_isolated_and_editor_gated(client):
+    c, aid = _agent(client, "sgtenantA")
+    client.post(f"/api/v1/agents/{aid}/slack-credentials", cookies=c, json={"bot_token": "xoxb-A"})
+    other = auth_cookies("sgtenantB", "owner")
+    viewer = auth_cookies("sgtenantA", "viewer")
+    for path in ("slack-credentials", "gmail-credentials"):
+        assert client.get(f"/api/v1/agents/{aid}/{path}", cookies=other).status_code == 404
+        assert client.delete(f"/api/v1/agents/{aid}/{path}", cookies=other).status_code == 404
+        assert client.post(f"/api/v1/agents/{aid}/{path}/test", cookies=other).status_code == 404
+        assert client.delete(f"/api/v1/agents/{aid}/{path}", cookies=viewer).status_code == 403
+        assert client.post(f"/api/v1/agents/{aid}/{path}/test", cookies=viewer).status_code == 403
+
+
+def test_slack_and_gmail_tests_422_without_credentials(client):
+    c, aid = _agent(client, "sgco3")
+    assert client.post(f"/api/v1/agents/{aid}/slack-credentials/test", cookies=c).status_code == 422
+    assert client.post(f"/api/v1/agents/{aid}/gmail-credentials/test", cookies=c).status_code == 422

@@ -81,20 +81,95 @@ class WhatsAppClient:
         return r.json()
 
 
+class SlackAuthError(Exception):
+    pass
+
+
 class SlackClient:
     """Implements SlackGateway via chat.postMessage."""
 
-    def __init__(self, bot_token: str | None = None, client: httpx.Client | None = None):
-        token = bot_token or get_settings().slack_bot_token
-        self._c = _client("https://slack.com/api", {"Authorization": f"Bearer {token}"}, client)
+    def __init__(self, bot_token: str, client: httpx.Client | None = None):
+        # Required on purpose: the token is either the tenant's own bot token or the one from their
+        # workspace installation. There is no Qiko-owned Slack account to fall back to.
+        self._c = _client("https://slack.com/api", {"Authorization": f"Bearer {bot_token}"}, client)
 
     def send_message(self, channel: str, text: str) -> dict:
         r = self._c.post("/chat.postMessage", json={"channel": channel, "text": text})
         r.raise_for_status()
         body = r.json()
         if not body.get("ok"):
-            raise RuntimeError(f"slack error: {body.get('error')}")
+            raise SlackAuthError(f"slack error: {body.get('error')}")
         return body
+
+    def test_connection(self) -> dict:
+        """auth.test: cheapest call that proves the bot token works and says who it belongs to."""
+        try:
+            r = self._c.post("/auth.test")
+            r.raise_for_status()
+            body = r.json()
+        except (httpx.HTTPError, ValueError) as e:
+            raise SlackAuthError("Slack connection failed") from e
+        if not body.get("ok"):
+            raise SlackAuthError("Slack rejected the bot token")
+        return {"ok": True, "team": body.get("team") or "", "user": body.get("user") or ""}
+
+
+class GmailSmtpError(Exception):
+    pass
+
+
+class GmailSmtpClient:
+    """Implements GmailGateway by sending through Gmail's SMTP with an App Password.
+
+    Deliberately SMTP + App Password rather than Gmail API OAuth: it needs no Qiko-owned Google Cloud
+    project, no restricted-scope verification, and the tenant keeps full control (revoking the App
+    Password revokes our access). Mirrors modules/email/sender.py:SmtpEmailSender.
+    """
+
+    HOST = "smtp.gmail.com"
+    PORT = 587
+
+    def __init__(self, address: str, app_password: str, timeout: int = 15):
+        self.address = address
+        self._password = app_password
+        self._timeout = timeout
+
+    def _smtp(self):
+        import smtplib
+        import ssl
+
+        smtp = smtplib.SMTP(self.HOST, self.PORT, timeout=self._timeout)
+        smtp.starttls(context=ssl.create_default_context())
+        smtp.login(self.address, self._password)
+        return smtp
+
+    def send(self, to: str, subject: str, body: str) -> dict:
+        import smtplib
+        from email.message import EmailMessage
+
+        msg = EmailMessage()
+        msg["From"], msg["To"], msg["Subject"] = self.address, to, subject
+        msg.set_content(body)
+        try:
+            with self._smtp() as smtp:
+                smtp.send_message(msg)
+        except smtplib.SMTPAuthenticationError as e:
+            raise GmailSmtpError("Gmail rejected the address or App Password; please reconnect") from e
+        except (smtplib.SMTPException, OSError) as e:
+            raise GmailSmtpError("Gmail rejected the message") from e
+        return {"sent": True, "to": to}
+
+    def test_connection(self) -> dict:
+        import smtplib
+
+        try:
+            with self._smtp() as smtp:
+                smtp.noop()
+        except smtplib.SMTPAuthenticationError as e:
+            raise GmailSmtpError("Gmail rejected the address or App Password") from e
+        except (smtplib.SMTPException, OSError) as e:
+            raise GmailSmtpError("Could not reach Gmail SMTP") from e
+        return {"ok": True, "user": self.address}
 
 
 class TeamsWebhookClient:

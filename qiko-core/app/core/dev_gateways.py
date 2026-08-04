@@ -17,15 +17,6 @@ class StubStripeGateway:
 
 
 
-class StubGmailGateway:
-    def send(self, to: str, subject: str, body: str) -> dict:
-        return {"sent": True, "to": to, "subject": subject, "stub": True}
-
-
-class StubSlackGateway:
-    def send_message(self, channel: str, text: str) -> dict:
-        return {"ok": True, "channel": channel, "stub": True}
-
 
 
 class StubWhatsAppGateway:

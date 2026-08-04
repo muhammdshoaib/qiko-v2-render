@@ -31,7 +31,8 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 # exposure): no legitimate client need ever reads it from here, and it shouldn't be handed out
 # just because it happens to live in the same free-form config dict as everything else.
 _REDACTED_CONFIG_KEYS = ("vapi_api_key_encrypted", "salesforce_client_secret_encrypted",
-                         "calendly_token_encrypted", "clickup_api_token_encrypted")
+                         "calendly_token_encrypted", "clickup_api_token_encrypted",
+                         "slack_bot_token_encrypted", "gmail_app_password_encrypted")
 
 
 def _redact(agent: Agent) -> Agent:
@@ -433,4 +434,175 @@ async def test_clickup_credentials(agent_id: str, request: Request,
             await recheck()
         return result
     except ClickUpAuthError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+# --- Per-worker Slack + Gmail connections -------------------------------------------------------
+# Same native shape: the tenant supplies its own Slack bot token / Gmail App Password. No Qiko-owned
+# Slack app or Google Cloud project is required, and revoking the credential revokes our access.
+
+class SlackCredentialsBody(BaseModel):
+    bot_token: str = Field(min_length=1)  # no max_length: a 422 would echo the secret back
+    default_channel: str = Field(default="", max_length=80)
+
+
+def _slack_view(agent: Agent) -> dict:
+    cfg = agent.config
+    return {
+        "slack_credentials_added": bool(cfg.get("slack_credentials_added")),
+        "default_channel": cfg.get("slack_default_channel") or "",
+        "token_masked": _mask(cfg.get("slack_bot_token_encrypted") or ""),
+    }
+
+
+@router.post("/{agent_id}/slack-credentials")
+async def save_slack_credentials(agent_id: str, body: SlackCredentialsBody,
+                                 tenant: str = Depends(authed_tenant),
+                                 _role: dict = Depends(require_role(Role.editor)),
+                                 svc=Depends(get_agents)) -> dict:
+    try:
+        agent = await svc.update_config(tenant, agent_id, {
+            "slack_bot_token_encrypted": encrypt(body.bot_token),
+            "slack_default_channel": body.default_channel or None,
+            "slack_credentials_added": True,
+        })
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="agent not found") from e
+    return _slack_view(agent)
+
+
+@router.get("/{agent_id}/slack-credentials")
+async def get_slack_credentials(agent_id: str, tenant: str = Depends(authed_tenant),
+                                svc=Depends(get_agents)) -> dict:
+    agent = await svc.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    return _slack_view(agent)
+
+
+@router.delete("/{agent_id}/slack-credentials")
+async def disconnect_slack(agent_id: str, tenant: str = Depends(authed_tenant),
+                           _role: dict = Depends(require_role(Role.editor)),
+                           svc=Depends(get_agents)) -> dict:
+    try:
+        await svc.update_config(tenant, agent_id, {
+            "slack_bot_token_encrypted": None, "slack_default_channel": None,
+            "slack_credentials_added": False,
+        })
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="agent not found") from e
+    return {"disconnected": True}
+
+
+@router.post("/{agent_id}/slack-credentials/test")
+async def test_slack_credentials(agent_id: str, request: Request,
+                                 tenant: str = Depends(authed_tenant),
+                                 _role: dict = Depends(require_role(Role.editor)),
+                                 svc=Depends(get_agents)) -> dict:
+    import asyncio
+
+    from app.integrations.clients import SlackAuthError, SlackClient
+
+    agent = await svc.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+    client = SlackClient(bot_token=stored_credential(
+        agent.config, flag="slack_credentials_added", key="slack_bot_token_encrypted", label="Slack"))
+    try:
+        try:
+            result = await asyncio.to_thread(client.test_connection)
+        finally:
+            await recheck()
+        return result
+    except SlackAuthError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+class GmailCredentialsBody(BaseModel):
+    address: str = Field(min_length=3, max_length=320)
+    app_password: str = Field(min_length=1)  # no max_length: a 422 would echo the secret back
+
+    @field_validator("address")
+    @classmethod
+    def _looks_like_an_email(cls, v: str) -> str:
+        if "@" not in v or v.startswith("@") or v.endswith("@"):
+            raise ValueError("address must be an email address")
+        return v
+
+
+def _gmail_view(agent: Agent) -> dict:
+    cfg = agent.config
+    return {
+        "gmail_credentials_added": bool(cfg.get("gmail_credentials_added")),
+        "address": cfg.get("gmail_address") or "",
+        "app_password_masked": _mask(cfg.get("gmail_app_password_encrypted") or ""),
+    }
+
+
+@router.post("/{agent_id}/gmail-credentials")
+async def save_gmail_credentials(agent_id: str, body: GmailCredentialsBody,
+                                 tenant: str = Depends(authed_tenant),
+                                 _role: dict = Depends(require_role(Role.editor)),
+                                 svc=Depends(get_agents)) -> dict:
+    """Gmail sending via SMTP + an App Password (Google account -> Security -> App passwords)."""
+    try:
+        agent = await svc.update_config(tenant, agent_id, {
+            "gmail_address": body.address,
+            "gmail_app_password_encrypted": encrypt(body.app_password),
+            "gmail_credentials_added": True,
+        })
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="agent not found") from e
+    return _gmail_view(agent)
+
+
+@router.get("/{agent_id}/gmail-credentials")
+async def get_gmail_credentials(agent_id: str, tenant: str = Depends(authed_tenant),
+                                svc=Depends(get_agents)) -> dict:
+    agent = await svc.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    return _gmail_view(agent)
+
+
+@router.delete("/{agent_id}/gmail-credentials")
+async def disconnect_gmail(agent_id: str, tenant: str = Depends(authed_tenant),
+                           _role: dict = Depends(require_role(Role.editor)),
+                           svc=Depends(get_agents)) -> dict:
+    try:
+        await svc.update_config(tenant, agent_id, {
+            "gmail_address": None, "gmail_app_password_encrypted": None,
+            "gmail_credentials_added": False,
+        })
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="agent not found") from e
+    return {"disconnected": True}
+
+
+@router.post("/{agent_id}/gmail-credentials/test")
+async def test_gmail_credentials(agent_id: str, request: Request,
+                                 tenant: str = Depends(authed_tenant),
+                                 _role: dict = Depends(require_role(Role.editor)),
+                                 svc=Depends(get_agents)) -> dict:
+    import asyncio
+
+    from app.integrations.clients import GmailSmtpClient, GmailSmtpError
+
+    agent = await svc.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+    cfg = agent.config
+    client = GmailSmtpClient(
+        address=cfg.get("gmail_address") or "",
+        app_password=stored_credential(cfg, flag="gmail_credentials_added",
+                                       key="gmail_app_password_encrypted", label="Gmail"))
+    try:
+        try:
+            result = await asyncio.to_thread(client.test_connection)
+        finally:
+            await recheck()
+        return result
+    except GmailSmtpError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e

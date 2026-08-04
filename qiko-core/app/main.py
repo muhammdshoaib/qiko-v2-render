@@ -27,9 +27,7 @@ from app.core.ratelimit import InMemoryRateLimiter, RedisRateLimiter
 from app.core.redis import build_redis
 from app.core.dev_gateways import (
     StubGA4Gateway,
-    StubGmailGateway,
     StubSignalEngine,
-    StubSlackGateway,
     StubSpeechGateway,
     StubStripeGateway,
     StubWhatsAppGateway,
@@ -38,7 +36,6 @@ from app.core.observability import init_sentry, init_tracing
 from app.integrations.clients import (
     GA4Client,
     SignalEngineClient,
-    SlackClient,
     StripeClient,
     WhatsAppClient,
 )
@@ -341,8 +338,9 @@ def create_app() -> FastAPI:
     app.state.teams_notifier = TeamsNotifier()
 
     # Real client if the secret is configured, dev stub otherwise -- same pattern as
-    # get_email_sender(). Gmail (as an agent tool, not transactional email) and Speech
-    # (TTS/STT) have no real client yet, so those two stay stubbed.
+    # get_email_sender(). Speech (TTS/STT) has no real client yet, so it stays stubbed. The channel
+    # integrations (Calendly, ClickUp, Slack, Gmail) are per-worker connections built per request
+    # from the tenant's own encrypted credential, so they are deliberately NOT wired here.
     stripe_gateway = StripeClient() if settings.stripe_secret_key else StubStripeGateway()
     app.state.subscriptions = SubscriptionService(stripe_gateway)
     # Give the webhook the subscription service so checkout.session.completed can link the tenant
@@ -368,8 +366,6 @@ def create_app() -> FastAPI:
     app.state.slack_links = WorkspaceLinkStore()
     app.state.file_generator = FileGenerator()
     app.state.task_queue = build_task_queue(task_registry)
-    app.state.gmail = StubGmailGateway()
-    app.state.slack = SlackClient() if settings.slack_bot_token else StubSlackGateway()
 
     # Every request is tenant-scoped.
     app.include_router(health_router)

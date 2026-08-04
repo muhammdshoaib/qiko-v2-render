@@ -189,6 +189,25 @@ export const disconnectClickUp = (agentId: string) =>
 export const testClickUpConnection = (agentId: string) =>
   request<{ ok: boolean; user: string }>(`/agents/${agentId}/clickup-credentials/test`, { method: "POST" });
 
+// Connections: Slack (the tenant's own bot token) + Gmail (their own address + App Password).
+export type SlackCredentials = { slack_credentials_added: boolean; default_channel: string; token_masked: string };
+export const getSlackCredentials = (agentId: string) => request<SlackCredentials>(`/agents/${agentId}/slack-credentials`);
+export const saveSlackCredentials = (agentId: string, body: { bot_token: string; default_channel: string }) =>
+  request<SlackCredentials>(`/agents/${agentId}/slack-credentials`, { method: "POST", body: JSON.stringify(body) });
+export const disconnectSlack = (agentId: string) =>
+  request<{ disconnected: boolean }>(`/agents/${agentId}/slack-credentials`, { method: "DELETE" });
+export const testSlackConnection = (agentId: string) =>
+  request<{ ok: boolean; team: string; user: string }>(`/agents/${agentId}/slack-credentials/test`, { method: "POST" });
+
+export type GmailCredentials = { gmail_credentials_added: boolean; address: string; app_password_masked: string };
+export const getGmailCredentials = (agentId: string) => request<GmailCredentials>(`/agents/${agentId}/gmail-credentials`);
+export const saveGmailCredentials = (agentId: string, body: { address: string; app_password: string }) =>
+  request<GmailCredentials>(`/agents/${agentId}/gmail-credentials`, { method: "POST", body: JSON.stringify(body) });
+export const disconnectGmail = (agentId: string) =>
+  request<{ disconnected: boolean }>(`/agents/${agentId}/gmail-credentials`, { method: "DELETE" });
+export const testGmailConnection = (agentId: string) =>
+  request<{ ok: boolean; user: string }>(`/agents/${agentId}/gmail-credentials/test`, { method: "POST" });
+
 // Connections: Salesforce (client-credentials grant against the tenant's own Connected App --
 // reusable per-worker, same shape as Vapi, not customer-specific -- see integrations/clients.py)
 export type SalesforceCredentials = { salesforce_credentials_added: boolean; instance_url: string; client_id_masked: string };
