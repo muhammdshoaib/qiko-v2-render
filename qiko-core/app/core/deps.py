@@ -223,14 +223,6 @@ def get_task_queue(request: Request):
     return request.app.state.task_queue
 
 
-def get_gmail(request: Request):
-    return request.app.state.gmail
-
-
-def get_slack(request: Request):
-    return request.app.state.slack
-
-
 async def assemble_worker(*, sessionmaker, agents, knowledge, tenant: str, agent_id: str | None = None):
     """Assemble a Worker over the shared knowledge service + agentcore (agentic-first).
 

@@ -27,9 +27,7 @@ from app.core.ratelimit import InMemoryRateLimiter, RedisRateLimiter
 from app.core.redis import build_redis
 from app.core.dev_gateways import (
     StubGA4Gateway,
-    StubGmailGateway,
     StubSignalEngine,
-    StubSlackGateway,
     StubSpeechGateway,
     StubStripeGateway,
     StubWhatsAppGateway,
@@ -38,7 +36,6 @@ from app.core.observability import init_sentry, init_tracing
 from app.integrations.clients import (
     GA4Client,
     SignalEngineClient,
-    SlackClient,
     StripeClient,
     WhatsAppClient,
 )
@@ -368,8 +365,6 @@ def create_app() -> FastAPI:
     app.state.slack_links = WorkspaceLinkStore()
     app.state.file_generator = FileGenerator()
     app.state.task_queue = build_task_queue(task_registry)
-    app.state.gmail = StubGmailGateway()
-    app.state.slack = SlackClient() if settings.slack_bot_token else StubSlackGateway()
 
     # Every request is tenant-scoped.
     app.include_router(health_router)

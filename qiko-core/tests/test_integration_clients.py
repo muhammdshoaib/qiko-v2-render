@@ -80,14 +80,15 @@ def test_slack_post_message_and_error():
     def ok(req):
         return httpx.Response(200, json={"ok": True, "ts": "1.2"})
 
-    assert SlackClient(client=_client("https://slack.com/api", ok)).send_message("#c", "hi")["ok"] is True
+    assert SlackClient("xoxb-test", client=_client("https://slack.com/api", ok)).send_message("#c", "hi")["ok"] is True
 
     def bad(req):
         return httpx.Response(200, json={"ok": False, "error": "not_in_channel"})
 
     import pytest
-    with pytest.raises(RuntimeError):
-        SlackClient(client=_client("https://slack.com/api", bad)).send_message("#c", "hi")
+    from app.integrations.clients import SlackAuthError
+    with pytest.raises(SlackAuthError):
+        SlackClient("xoxb-test", client=_client("https://slack.com/api", bad)).send_message("#c", "hi")
 
 
 def test_clickup_create_task():

@@ -29,10 +29,59 @@ def test_outbound_sends(client):
         "/api/v1/channels/whatsapp/send",
         json={"to": "155", "text": "hi", "worker_id": "w1"},
         cookies=_cookies()).json()["stub"] is True
-    assert client.post(
-        "/api/v1/channels/gmail/send",
-        json={"to": "a@invalid", "subject": "S", "body": "B", "worker_id": "w1"},
-        cookies=_cookies()).json()["sent"] is True
+
+
+def test_gmail_send_requires_a_per_worker_connection(client):
+    r = client.post("/api/v1/channels/gmail/send",
+                    json={"to": "a@invalid", "subject": "S", "body": "B", "worker_id": "w1"},
+                    cookies=_cookies())
+    assert r.status_code == 422 and "Gmail" in r.json()["detail"]
+
+
+def test_gmail_send_uses_the_worker_address_and_app_password(client, monkeypatch):
+    seen = {}
+
+    class FakeGmail:
+        def __init__(self, address="", app_password="", **_kw):
+            seen["address"], seen["password"] = address, app_password
+
+        def send(self, to, subject, body):
+            seen["to"] = to
+            return {"sent": True, "to": to}
+
+    monkeypatch.setattr("app.integrations.clients.GmailSmtpClient", FakeGmail)
+    _connect(client, "gmail-credentials", {"address": "sales@acme.invalid", "app_password": "app-pw"})
+    body = client.post("/api/v1/channels/gmail/send",
+                       json={"to": "a@invalid", "subject": "S", "body": "B", "worker_id": "w1"},
+                       cookies=_cookies()).json()
+    assert body["sent"] is True
+    assert seen["address"] == "sales@acme.invalid" and seen["password"] == "app-pw"
+
+
+def test_slack_send_requires_a_connection_or_a_linked_workspace(client):
+    assert client.post("/api/v1/channels/slack/send", json={"text": "hi"},
+                       cookies=_cookies()).status_code == 422
+    r = client.post("/api/v1/channels/slack/send", json={"worker_id": "w1", "text": "hi"},
+                    cookies=_cookies())
+    assert r.status_code == 422 and "Slack" in r.json()["detail"]
+
+
+def test_slack_send_uses_the_worker_bot_token_and_default_channel(client, monkeypatch):
+    seen = {}
+
+    class FakeSlack:
+        def __init__(self, bot_token=None, client=None):
+            seen["token"] = bot_token
+
+        def send_message(self, channel, text):
+            seen["channel"] = channel
+            return {"ok": True}
+
+    monkeypatch.setattr("app.integrations.clients.SlackClient", FakeSlack)
+    _connect(client, "slack-credentials", {"bot_token": "xoxb-secret", "default_channel": "#sales"})
+    assert client.post("/api/v1/channels/slack/send", json={"worker_id": "w1", "text": "hi"},
+                       cookies=_cookies()).json()["ok"] is True
+    assert seen["token"] == "xoxb-secret" and seen["channel"] == "#sales"
 
 
 def test_clickup_task_requires_a_per_worker_connection(client):

@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle, ArrowLeft, Bot, BrainCircuit, Calendar, ChevronDown, ChevronUp, CircleCheck,
-  Database, ExternalLink, FileText, GraduationCap, HelpCircle, Library, Link2, ListChecks, Loader2, Lock, MessageCircle,
+  Database, ExternalLink, FileText, GraduationCap, HelpCircle, Library, Link2, ListChecks, Loader2, Lock, Mail, MessageCircle,
   MessageSquare, Phone, Plus, Search, SendHorizonal, Settings, Share2, Sparkles, Trash2, Upload, Users, Zap,
   type LucideIcon,
 } from "lucide-react";
@@ -18,11 +18,14 @@ import { CrmPipeline } from "@/components/crm-pipeline";
 import { WorkerVoiceCall } from "@/components/worker-voice-call";
 import {
   addFaq, addPolicy, addWebsite, ask, connectTeamsWebhook, disconnectCalendly, disconnectClickUp,
+  disconnectGmail, disconnectSlack,
   deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, getCalendlyCredentials,
-  getClickUpCredentials, getSalesforceCredentials,
+  getClickUpCredentials, getGmailCredentials, getSalesforceCredentials, getSlackCredentials,
   getTeamsWebhookStatus, getVapiCredentials, ingest, ingestFile, listAgents, listDocuments, markReady, me,
-  saveCalendlyCredentials, saveClickUpCredentials, saveSalesforceCredentials, saveVapiCredentials,
-  testCalendlyConnection, testClickUpConnection, testSalesforceConnection, testTeamsWebhook,
+  saveCalendlyCredentials, saveClickUpCredentials, saveGmailCredentials, saveSalesforceCredentials,
+  saveSlackCredentials, saveVapiCredentials,
+  testCalendlyConnection, testClickUpConnection, testGmailConnection, testSalesforceConnection,
+  testSlackConnection, testTeamsWebhook,
   updateAgentConfig, updateCalendlyEventType, type Agent, type Doc,
 } from "@/lib/api";
 import { workerTypeLabel } from "@/lib/stringUtils";
@@ -256,10 +259,11 @@ function CrmTab({ id, readOnly }: { id: string; readOnly?: boolean }) {
   );
 }
 
-const CONNECTIONS_SUBTABS = ["Voice", "Calendly", "ClickUp", "Teams", "Salesforce"] as const;
+const CONNECTIONS_SUBTABS = ["Voice", "Calendly", "ClickUp", "Slack", "Gmail", "Teams", "Salesforce"] as const;
 // Icon per connection (a map, not a nested ternary, so this stays readable as connections grow).
 const CONNECTION_ICONS: Record<(typeof CONNECTIONS_SUBTABS)[number], LucideIcon> = {
-  Voice: Phone, Calendly: Calendar, ClickUp: ListChecks, Teams: Users, Salesforce: Share2,
+  Voice: Phone, Calendly: Calendar, ClickUp: ListChecks, Slack: MessageCircle, Gmail: Mail,
+  Teams: Users, Salesforce: Share2,
 };
 
 function ConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
@@ -278,6 +282,8 @@ function ConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
       {sub === "Voice" && <VoiceSubTab id={id} />}
       {sub === "Calendly" && <CalendlySubTab id={id} worker={worker} />}
       {sub === "ClickUp" && <ClickUpSubTab id={id} />}
+      {sub === "Slack" && <SlackSubTab id={id} />}
+      {sub === "Gmail" && <GmailSubTab id={id} />}
       {sub === "Teams" && <TeamsSubTab id={id} />}
       {sub === "Salesforce" && <SalesforceSubTab id={id} />}
     </div>
@@ -647,6 +653,132 @@ function ClickUpSubTab({ id }: { id: string }) {
         {testResult === "ok" && <p className="text-xs text-emerald-600">ClickUp connection works.</p>}
         {testResult === "error" && <p className="text-xs text-red-500">ClickUp rejected that token. Please check it and try again.</p>}
         {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save that token. Please try again.</p>}
+      </CardContent></Card>
+    </div>
+  );
+}
+
+function SlackSubTab({ id }: { id: string }) {
+  const qc = useQueryClient();
+  const [botToken, setBotToken] = useState("");
+  const [channel, setChannel] = useState("");
+  const [testResult, setTestResult] = useState<"idle" | "ok" | "error">("idle");
+  const creds = useQuery({ queryKey: ["slack-credentials", id], queryFn: () => getSlackCredentials(id) });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["slack-credentials", id] });
+  const save = useMutation({
+    mutationFn: () => saveSlackCredentials(id, { bot_token: botToken, default_channel: channel }),
+    onSuccess: () => { setBotToken(""); setTestResult("idle"); invalidate(); },
+  });
+  const disconnect = useMutation({ mutationFn: () => disconnectSlack(id), onSuccess: () => { setTestResult("idle"); invalidate(); } });
+  const test = useMutation({ mutationFn: () => testSlackConnection(id), onSuccess: () => setTestResult("ok"), onError: () => setTestResult("error") });
+  const connected = creds.data?.slack_credentials_added;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="font-medium">Slack</p>
+        <p className="text-sm text-muted-foreground">Let this worker post messages into your own Slack workspace</p>
+      </div>
+      {!connected && (
+        <Card><CardContent className="pt-6 text-xs">
+          <p className="font-medium">Slack bot token required</p>
+          <p className="text-muted-foreground">Create a Slack app in your workspace, add the <b>chat:write</b> scope, install it, then copy the Bot User OAuth Token (starts with xoxb-). Set a default channel so the worker knows where to post. The token is encrypted and used only for this worker.</p>
+        </CardContent></Card>
+      )}
+      <Card><CardContent className="space-y-3 pt-6">
+        <p className="text-sm">Status: {connected
+          ? <span className="text-emerald-600">Connected{creds.data?.default_channel ? ` (${creds.data.default_channel})` : ""}</span>
+          : "Not connected"}</p>
+        {connected ? (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={test.isPending} onClick={() => test.mutate()}>
+              {test.isPending ? "Testing..." : "Test connection"}
+            </Button>
+            <Button variant="outline" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>Disconnect</Button>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="slack-token">Bot User OAuth Token</Label>
+              <Input id="slack-token" type="password" value={botToken} onChange={(e) => setBotToken(e.target.value)} placeholder="xoxb-..." />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="slack-channel">Default channel</Label>
+              <Input id="slack-channel" value={channel} onChange={(e) => setChannel(e.target.value)} placeholder="#sales" />
+            </div>
+            <div className="flex justify-end">
+              <Button disabled={!botToken || save.isPending} onClick={() => save.mutate()}>
+                {save.isPending ? "Connecting..." : "Connect"}
+              </Button>
+            </div>
+          </>
+        )}
+        {testResult === "ok" && <p className="text-xs text-emerald-600">Slack connection works.</p>}
+        {testResult === "error" && <p className="text-xs text-red-500">Slack rejected that token. Please check it and try again.</p>}
+        {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save that token. Please try again.</p>}
+      </CardContent></Card>
+    </div>
+  );
+}
+
+function GmailSubTab({ id }: { id: string }) {
+  const qc = useQueryClient();
+  const [address, setAddress] = useState("");
+  const [appPassword, setAppPassword] = useState("");
+  const [testResult, setTestResult] = useState<"idle" | "ok" | "error">("idle");
+  const creds = useQuery({ queryKey: ["gmail-credentials", id], queryFn: () => getGmailCredentials(id) });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["gmail-credentials", id] });
+  const save = useMutation({
+    mutationFn: () => saveGmailCredentials(id, { address, app_password: appPassword }),
+    onSuccess: () => { setAppPassword(""); setTestResult("idle"); invalidate(); },
+  });
+  const disconnect = useMutation({ mutationFn: () => disconnectGmail(id), onSuccess: () => { setTestResult("idle"); invalidate(); } });
+  const test = useMutation({ mutationFn: () => testGmailConnection(id), onSuccess: () => setTestResult("ok"), onError: () => setTestResult("error") });
+  const connected = creds.data?.gmail_credentials_added;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="font-medium">Gmail</p>
+        <p className="text-sm text-muted-foreground">Let this worker send email from your own Gmail address</p>
+      </div>
+      {!connected && (
+        <Card><CardContent className="pt-6 text-xs">
+          <p className="font-medium">Gmail App Password required</p>
+          <p className="text-muted-foreground">With 2-Step Verification on, go to your Google account {"\u2192"} Security {"\u2192"} App passwords, create one for &quot;Mail&quot;, and paste the 16-character password here. It is encrypted, used only for this worker, and you can revoke it in Google at any time.</p>
+        </CardContent></Card>
+      )}
+      <Card><CardContent className="space-y-3 pt-6">
+        <p className="text-sm">Status: {connected
+          ? <span className="text-emerald-600">Connected as {creds.data?.address}</span>
+          : "Not connected"}</p>
+        {connected ? (
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={test.isPending} onClick={() => test.mutate()}>
+              {test.isPending ? "Testing..." : "Test connection"}
+            </Button>
+            <Button variant="outline" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>Disconnect</Button>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-1.5">
+              <Label htmlFor="gmail-address">Gmail address</Label>
+              <Input id="gmail-address" type="email" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="sales@yourcompany.com" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="gmail-password">App password</Label>
+              <Input id="gmail-password" type="password" value={appPassword} onChange={(e) => setAppPassword(e.target.value)} placeholder="16 characters" />
+            </div>
+            <div className="flex justify-end">
+              <Button disabled={!address || !appPassword || save.isPending} onClick={() => save.mutate()}>
+                {save.isPending ? "Connecting..." : "Connect"}
+              </Button>
+            </div>
+          </>
+        )}
+        {testResult === "ok" && <p className="text-xs text-emerald-600">Gmail connection works.</p>}
+        {testResult === "error" && <p className="text-xs text-red-500">Gmail rejected that address or App Password. Please check them and try again.</p>}
+        {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save those details. Please try again.</p>}
       </CardContent></Card>
     </div>
   );

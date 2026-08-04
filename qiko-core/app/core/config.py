@@ -67,7 +67,6 @@ class Settings(BaseSettings):
     whatsapp_access_token: str = ""
     whatsapp_phone_number_id: str = ""
     whatsapp_app_secret: str = ""   # HMAC secret for inbound webhook signature verification
-    slack_bot_token: str = ""
     slack_client_id: str = ""
     slack_client_secret: str = ""
     slack_redirect_uri: str = ""

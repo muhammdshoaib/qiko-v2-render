@@ -12,6 +12,7 @@ from app.modules.finance.service import FinanceService
 from app.modules.sales_intelligence.salesforce import SalesforceAuthService
 from app.modules.sales_intelligence.scheduler import scan_due_sources
 from app.modules.sales_intelligence.service import OpportunityService
+from app.core.crypto import encrypt
 from tests.helpers import auth_cookies
 
 
@@ -139,7 +140,7 @@ async def test_salesforce_oauth_rechecks_worker_before_token_exchange(monkeypatc
     assert exchanges == 0
 
 
-async def test_channel_disable_during_external_call_returns_404(client):
+async def test_channel_disable_during_external_call_returns_404(client, monkeypatch):
     tenant, agent_id = "m2c-channel-race", "worker"
     await client.app.state.agents.store.add(
         Agent(id=agent_id, tenant=tenant, name=agent_id))
@@ -147,12 +148,21 @@ async def test_channel_disable_during_external_call_returns_404(client):
     release = threading.Event()
 
     class Gmail:
+        def __init__(self, address="", app_password="", **_kw):
+            pass
+
         def send(self, *_args):
             entered.set()
             release.wait(timeout=5)
             return {"sent": True}
 
-    client.app.state.gmail = Gmail()
+    # Gmail is now a per-worker connection: store a credential and patch the client class.
+    await client.app.state.agents.update_config(tenant, agent_id, {
+        "gmail_address": "sender@invalid",
+        "gmail_app_password_encrypted": encrypt("app-password"),
+        "gmail_credentials_added": True,
+    })
+    monkeypatch.setattr("app.integrations.clients.GmailSmtpClient", Gmail)
     request = asyncio.create_task(asyncio.to_thread(
         client.post, "/api/v1/channels/gmail/send",
         json={
