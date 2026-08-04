@@ -1,3 +1,4 @@
+import asyncio
 import pyotp
 import pytest
 from fastapi.testclient import TestClient
@@ -259,3 +260,60 @@ def test_forgot_password_sender_failure_is_safe(caplog, capsys):
     assert "transactional_email_failed" in captured
     assert secret not in response.text
     assert secret not in caplog.text + captured
+
+
+def test_signup_persists_the_display_name_typed_at_register():
+    """The register form always collected a name, but it was dropped on the way in (SignupBody had
+    no name field and forbids extras), so every account was created nameless even though users.name
+    exists and Settings renders a display name."""
+    app = create_app()
+    store = InMemoryUserStore()
+    app.dependency_overrides[get_store] = lambda: store
+    client = TestClient(app)
+    email = "named" + "@" + "example.test"
+
+    _, verified = _complete_signup(client, email, name="  Ada Lovelace  ")
+    assert verified.status_code == 200
+
+    user = asyncio.run(store.get_by_email(email))
+    assert user is not None
+    assert user.name == "Ada Lovelace"  # trimmed, and actually stored
+
+
+def test_signup_without_a_name_still_works_and_stores_none():
+    app = create_app()
+    store = InMemoryUserStore()
+    app.dependency_overrides[get_store] = lambda: store
+    client = TestClient(app)
+    email = "anon" + "@" + "example.test"
+
+    _, verified = _complete_signup(client, email)
+    assert verified.status_code == 200
+    user = asyncio.run(store.get_by_email(email))
+    assert user is not None and user.name is None
+
+
+def test_login_reports_missing_2fa_code_so_the_ui_can_ask_for_it():
+    """The creator app had no code field, so a 2FA account could never sign in there. The error must
+    stay identifiable (it is what the UI matches on to reveal the code input)."""
+    app = create_app()
+    store = InMemoryUserStore()
+    app.dependency_overrides[get_store] = lambda: store
+    client = TestClient(app)
+    email = "twofa" + "@" + "example.test"
+    password = "correct-horse-battery-staple"
+    _complete_signup(client, email, password=password)
+
+    user = asyncio.run(store.get_by_email(email))
+    user.twofa_enabled = True
+    user.totp_secret = "JBSWY3DPEHPK3PXP"
+
+    r = client.post("/api/v1/auth/login", json={"email": email, "password": password})
+    assert r.status_code == 401
+    assert "2FA" in r.json()["detail"]
+
+    import pyotp
+
+    code = pyotp.TOTP("JBSWY3DPEHPK3PXP").now()
+    ok = client.post("/api/v1/auth/login", json={"email": email, "password": password, "totp": code})
+    assert ok.status_code == 200

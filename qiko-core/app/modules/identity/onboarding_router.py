@@ -45,6 +45,9 @@ class SignupBody(BaseModel):
     tenant: str | None = None
     email: str = Field(min_length=3)
     password: str = Field(min_length=8)
+    # The signup form always collected a name; it was dropped on the way in, so every account was
+    # created nameless even though users.name exists and Settings renders a display name.
+    name: str | None = Field(default=None, max_length=255)
     invite_token: str | None = None
     accept_policies: Literal[True]
     terms_release_id: Literal["terms-2026-07-24"]
@@ -103,6 +106,7 @@ async def signup(
         terms_release_id=body.terms_release_id,
         privacy_release_id=body.privacy_release_id,
         cookies_release_id=body.cookies_release_id,
+        name=(body.name or "").strip() or None,
         invite_version=invite_version,
     )
     created = await pending_signups.put(candidate)
@@ -222,6 +226,7 @@ async def verify_signup(
         password_hash=hash_password(body.password),
         tenant=candidate.tenant,
         role=candidate.role,
+        name=candidate.name,
     ))
     if candidate.invite_version is not None:
         await pending_invites.remove(candidate.tenant, email)
