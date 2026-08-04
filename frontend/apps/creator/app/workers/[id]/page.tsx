@@ -15,6 +15,7 @@ import { AppShell } from "@/components/app-shell";
 import { WorkerAvatar } from "@/components/worker-avatar";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import { CrmPipeline } from "@/components/crm-pipeline";
+import { WorkerVoiceCall } from "@/components/worker-voice-call";
 import {
   addFaq, addPolicy, addWebsite, ask, connectTeamsWebhook,
   deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, getSalesforceCredentials,
@@ -924,6 +925,7 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">Test how this worker answers, grounded in the knowledge you&apos;ve added.</p>
           {worker?.status === "ready" && <WorkerShare id={id} tenant={worker.tenant} />}
+          <WorkerVoiceCall id={id} />
         </div>
         {messages.length === 0 && quickPrompts.length > 0 && (
           <div className="flex flex-wrap gap-2">
