@@ -285,8 +285,10 @@ class AiUsageEvent(Base):
     activity log is: a call that has already been billed by AWS must be recorded even if the worker
     was disabled a moment later, and several call sites have no worker at all.
 
-    Cost is integer micro-USD. There is no Numeric or Float column anywhere in this schema and money
-    is integer cents elsewhere; a float accumulating over millions of calls drifts.
+    Cost is integer NANO-USD. Micro-USD rounded real calls to zero: Titan is 20 micro-USD per 1,000
+    tokens, so an 8-token embedding cost 0.16 and disappeared, and an ingest embeds one chunk at a
+    time. There is no Numeric or Float column anywhere in this schema and money is integer cents
+    elsewhere; a float accumulating over millions of calls drifts.
     """
 
     __tablename__ = "ai_usage_events"
@@ -297,7 +299,7 @@ class AiUsageEvent(Base):
     operation: Mapped[str] = mapped_column(String(40))
     input_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
     output_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
-    cost_micro_usd: Mapped[int] = mapped_column(BigInteger, default=0)
+    cost_nano_usd: Mapped[int] = mapped_column(BigInteger, default=0)
     # False when the model has no published rate in the price table, so unpriced spend is visible
     # rather than silently counted as free.
     priced: Mapped[bool] = mapped_column(Boolean, default=True)
