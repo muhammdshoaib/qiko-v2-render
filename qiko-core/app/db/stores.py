@@ -152,6 +152,13 @@ class SqlUserStore:
             rows = (await s.execute(select(UserRow).where(UserRow.tenant_id == tenant))).scalars().all()
             return [await self._to_domain(r) for r in rows]
 
+    async def list_all(self) -> list[User]:
+        # Cross-tenant: the platform-admin user directory ONLY. Deliberately unfiltered, ordered by
+        # email so the directory is stable across pages.
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(select(UserRow).order_by(UserRow.email))).scalars().all()
+            return [await self._to_domain(r) for r in rows]
+
     async def set_sid(self, user_id: str, sid: str | None) -> None:
         async with self.sessionmaker() as s, s.begin():
             row = await s.get(UserRow, user_id)
@@ -336,6 +343,14 @@ class SqlAgentStore:
             if row is None or row.tenant_id != tenant:
                 return None
             return self._to_domain(row)
+
+    async def list_all(self) -> list[Agent]:
+        # Cross-tenant: the platform-admin worker directory ONLY. Ordered by tenant then id so the
+        # directory is stable across pages.
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(AgentRow).order_by(AgentRow.tenant_id, AgentRow.id))).scalars().all()
+            return [self._to_domain(row) for row in rows]
 
     async def get_by_id(self, agent_id: str) -> Agent | None:
         # Global (tenant-agnostic) lookup for the PUBLIC chat path only (agent ids are globally

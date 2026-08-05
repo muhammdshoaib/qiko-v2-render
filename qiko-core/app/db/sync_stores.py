@@ -28,6 +28,7 @@ from app.db.models import BillingSubscription as SubscriptionRow
 from app.db.models import Tenant as TenantRow
 from app.db.models import User as UserRow
 from app.modules.admin.customers import CustomerRecord
+from app.modules.admin.pagination import paginate
 from app.modules.billing.payment_links import PaymentLinkLog
 from app.modules.billing.subscriptions import Subscription
 from app.modules.billing.webhook import Invoice
@@ -210,6 +211,11 @@ class SqlCustomerDirectory:
         for tid in agents:
             worker_count[tid] = worker_count.get(tid, 0) + 1
 
+        user_count: dict[str, int] = {}
+        for u in users:
+            if u.tenant_id:
+                user_count[u.tenant_id] = user_count.get(u.tenant_id, 0) + 1
+
         earnings: dict[str, int] = {}
         # Invoices are keyed by Stripe customer id; map each tenant's paid invoices back to it via
         # the tenant<->customer mapping (falling back to the tenant string, our stable ref).
@@ -231,6 +237,7 @@ class SqlCustomerDirectory:
                 stripe_paid_cents=earnings.get(t.id, 0),
                 local_paid_cents=0,
                 agents=worker_count.get(t.id, 0),
+                users=user_count.get(t.id, 0),
                 is_studio=bool(flag.is_studio) if flag is not None else False,
                 deleted=bool(flag.deleted) if flag is not None else False)
         return records
@@ -245,9 +252,7 @@ class SqlCustomerDirectory:
         if plan and plan != "all":
             rows = [r for r in rows if r.plan == plan]
         rows.sort(key=lambda r: r.earnings_cents, reverse=True)
-        total = len(rows)
-        start = (page - 1) * page_size
-        return {"total": total, "page": page, "items": rows[start:start + page_size]}
+        return paginate(rows, page=page, page_size=page_size)
 
     def details(self, user_id: str) -> CustomerRecord | None:
         with self.sessionmaker() as s:

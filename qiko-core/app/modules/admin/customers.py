@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from app.modules.admin.pagination import paginate
+
 
 @dataclass
 class CustomerRecord:
@@ -13,6 +15,9 @@ class CustomerRecord:
     stripe_paid_cents: int = 0
     local_paid_cents: int = 0
     agents: int = 0
+    # Tenant user count. Already derivable in both implementations (the users table is loaded
+    # anyway) but never surfaced, so "how many people are on this account" was unanswerable.
+    users: int = 0
     conversations: int = 0
     is_studio: bool = False
     deleted: bool = False
@@ -39,9 +44,7 @@ class CustomerDirectory:
         if plan and plan != "all":
             rows = [r for r in rows if r.plan == plan]
         rows.sort(key=lambda r: r.earnings_cents, reverse=True)
-        total = len(rows)
-        start = (page - 1) * page_size
-        return {"total": total, "page": page, "items": rows[start:start + page_size]}
+        return paginate(rows, page=page, page_size=page_size)
 
     def details(self, user_id: str) -> CustomerRecord | None:
         rec = self._by_id.get(user_id)

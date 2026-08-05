@@ -3,19 +3,22 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.deps import (
+    get_user_store,
     require_platform_capability,
     require_platform_identity,
     authed_tenant,
     current_claims,
 )
 from app.modules.admin.metrics import Subscription, revenue_metrics
+from app.modules.admin.pagination import paginate
 from app.modules.identity import csrf
 from app.modules.identity.admin_rbac import AdminRole, Capability
+from app.modules.identity.team_access import ROLE_LABELS
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -240,3 +243,117 @@ def analytics(request: Request, _tenant: str = Depends(authed_tenant),
     from app.modules.admin.ga4 import GA4Analytics
 
     return GA4Analytics(request.app.state.ga4).dashboard(start, end)
+
+
+class TenantDirectoryRow(BaseModel):
+    tenant_id: str
+    email: str
+    plan: str
+    earnings_cents: int
+    user_count: int
+    worker_count: int
+    is_studio: bool
+
+
+@router.get("/tenants")
+def tenants(request: Request, _tenant: str = Depends(authed_tenant),
+            _identity=Depends(require_platform_capability(Capability.view_customers)),
+            search: str | None = None, plan: str | None = None,
+            page: int = Query(default=1, ge=1)) -> dict:
+    """The tenant directory (QIK-515).
+
+    A "customer" already IS a tenant in this codebase, so this is the same rows as /admin/customers
+    with the counts the console needs and never had: how many people are on the account and how many
+    workers it runs. Both were already derivable and simply not surfaced.
+    """
+    result = request.app.state.customers.list(search=search, plan=plan, page=page)
+    return {"total": result["total"], "page": result["page"], "items": [{
+        "tenant_id": record.user_id, "email": record.email, "plan": record.plan,
+        "earnings_cents": record.earnings_cents, "user_count": record.users,
+        "worker_count": record.agents, "is_studio": record.is_studio,
+    } for record in result["items"]]}
+
+
+class UserDirectoryRow(BaseModel):
+    id: str
+    email: str
+    name: str | None
+    tenant_id: str | None
+    role: str
+    role_label: str
+    twofa_enabled: bool
+    platform_role: str | None
+    platform_capabilities: list[str]
+
+
+@router.get("/users")
+async def users(request: Request, _tenant: str = Depends(authed_tenant),
+                _identity=Depends(require_platform_capability(Capability.view_customers)),
+                search: str | None = None, tenant_id: str | None = None,
+                page: int = Query(default=1, ge=1)) -> dict:
+    """The site-wide user directory with both RBAC systems visible (QIK-516).
+
+    Two independent role systems exist and an operator had no single place to see them together: the
+    TENANT role lives on users.role, while platform-admin access is keyed by EMAIL in
+    platform_admins. So "who can reach the admin panel" required reading two tables by hand. Joined
+    here on the lowercased email, which is how the admin registry stores it.
+
+    No password hash, TOTP secret or session id is exposed. The fields are chosen explicitly rather
+    than dumping the row.
+    """
+    store = get_user_store()
+    everyone = await store.list_all()
+    platform = {identity.email: identity for identity in await request.app.state.admin_org.list_admins()}
+
+    rows = everyone
+    if tenant_id:
+        rows = [user for user in rows if user.tenant == tenant_id]
+    if search:
+        needle = search.lower()
+        rows = [user for user in rows
+                if needle in user.email.lower() or needle in (user.name or "").lower()]
+    rows = sorted(rows, key=lambda user: user.email)
+
+    result = paginate(rows, page=page)
+    return {"total": result["total"], "page": result["page"], "items": [{
+        "id": user.id, "email": user.email, "name": user.name, "tenant_id": user.tenant,
+        "role": user.role.value, "role_label": ROLE_LABELS.get(user.role, user.role.value),
+        "twofa_enabled": user.twofa_enabled,
+        "platform_role": platform[user.email.lower()].role.value if user.email.lower() in platform else None,
+        "platform_capabilities": sorted(c.value for c in platform[user.email.lower()].capabilities)
+        if user.email.lower() in platform else [],
+    } for user in result["items"]]}
+
+
+class WorkerDirectoryRow(AdminWorkerOut):
+    tenant_id: str
+
+
+@router.get("/workers")
+async def workers(request: Request, _tenant: str = Depends(authed_tenant),
+                  _identity=Depends(require_platform_capability(Capability.view_customers)),
+                  search: str | None = None, tenant_id: str | None = None,
+                  enabled: bool | None = None, page: int = Query(default=1, ge=1)) -> dict:
+    """The cross-tenant worker directory (QIK-520).
+
+    The enable/disable enforcement already exists per customer, but there was no way to see every
+    worker on the platform at once, so answering "which workers are disabled right now" meant opening
+    customers one by one. Config goes through the same allowlist as the customer detail view, so no
+    secret key can leak into a directory listing.
+    """
+    everyone = await request.app.state.agents.list_all()
+
+    rows = everyone
+    if tenant_id:
+        rows = [agent for agent in rows if agent.tenant == tenant_id]
+    if enabled is not None:
+        rows = [agent for agent in rows if agent.enabled is enabled]
+    if search:
+        needle = search.lower()
+        rows = [agent for agent in rows
+                if needle in agent.name.lower() or needle in agent.id.lower()]
+
+    result = paginate(rows, page=page)
+    return {"total": result["total"], "page": result["page"],
+            "items": [{**_worker_json(agent), "tenant_id": agent.tenant}
+                      for agent in result["items"]]}

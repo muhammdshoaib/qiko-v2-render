@@ -104,6 +104,33 @@ export type AdminGrantAudit = {
   reason: string | null; created_at: string;
 };
 
+export type TenantRow = {
+  tenant_id: string; email: string; plan: string; earnings_cents: number;
+  user_count: number; worker_count: number; is_studio: boolean;
+};
+export type UserRow = {
+  id: string; email: string; name: string | null; tenant_id: string | null;
+  role: string; role_label: string; twofa_enabled: boolean;
+  platform_role: AdminRole | null; platform_capabilities: Capability[];
+};
+export type WorkerRow = AdminWorker & { tenant_id: string };
+
+type Paged<T> = { total: number; page: number; items: T[] };
+
+const paged = (page: number, extra: Record<string, string | undefined> = {}) => {
+  const params = new URLSearchParams({ page: String(page) });
+  for (const [key, value] of Object.entries(extra)) if (value) params.set(key, value);
+  return params;
+};
+
+export const listTenants = (search = "", page = 1) =>
+  request<Paged<TenantRow>>(`/admin/tenants?${paged(page, { search })}`);
+export const listUsers = (search = "", page = 1, tenantId?: string) =>
+  request<Paged<UserRow>>(`/admin/users?${paged(page, { search, tenant_id: tenantId })}`);
+export const listWorkers = (search = "", page = 1, enabled?: boolean) =>
+  request<Paged<WorkerRow>>(
+    `/admin/workers?${paged(page, { search, enabled: enabled === undefined ? undefined : String(enabled) })}`);
+
 export const adminMe = () =>
   request<{ role: AdminRole; capabilities: Capability[] }>("/admin/me");
 export const listPlatformAdmins = () =>

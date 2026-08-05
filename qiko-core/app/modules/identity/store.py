@@ -28,6 +28,9 @@ class UserStore(Protocol):
     async def get_by_email(self, email: str) -> User | None: ...
     async def get_by_id(self, user_id: str) -> User | None: ...
     async def list_by_tenant(self, tenant: str) -> list[User]: ...
+    # Cross-tenant: the platform-admin user directory ONLY. Every other caller must go through
+    # list_by_tenant, which is why this is a separate method rather than an optional argument.
+    async def list_all(self) -> list[User]: ...
     async def set_sid(self, user_id: str, sid: str | None) -> None: ...
     async def enable_twofa(self, user_id: str, secret: str,
                            backup_code_hashes: dict[str, str] | None = None) -> None: ...
@@ -59,6 +62,10 @@ class InMemoryUserStore:
 
     async def list_by_tenant(self, tenant: str) -> list[User]:
         return [u for u in self._by_id.values() if u.tenant == tenant]
+
+    async def list_all(self) -> list[User]:
+        # Cross-tenant: platform-admin directory only.
+        return list(self._by_id.values())
 
     async def set_sid(self, user_id: str, sid: str | None) -> None:
         user = self._by_id.get(user_id)
