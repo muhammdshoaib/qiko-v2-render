@@ -1,7 +1,7 @@
 """Admin HTTP API (tenant-scoped). Revenue computed from a single source (the posted subs)."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
@@ -382,3 +382,86 @@ async def workers(request: Request, _tenant: str = Depends(authed_tenant),
     return {"total": result["total"], "page": result["page"],
             "items": [{**_worker_json(agent), "tenant_id": agent.tenant}
                       for agent in result["items"]]}
+
+
+_MAX_WINDOW_DAYS = 400
+
+
+def _window(days: int) -> tuple[datetime, datetime]:
+    end = datetime.now(timezone.utc)
+    return end - timedelta(days=days), end
+
+
+def _totals_json(totals) -> dict:
+    return {"calls": totals.calls, "input_tokens": totals.input_tokens,
+            "output_tokens": totals.output_tokens, "cost_nano_usd": totals.cost_nano_usd,
+            # Surfaced so an operator can see when a total understates reality because a model has no
+            # published rate yet, rather than trusting a plausible-looking number.
+            "unpriced_calls": totals.unpriced_calls}
+
+
+@router.get("/ai-cost")
+async def ai_cost(request: Request, _tenant: str = Depends(authed_tenant),
+                  _identity=Depends(require_platform_capability(Capability.view_ai_cost)),
+                  days: int = Query(default=30, ge=1, le=_MAX_WINDOW_DAYS)) -> dict:
+    """Platform AI spend, broken down by tenant, model, operation and day (QIK-517).
+
+    Reads the events recorded by QIK-514. Cost is nano-USD because a single Titan embedding rounds to
+    zero in micro-USD, and an ingest performs one per chunk.
+
+    Gated on view_ai_cost rather than view_customers: per-account model spend reveals unit economics,
+    which is sensitive in a different way from a customer list.
+    """
+    start, end = _window(days)
+    store = request.app.state.ai_usage
+    totals = await store.platform_totals(start=start, end=end)
+    breakdowns = {name: {key: _totals_json(value) for key, value in
+                         (await store.platform_by(name, start=start, end=end)).items()}
+                  for name in ("tenant", "model", "operation", "day")}
+    return {"window_days": days, "totals": _totals_json(totals), **breakdowns}
+
+
+@router.get("/worker-monitoring")
+async def worker_monitoring(request: Request, _tenant: str = Depends(authed_tenant),
+                            identity=Depends(require_platform_capability(Capability.view_customers)),
+                            days: int = Query(default=30, ge=1, le=_MAX_WINDOW_DAYS),
+                            tenant_id: str | None = Query(default=None, max_length=64),
+                            page: int = Query(default=1, ge=1)) -> dict:
+    """Every worker with its state and recent activity (QIK-521).
+
+    Answers "is this worker alive and being used", which previously required opening each customer and
+    inferring it from nothing. last_seen comes from the AI usage events, so it reflects real model
+    activity rather than a heartbeat that would keep ticking for an idle worker.
+
+    Visible to view_customers because worker state is operational, but the COST columns are returned
+    only to a view_ai_cost holder. Ungating spend here would have made this endpoint a way around the
+    /admin/ai-cost gate, which is the mistake QIK-515/516 made with platform authority.
+    """
+    show_cost = identity is not None and identity.can(Capability.view_ai_cost)
+    start, end = _window(days)
+    agents = await request.app.state.agents.list_all()
+    if tenant_id:
+        agents = [agent for agent in agents if agent.tenant == tenant_id]
+    usage_by_agent = await request.app.state.ai_usage.platform_agent_usage(start=start, end=end)
+
+    rows = []
+    for agent in agents:
+        summary = usage_by_agent.get(f"{agent.tenant}/{agent.id}")
+        row = {
+            "tenant_id": agent.tenant, "id": agent.id, "name": agent.name,
+            "status": agent.status, "enabled": agent.enabled,
+            "created_at": agent.created_at,
+            "calls": summary.totals.calls if summary else 0,
+            "last_seen": summary.last_seen if summary else None,
+        }
+        if show_cost:
+            row["cost_nano_usd"] = summary.totals.cost_nano_usd if summary else 0
+            row["input_tokens"] = summary.totals.input_tokens if summary else 0
+            row["output_tokens"] = summary.totals.output_tokens if summary else 0
+        rows.append(row)
+
+    # Busiest first: an operator opening this page is looking for the outliers, not an alphabet.
+    rows.sort(key=lambda row: (-row["calls"], row["tenant_id"] or "", row["id"]))
+    result = paginate(rows, page=page)
+    return {"total": result["total"], "page": result["page"], "window_days": days,
+            "cost_visible": show_cost, "items": result["items"]}

@@ -4,6 +4,32 @@
  */
 
 export interface paths {
+    "/api/v1/admin/ai-cost": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ai Cost
+         * @description Platform AI spend, broken down by tenant, model, operation and day (QIK-517).
+         *
+         *     Reads the events recorded by QIK-514. Cost is nano-USD because a single Titan embedding rounds to
+         *     zero in micro-USD, and an ingest performs one per chunk.
+         *
+         *     Gated on view_ai_cost rather than view_customers: per-account model spend reveals unit economics,
+         *     which is sensitive in a different way from a customer list.
+         */
+        get: operations["ai_cost_api_v1_admin_ai_cost_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/analytics": {
         parameters: {
             query?: never;
@@ -347,6 +373,34 @@ export interface paths {
          *     store returns a projection that never loads them.
          */
         get: operations["users_api_v1_admin_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/worker-monitoring": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Worker Monitoring
+         * @description Every worker with its state and recent activity (QIK-521).
+         *
+         *     Answers "is this worker alive and being used", which previously required opening each customer and
+         *     inferring it from nothing. last_seen comes from the AI usage events, so it reflects real model
+         *     activity rather than a heartbeat that would keep ticking for an idle worker.
+         *
+         *     Visible to view_customers because worker state is operational, but the COST columns are returned
+         *     only to a view_ai_cost holder. Ungating spend here would have made this endpoint a way around the
+         *     /admin/ai-cost gate, which is the mistake QIK-515/516 made with platform authority.
+         */
+        get: operations["worker_monitoring_api_v1_admin_worker_monitoring_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5457,6 +5511,39 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    ai_cost_api_v1_admin_ai_cost_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     analytics_api_v1_admin_analytics_get: {
         parameters: {
             query?: {
@@ -6067,6 +6154,41 @@ export interface operations {
         parameters: {
             query?: {
                 search?: string | null;
+                tenant_id?: string | null;
+                page?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    worker_monitoring_api_v1_admin_worker_monitoring_get: {
+        parameters: {
+            query?: {
+                days?: number;
                 tenant_id?: string | null;
                 page?: number;
             };
