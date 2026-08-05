@@ -8,6 +8,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.deps import (
+    require_platform_identity,
     authed_tenant,
     current_claims,
     require_platform_admin,
@@ -22,6 +23,9 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 class AdminSelfOut(BaseModel):
     role: AdminRole
+    # The effective capability set, so the admin UI can hide what the caller cannot do instead of
+    # letting them click into a 403.
+    capabilities: list[str] = []
 
 
 class AdminWorkerOut(BaseModel):
@@ -120,8 +124,9 @@ def _audit_json(entry) -> dict:
 
 @router.get("/me", response_model=AdminSelfOut)
 async def admin_me(_tenant: str = Depends(authed_tenant),
-                   role=Depends(require_platform_admin())) -> dict:
-    return {"role": role.value}
+                   identity=Depends(require_platform_identity())) -> dict:
+    return {"role": identity.role.value,
+            "capabilities": sorted(c.value for c in identity.capabilities)}
 
 
 @router.get("/customers/{user_id}", response_model=CustomerDetailOut)

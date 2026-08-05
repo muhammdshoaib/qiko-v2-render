@@ -61,14 +61,23 @@ def test_2fa_exchange_bridge(client):
 
 
 def test_admin_bootstrap_is_disabled_outside_dev(client, monkeypatch):
+    """Bootstrap stays dev-only: outside dev the FIRST caller to reach it must never be able to
+    self-appoint. Production provisioning goes through the operator CLI instead.
+
+    invite/accept are no longer 404 outside dev (a platform admin has to be able to add a colleague
+    without a database edit), so this asserts they are properly GATED rather than absent: a random
+    tenant owner gets 403, never a token."""
     settings = get_settings()
     monkeypatch.setattr(settings, "environment", Environment.preprod)
     caller = auth_cookies("public", "owner", email="public-owner@invalid")
 
     assert client.post("/api/v1/admin/org/bootstrap", cookies=caller).status_code == 404
+    # not a platform admin at all -> the platform gate rejects it
     assert client.post("/api/v1/admin/org/invite",
-                       json={"email": "admin@invalid", "role": "viewer"}, cookies=caller).status_code == 404
-    assert client.post("/api/v1/admin/org/accept", json={"token": "anything"}).status_code == 404
+                       json={"email": "admin@invalid", "role": "viewer"},
+                       cookies=caller).status_code == 403
+    # an unauthenticated redeem attempt cannot mint access for anyone
+    assert client.post("/api/v1/admin/org/accept", json={"token": "anything"}).status_code in (401, 403)
 
 
 def test_admin_org_rbac(client):
@@ -77,6 +86,18 @@ def test_admin_org_rbac(client):
     # bootstrap is first-run only -- a second caller can't self-escalate afterwards
     other = auth_cookies("b4", "owner", email="other@invalid")
     assert client.post("/api/v1/admin/org/bootstrap", cookies=other).status_code == 409
-    tok = client.post("/api/v1/admin/org/invite", json={"email": "viewer@invalid", "role": "viewer"}, cookies=boss).json()["token"]
-    assert client.post("/api/v1/admin/org/accept", json={"token": tok}, cookies=boss).json()["role"] == "viewer"
+    # invite is now CSRF-protected like every other admin mutation
+    from app.modules.identity import csrf as csrf_module
+
+    token = csrf_module.generate_csrf_token()
+    boss_csrf = {**boss, csrf_module.CSRF_COOKIE: token}
+    headers = {csrf_module.CSRF_HEADER: token}
+    tok = client.post("/api/v1/admin/org/invite", json={"email": "viewer@invalid", "role": "viewer"},
+                      cookies=boss_csrf, headers=headers).json()["token"]
+    # Only the invited person may redeem it: the boss holding the token cannot mint it for someone else.
+    assert client.post("/api/v1/admin/org/accept", json={"token": tok},
+                       cookies=boss).status_code == 400
+    invitee = auth_cookies("b4", "owner", email="viewer@invalid")
+    assert client.post("/api/v1/admin/org/accept", json={"token": tok},
+                       cookies=invitee).json()["role"] == "viewer"
     assert client.get("/api/v1/admin/org/role/viewer@invalid", cookies=boss).json()["role"] == "viewer"
