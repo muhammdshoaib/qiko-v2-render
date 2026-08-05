@@ -311,8 +311,14 @@ def create_app() -> FastAPI:
     if settings.environment is Environment.dev:
         limiter = InMemoryRateLimiter(limit=settings.rate_limit_per_minute)
         strict_limiter = InMemoryRateLimiter(limit=settings.auth_rate_limit_per_minute)
+        # None means "not configured": in dev the limiter is in-memory, so the readiness probe must
+        # report not-configured rather than failing.
+        app.state.redis = None
     else:
         redis = build_redis(settings.redis_url)
+        # Exposed so the readiness probe and the system dashboard can reach the same client the rate
+        # limiter uses, rather than opening a second connection to answer "is Redis up".
+        app.state.redis = redis
         limiter = RedisRateLimiter(redis=redis, namespace="qiko:rate", limit=settings.rate_limit_per_minute)
         strict_limiter = RedisRateLimiter(
             redis=redis, namespace="qiko:strict-rate", limit=settings.auth_rate_limit_per_minute)

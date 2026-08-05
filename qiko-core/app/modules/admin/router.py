@@ -1,12 +1,15 @@
 """Admin HTTP API (tenant-scoped). Revenue computed from a single source (the posted subs)."""
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 
+from app import __version__ as app_version
+from app.core.config import get_settings
 from app.core.deps import (
     get_user_store,
     require_platform_capability,
@@ -15,6 +18,13 @@ from app.core.deps import (
     current_claims,
 )
 from app.modules.admin.metrics import Subscription, revenue_metrics
+from app.modules.health.system import (
+    database_stats,
+    process_stats,
+    queue_stats,
+    readiness,
+    redis_stats,
+)
 from app.modules.admin.pagination import paginate
 from app.modules.identity import csrf
 from app.modules.identity.admin_rbac import AdminRole, Capability
@@ -465,3 +475,48 @@ async def worker_monitoring(request: Request, _tenant: str = Depends(authed_tena
     result = paginate(rows, page=page)
     return {"total": result["total"], "page": result["page"], "window_days": days,
             "cost_visible": show_cost, "items": result["items"]}
+
+
+@router.get("/system")
+async def system(request: Request, _tenant: str = Depends(authed_tenant),
+                 _identity=Depends(require_platform_capability(Capability.view_system_stats))) -> dict:
+    """Infrastructure health and capacity (QIK-518).
+
+    Answers the questions an operator currently answers by opening a shell on the host: are the
+    dependencies actually up, how close is the database to its connection limit, is Redis evicting
+    keys, and is the background queue draining.
+
+    Every section degrades to available=false with a reason rather than raising, because a statistics
+    dashboard that 500s when one collector fails is a dashboard that gets ignored precisely when it
+    matters. Reasons are exception class names, never driver messages, which can carry a connection
+    string.
+
+    Gated on view_system_stats rather than view_customers: connection headroom and queue depth are
+    operational reconnaissance, a different category from a customer list.
+    """
+    state = request.app.state
+    ready, probes = await readiness(state)
+    # return_exceptions so a collector that raises instead of degrading cannot 500 the dashboard.
+    # Each collector already catches internally, but relying on all of them to keep remembering that
+    # makes the promise above a convention rather than a guarantee.
+    database, redis_info, queue = [
+        result if not isinstance(result, BaseException)
+        else {"available": False, "reason": type(result).__name__}
+        for result in await asyncio.gather(
+            database_stats(getattr(state, "sessionmaker", None)),
+            redis_stats(getattr(state, "redis", None)),
+            queue_stats(getattr(state, "redis", None)),
+            return_exceptions=True,
+        )
+    ]
+    settings = get_settings()
+    return {
+        "ready": ready,
+        "checks": [probe.as_dict() for probe in probes],
+        "process": process_stats(),
+        "database": database,
+        "redis": redis_info,
+        "queue": queue,
+        "environment": settings.environment.value,
+        "version": app_version,
+    }

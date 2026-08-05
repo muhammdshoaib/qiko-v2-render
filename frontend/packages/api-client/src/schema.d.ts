@@ -323,6 +323,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/system": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * System
+         * @description Infrastructure health and capacity (QIK-518).
+         *
+         *     Answers the questions an operator currently answers by opening a shell on the host: are the
+         *     dependencies actually up, how close is the database to its connection limit, is Redis evicting
+         *     keys, and is the background queue draining.
+         *
+         *     Every section degrades to available=false with a reason rather than raising, because a statistics
+         *     dashboard that 500s when one collector fails is a dashboard that gets ignored precisely when it
+         *     matters. Reasons are exception class names, never driver messages, which can carry a connection
+         *     string.
+         *
+         *     Gated on view_system_stats rather than view_customers: connection headroom and queue depth are
+         *     operational reconnaissance, a different category from a customer list.
+         */
+        get: operations["system_api_v1_admin_system_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/tenants": {
         parameters: {
             query?: never;
@@ -2129,8 +2161,40 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Health */
+        /**
+         * Health
+         * @description Liveness. Deliberately does NOT probe dependencies.
+         *
+         *     A liveness probe that fails during a database blip makes Docker restart a healthy container,
+         *     turning a brief dependency outage into a crash loop and a longer one. Readiness is the endpoint
+         *     that answers "can this instance actually serve" -- see /health/ready.
+         */
         get: operations["health_api_v1_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ready
+         * @description Readiness: 200 only when every dependency answers, 503 otherwise.
+         *
+         *     Nothing had this distinction, so /health returned a static dict and a deploy could be declared
+         *     successful against an unreachable database. Unauthenticated on purpose: a load balancer and the
+         *     deploy gate need it, and it reveals only whether a dependency answered, never why in a form that
+         *     could leak a connection string.
+         */
+        get: operations["ready_api_v1_health_ready_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3936,8 +4000,40 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Health */
+        /**
+         * Health
+         * @description Liveness. Deliberately does NOT probe dependencies.
+         *
+         *     A liveness probe that fails during a database blip makes Docker restart a healthy container,
+         *     turning a brief dependency outage into a crash loop and a longer one. Readiness is the endpoint
+         *     that answers "can this instance actually serve" -- see /health/ready.
+         */
         get: operations["health_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/health/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ready
+         * @description Readiness: 200 only when every dependency answers, 503 otherwise.
+         *
+         *     Nothing had this distinction, so /health returned a static dict and a deploy could be declared
+         *     successful against an unreachable database. Unauthenticated on purpose: a load balancer and the
+         *     deploy gate need it, and it reveals only whether a dependency answered, never why in a form that
+         *     could leak a connection string.
+         */
+        get: operations["ready_health_ready_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6111,6 +6207,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    system_api_v1_admin_system_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -10137,6 +10255,39 @@ export interface operations {
             };
         };
     };
+    ready_api_v1_health_ready_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-tenant-id"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_users_api_v1_identity_users_get: {
         parameters: {
             query?: never;
@@ -13900,6 +14051,28 @@ export interface operations {
         };
     };
     health_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    ready_health_ready_get: {
         parameters: {
             query?: never;
             header?: never;

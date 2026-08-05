@@ -43,8 +43,8 @@ class Capability(str, Enum):
 
     # Deliberately ONLY the capabilities that gate a real endpoint today. Shipping names that
     # nothing enforces would be worse than not having them: an operator would believe they had
-    # applied least privilege when they had only filtered a menu. set_cost_caps and
-    # view_system_stats arrive with the endpoints they gate (QIK-518/522).
+    # applied least privilege when they had only filtered a menu. set_cost_caps arrives with the
+    # endpoint it gates (QIK-522).
     view_customers = "view_customers"
     manage_customers = "manage_customers"
     manage_workers = "manage_workers"
@@ -53,6 +53,9 @@ class Capability(str, Enum):
     # Platform AI spend. Separate from view_customers because model spend is commercially sensitive
     # in a different way from a customer list: it reveals unit economics per account.
     view_ai_cost = "view_ai_cost"
+    # Infrastructure health and capacity. Separate again: it exposes database size, connection
+    # headroom and queue depth, which is operational reconnaissance rather than customer data.
+    view_system_stats = "view_system_stats"
 
 
 # A super_admin keeps everything, so today's behaviour is unchanged. A viewer keeps read-only
