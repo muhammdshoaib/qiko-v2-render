@@ -121,3 +121,25 @@ async def test_request_size_limit_counts_streamed_body_without_content_length():
              "query_string": b"", "headers": [], "client": ("test", 1), "server": ("test", 80)}
     await middleware(scope, receive, send)
     assert sent[0]["status"] == 413
+
+
+def test_live_edge_sends_hsts_with_preload_and_admin_hides_its_stack():
+    """Rows 6 and 14 of the Essential Living security review.
+
+    Row 14 needs the `preload` directive on every live site before qiko.ai can be submitted to
+    hstspreload.org; it was missing while the older V1 hosts already sent it. Row 6 is a stack
+    disclosure: the admin app leaked `x-powered-by: Next.js` because only the creator app set
+    poweredByHeader:false. Pinned here so neither silently regresses.
+    """
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    live = (root / "Caddyfile.live").read_text()
+    hsts = [line.strip() for line in live.splitlines() if "Strict-Transport-Security" in line]
+    assert hsts, "the live edge must set HSTS"
+    for line in hsts:
+        assert "includeSubDomains" in line and "preload" in line, line
+
+    for app in ("admin", "creator"):
+        config = (root / "frontend/apps" / app / "next.config.mjs").read_text()
+        assert "poweredByHeader: false" in config, f"{app} must not advertise its stack"
