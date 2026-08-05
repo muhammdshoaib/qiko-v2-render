@@ -50,13 +50,13 @@ def test_dry_run_is_the_default_and_writes_nothing(db, capsys):
 
 def test_apply_creates_the_admin_and_audits_it(db, capsys):
     assert cli.main(["--email", EMAIL, "--role", "viewer",
-                     "--capabilities", "view_ai_cost,view_system_stats",
+                     "--capabilities", "view_customers,manage_workers",
                      "--actor", "operator@invalid", "--apply"]) == 0
     assert capsys.readouterr().out.startswith("APPLIED")
 
     identity = _identity(db, EMAIL)
     assert identity is not None and identity.role.value == "viewer"
-    assert sorted(c.value for c in identity.capabilities) == ["view_ai_cost", "view_system_stats"]
+    assert sorted(c.value for c in identity.capabilities) == ["manage_workers", "view_customers"]
 
     async def read_audit():
         engine = create_async_engine(db)
@@ -91,9 +91,9 @@ def test_live_requires_the_email_typed_twice(db, monkeypatch, capsys):
 
 def test_unknown_capability_is_refused_with_the_known_list(db, capsys):
     assert cli.main(["--email", EMAIL, "--role", "viewer",
-                     "--capabilities", "view_ai_cost,nope", "--apply"]) == 2
+                     "--capabilities", "view_customers,nope", "--apply"]) == 2
     err = capsys.readouterr().err
-    assert "unknown capability" in err and "view_ai_cost" in err
+    assert "unknown capability" in err and "view_customers" in err
     assert _identity(db, EMAIL) is None
 
 

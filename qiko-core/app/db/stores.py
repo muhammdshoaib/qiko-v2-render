@@ -953,7 +953,11 @@ class SqlAdminOrgStore:
         grant can never land without its audit entry. A no-op change writes no audit row.
         """
         key = email.lower()
-        stored = sorted(c.value for c in capabilities) if capabilities is not None else None
+        # Persist the EFFECTIVE set: a super_admin implicitly keeps manage_admins, and storing the
+        # requested list without it made platform_admins and the audit under-report the real
+        # authority while GET /admin/org reported the effective one.
+        stored = (sorted(c.value for c in effective_capabilities(role, capabilities))
+                  if capabilities is not None else None)
         async with self.sessionmaker() as s, s.begin():
             row = (await s.execute(
                 select(PlatformAdminRow).where(PlatformAdminRow.email == key).with_for_update()

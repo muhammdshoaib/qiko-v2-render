@@ -89,14 +89,15 @@ export type WorkerAudit = {
 export type CustomerDetail = Customer & {
   is_studio: boolean; deleted: boolean; workers: AdminWorker[]; worker_state_audit: WorkerAudit[];
 };
-export type Capability =
-  | "view_customers" | "manage_customers" | "manage_workers" | "view_ai_cost"
-  | "set_cost_caps" | "view_system_stats" | "manage_billing" | "manage_admins";
+// Only the capabilities the server actually enforces today. view_ai_cost, set_cost_caps and
+// view_system_stats arrive with the endpoints they gate, so the UI never offers a permission that
+// does nothing.
+// Only the capabilities the server actually enforces today. view_ai_cost, set_cost_caps and
+// view_system_stats arrive with the endpoints they gate, so the UI never offers a permission that
+// does nothing.
+export type Capability = "view_customers" | "manage_customers" | "manage_workers" | "manage_billing" | "manage_admins";
 
-export const ALL_CAPABILITIES: Capability[] = [
-  "view_customers", "manage_customers", "manage_workers", "view_ai_cost",
-  "set_cost_caps", "view_system_stats", "manage_billing", "manage_admins",
-];
+export const ALL_CAPABILITIES: Capability[] = ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins"];
 
 export type PlatformAdmin = { email: string; role: AdminRole; capabilities: Capability[] };
 export type AdminGrantAudit = {
@@ -119,7 +120,11 @@ export const grantPlatformAdmin = (
 export const listPlatformAdminAudit = () =>
   request<{ entries: AdminGrantAudit[] }>("/admin/org/audit");
 export const adminRoleOf = (email: string) => request<{ email: string; role: AdminRole | null }>(`/admin/org/role/${encodeURIComponent(email)}`);
-export const removePlatformAdmin = (email: string) => request<{ removed: string }>(`/admin/org/${encodeURIComponent(email)}`, { method: "DELETE" });
+export const removePlatformAdmin = (email: string, reason?: string) => {
+  // The reason lands in the audit trail; a UI-originated revoke used to record none.
+  const query = reason ? `?reason=${encodeURIComponent(reason)}` : "";
+  return request<{ removed: string }>(`/admin/org/${encodeURIComponent(email)}${query}`, { method: "DELETE" });
+};
 export const customerDetail = (userId: string) => request<CustomerDetail>(`/admin/customers/${encodeURIComponent(userId)}`);
 export const setCustomerStudio = (customerId: string, enabled: boolean) =>
   request<CustomerDetail>(`/admin/customers/${encodeURIComponent(customerId)}/studio`, {

@@ -41,12 +41,13 @@ class Capability(str, Enum):
     granted exactly one extra capability without becoming a super_admin.
     """
 
+    # Deliberately ONLY the capabilities that gate a real endpoint today. Shipping names that
+    # nothing enforces would be worse than not having them: an operator would believe they had
+    # applied least privilege when they had only filtered a menu. view_ai_cost, set_cost_caps and
+    # view_system_stats arrive with the endpoints they gate (QIK-517/518/522).
     view_customers = "view_customers"
     manage_customers = "manage_customers"
     manage_workers = "manage_workers"
-    view_ai_cost = "view_ai_cost"
-    set_cost_caps = "set_cost_caps"
-    view_system_stats = "view_system_stats"
     manage_billing = "manage_billing"
     manage_admins = "manage_admins"
 
@@ -174,13 +175,17 @@ class InMemoryAdminOrgStore:
         key = email.lower()
         previous_role = self._admins.get(key)
         previous_caps = self._capabilities.get(key)
+        stored = frozenset(effective_capabilities(role, capabilities)) if capabilities is not None else None
         self._admins[key] = role
-        if capabilities is None:
+        if stored is None:
             self._capabilities.pop(key, None)
         else:
-            self._capabilities[key] = frozenset(capabilities)
+            self._capabilities[key] = stored
         identity = await self.get_identity(key)
-        self._record(key, changed_by_email, previous_role, role, previous_caps, capabilities, reason)
+        # Same no-op suppression as the SQL store: without it the "a no-op grant writes no audit
+        # row" property would hold only in production, and every API test runs against this store.
+        if not (previous_role is role and previous_caps == stored):
+            self._record(key, changed_by_email, previous_role, role, previous_caps, stored, reason)
         return identity  # type: ignore[return-value]
 
     async def revoke(self, email: str, *, changed_by_email: str, reason: str | None) -> None:
@@ -255,15 +260,29 @@ class AdminOrg:
                     reason: str | None = None) -> AdminIdentity:
         """Assign a role and (optionally) an explicit capability set.
 
-        Only an admin holding manage_admins may do this, and nobody may demote or narrow themselves:
-        an accidental self-demotion by the last super_admin would leave the platform with no way
-        back in except an operator database edit.
+        manage_admins is deliberately NOT a root primitive that can be delegated to a viewer:
+        without the guards below, one checkbox would let a viewer mint a super_admin they control
+        (which then passes every role-gated mutation), demote every peer super_admin in bypass of
+        the 409 invariant the removal path enforces, and widen their own capability set while the
+        role column still read "viewer".
         """
         actor_identity = await self.store.get_identity(actor)
         if actor_identity is None or not actor_identity.can(Capability.manage_admins):
             raise AdminAuthzError("only an admin with manage_admins can assign roles")
-        if actor.lower() == email.lower() and role is not actor_identity.role:
-            raise AdminAuthzError("an admin cannot change their own role")
+        # No self-service at all, not just no self-role-change: self-widening kept the role column
+        # unchanged, so a role-based review would have shown nothing.
+        if actor.lower() == email.lower():
+            raise AdminAuthzError("an admin cannot change their own access")
+        actor_is_super = actor_identity.role is AdminRole.super_admin
+        target = await self.store.get_identity(email)
+        if role is AdminRole.super_admin and not actor_is_super:
+            raise AdminAuthzError("only a super_admin can appoint a super_admin")
+        if target is not None and target.role is AdminRole.super_admin and not actor_is_super:
+            # Mirrors the removal path's refusal to touch a super_admin: otherwise the invariant is
+            # bypassable by demotion instead of deletion.
+            raise AdminAuthzError("only a super_admin can change a super_admin")
+        if capabilities is not None and Capability.manage_admins in capabilities and not actor_is_super:
+            raise AdminAuthzError("only a super_admin can delegate manage_admins")
         return await self.store.grant(email, role, capabilities,
                                       changed_by_email=actor, reason=reason)
 
@@ -273,6 +292,10 @@ class AdminOrg:
             raise AdminAuthzError("only an admin with manage_admins can remove admins")
         if actor.lower() == email.lower():
             raise AdminAuthzError("an admin cannot remove themselves")
+        target = await self.store.get_identity(email)
+        if target is not None and target.role is AdminRole.super_admin \
+                and actor_identity.role is not AdminRole.super_admin:
+            raise AdminAuthzError("only a super_admin can remove a super_admin")
         await self.store.revoke(email, changed_by_email=actor, reason=reason)
 
     async def list_audit(self, *, limit: int = 50) -> list[AdminGrantAudit]:

@@ -139,12 +139,10 @@ export interface paths {
         put?: never;
         /**
          * Accept
-         * @description Redeem a platform-admin invite.
+         * @description Redeem a platform-admin invite. DEV-ONLY, see invite() for why.
          *
-         *     Available outside dev now, but only to the invited person: the caller must be signed in, have 2FA
-         *     on the session, and their token email must match the invite. Previously this endpoint had no
-         *     auth at all, so ANYONE holding a leaked invite could mint platform-admin access for that email -
-         *     which is why it was kept dev-only rather than shipped.
+         *     The identity checks below are kept even in dev: the endpoint used to have no authentication at
+         *     all, so anyone holding a leaked invite could mint platform-admin access for the invited email.
          */
         post: operations["accept_api_v1_admin_org_accept_post"];
         delete?: never;
@@ -206,8 +204,17 @@ export interface paths {
         put?: never;
         /**
          * Invite
-         * @description Mint an invite token. Available outside dev, but now gated at the router as well as inside
-         *     AdminOrg, and CSRF-protected like every other admin mutation.
+         * @description Mint an invite token. DEV-ONLY on purpose.
+         *
+         *     The token is stateless: no jti, no server-side record, valid for 7 days, and its value is
+         *     returned in this response body for the caller to paste into email or chat. That makes it a
+         *     replayable, unrevocable bearer credential for the highest privilege in the system - a revoked
+         *     admin could re-post the same token and reinstate themselves, and because accept() writes through
+         *     store.set() rather than the audited grant path, the reinstatement would leave no audit row.
+         *     Production granting goes through the audited, capability-gated PUT /admin/org/{email}, and
+         *     first-admin provisioning through scripts/provision_platform_admin.py. Rebuilding this on the
+         *     PendingTeamInvite pattern (single-use row consumed under FOR UPDATE, emailed to the invitee) is
+         *     the prerequisite for enabling it outside dev.
          */
         post: operations["invite_api_v1_admin_org_invite_post"];
         delete?: never;

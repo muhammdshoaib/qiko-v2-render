@@ -18,9 +18,6 @@ const LABELS: Record<Capability, string> = {
   view_customers: "View customers",
   manage_customers: "Manage customers",
   manage_workers: "Manage workers",
-  view_ai_cost: "View AI cost",
-  set_cost_caps: "Set cost caps",
-  view_system_stats: "View system stats",
   manage_billing: "Manage billing",
   manage_admins: "Manage admins",
 };
@@ -51,8 +48,8 @@ export default function AdminsPage() {
     onSuccess: () => { setEmail(""); setReason(""); refresh(); },
   });
   const remove = useMutation({
-    mutationFn: (target: string) => removePlatformAdmin(target),
-    onSuccess: refresh,
+    mutationFn: (target: string) => removePlatformAdmin(target, reason.trim() || undefined),
+    onSuccess: () => { setReason(""); refresh(); },
   });
 
   return (
@@ -96,6 +93,7 @@ export default function AdminsPage() {
                     onClick={() =>
                       window.confirm(`Remove ${admin.email} from platform administration?`) &&
                       remove.mutate(admin.email)}
+                    title="The reason field below is recorded in the audit trail"
                   >
                     Remove
                   </Button>

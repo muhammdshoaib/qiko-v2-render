@@ -1,8 +1,8 @@
 """Admin-organisation RBAC API (super_admin/viewer) - distinct from the product tenant RBAC."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import get_settings
 from app.core.deps import (
@@ -39,6 +39,18 @@ def _identity_json(identity: AdminIdentity) -> dict:
 router = APIRouter(prefix="/admin/org", tags=["admin"])
 
 
+def _validated_email(email: str) -> str:
+    """A platform-admin key must look like an address.
+
+    Without this, PUT /admin/org/audit created a platform_admins row literally keyed "audit", and a
+    value longer than the 320-char column raised a database error as an unhandled 500.
+    """
+    candidate = email.strip().lower()
+    if len(candidate) > 320 or "@" not in candidate.strip("@") or any(c.isspace() for c in candidate):
+        raise HTTPException(status_code=422, detail="email must be a single valid address")
+    return candidate
+
+
 def _actor_email(claims: dict) -> str:
     email = claims.get("email")
     if not email:
@@ -67,8 +79,20 @@ class InviteBody(BaseModel):
 @router.post("/invite", openapi_extra=_CSRF_OPENAPI)
 async def invite(body: InviteBody, request: Request, claims: dict = Depends(current_claims),
                  _role=Depends(require_platform_super_admin()), org=Depends(get_admin_org)) -> dict:
-    """Mint an invite token. Available outside dev, but now gated at the router as well as inside
-    AdminOrg, and CSRF-protected like every other admin mutation."""
+    """Mint an invite token. DEV-ONLY on purpose.
+
+    The token is stateless: no jti, no server-side record, valid for 7 days, and its value is
+    returned in this response body for the caller to paste into email or chat. That makes it a
+    replayable, unrevocable bearer credential for the highest privilege in the system - a revoked
+    admin could re-post the same token and reinstate themselves, and because accept() writes through
+    store.set() rather than the audited grant path, the reinstatement would leave no audit row.
+    Production granting goes through the audited, capability-gated PUT /admin/org/{email}, and
+    first-admin provisioning through scripts/provision_platform_admin.py. Rebuilding this on the
+    PendingTeamInvite pattern (single-use row consumed under FOR UPDATE, emailed to the invitee) is
+    the prerequisite for enabling it outside dev.
+    """
+    if not get_settings().debug:
+        raise HTTPException(status_code=404, detail="not found")
     csrf.require_csrf(request)
     try:
         return {"token": await org.invite(_actor_email(claims), body.email, body.role)}
@@ -83,13 +107,13 @@ class AcceptBody(BaseModel):
 @router.post("/accept")
 async def accept(body: AcceptBody, claims: dict = Depends(current_claims),
                  org=Depends(get_admin_org)) -> dict:
-    """Redeem a platform-admin invite.
+    """Redeem a platform-admin invite. DEV-ONLY, see invite() for why.
 
-    Available outside dev now, but only to the invited person: the caller must be signed in, have 2FA
-    on the session, and their token email must match the invite. Previously this endpoint had no
-    auth at all, so ANYONE holding a leaked invite could mint platform-admin access for that email -
-    which is why it was kept dev-only rather than shipped.
+    The identity checks below are kept even in dev: the endpoint used to have no authentication at
+    all, so anyone holding a leaked invite could mint platform-admin access for the invited email.
     """
+    if not get_settings().debug:
+        raise HTTPException(status_code=404, detail="not found")
     if not claims.get("mfa"):
         raise HTTPException(status_code=403, detail="two-factor authentication required")
     caller = (claims.get("email") or "").lower()
@@ -105,16 +129,14 @@ async def accept(body: AcceptBody, claims: dict = Depends(current_claims),
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
-class RemoveQuery(BaseModel):
-    reason: str | None = Field(default=None, max_length=1000)
-
-
 @router.delete("/{email}", openapi_extra=_CSRF_OPENAPI)
-async def remove(email: str, request: Request, reason: str | None = None,
+async def remove(email: str, request: Request,
+                 reason: str | None = Query(default=None, max_length=1000),
                  claims: dict = Depends(current_claims),
                  _identity=Depends(require_platform_capability(Capability.manage_admins)),
                  org=Depends(get_admin_org)) -> dict:
     csrf.require_csrf(request)
+    email = _validated_email(email)
     if await org.role_of(email) is AdminRole.super_admin:
         raise HTTPException(status_code=409, detail="super-admin removal requires operator recovery process")
     try:
@@ -156,6 +178,8 @@ async def list_admins(_identity=Depends(require_platform_admin()), org=Depends(g
 
 
 class GrantBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     role: AdminRole
     # None means "use the role default"; a list means exactly these capabilities.
     capabilities: list[str] | None = None
@@ -168,6 +192,7 @@ async def grant(email: str, body: GrantBody, request: Request,
                 _identity=Depends(require_platform_capability(Capability.manage_admins)),
                 org=Depends(get_admin_org)) -> dict:
     csrf.require_csrf(request)
+    email = _validated_email(email)
     try:
         capabilities = parse_capabilities(body.capabilities)
     except ValueError as e:

@@ -14,14 +14,14 @@ from app.core.deps import (
     get_stripe_webhook,
     get_subscriptions,
     get_teams,
-    require_platform_admin,
-    require_platform_super_admin,
+    require_platform_capability,
     require_role,
 )
 from app.modules.billing.subscriptions import CheckoutUnavailableError
 from app.modules.billing.team_billing import team_plan
 from app.modules.billing.webhook import verify_stripe_signature
 from app.modules.identity import csrf
+from app.modules.identity.admin_rbac import Capability
 from app.modules.identity.rbac import Role
 
 router = APIRouter(prefix="/billing", tags=["billing"])
@@ -171,7 +171,7 @@ class PaymentLinkBody(BaseModel):
 @router.post("/payment-links")
 def create_payment_link(body: PaymentLinkBody, request: Request,
                         _tenant: str = Depends(authed_tenant),
-                        _role=Depends(require_platform_super_admin()), links=Depends(get_payment_links)) -> dict:
+                        _identity=Depends(require_platform_capability(Capability.manage_billing)), links=Depends(get_payment_links)) -> dict:
     csrf.require_csrf(request)
     try:
         log = links.create(body.customer_email, body.amount_cents, recurring=body.recurring)
@@ -186,7 +186,7 @@ class MarkPaidBody(BaseModel):
 
 @router.post("/payment-links/mark-paid")
 def mark_paid(body: MarkPaidBody, request: Request, _tenant: str = Depends(authed_tenant),
-              _role=Depends(require_platform_super_admin()), links=Depends(get_payment_links)) -> dict:
+              _identity=Depends(require_platform_capability(Capability.manage_billing)), links=Depends(get_payment_links)) -> dict:
     csrf.require_csrf(request)
     # Validated body (was a raw dict -> a missing customer_email 500'd instead of a clean 422).
     return {"marked": links.mark_as_paid_for_user(body.customer_email)}
@@ -194,7 +194,7 @@ def mark_paid(body: MarkPaidBody, request: Request, _tenant: str = Depends(authe
 
 @router.get("/payment-links")
 def list_payment_links(email: str, _tenant: str = Depends(authed_tenant),
-                       _role=Depends(require_platform_admin()), links=Depends(get_payment_links)) -> list[dict]:
+                       _identity=Depends(require_platform_capability(Capability.manage_billing)), links=Depends(get_payment_links)) -> list[dict]:
     return [asdict(x) for x in links.logs_for(email)]
 
 
@@ -211,6 +211,6 @@ async def team_billing_plan(team_id: str, tenant: str = Depends(authed_tenant),
 
 
 @router.get("/invoices")
-def invoices(_tenant: str = Depends(authed_tenant), _role=Depends(require_platform_admin()),
+def invoices(_tenant: str = Depends(authed_tenant), _identity=Depends(require_platform_capability(Capability.manage_billing)),
              handler=Depends(get_stripe_webhook), customer_id: str | None = None) -> list[dict]:
     return [asdict(i) for i in handler.invoices.list(customer_id)]
