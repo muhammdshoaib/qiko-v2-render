@@ -287,3 +287,19 @@ def test_the_usage_table_carries_the_indexes_the_dashboards_will_need():
     names = {index.name for index in AiUsageEvent.__table__.indexes}
     assert "ix_ai_usage_tenant_created" in names
     assert "ix_ai_usage_tenant_agent_created" in names
+
+
+def test_the_bulk_scripts_record_their_own_spend():
+    """The re-embed and re-chunk tools each make thousands of Titan calls, the largest bursts this
+    platform produces. Both previously ran with no scope open, so usage.record warned once per call and
+    the spend went unrecorded: the very tooling built to fix the corpus was invisible to the cost view
+    built alongside it. Pinned at the source, because exercising a whole-corpus rebuild in a unit test is
+    not practical."""
+    from pathlib import Path
+
+    scripts = Path(__file__).resolve().parents[2] / "scripts"
+    for name in ("reembed_passages.py", "rechunk_oversized_passages.py"):
+        source = (scripts / name).read_text()
+        assert "usage.scope()" in source, f"{name} must open a usage scope"
+        assert "usage.flush(" in source, f"{name} must persist what it recorded"
+        assert "set_tenant(" in source, f"{name} must attribute spend to a tenant"

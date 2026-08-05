@@ -37,7 +37,9 @@ from sqlalchemy import func, select  # noqa: E402
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 
 from app.core.config import get_settings  # noqa: E402
+from app.core.tenancy import reset_tenant, set_tenant  # noqa: E402
 from app.db.models import Passage  # noqa: E402
+from app.modules.ai import usage  # noqa: E402
 from app.modules.ai.embeddings import get_embeddings  # noqa: E402
 
 # Titan enforces TWO independent limits, and the character one is not the binding constraint:
@@ -129,19 +131,38 @@ async def _run(args: argparse.Namespace) -> int:
     processed = 0
     rewritten = 0
     offset = 0
+    try:
+        from app.db.stores import SqlUsageStore
+
+        usage_store = SqlUsageStore(sessionmaker)
+    except Exception:  # noqa: BLE001 - accounting must never stop the rebuild
+        usage_store = None
+
     while True:
-        async with sessionmaker.begin() as session:
-            rows = (await session.execute(
-                scoped(select(Passage).order_by(Passage.id).offset(offset).limit(args.batch_size))
-            )).scalars().all()
-            if not rows:
-                break
-            for passage in rows:
-                rebuilt = embed_text(embedder, passage.text)
-                if list(passage.embedding or []) != list(rebuilt):
-                    passage.embedding = rebuilt
-                    rewritten += 1
-                processed += 1
+        # One scope per batch, flushed with the batch, so an interrupted rebuild still has the spend it
+        # already incurred recorded rather than losing all of it.
+        with usage.scope() as events:
+            async with sessionmaker.begin() as session:
+                rows = (await session.execute(
+                    scoped(select(Passage).order_by(Passage.id).offset(offset).limit(args.batch_size))
+                )).scalars().all()
+                if not rows:
+                    break
+                for passage in rows:
+                    # Attribute the embedding spend to the tenant that owns the passage. Without a bound
+                    # tenant and an open scope the instrumentation warns once per call and the spend,
+                    # which for a whole-corpus rebuild is the largest burst this platform makes, goes
+                    # unrecorded.
+                    tenant_token = set_tenant(passage.tenant_id)
+                    try:
+                        rebuilt = embed_text(embedder, passage.text)
+                    finally:
+                        reset_tenant(tenant_token)
+                    if list(passage.embedding or []) != list(rebuilt):
+                        passage.embedding = rebuilt
+                        rewritten += 1
+                    processed += 1
+            await usage.flush(usage_store, events)
         offset += args.batch_size
         print(f"  ...{processed}/{total} processed, {rewritten} rewritten", flush=True)
 
