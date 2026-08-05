@@ -68,7 +68,8 @@ def require_role(minimum: Role):
     "owner" ranks above "admin" here on purpose (an owner can do anything an admin can within
     their own tenant). It must never be used to gate cross-tenant platform-admin endpoints:
     every signed-up user is "owner" of their own tenant, so require_role(Role.admin) would let
-    any customer into the admin panel. Use require_platform_admin/_super_admin for that instead.
+    any customer into the admin panel. Use require_platform_capability(Capability.x) for that
+    instead, which is the gate QIK-513 replaced the two coarse role checks with.
     """
     def _dep(claims: dict = Depends(current_claims)) -> dict:
         if not role_allows(claims.get("role", "viewer"), minimum):
