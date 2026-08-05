@@ -40,19 +40,39 @@ from app.core.config import get_settings  # noqa: E402
 from app.db.models import Passage  # noqa: E402
 from app.modules.ai.embeddings import get_embeddings  # noqa: E402
 
-# Titan rejects an input longer than 50k characters outright ("expected maxLength: 50000"). Real
-# corpora contain passages far past that (the largest observed is ~150k), so a single call cannot
-# embed them. Split into windows and mean-pool, which is the standard way to get one representative
-# vector for a long document without discarding content.
+# Titan enforces TWO independent limits, and the character one is not the binding constraint:
+#   - "expected maxLength: 50000"          -> characters
+#   - "Max input tokens: 8192"             -> tokens, which a 40k-char window already exceeded (8455)
+# Token density varies a lot by content (prose ~4 chars/token, tables and code closer to 2), so a
+# fixed window cannot be proven safe from the character count alone. Use a conservative window AND
+# halve it on a token-limit rejection, so the tool self-corrects instead of aborting a rebuild
+# halfway through.
 TITAN_MAX_CHARS = 50_000
-WINDOW_CHARS = 40_000  # margin below the hard limit
+TITAN_MAX_TOKENS = 8_192
+WINDOW_CHARS = 16_000  # ~4k tokens at 4 chars/token, ~8k in the worst realistic density
+MIN_WINDOW_CHARS = 1_000
+
+
+def _embed_window(embedder, window: str) -> list[float]:
+    """Embed one window, halving it on a token-limit rejection until it fits."""
+    size = len(window)
+    while True:
+        try:
+            return list(embedder.embed(window[:size]))
+        except Exception as error:  # noqa: BLE001 - provider SDKs raise their own error types
+            message = str(error)
+            too_long = "Too many input tokens" in message or "maxLength" in message
+            if not too_long or size <= MIN_WINDOW_CHARS:
+                raise
+            size = max(MIN_WINDOW_CHARS, size // 2)
+            print(f"    window rejected as too long, retrying at {size} chars", flush=True)
 
 
 def embed_text(embedder, text: str) -> list[float]:
     if len(text) <= WINDOW_CHARS:
-        return list(embedder.embed(text))
+        return _embed_window(embedder, text)
     windows = [text[i:i + WINDOW_CHARS] for i in range(0, len(text), WINDOW_CHARS)]
-    vectors = [list(embedder.embed(window)) for window in windows]
+    vectors = [_embed_window(embedder, window) for window in windows]
     return [sum(values) / len(values) for values in zip(*vectors, strict=True)]
 
 
@@ -86,7 +106,8 @@ async def _run(args: argparse.Namespace) -> int:
             select(func.count()).select_from(Passage).where(func.length(Passage.text) > WINDOW_CHARS)
         ))).scalar_one()
     print(f"passages in scope: {total} ({oversized} need window mean-pooling above "
-          f"{WINDOW_CHARS} chars; Titan's hard limit is {TITAN_MAX_CHARS})")
+          f"{WINDOW_CHARS} chars; Titan caps input at {TITAN_MAX_CHARS} chars AND "
+          f"{TITAN_MAX_TOKENS} tokens)")
     if total == 0:
         await engine.dispose()
         return 0
