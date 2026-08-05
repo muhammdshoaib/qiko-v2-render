@@ -278,6 +278,36 @@ class PlatformAdmin(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class AiUsageEvent(Base):
+    """One model call, attributed to a tenant and (where known) a worker (QIK-514).
+
+    Append-only. Deliberately NOT row-locked against the agents table like the sales-intelligence
+    activity log is: a call that has already been billed by AWS must be recorded even if the worker
+    was disabled a moment later, and several call sites have no worker at all.
+
+    Cost is integer micro-USD. There is no Numeric or Float column anywhere in this schema and money
+    is integer cents elsewhere; a float accumulating over millions of calls drifts.
+    """
+
+    __tablename__ = "ai_usage_events"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    agent_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    model_id: Mapped[str] = mapped_column(String(128))
+    operation: Mapped[str] = mapped_column(String(40))
+    input_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    output_tokens: Mapped[int] = mapped_column(BigInteger, default=0)
+    cost_micro_usd: Mapped[int] = mapped_column(BigInteger, default=0)
+    # False when the model has no published rate in the price table, so unpriced spend is visible
+    # rather than silently counted as free.
+    priced: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    __table_args__ = (
+        Index("ix_ai_usage_tenant_created", "tenant_id", "created_at"),
+        Index("ix_ai_usage_tenant_agent_created", "tenant_id", "agent_id", "created_at"),
+    )
+
+
 class PlatformAdminAudit(Base):
     """Append-only record of every platform-admin grant or revoke.
 

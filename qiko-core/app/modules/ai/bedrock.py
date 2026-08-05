@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.core.config import get_settings
+from app.modules.ai import usage
 from app.modules.ai.gateway import LLMResponse
 
 _PROFILES = {"eu", "us", "jp", "au"}
@@ -84,4 +85,13 @@ class BedrockProvider:
         text = resp["output"]["message"]["content"][0]["text"]
         if seed:
             text = seed + text
-        return LLMResponse(text=text, model=self.model_id)
+        # Read defensively: FallbackProvider swallows any exception from here and silently returns a
+        # stub answer, so a shape surprise in the usage block must never be able to degrade a real
+        # answer into a fabricated one.
+        reported = resp.get("usage") or {}
+        input_tokens = int(reported.get("inputTokens") or 0)
+        output_tokens = int(reported.get("outputTokens") or 0)
+        usage.record(self.model_id, "generate",
+                     input_tokens=input_tokens, output_tokens=output_tokens)
+        return LLMResponse(text=text, model=self.model_id,
+                           input_tokens=input_tokens, output_tokens=output_tokens)

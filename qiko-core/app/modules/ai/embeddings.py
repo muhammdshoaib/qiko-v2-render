@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from app.core.config import get_settings
+from app.modules.ai import usage
 
 
 class EmbeddingsProvider(Protocol):
@@ -38,6 +39,9 @@ class LocalEmbeddings:
         return [v / norm for v in vec] if norm else vec
 
 
+_TITAN_MODEL_ID = "amazon.titan-embed-text-v2:0"
+
+
 @dataclass
 class TitanEmbeddings:  # pragma: no cover - requires AWS credentials/network
     dim: int = 1024
@@ -53,8 +57,14 @@ class TitanEmbeddings:  # pragma: no cover - requires AWS credentials/network
 
         client = boto3.client("bedrock-runtime", region_name=self.region)
         body = json.dumps({"inputText": text, "dimensions": self.dim, "normalize": True})
-        resp = client.invoke_model(modelId="amazon.titan-embed-text-v2:0", body=body)
-        return json.loads(resp["body"].read())["embedding"]
+        resp = client.invoke_model(modelId=_TITAN_MODEL_ID, body=body)
+        payload = json.loads(resp["body"].read())
+        # Titan reports inputTextTokenCount and it used to be discarded. Embeddings are billed per
+        # input token and an ingest embeds every chunk of every document, so this is a real cost line
+        # rather than a rounding error.
+        usage.record(_TITAN_MODEL_ID, "embed",
+                     input_tokens=int(payload.get("inputTextTokenCount") or 0))
+        return payload["embedding"]
 
 
 def get_embeddings() -> EmbeddingsProvider:

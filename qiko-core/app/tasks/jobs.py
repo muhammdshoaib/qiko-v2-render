@@ -5,6 +5,7 @@ is identical whether run eagerly (dev) or on a worker (prod).
 """
 from __future__ import annotations
 
+from app.core.tenancy import reset_tenant, set_tenant
 from app.modules.knowledge.service import KnowledgeService
 from app.tasks.queue import TaskRegistry
 
@@ -27,6 +28,16 @@ async def send_email(*, to: str, subject: str, body: str, html: str | None = Non
     from app.modules.email.sender import get_email_sender
 
     return (sender or get_email_sender()).send(to=to, subject=subject, body=body, html=html)
+
+
+def _usage_store(sessionmaker):
+    """The durable usage store, or None when no sessionmaker is available (dev/tests run eagerly
+    with in-memory stores and simply keep the events in the scope)."""
+    if sessionmaker is None:
+        return None
+    from app.db.stores import SqlUsageStore
+
+    return SqlUsageStore(sessionmaker)
 
 
 def _build_rfp_deps(sessionmaker):
@@ -67,12 +78,26 @@ async def generate_tender_artifacts(*, tenant: str, pack_id: str, agent_id: str 
     Callers may inject already-built services (the API's eager/inline path passes app.state's
     stores directly, so an in-memory dev/test run reaches the same data); otherwise the services
     are built from `sessionmaker` (the arq worker tier passes ctx["sessionmaker"])."""
+    from app.modules.ai import usage
     from app.modules.rfp import generation
 
     if packs is None:
         deps = _build_rfp_deps(sessionmaker)
         packs, reqs, answers = deps["packs"], deps["reqs"], deps["answers"]
         tree, knowledge, agents = deps["tree"], deps["knowledge"], deps["agents"]
-    return await generation.run_generation(
-        tenant=tenant, pack_id=pack_id, agent_id=agent_id, packs=packs, reqs=reqs,
-        answers=answers, tree=tree, knowledge=knowledge, agents=agents, sessionmaker=sessionmaker)
+    # This job runs on the arq worker tier with no request around it, so nothing binds the tenant or
+    # opens a usage scope. Without this, the largest token consumer in the platform (extraction,
+    # brief, compliance and one draft per section) recorded no spend at all.
+    tenant_token = set_tenant(tenant)
+    try:
+        with usage.scope() as events:
+            try:
+                return await generation.run_generation(
+                    tenant=tenant, pack_id=pack_id, agent_id=agent_id, packs=packs, reqs=reqs,
+                    answers=answers, tree=tree, knowledge=knowledge, agents=agents,
+                    sessionmaker=sessionmaker)
+            finally:
+                # Flushed even when generation fails: the tokens were still spent.
+                await usage.flush(_usage_store(sessionmaker), events)
+    finally:
+        reset_tenant(tenant_token)

@@ -20,6 +20,10 @@ class LLMResponse:
     # True when the text came from the deterministic StubProvider (e.g. a Bedrock outage forced
     # the fallback). Such output is NOT a real grounded draft, so persistence paths can refuse it.
     stub: bool = False
+    # Token counts as reported by the provider. Bedrock returns these on every Converse call and
+    # they used to be discarded. Defaulted so the stub and every test fake stay valid.
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 class LLMProvider(Protocol):

@@ -100,3 +100,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             if not await self._allowed(self.strict_limiter, key):
                 return JSONResponse({"detail": "Rate limit exceeded"}, status_code=429)
         return await call_next(request)
+
+
+class AiUsageMiddleware(BaseHTTPMiddleware):
+    """Open an AI-usage scope for the request and persist what it recorded.
+
+    The scope has to wrap the whole request because the tenant is only bound later, inside the auth
+    dependency, and the model calls happen deeper still (several of them inside asyncio.to_thread).
+    Each event stamps the tenant and worker that were bound at the moment of the call, so a scope
+    that starts before authentication is not a problem.
+
+    Flushing happens after the response is produced and never propagates: accounting must not be
+    able to turn a served answer into a 500.
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        from app.modules.ai import usage
+
+        with usage.scope() as events:
+            response = await call_next(request)
+            if events:
+                await usage.flush(getattr(request.app.state, "ai_usage", None), events)
+            return response

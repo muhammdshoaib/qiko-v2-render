@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import get_settings
+from app.core.tenancy import reset_tenant, set_tenant
 from app.core.deps import require_available_worker, resolve_tenant_worker
 from app.modules.chat.public import AgentNotReadyError, public_ask
 
@@ -67,6 +68,16 @@ async def public_worker(worker_id: str, request: Request) -> dict:
 async def public_chat(body: PublicChatBody, request: Request) -> dict:
     _public_enabled()
     tenant = await _resolve_public_tenant(request, body.worker_id, body.tenant)
+    # Public chat has no authed_tenant dependency, so nothing binds the tenant context. Embedded
+    # widget traffic still costs money and belongs to the worker's tenant.
+    tenant_token = set_tenant(tenant)
+    try:
+        return await _public_chat(body, request, tenant)
+    finally:
+        reset_tenant(tenant_token)
+
+
+async def _public_chat(body: PublicChatBody, request: Request, tenant: str) -> dict:
 
     async def recheck_public_worker() -> None:
         agent = await require_available_worker(

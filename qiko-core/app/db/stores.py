@@ -38,6 +38,7 @@ from app.db.models import PasswordResetOtp as PasswordResetOtpRow
 from app.db.models import PendingSignup as PendingSignupRow
 from app.db.models import PendingTeamInvite as PendingTeamInviteRow
 from app.db.models import PlatformAdmin as PlatformAdminRow
+from app.db.models import AiUsageEvent as AiUsageEventRow
 from app.db.models import PlatformAdminAudit as PlatformAdminAuditRow
 from app.db.models import PolicyRelease as PolicyReleaseRow
 from app.db.models import RfpPack as RfpPackRow
@@ -66,6 +67,8 @@ from app.core.deps import WorkerUnavailable
 from app.modules.chat.service import ConversationScopeError, ConversationSummary, Message
 from app.modules.crm.service import Contact, CrmAction
 from app.modules.finance.models import FinanceChatMessage, FinanceFile
+from app.modules.ai.usage import UsageEvent, UsageTotals
+from app.modules.ai.usage import group as usage_group
 from app.modules.identity.admin_rbac import (
     AdminGrantAudit,
     AdminIdentity,
@@ -2122,3 +2125,74 @@ class SqlPendingSignupStore:
             result = await session.execute(delete(PendingSignupRow).where(
                 PendingSignupRow.expires_at <= datetime.now(timezone.utc)))
             return result.rowcount
+
+
+@dataclass
+class SqlUsageStore:
+    """Durable AI usage accounting (QIK-514).
+
+    Aggregation is done with SQL SUM grouped on columns that exist in both dialects. Day bucketing is
+    done in Python from the raw rows in the window, because date_trunc is Postgres-only and much of
+    the suite runs on SQLite: a portable-looking aggregate that silently returns nothing on one
+    backend is worse than an explicit two-step.
+    """
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def add_many(self, events: list[UsageEvent]) -> None:
+        if not events:
+            return
+        async with self.sessionmaker() as s, s.begin():
+            s.add_all([AiUsageEventRow(
+                tenant_id=event.tenant, agent_id=event.agent_id, model_id=event.model_id,
+                operation=event.operation, input_tokens=event.input_tokens,
+                output_tokens=event.output_tokens, cost_micro_usd=event.cost_micro_usd,
+                priced=event.priced, created_at=event.created_at) for event in events])
+
+    def _window(self, tenant: str, start, end):
+        query = select(AiUsageEventRow).where(AiUsageEventRow.tenant_id == tenant)
+        if start is not None:
+            query = query.where(AiUsageEventRow.created_at >= start)
+        if end is not None:
+            query = query.where(AiUsageEventRow.created_at <= end)
+        return query
+
+    async def _rows(self, tenant: str, start, end) -> list[UsageEvent]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(self._window(tenant, start, end))).scalars().all()
+            return [UsageEvent(
+                tenant=row.tenant_id, agent_id=row.agent_id, model_id=row.model_id,
+                operation=row.operation, input_tokens=row.input_tokens,
+                output_tokens=row.output_tokens, cost_micro_usd=row.cost_micro_usd,
+                created_at=row.created_at, priced=row.priced) for row in rows]
+
+    async def totals(self, tenant: str, *, start=None, end=None) -> UsageTotals:
+        async with self.sessionmaker() as s:
+            query = select(
+                func.coalesce(func.sum(AiUsageEventRow.input_tokens), 0),
+                func.coalesce(func.sum(AiUsageEventRow.output_tokens), 0),
+                func.coalesce(func.sum(AiUsageEventRow.cost_micro_usd), 0),
+                func.count(),
+            ).where(AiUsageEventRow.tenant_id == tenant)
+            if start is not None:
+                query = query.where(AiUsageEventRow.created_at >= start)
+            if end is not None:
+                query = query.where(AiUsageEventRow.created_at <= end)
+            row = (await s.execute(query)).one()
+            unpriced = select(func.count()).where(
+                AiUsageEventRow.tenant_id == tenant, AiUsageEventRow.priced.is_(False))
+            if start is not None:
+                unpriced = unpriced.where(AiUsageEventRow.created_at >= start)
+            if end is not None:
+                unpriced = unpriced.where(AiUsageEventRow.created_at <= end)
+            return UsageTotals(input_tokens=int(row[0]), output_tokens=int(row[1]),
+                               cost_micro_usd=int(row[2]), calls=int(row[3]),
+                               unpriced_calls=int((await s.execute(unpriced)).scalar_one()))
+
+    async def totals_by_agent(self, tenant: str, *, start=None, end=None) -> dict[str, UsageTotals]:
+        return usage_group(await self._rows(tenant, start, end),
+                           lambda event: event.agent_id or "unattributed")
+
+    async def daily(self, tenant: str, *, start=None, end=None) -> dict[str, UsageTotals]:
+        return usage_group(await self._rows(tenant, start, end),
+                           lambda event: event.created_at.date().isoformat())

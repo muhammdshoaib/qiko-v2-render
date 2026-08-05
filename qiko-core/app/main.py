@@ -19,6 +19,7 @@ from app.modules.chat.service import ConversationScopeError
 from app.modules.workers.worker import StubProviderUnavailable
 from app.core.logging import configure_logging
 from app.core.middleware import (
+    AiUsageMiddleware,
     RateLimitMiddleware,
     RequestSizeLimitMiddleware,
     SecurityHeadersMiddleware,
@@ -56,6 +57,7 @@ from app.core.tenancy import tenant_dependency
 from app.modules.admin.router import router as admin_router
 from app.modules.agents.router import router as agents_router
 from app.modules.agents.service import AgentService
+from app.modules.ai.usage import InMemoryUsageStore
 from app.modules.assignments.router import router as assignments_router
 from app.modules.assignments.service import AssignmentService
 from app.modules.rfp.router import router as rfp_router
@@ -145,6 +147,7 @@ async def lifespan(app: FastAPI):
             SqlSalesforceConnectionStore,
             SqlTeamsIntegrationStore,
             SqlTeamStore,
+            SqlUsageStore,
             SqlUserStore,
             SqlVectorStore,
         )
@@ -166,6 +169,7 @@ async def lifespan(app: FastAPI):
         si_connections = SqlSalesforceConnectionStore(sm)
         # Generic in-app notification inbox (reusable across verticals) + the SI trigger wrapper
         # that the scan/review/assign/push flows call. In-product only (no email/FCM push).
+        app.state.ai_usage = SqlUsageStore(sm)  # AI spend survives a redeploy
         app.state.notifications = NotificationService(store=SqlNotificationStore(sm))
         sales_notifier = SalesNotificationService(notifications=app.state.notifications)
         app.state.sales_notifier = sales_notifier
@@ -300,6 +304,7 @@ def create_app() -> FastAPI:
         init_tracing(app)
 
     # API hardening (outermost first): request-id correlation, security headers, size cap, rate limit, CORS.
+    app.add_middleware(AiUsageMiddleware)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestSizeLimitMiddleware, max_bytes=settings.max_request_bytes)
@@ -342,6 +347,7 @@ def create_app() -> FastAPI:
     app.state.chat = ChatService()
     app.state.crm = CrmService(app.state.chat)
     # Generic in-app notification inbox (reusable across verticals) + the SI trigger wrapper.
+    app.state.ai_usage = InMemoryUsageStore()
     app.state.notifications = NotificationService()
     app.state.sales_notifier = SalesNotificationService(notifications=app.state.notifications)
     app.state.sales_intel = OpportunityService(scan_interval_minutes=settings.idg_sales_scan_interval_minutes,
