@@ -147,3 +147,42 @@ def test_short_passages_take_the_single_call_path(tmp_path, monkeypatch):
 
     assert module.embed_text(Recorder(), "short text") == [1.0, 2.0]
     assert calls == ["short text"], "no windowing for text under the limit"
+
+
+def test_window_halves_itself_when_the_provider_rejects_the_token_count():
+    """Titan enforces a token limit (8192) independently of the 50k character limit, and a 40k-char
+    window already exceeded it at 8455 tokens. Token density varies by content, so the tool must
+    recover from a rejection instead of aborting a rebuild halfway through."""
+    module = _load_script()
+    attempts: list[int] = []
+
+    class TokenLimited:
+        """Rejects anything above 4000 chars the way Bedrock does."""
+
+        def embed(self, chunk: str) -> list[float]:
+            attempts.append(len(chunk))
+            if len(chunk) > 4000:
+                raise RuntimeError(
+                    "An error occurred (ValidationException): 400 Bad Request: Too many input "
+                    "tokens. Max input tokens: 8192, request input token count: 8455")
+            return [1.0, 1.0]
+
+    vector = module._embed_window(TokenLimited(), "x" * module.WINDOW_CHARS)
+    assert vector == [1.0, 1.0]
+    # Halved until it fitted, and every attempt was strictly smaller than the last.
+    assert attempts == sorted(attempts, reverse=True)
+    assert attempts[0] == module.WINDOW_CHARS and attempts[-1] <= 4000
+    assert len(attempts) > 1
+
+
+def test_a_non_length_error_is_not_swallowed():
+    """Only length rejections may be retried; anything else (credentials, throttling, a model id
+    typo) must surface immediately rather than looking like a successful rebuild."""
+    module = _load_script()
+
+    class Broken:
+        def embed(self, _chunk: str) -> list[float]:
+            raise RuntimeError("AccessDeniedException: not authorized to invoke this model")
+
+    with pytest.raises(RuntimeError, match="AccessDenied"):
+        module._embed_window(Broken(), "short text")
