@@ -18,9 +18,50 @@ import { expect, test, type Page, type Route } from "@playwright/test";
 // Same convention as the other admin specs (e2e/tests/admin.spec.ts).
 const ADMIN_BASE_URL = process.env.ADMIN_BASE_URL ?? "https://admin.preprod.qiko.ai";
 
+/** Pre-seed a consent decision so the cookie banner never mounts.
+ *
+ *  Clicking the banner away is inherently racy: it mounts asynchronously after a consent probe, so a
+ *  `count()` check or even a bounded `waitFor` can miss it, and once mounted it OVERLAYS the Sign in
+ *  button, making every subsequent click time out. Writing a valid decision before any page script
+ *  runs removes the banner from the equation entirely, which is what makes these tests stable.
+ *  Shape mirrors apps/creator/lib/consent/consent-record.ts (schemaVersion 1, policy 2026-07-24).
+ */
+async function seedConsent(page: Page) {
+  await page.addInitScript(() => {
+    const now = new Date();
+    const expires = new Date(now.getTime());
+    expires.setUTCFullYear(expires.getUTCFullYear() + 1);
+    const timestamp = now.toISOString();
+    const record = {
+      schemaVersion: 1,
+      decisionId: `e2e-${timestamp}`,
+      revision: now.getTime(),
+      policyVersion: "2026-07-24",
+      necessary: true,
+      preferences: false,
+      analytics: false,
+      marketing: false,
+      source: "banner",
+      decidedAt: timestamp,
+      updatedAt: timestamp,
+      expiresAt: expires.toISOString(),
+      signals: { gpc: false, dnt: false },
+    };
+    try {
+      window.localStorage.setItem("qiko.consent.v1", JSON.stringify(record));
+    } catch {
+      // Storage disabled in this context; the banner assertions below simply do not apply.
+    }
+  });
+}
+
+/** Kept for the rare case a banner still renders (e.g. storage blocked): never fails the test. */
 async function dismissConsent(page: Page) {
-  const reject = page.getByRole("button", { name: "Reject non-essential" });
-  if (await reject.count()) await reject.click().catch(() => {});
+  const reject = page.getByRole("button", { name: "Reject non-essential" }).first();
+  if (await reject.isVisible().catch(() => false)) {
+    await reject.click().catch(() => {});
+    await reject.waitFor({ state: "hidden", timeout: 5000 }).catch(() => {});
+  }
 }
 
 /** Fail the test on any uncaught page error: an auth screen must never crash. */
@@ -29,6 +70,17 @@ function trackPageErrors(page: Page): string[] {
   page.on("pageerror", (e) => errors.push(e.message));
   return errors;
 }
+
+test.beforeEach(async ({ page }) => {
+  await seedConsent(page);
+  // /api/v1/consent sits on the STRICT rate limiter (10/min per IP+path). Across a suite this file
+  // would exhaust that budget, the sync would start returning 429, the provider would fall back to
+  // "undecided", and the banner would remount mid-suite and block clicks -- which is exactly the
+  // cross-test flakiness observed (each test passes alone, later ones fail in a batch). Serving the
+  // consent endpoints locally keeps the tests hermetic and stops the suite hammering a shared env.
+  await page.route("**/api/v1/consent**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) }));
+});
 
 function jsonRoute(route: Route, status: number, body: unknown) {
   return route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
@@ -208,5 +260,152 @@ test.describe("auth guards", () => {
       await expect(page).toHaveURL(new RegExp(path.replace("/", "\\/")));
       expect(errors).toEqual([]);
     }
+  });
+});
+
+// A platform admin is ALSO a normal tenant user (every /admin endpoint additionally depends on
+// authed_tenant) and MFA is mandatory for admin access. That combination is exactly what broke:
+// enrol 2FA for the admin panel and the creator app becomes unreachable. These cover the admin
+// account signing in to the CREATOR app (qiko.ai), not the admin host.
+//
+// middleware.ts gates the /dashboard document on the PRESENCE of the qiko_access cookie (it
+// deliberately does not check validity), so the successful login stub sets that cookie exactly like
+// the real backend does. Without it the document request bounces straight back to /login and the
+// test would be measuring the middleware, not the login flow.
+test.describe("admin account signing in to the creator app", () => {
+  const ADMIN_EMAIL = "platform.admin" + "@" + "example.invalid";
+  const ADMIN_PASSWORD = "Platform-Admin-1!";
+  const ADMIN_USER = {
+    id: "admin-1", email: ADMIN_EMAIL, name: "Platform Admin", tenant: "acme",
+    role: "owner", twofa_enabled: true,
+  };
+
+  function loggedIn(route: Route) {
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "set-cookie": "qiko_access=stub-session; Path=/; SameSite=Lax" },
+      body: JSON.stringify({ user: ADMIN_USER }),
+    });
+  }
+
+  /** The reads the creator app performs once a session exists. */
+  async function stubCreatorSession(page: Page) {
+    await page.route("**/api/v1/auth/me", (route) => jsonRoute(route, 200, { user: ADMIN_USER }));
+    await page.route("**/api/v1/agents", (route) => jsonRoute(route, 200, []));
+    await page.route("**/api/v1/agents/usage", (route) =>
+      jsonRoute(route, 200, { used_count: 0, worker_limit: 1 }));
+    await page.route("**/api/v1/notifications**", (route) => jsonRoute(route, 200, []));
+  }
+
+  /** Submit and wait for the navigation it triggers. The login page uses window.location.href, so
+   *  the click tears the page down and its own post-action wait would never settle. */
+  async function submitAndNavigate(page: Page) {
+    await Promise.all([
+      page.waitForURL(/\/dashboard/, { timeout: 20000 }),
+      page.getByRole("button", { name: /sign in/i }).click({ noWaitAfter: true }),
+    ]);
+  }
+
+  async function signIn(page: Page, code: string) {
+    await page.goto("/login");
+    await dismissConsent(page);
+    await page.locator("#email").fill(ADMIN_EMAIL);
+    await page.locator("#password").fill(ADMIN_PASSWORD);
+    await page.getByRole("button", { name: /sign in/i }).click();
+    // Before the fix the admin dead-ended here: 2FA is mandatory for them and the creator login had
+    // nowhere to type a code.
+    await expect(page.locator("#totp")).toBeVisible();
+    await page.locator("#totp").fill(code);
+    await submitAndNavigate(page);
+  }
+
+  test("an admin with 2FA can complete login on qiko.ai and reach the creator dashboard", async ({ page }) => {
+    const errors = trackPageErrors(page);
+    const sent: Array<Record<string, unknown>> = [];
+    await page.route("**/api/v1/auth/login", async (route) => {
+      const body = JSON.parse(route.request().postData() ?? "{}");
+      sent.push(body);
+      return body.totp ? loggedIn(route) : jsonRoute(route, 401, { detail: "Invalid or missing 2FA code" });
+    });
+    await stubCreatorSession(page);
+
+    await signIn(page, "123456");  // waits for the /dashboard navigation
+
+    await expect(page).not.toHaveURL(/\/login/);
+    expect(sent.map((b) => b.totp)).toEqual([undefined, "123456"]);
+    expect(errors).toEqual([]);
+  });
+
+  test("the admin lands on the tenant surface, with no cross-tenant admin controls in the creator app", async ({ page }) => {
+    await page.route("**/api/v1/auth/login", (route) => {
+      const body = JSON.parse(route.request().postData() ?? "{}");
+      return body.totp ? loggedIn(route) : jsonRoute(route, 401, { detail: "Invalid or missing 2FA code" });
+    });
+    await stubCreatorSession(page);
+
+    await signIn(page, "123456");  // waits for the /dashboard navigation
+
+    // Platform administration lives on the admin host behind its own MFA-gated checks. The creator
+    // app is the tenant surface and must not surface cross-tenant affordances.
+    for (const forbidden of [/all tenants/i, /platform admin/i, /cross-tenant/i]) {
+      await expect(page.getByText(forbidden)).toHaveCount(0);
+    }
+    // Normal creator navigation is available to them.
+    await expect(page.getByText(/workers/i).first()).toBeVisible();
+  });
+
+  test("an admin who mistypes the code is told what to do and retries without re-entering credentials", async ({ page }) => {
+    const sent: Array<Record<string, unknown>> = [];
+    await page.route("**/api/v1/auth/login", (route) => {
+      const body = JSON.parse(route.request().postData() ?? "{}") as { totp?: string };
+      sent.push(body);
+      // No code, then a wrong code, then the right one.
+      if (body.totp === "123456") return loggedIn(route);
+      return jsonRoute(route, 401, { detail: "Invalid or missing 2FA code" });
+    });
+    await stubCreatorSession(page);
+
+    await page.goto("/login");
+    await dismissConsent(page);
+    await page.locator("#email").fill(ADMIN_EMAIL);
+    await page.locator("#password").fill(ADMIN_PASSWORD);
+    await page.getByRole("button", { name: /sign in/i }).click();
+    await expect(page.locator("#totp")).toBeVisible();
+
+    await page.locator("#totp").fill("000000");
+    await page.getByRole("button", { name: /sign in/i }).click();
+    // Stays on the form, mentions backup codes, and does NOT clear what was already typed.
+    await expect(page.getByText(/backup code/i).first()).toBeVisible();
+    await expect(page.locator("#email")).toHaveValue(ADMIN_EMAIL);
+    await expect(page.locator("#password")).toHaveValue(ADMIN_PASSWORD);
+
+    await page.locator("#totp").fill("123456");
+    await submitAndNavigate(page);
+    expect(sent.map((b) => b.totp)).toEqual([undefined, "000000", "123456"]);
+  });
+
+  test("an admin can use a long backup code, not just a 6-digit authenticator code", async ({ page }) => {
+    const backupCode = "a1b2c3d4e5f6g7h8";
+    const sent: Array<Record<string, unknown>> = [];
+    await page.route("**/api/v1/auth/login", (route) => {
+      const body = JSON.parse(route.request().postData() ?? "{}") as { totp?: string };
+      sent.push(body);
+      return body.totp ? loggedIn(route) : jsonRoute(route, 401, { detail: "Invalid or missing 2FA code" });
+    });
+    await stubCreatorSession(page);
+
+    await page.goto("/login");
+    await dismissConsent(page);
+    await page.locator("#email").fill(ADMIN_EMAIL);
+    await page.locator("#password").fill(ADMIN_PASSWORD);
+    await page.getByRole("button", { name: /sign in/i }).click();
+    await expect(page.locator("#totp")).toBeVisible();
+
+    await page.locator("#totp").fill(backupCode);
+    // The field must not truncate a backup code away via maxLength.
+    expect(await page.locator("#totp").inputValue()).toBe(backupCode);
+    await submitAndNavigate(page);
+    expect(sent.at(-1)?.totp).toBe(backupCode);
   });
 });
