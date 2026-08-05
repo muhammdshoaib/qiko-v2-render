@@ -5,6 +5,11 @@
 coverage, which is exactly how four in-memory stores survived into production (generated files,
 Slack installations, Slack workspace links, channel sessions). These tests fail if a NEW store is
 added without a durable production implementation.
+
+file_generator has since been fixed (it uses S3Storage when S3_BUCKET is set, and
+assert_secrets_set refuses to start a non-dev environment without one), so it moved out of the
+declared-exception list and into the durable assertions below. Leaving a stale exception in place is
+worse than not having the list: the test would keep passing if someone un-wired S3.
 """
 import pytest
 from fastapi.testclient import TestClient
@@ -26,7 +31,6 @@ DURABLE_STORES = (
 
 # Known, deliberate exceptions with a recorded reason. Shrinking this list is the goal.
 KNOWN_IN_MEMORY = {
-    "file_generator": "generated documents are lost on restart and grow unbounded (S3Storage exists but is unwired)",
     "slack_oauth": "OAuth-installed Slack workspaces are lost on restart",
     "slack_links": "Slack user -> worker links are lost on restart",
     "channel_sessions": "per-channel sessions are lost on restart (no production consumer today)",
@@ -72,9 +76,31 @@ def test_production_wiring_replaces_durable_stores_with_sql(production_app):
 
 
 def test_known_in_memory_stores_are_declared_not_accidental(production_app):
-    """The four known offenders must stay declared here. If one is fixed, remove it from the dict;
-    if a new one appears, this test forces a decision instead of letting it slip through."""
+    """The remaining known offenders must stay declared here. If one is fixed, remove it from the
+    dict; if a new one appears, this test forces a decision instead of letting it slip through."""
     for name, reason in KNOWN_IN_MEMORY.items():
         store = getattr(production_app.app.state, name, None)
         assert store is not None, f"app.state.{name} disappeared; update KNOWN_IN_MEMORY"
         assert reason, "every known offender needs a recorded reason"
+
+
+def test_generated_files_are_durable_in_production(production_app, monkeypatch):
+    """file_generator was the worst of the four: a dict with no TTL in a 512M container, and every
+    download key 404'd after a deploy. It is fixed, so it is asserted rather than excused."""
+    from app.modules.storage.backend import S3Storage
+
+    assert "file_generator" not in KNOWN_IN_MEMORY, (
+        "file_generator is wired to S3Storage now; re-adding it here would let a regression pass")
+
+    monkeypatch.setattr(get_settings(), "s3_bucket", "qiko-v2-live-files")
+    app = create_app()
+    backend = app.state.file_generator.storage
+    assert isinstance(backend, S3Storage) and backend.bucket == "qiko-v2-live-files"
+
+
+def test_a_non_dev_environment_refuses_to_start_without_a_bucket():
+    """The guard is what makes the S3 wiring load-bearing rather than best-effort."""
+    from app.core.config import Environment, Settings
+
+    with pytest.raises(RuntimeError, match="S3_BUCKET"):
+        Settings(_env_file=None, environment=Environment.live, s3_bucket="").assert_secrets_set()
