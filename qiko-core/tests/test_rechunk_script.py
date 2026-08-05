@@ -108,6 +108,14 @@ def test_a_second_run_finds_nothing_and_changes_nothing(db, capsys):
     assert sorted(asyncio.run(_rows(url))) == before
 
 
+def test_the_default_threshold_targets_the_passages_whose_vectors_are_wrong():
+    """The default is the point where Titan cannot embed the text in one call, so the stored vector is a
+    mean of windows rather than an embedding. Below it a passage is merely suboptimal, and rewriting a
+    tenth of the corpus would shift BM25s corpus-wide idf and avgdl for documents nobody touched."""
+    module = _load()
+    assert module.DEFAULT_THRESHOLD == 16_000
+
+
 def test_child_ids_are_deterministic():
     """So a re-run cannot duplicate content, and an id can be traced back to what it came from."""
     module = _load()
