@@ -192,6 +192,21 @@ class Settings(BaseSettings):
                 or not self.smtp_user or not self.smtp_password
                 or "replace" in self.email_from.lower() or "@" not in self.email_from):
             misconfigured.append("complete non-placeholder SMTP host, credentials and sender")
+        # Settings that default to a DEV value and degrade the product SILENTLY if the real
+        # environment omits them. Everything above fails closed already; these did not.
+        if self.embeddings_provider == "local":
+            # LocalEmbeddings is a SHA-256 bag-of-words hash into buckets, not a semantic model, so
+            # RAG retrieval quietly becomes keyword hashing with no error and no health signal.
+            misconfigured.append("EMBEDDINGS_PROVIDER=titan (the default 'local' is a dev-only hash embedder)")
+        for label, url in (("PUBLIC_BASE_URL", self.public_base_url), ("FRONTEND_URL", self.frontend_url)):
+            # public_base_url is baked into every verification / reset / welcome email link, so a
+            # leftover localhost silently breaks signup for real users with no server-side error.
+            if "localhost" in url or "127.0.0.1" in url:
+                misconfigured.append(f"{label} pointing at the real host, not localhost")
+        if any(not origin.startswith("https://") for origin in self.cors_allow_origins):
+            # require_csrf validates the Origin header against this list, so a wrong entry 403s
+            # login-refresh, logout, 2FA, consent and every admin mutation.
+            misconfigured.append("CORS_ALLOW_ORIGINS with https:// origins only")
         if misconfigured:
             raise RuntimeError(
                 "unsafe production config: a non-dev deploy must not run on in-memory stores or "
