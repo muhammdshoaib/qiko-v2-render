@@ -111,6 +111,9 @@ export type TenantRow = {
 export type UserRow = {
   id: string; email: string; name: string | null; tenant_id: string | null;
   role: string; role_label: string; twofa_enabled: boolean;
+  // is_platform_admin is visible to any platform admin; the role and capability set only to a
+  // manage_admins holder, so both are nullable/empty by design rather than by accident.
+  is_platform_admin: boolean;
   platform_role: AdminRole | null; platform_capabilities: Capability[];
 };
 export type WorkerRow = AdminWorker & { tenant_id: string };

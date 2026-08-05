@@ -82,7 +82,7 @@ from app.modules.identity.pending_signup import PendingSignup, hash_signup_code
 from app.modules.identity import twofa
 from app.modules.identity.rbac import Role
 from app.modules.identity.security import verify_password
-from app.modules.identity.store import User
+from app.modules.identity.store import User, UserDirectoryEntry
 from app.modules.identity.team_access import PendingInvite
 from app.modules.knowledge.models import Passage
 from app.modules.leads.service import Lead
@@ -152,12 +152,21 @@ class SqlUserStore:
             rows = (await s.execute(select(UserRow).where(UserRow.tenant_id == tenant))).scalars().all()
             return [await self._to_domain(r) for r in rows]
 
-    async def list_all(self) -> list[User]:
+    async def list_all(self) -> list[UserDirectoryEntry]:
         # Cross-tenant: the platform-admin user directory ONLY. Deliberately unfiltered, ordered by
         # email so the directory is stable across pages.
+        #
+        # A COLUMN PROJECTION, not select(UserRow): the full entity would run _to_domain per row,
+        # which decrypts every TOTP secret (Fernet, on the event loop) and materialises every password
+        # hash, to render twenty rows that contain neither. It also means a row whose ciphertext no
+        # longer decrypts after a key rotation cannot fail this endpoint.
         async with self.sessionmaker() as s:
-            rows = (await s.execute(select(UserRow).order_by(UserRow.email))).scalars().all()
-            return [await self._to_domain(r) for r in rows]
+            rows = (await s.execute(select(
+                UserRow.id, UserRow.email, UserRow.name, UserRow.tenant_id, UserRow.role,
+                UserRow.twofa_enabled).order_by(UserRow.email))).all()
+            return [UserDirectoryEntry(id=row.id, email=row.email, name=row.name,
+                                       tenant=row.tenant_id, role=Role(row.role),
+                                       twofa_enabled=row.twofa_enabled) for row in rows]
 
     async def set_sid(self, user_id: str, sid: str | None) -> None:
         async with self.sessionmaker() as s, s.begin():

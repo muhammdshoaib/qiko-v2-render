@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from app.modules.admin.pagination import paginate
+from app.modules.admin.pagination import PAGE_SIZE, paginate
 
 
 @dataclass
@@ -36,7 +36,7 @@ class CustomerDirectory:
         self._by_id[rec.user_id] = rec
 
     def list(self, *, search: str | None = None, plan: str | None = None,
-             page: int = 1, page_size: int = 20) -> dict:
+             page: int = 1, page_size: int = PAGE_SIZE) -> dict:
         rows = [r for r in self._by_id.values() if not r.deleted]
         if search:
             s = search.lower()

@@ -78,7 +78,9 @@ def revenue(subs: list[SubscriptionIn], _tenant: str = Depends(authed_tenant),
 @router.get("/customers")
 def customers(request: Request, _tenant: str = Depends(authed_tenant),
               _identity=Depends(require_platform_capability(Capability.view_customers)),
-              search: str | None = None, plan: str | None = None, page: int = 1) -> dict:
+              search: str | None = Query(default=None, max_length=200),
+              plan: str | None = Query(default=None, max_length=40),
+              page: int = Query(default=1, ge=1)) -> dict:
     directory = request.app.state.customers
     result = directory.list(search=search, plan=plan, page=page)
     return {"total": result["total"], "page": result["page"],
@@ -258,7 +260,8 @@ class TenantDirectoryRow(BaseModel):
 @router.get("/tenants")
 def tenants(request: Request, _tenant: str = Depends(authed_tenant),
             _identity=Depends(require_platform_capability(Capability.view_customers)),
-            search: str | None = None, plan: str | None = None,
+            search: str | None = Query(default=None, max_length=200),
+            plan: str | None = Query(default=None, max_length=40),
             page: int = Query(default=1, ge=1)) -> dict:
     """The tenant directory (QIK-515).
 
@@ -274,6 +277,22 @@ def tenants(request: Request, _tenant: str = Depends(authed_tenant),
     } for record in result["items"]]}
 
 
+def _user_directory_json(user, platform: dict, *, show_authority: bool) -> dict:
+    key = user.email.lower()
+    admin = platform.get(key)
+    return {
+        "id": user.id, "email": user.email, "name": user.name, "tenant_id": user.tenant,
+        "role": user.role.value, "role_label": ROLE_LABELS.get(user.role, user.role.value),
+        "twofa_enabled": user.twofa_enabled,
+        # Membership is visible to any platform admin (GET /admin/org/role/{email} already tells them
+        # that much); the ROLE and CAPABILITY SET are not.
+        "is_platform_admin": admin is not None,
+        "platform_role": admin.role.value if admin and show_authority else None,
+        "platform_capabilities": sorted(c.value for c in admin.capabilities)
+        if admin and show_authority else [],
+    }
+
+
 class UserDirectoryRow(BaseModel):
     id: str
     email: str
@@ -282,28 +301,38 @@ class UserDirectoryRow(BaseModel):
     role: str
     role_label: str
     twofa_enabled: bool
+    is_platform_admin: bool
     platform_role: str | None
     platform_capabilities: list[str]
 
 
 @router.get("/users")
 async def users(request: Request, _tenant: str = Depends(authed_tenant),
-                _identity=Depends(require_platform_capability(Capability.view_customers)),
-                search: str | None = None, tenant_id: str | None = None,
+                identity=Depends(require_platform_capability(Capability.view_customers)),
+                search: str | None = Query(default=None, max_length=200),
+                tenant_id: str | None = Query(default=None, max_length=64),
                 page: int = Query(default=1, ge=1)) -> dict:
-    """The site-wide user directory with both RBAC systems visible (QIK-516).
+    """The site-wide user directory, annotated with platform access where a user also holds it.
 
-    Two independent role systems exist and an operator had no single place to see them together: the
-    TENANT role lives on users.role, while platform-admin access is keyed by EMAIL in
-    platform_admins. So "who can reach the admin panel" required reading two tables by hand. Joined
-    here on the lowercased email, which is how the admin registry stores it.
+    Two independent role systems exist: the TENANT role lives on users.role, while platform-admin
+    access is keyed by EMAIL in platform_admins with no foreign key between them. This lists users and
+    marks which of them also hold platform access. It is deliberately NOT the answer to "who has
+    platform access" -- an operator provisioned by scripts/provision_platform_admin.py who never
+    signed up has no user row and so appears nowhere here. GET /admin/org is that answer.
 
-    No password hash, TOTP secret or session id is exposed. The fields are chosen explicitly rather
-    than dumping the row.
+    The SCOPE of someone's platform authority is shown only to a caller holding manage_admins.
+    QIK-513 put GET /admin/org behind that capability precisely so a read-only viewer cannot enumerate
+    who holds manage_admins, which is the privilege-escalation root; leaking the same set through a
+    weaker gate here would have undone that decision.
+
+    No password hash, TOTP secret or session id is exposed: the fields are listed explicitly, and the
+    store returns a projection that never loads them.
     """
+    # Only a manage_admins holder sees the scope of platform authority.
+    show_authority = identity is not None and identity.can(Capability.manage_admins)
     store = get_user_store()
     everyone = await store.list_all()
-    platform = {identity.email: identity for identity in await request.app.state.admin_org.list_admins()}
+    platform = {admin.email: admin for admin in await request.app.state.admin_org.list_admins()}
 
     rows = everyone
     if tenant_id:
@@ -315,14 +344,9 @@ async def users(request: Request, _tenant: str = Depends(authed_tenant),
     rows = sorted(rows, key=lambda user: user.email)
 
     result = paginate(rows, page=page)
-    return {"total": result["total"], "page": result["page"], "items": [{
-        "id": user.id, "email": user.email, "name": user.name, "tenant_id": user.tenant,
-        "role": user.role.value, "role_label": ROLE_LABELS.get(user.role, user.role.value),
-        "twofa_enabled": user.twofa_enabled,
-        "platform_role": platform[user.email.lower()].role.value if user.email.lower() in platform else None,
-        "platform_capabilities": sorted(c.value for c in platform[user.email.lower()].capabilities)
-        if user.email.lower() in platform else [],
-    } for user in result["items"]]}
+    return {"total": result["total"], "page": result["page"],
+            "items": [_user_directory_json(user, platform, show_authority=show_authority)
+                      for user in result["items"]]}
 
 
 class WorkerDirectoryRow(AdminWorkerOut):
@@ -332,7 +356,8 @@ class WorkerDirectoryRow(AdminWorkerOut):
 @router.get("/workers")
 async def workers(request: Request, _tenant: str = Depends(authed_tenant),
                   _identity=Depends(require_platform_capability(Capability.view_customers)),
-                  search: str | None = None, tenant_id: str | None = None,
+                  search: str | None = Query(default=None, max_length=200),
+                  tenant_id: str | None = Query(default=None, max_length=64),
                   enabled: bool | None = None, page: int = Query(default=1, ge=1)) -> dict:
     """The cross-tenant worker directory (QIK-520).
 

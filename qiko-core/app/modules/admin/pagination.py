@@ -22,7 +22,17 @@ def paginate(rows: Sequence[T], *, page: int = 1, page_size: int = PAGE_SIZE) ->
     Clamps rather than raises: these are read-only directory listings reached from a URL an operator
     may have edited, and a clamped first page is a better answer than a 500 or a silently wrong slice.
     """
-    page = max(1, int(page or 1))
-    page_size = max(1, min(int(page_size or PAGE_SIZE), MAX_PAGE_SIZE))
-    start = (page - 1) * page_size
-    return {"total": len(rows), "page": page, "items": list(rows[start:start + page_size])}
+    size = int(page_size) if page_size else PAGE_SIZE
+    if size < 1:
+        # A negative size is exactly as unspecified as zero, so it falls back rather than to one row.
+        size = PAGE_SIZE
+    size = min(size, MAX_PAGE_SIZE)
+
+    requested = int(page) if page else 1
+    last = max(1, -(-len(rows) // size))  # ceil division
+    # Clamped at BOTH ends. Clamping only the low end would leave the exact defect this module exists
+    # to fix reachable from the other direction: page=999 returning an empty list next to a non-zero
+    # total, which reads as "no results".
+    current = min(max(1, requested), last)
+    start = (current - 1) * size
+    return {"total": len(rows), "page": current, "items": list(rows[start:start + size])}

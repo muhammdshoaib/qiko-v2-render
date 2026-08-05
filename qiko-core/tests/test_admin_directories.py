@@ -72,12 +72,21 @@ def test_a_zero_or_negative_page_no_longer_returns_the_wrong_slice():
     assert paginate(rows, page=0)["page"] == 1
 
 
+def test_a_page_past_the_end_is_clamped_to_the_last_page():
+    """Clamping only the low end would leave the same defect reachable from the other direction: an
+    empty list next to a non-zero total, which an operator reads as "no results"."""
+    rows = list(range(50))
+    result = paginate(rows, page=999, page_size=20)
+    assert result["page"] == 3 and result["items"] == rows[40:]
+    assert paginate([], page=999)["page"] == 1
+
+
 def test_page_size_is_bounded_so_one_request_cannot_ask_for_everything():
     rows = list(range(500))
     assert len(paginate(rows, page=1, page_size=10_000)["items"]) == MAX_PAGE_SIZE
-    # 0 or None means "unspecified", so it falls back to the default page rather than to one row
+    # 0, None and a negative are all equally unspecified, so all three fall back to the default
     assert len(paginate(rows, page=1, page_size=0)["items"]) == PAGE_SIZE
-    assert len(paginate(rows, page=1, page_size=-5)["items"]) == 1
+    assert len(paginate(rows, page=1, page_size=-5)["items"]) == PAGE_SIZE
 
 
 def test_the_total_is_the_unpaginated_count():
@@ -120,10 +129,12 @@ def test_the_user_directory_shows_both_rbac_systems_side_by_side(client):
     assert rows["owner@acme.invalid"]["platform_role"] is None
     assert rows["editor@acme.invalid"]["twofa_enabled"] is True
 
-    # the platform admin appears with its platform role AND its tenant role
+    # the platform admin appears with its tenant role, and (to a manage_admins caller) its scope
     assert rows[ADMIN_EMAIL]["role"] == "viewer"
+    assert rows[ADMIN_EMAIL]["is_platform_admin"] is True
     assert rows[ADMIN_EMAIL]["platform_role"] == "super_admin"
     assert "manage_admins" in rows[ADMIN_EMAIL]["platform_capabilities"]
+    assert rows["owner@acme.invalid"]["is_platform_admin"] is False
 
 
 def test_the_user_directory_never_exposes_a_credential(client):
@@ -211,19 +222,6 @@ def test_a_narrowed_admin_with_view_customers_can_read_the_directories(client):
     assert client.delete("/api/v1/admin/customers/acme", cookies=reader).status_code == 403
 
 
-def test_the_cross_tenant_store_methods_are_explicitly_marked_as_such():
-    """These are the only unfiltered queries in the data layer. There is no lint rule that catches an
-    accidentally unscoped query, so the exemption is pinned here as well as commented."""
-    import inspect
-
-    from app.db.stores import SqlAgentStore, SqlUserStore
-
-    for method in (SqlUserStore.list_all, SqlAgentStore.list_all):
-        source = inspect.getsource(method)
-        assert "Cross-tenant" in source
-        assert "tenant_id ==" not in source, "list_all must not be tenant filtered"
-
-
 def test_the_directory_roles_use_the_shared_labels():
     """So the admin console and the creator team screen never disagree about what a role is called."""
     from app.modules.identity.team_access import ROLE_LABELS
@@ -231,3 +229,99 @@ def test_the_directory_roles_use_the_shared_labels():
     assert ROLE_LABELS[Role.viewer] == "User"
     assert ROLE_LABELS[Role.owner] == "Owner"
     assert AdminRole.super_admin.value == "super_admin"
+
+
+def test_the_scope_of_platform_authority_needs_manage_admins(client):
+    """QIK-513 put GET /admin/org behind manage_admins so a read-only viewer cannot enumerate who
+    holds it, manage_admins being the privilege-escalation root. Leaking the same set here behind the
+    weaker view_customers would have undone that."""
+    from app.modules.identity import csrf
+
+    cookies = _admin(client)
+    _seed_users(client)
+    token = csrf.generate_csrf_token()
+    client.put("/api/v1/admin/org/scoped.dir@invalid",
+               cookies={**cookies, csrf.CSRF_COOKIE: token},
+               headers={csrf.CSRF_HEADER: token},
+               json={"role": "viewer", "capabilities": [Capability.view_customers.value]})
+    reader = auth_cookies("platform", "viewer", email="scoped.dir@invalid")
+
+    body = client.get("/api/v1/admin/users", cookies=reader).json()
+    admin_row = next(row for row in body["items"] if row["email"] == ADMIN_EMAIL)
+    # It still learns THAT the person is an admin, which GET /admin/org/role/{email} already tells any
+    # platform admin. It must not learn the scope.
+    assert admin_row["is_platform_admin"] is True
+    assert admin_row["platform_role"] is None
+    assert admin_row["platform_capabilities"] == []
+
+    # the manage_admins holder does see it
+    full = client.get("/api/v1/admin/users", cookies=cookies).json()
+    full_row = next(row for row in full["items"] if row["email"] == ADMIN_EMAIL)
+    assert full_row["platform_role"] == "super_admin"
+
+
+def test_the_platform_join_is_case_insensitive(client):
+    """platform_admins is keyed by a lowercased email while users.email keeps its original case, so a
+    mixed-case signup must still match its admin row."""
+    from app.core.deps import get_user_store
+
+    cookies = _admin(client)
+    bootstrap_admin(client, "mixed@case.invalid")
+
+    async def seed() -> None:
+        await get_user_store().add(User(id="u9", email="Mixed@Case.invalid", password_hash="x",
+                                        tenant="acme", role=Role.owner))
+
+    asyncio.run(seed())
+    body = client.get("/api/v1/admin/users", cookies=cookies).json()
+    row = next(r for r in body["items"] if r["email"].lower() == "mixed@case.invalid")
+    assert row["is_platform_admin"] is True
+
+
+def test_an_unauthenticated_caller_gets_401_not_403(client):
+    for path in ("/api/v1/admin/tenants", "/api/v1/admin/users", "/api/v1/admin/workers"):
+        assert client.get(path).status_code == 401
+
+
+def test_a_different_capability_does_not_open_the_directories(client):
+    """Capabilities are a set, not a ladder: manage_billing must not imply view_customers."""
+    from app.modules.identity import csrf
+
+    cookies = _admin(client)
+    token = csrf.generate_csrf_token()
+    client.put("/api/v1/admin/org/billing.only@invalid",
+               cookies={**cookies, csrf.CSRF_COOKIE: token},
+               headers={csrf.CSRF_HEADER: token},
+               json={"role": "viewer", "capabilities": [Capability.manage_billing.value]})
+    biller = auth_cookies("platform", "owner", email="billing.only@invalid")
+    for path in ("/api/v1/admin/tenants", "/api/v1/admin/users", "/api/v1/admin/workers"):
+        assert client.get(path, cookies=biller).status_code == 403
+
+
+def test_the_user_directory_store_cannot_carry_a_credential():
+    """Replaces a source-grep with a structural guarantee: the projection type has no field that
+    could hold a secret, so a future addition cannot turn the directory into a leak."""
+    from app.modules.identity.store import UserDirectoryEntry
+
+    fields = set(UserDirectoryEntry.__dataclass_fields__)
+    assert fields == {"id", "email", "name", "tenant", "role", "twofa_enabled"}
+    for forbidden in ("password_hash", "totp_secret", "current_sid"):
+        assert forbidden not in fields
+
+
+def test_the_cross_tenant_reads_really_span_tenants(client):
+    """Behavioural, not a comment grep: the previous version asserted the word "Cross-tenant" appeared
+    in the source, which any refactor could satisfy while filtering by tenant."""
+    _seed(client)
+    _seed_users(client)
+
+    async def read() -> tuple[set, set]:
+        from app.core.deps import get_user_store
+
+        users = await get_user_store().list_all()
+        agents = await client.app.state.agents.list_all()
+        return {u.tenant for u in users}, {a.tenant for a in agents}
+
+    user_tenants, agent_tenants = asyncio.run(read())
+    assert len(user_tenants) > 1, "list_all must not be tenant scoped"
+    assert {"acme", "beta"} <= agent_tenants

@@ -28,7 +28,7 @@ from app.db.models import BillingSubscription as SubscriptionRow
 from app.db.models import Tenant as TenantRow
 from app.db.models import User as UserRow
 from app.modules.admin.customers import CustomerRecord
-from app.modules.admin.pagination import paginate
+from app.modules.admin.pagination import PAGE_SIZE, paginate
 from app.modules.billing.payment_links import PaymentLinkLog
 from app.modules.billing.subscriptions import Subscription
 from app.modules.billing.webhook import Invoice
@@ -243,7 +243,7 @@ class SqlCustomerDirectory:
         return records
 
     def list(self, *, search: str | None = None, plan: str | None = None,
-             page: int = 1, page_size: int = 20) -> dict:
+             page: int = 1, page_size: int = PAGE_SIZE) -> dict:
         with self.sessionmaker() as s:
             rows = [r for r in self._records(s).values() if not r.deleted]
         if search:

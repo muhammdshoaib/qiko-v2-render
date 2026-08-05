@@ -330,15 +330,21 @@ export interface paths {
         };
         /**
          * Users
-         * @description The site-wide user directory with both RBAC systems visible (QIK-516).
+         * @description The site-wide user directory, annotated with platform access where a user also holds it.
          *
-         *     Two independent role systems exist and an operator had no single place to see them together: the
-         *     TENANT role lives on users.role, while platform-admin access is keyed by EMAIL in
-         *     platform_admins. So "who can reach the admin panel" required reading two tables by hand. Joined
-         *     here on the lowercased email, which is how the admin registry stores it.
+         *     Two independent role systems exist: the TENANT role lives on users.role, while platform-admin
+         *     access is keyed by EMAIL in platform_admins with no foreign key between them. This lists users and
+         *     marks which of them also hold platform access. It is deliberately NOT the answer to "who has
+         *     platform access" -- an operator provisioned by scripts/provision_platform_admin.py who never
+         *     signed up has no user row and so appears nowhere here. GET /admin/org is that answer.
          *
-         *     No password hash, TOTP secret or session id is exposed. The fields are chosen explicitly rather
-         *     than dumping the row.
+         *     The SCOPE of someone's platform authority is shown only to a caller holding manage_admins.
+         *     QIK-513 put GET /admin/org behind that capability precisely so a read-only viewer cannot enumerate
+         *     who holds manage_admins, which is the privilege-escalation root; leaking the same set through a
+         *     weaker gate here would have undone that decision.
+         *
+         *     No password hash, TOTP secret or session id is exposed: the fields are listed explicitly, and the
+         *     store returns a projection that never loads them.
          */
         get: operations["users_api_v1_admin_users_get"];
         put?: never;

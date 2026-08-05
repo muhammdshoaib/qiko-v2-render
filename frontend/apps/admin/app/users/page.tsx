@@ -24,9 +24,12 @@ export default function UsersPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2 text-sm">
             <Badge variant="muted">{row.role_label}</Badge>
-            {/* Platform access is a separate system from the tenant role, so it is labelled as such
-                rather than shown as just another badge. */}
-            {row.platform_role && <Badge>Platform {row.platform_role.replace("_", " ")}</Badge>}
+            {/* Platform access is a separate system from the tenant role, so it is labelled as
+                such. The scope is only returned to a manage_admins caller, so fall back to the plain
+                membership badge rather than rendering nothing. */}
+            {row.platform_role
+              ? <Badge>Platform {row.platform_role.replace("_", " ")}</Badge>
+              : row.is_platform_admin && <Badge>Platform admin</Badge>}
             <span className={row.twofa_enabled ? "text-muted-foreground" : "text-destructive"}>
               {row.twofa_enabled ? "2FA on" : "2FA off"}
             </span>

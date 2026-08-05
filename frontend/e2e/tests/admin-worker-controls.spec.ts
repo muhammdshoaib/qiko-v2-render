@@ -41,7 +41,7 @@ async function mockAdmin(page: Page, role: "viewer" | "super_admin") {
     if (path.endsWith("/admin/users") && method === "GET") return json({
       total: 1, page: 1, items: [{ id: "u1", email: "owner@invalid", name: "Acme Owner",
         tenant_id: "acme", role: "owner", role_label: "Owner", twofa_enabled: true,
-        platform_role: null, platform_capabilities: [] }] });
+        is_platform_admin: false, platform_role: null, platform_capabilities: [] }] });
     if (path.endsWith("/admin/workers") && method === "GET") return json({
       total: 1, page: 1, items: [{ id: "w1", tenant_id: "acme", name: "Tender Worker",
         type: "pre_sales_writer", status: "ready", enabled: true,
