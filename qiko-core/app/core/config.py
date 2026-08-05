@@ -53,6 +53,9 @@ class Settings(BaseSettings):
     aws_region: str = "eu-central-1"
     bedrock_inference_profile: str = "eu"  # eu | us | jp | au | global | "" (in-region)
     bedrock_model: str = "anthropic.claude-sonnet-4-5"
+    # Generated file storage. Empty means the in-memory backend, which is a plain dict with no TTL
+    # and no eviction: acceptable in dev, an unbounded leak plus data loss on restart in production.
+    s3_bucket: str = ""
     embeddings_provider: str = "local"
     embeddings_dim: int = 1024
 
@@ -98,6 +101,10 @@ class Settings(BaseSettings):
     # Public/embed chat is disabled by default for enterprise deployments. Dev keeps it available for
     # local tests; non-dev must opt in explicitly.
     public_chat_enabled: bool = False
+    # WhatsApp inbound is receive-and-discard: the adapter de-duplicates and returns ids without
+    # resolving a worker, generating an answer or replying. Off by default so the platform does not
+    # advertise a capability it does not have (QIK audit H9).
+    channels_inbound_enabled: bool = False
     # Share the auth/CSRF cookies across subdomains (e.g. ".preprod.qiko.ai" so both
     # preprod.qiko.ai and admin.preprod.qiko.ai see the same session). Empty = host-only
     # cookie (dev default; fine when creator/admin/API are all on the same host).
@@ -194,6 +201,10 @@ class Settings(BaseSettings):
             misconfigured.append("complete non-placeholder SMTP host, credentials and sender")
         # Settings that default to a DEV value and degrade the product SILENTLY if the real
         # environment omits them. Everything above fails closed already; these did not.
+        if not self.s3_bucket:
+            # Every generated DOCX/XLSX/PDF/CSV would otherwise live in a process dict that grows
+            # forever and is lost on every deploy, so previously issued download links 404.
+            misconfigured.append("S3_BUCKET so generated files survive a restart and do not leak memory")
         if self.embeddings_provider == "local":
             # LocalEmbeddings is a SHA-256 bag-of-words hash into buckets, not a semantic model, so
             # RAG retrieval quietly becomes keyword hashing with no error and no health signal.

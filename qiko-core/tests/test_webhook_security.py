@@ -15,6 +15,9 @@ def test_whatsapp_inbound_verifies_signature(client, monkeypatch):
     from app.core import config
 
     monkeypatch.setattr(config.get_settings(), "whatsapp_app_secret", "wa-secret")
+    # Inbound routing is off by default (audit H9: the adapter discarded messages while answering 200),
+    # and this test is about the signature check, so enable it explicitly.
+    monkeypatch.setattr(config.get_settings(), "channels_inbound_enabled", True)
     body = json.dumps(_PAYLOAD).encode()
 
     # valid signature -> processed
