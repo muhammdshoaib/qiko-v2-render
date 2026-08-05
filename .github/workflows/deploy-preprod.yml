@@ -69,16 +69,23 @@ jobs:
           fi
           [[ "$STATUS" == "Success" ]] || { echo "::error::deploy command ended with $STATUS"; exit 1; }
 
-      - name: Health check
+      # Readiness, not liveness. /health answers 200 whenever the process is up, so this gate used
+      # to pass with an unreachable database and record the SHA as verified. /health/ready probes
+      # every dependency and answers 503 when one is down.
+      - name: Readiness check
         run: |
           ok=false
           for i in $(seq 1 12); do
-            CODE=$(curl -s -o /dev/null -w "%{http_code}" https://preprod.qiko.ai/api/v1/health || echo 000)
-            echo "health=$CODE"
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" https://preprod.qiko.ai/api/v1/health/ready || echo 000)
+            echo "ready=$CODE"
             if [[ "$CODE" == "200" ]]; then ok=true; break; fi
             sleep 10
           done
-          [[ "$ok" == "true" ]] || exit 1
+          if [[ "$ok" != "true" ]]; then
+            echo "::error::preprod is not ready; failing checks:"
+            curl -s https://preprod.qiko.ai/api/v1/health/ready || true
+            exit 1
+          fi
 
       - name: Record verified preprod SHA
         run: aws ssm put-parameter --name /qiko/preprod/DEPLOYED_SHA --type String --value "${{ github.sha }}" --overwrite

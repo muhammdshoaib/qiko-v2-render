@@ -92,9 +92,9 @@ export type CustomerDetail = Customer & {
 // Only the capabilities the server actually enforces today. view_ai_cost, set_cost_caps and
 // view_system_stats arrive with the endpoints they gate, so the UI never offers a permission that
 // does nothing.
-export type Capability = "view_customers" | "manage_customers" | "manage_workers" | "manage_billing" | "manage_admins" | "view_ai_cost";
+export type Capability = "view_customers" | "manage_customers" | "manage_workers" | "manage_billing" | "manage_admins" | "view_ai_cost" | "view_system_stats";
 
-export const ALL_CAPABILITIES: Capability[] = ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins", "view_ai_cost"];
+export const ALL_CAPABILITIES: Capability[] = ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins", "view_ai_cost", "view_system_stats"];
 
 export type PlatformAdmin = { email: string; role: AdminRole; capabilities: Capability[] };
 export type AdminGrantAudit = {
@@ -159,6 +159,34 @@ export const workerMonitoring = (days = 30, page = 1, tenantId?: string) =>
 export const formatUsd = (nanoUsd: number) =>
   (nanoUsd / 1_000_000_000).toLocaleString(undefined, { style: "currency", currency: "USD",
     minimumFractionDigits: 2, maximumFractionDigits: nanoUsd < 10_000_000 ? 6 : 2 });
+
+export type SystemCheck = { name: string; ok: boolean; detail: string | null; latency_ms: number | null };
+export type SystemStats = {
+  ready: boolean;
+  checks: SystemCheck[];
+  process: {
+    uptime_seconds: number; started_at: string; pid: number; python: string; platform: string;
+    max_rss_kb: number; cpu_user_seconds: number; cpu_system_seconds: number;
+    load_average: number[] | null; cpu_count: number | null;
+  };
+  // Each section degrades to available:false with a reason rather than failing the dashboard.
+  database: { available: boolean; reason?: string; size_bytes?: number;
+    connections_total?: number; connections_active?: number; connections_limit?: number };
+  redis: { available: boolean; reason?: string; used_memory_bytes?: number; max_memory_bytes?: number;
+    connected_clients?: number; evicted_keys?: number; rejected_connections?: number; uptime_seconds?: number };
+  queue: { available: boolean; reason?: string; queue?: string; depth?: number };
+  environment: string;
+  version: string;
+};
+export const systemStats = () => request<SystemStats>("/admin/system");
+
+export const formatBytes = (bytes: number) => {
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return `${value.toFixed(value < 10 && unit > 0 ? 1 : 0)} ${units[unit]}`;
+};
 
 export const adminMe = () =>
   request<{ role: AdminRole; capabilities: Capability[] }>("/admin/me");

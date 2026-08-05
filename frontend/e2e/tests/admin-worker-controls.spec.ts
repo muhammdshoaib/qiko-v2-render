@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 // /admin/me returns the effective capability set and the shell filters the nav on it, so mocking
 // only `role` would exercise a payload the server never sends.
 const ADMIN_CAPABILITIES: Record<"viewer" | "super_admin", string[]> = {
-  super_admin: ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins", "view_ai_cost"],
+  super_admin: ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins", "view_ai_cost", "view_system_stats"],
   viewer: ["view_customers"],
 };
 
@@ -46,6 +46,17 @@ async function mockAdmin(page: Page, role: "viewer" | "super_admin") {
       total: 1, page: 1, items: [{ id: "w1", tenant_id: "acme", name: "Tender Worker",
         type: "pre_sales_writer", status: "ready", enabled: true,
         created_at: "2026-01-01T00:00:00Z", config: {} }] });
+    if (path.endsWith("/admin/system") && method === "GET") return json({
+      ready: true, checks: [{ name: "database", ok: true, detail: "reachable", latency_ms: 3 }],
+      process: { uptime_seconds: 120, started_at: "2026-08-01T00:00:00Z", pid: 1, python: "3.11.9",
+        platform: "linux", max_rss_kb: 200000, cpu_user_seconds: 1.5, cpu_system_seconds: 0.4,
+        load_average: [0.2, 0.3, 0.4], cpu_count: 2 },
+      database: { available: true, size_bytes: 1048576, connections_total: 4,
+        connections_active: 1, connections_limit: 100 },
+      redis: { available: true, used_memory_bytes: 1024, max_memory_bytes: 268435456,
+        connected_clients: 2, evicted_keys: 0, rejected_connections: 0, uptime_seconds: 900 },
+      queue: { available: true, queue: "arq:queue", depth: 0 },
+      environment: "preprod", version: "0.1.0" });
     if (path.endsWith("/admin/ai-cost") && method === "GET") return json({
       window_days: 30, totals: { calls: 1, input_tokens: 10, output_tokens: 2,
         cost_nano_usd: 1000000, unpriced_calls: 0 },
@@ -156,7 +167,7 @@ test("tablet and mobile navigation expose every Admin destination", async ({ pag
   // One Tab per nav entry plus Sign out. Derived from the label list below rather than hardcoded, so
   // adding a destination cannot silently leave this test asserting the wrong element.
   const MOBILE_NAV_LABELS = ["Overview", "Customers", "Tenants", "Users", "Workers", "Monitoring",
-    "AI Cost", "Subscriptions", "Invoices", "Platform Admins", "Analytics", "Security", "Sign out"];
+    "AI Cost", "System", "Subscriptions", "Invoices", "Platform Admins", "Analytics", "Security", "Sign out"];
   for (let index = 0; index < MOBILE_NAV_LABELS.length; index += 1) await page.keyboard.press("Tab");
   expect(await page.evaluate(() => document.querySelector('[aria-labelledby="mobile-nav-title"]')?.contains(document.activeElement))).toBe(true);
   for (const label of MOBILE_NAV_LABELS) {

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Users, BarChart3, Receipt, ShieldCheck, ShieldAlert, LogOut, Menu, X, UserCog, CreditCard, Building2, UsersRound, Bot, Activity, Coins } from "lucide-react";
+import { LayoutDashboard, Users, BarChart3, Receipt, ShieldCheck, ShieldAlert, LogOut, Menu, X, UserCog, CreditCard, Building2, UsersRound, Bot, Activity, Coins, Server } from "lucide-react";
 import { Button, Logo, cn } from "@qiko/ui";
 import { adminMe, ApiError, logout, type Capability } from "@/lib/api";
 
@@ -19,6 +19,7 @@ const NAV: { href: string; label: string; icon: typeof Users; requires?: Capabil
   { href: "/workers", label: "Workers", icon: Bot, requires: "view_customers" },
   { href: "/monitoring", label: "Monitoring", icon: Activity, requires: "view_customers" },
   { href: "/ai-cost", label: "AI Cost", icon: Coins, requires: "view_ai_cost" },
+  { href: "/system", label: "System", icon: Server, requires: "view_system_stats" },
   { href: "/subscriptions", label: "Subscriptions", icon: CreditCard },
   { href: "/invoices", label: "Invoices", icon: Receipt, requires: "manage_billing" },
   { href: "/admins", label: "Platform Admins", icon: UserCog },

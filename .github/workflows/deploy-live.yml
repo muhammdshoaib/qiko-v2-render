@@ -119,6 +119,25 @@ jobs:
           fi
           [[ "$STATUS" == "Success" ]] || { echo "::error::deploy command ended with $STATUS"; exit 1; }
 
+      # The SSM command exiting zero only means the containers were started. It says nothing about
+      # whether the service can reach its database, so a live deploy could previously be declared
+      # successful while the app was unable to serve a single authenticated request.
+      - name: Readiness check
+        run: |
+          ok=false
+          for i in $(seq 1 18); do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" https://qiko.ai/api/v1/health/ready || echo 000)
+            echo "ready=$CODE"
+            if [[ "$CODE" == "200" ]]; then ok=true; break; fi
+            sleep 10
+          done
+          if [[ "$ok" != "true" ]]; then
+            echo "::error::live is not ready after deploy; failing checks:"
+            curl -s https://qiko.ai/api/v1/health/ready || true
+            echo "::error::Follow docs/playbooks/live.md. Do NOT start another deploy until the cause is known."
+            exit 1
+          fi
+
       # Production rollback is deliberately manual. An older artifact may not understand a newer
       # Alembic revision, so an automatic second deploy can race or compound a schema failure.
       - name: Report controlled failure
