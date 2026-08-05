@@ -2146,7 +2146,7 @@ class SqlUsageStore:
             s.add_all([AiUsageEventRow(
                 tenant_id=event.tenant, agent_id=event.agent_id, model_id=event.model_id,
                 operation=event.operation, input_tokens=event.input_tokens,
-                output_tokens=event.output_tokens, cost_micro_usd=event.cost_micro_usd,
+                output_tokens=event.output_tokens, cost_nano_usd=event.cost_nano_usd,
                 priced=event.priced, created_at=event.created_at) for event in events])
 
     def _window(self, tenant: str, start, end):
@@ -2163,7 +2163,7 @@ class SqlUsageStore:
             return [UsageEvent(
                 tenant=row.tenant_id, agent_id=row.agent_id, model_id=row.model_id,
                 operation=row.operation, input_tokens=row.input_tokens,
-                output_tokens=row.output_tokens, cost_micro_usd=row.cost_micro_usd,
+                output_tokens=row.output_tokens, cost_nano_usd=row.cost_nano_usd,
                 created_at=row.created_at, priced=row.priced) for row in rows]
 
     async def totals(self, tenant: str, *, start=None, end=None) -> UsageTotals:
@@ -2171,7 +2171,7 @@ class SqlUsageStore:
             query = select(
                 func.coalesce(func.sum(AiUsageEventRow.input_tokens), 0),
                 func.coalesce(func.sum(AiUsageEventRow.output_tokens), 0),
-                func.coalesce(func.sum(AiUsageEventRow.cost_micro_usd), 0),
+                func.coalesce(func.sum(AiUsageEventRow.cost_nano_usd), 0),
                 func.count(),
             ).where(AiUsageEventRow.tenant_id == tenant)
             if start is not None:
@@ -2186,7 +2186,7 @@ class SqlUsageStore:
             if end is not None:
                 unpriced = unpriced.where(AiUsageEventRow.created_at <= end)
             return UsageTotals(input_tokens=int(row[0]), output_tokens=int(row[1]),
-                               cost_micro_usd=int(row[2]), calls=int(row[3]),
+                               cost_nano_usd=int(row[2]), calls=int(row[3]),
                                unpriced_calls=int((await s.execute(unpriced)).scalar_one()))
 
     async def totals_by_agent(self, tenant: str, *, start=None, end=None) -> dict[str, UsageTotals]:
