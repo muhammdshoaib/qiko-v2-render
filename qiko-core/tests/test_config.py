@@ -61,7 +61,11 @@ def _prod_settings(**overrides):
         consent_pseudonym_keys={"v1": "Con" + "sent-Q1w2E3r4T5y6U7i8O9p0A1s2D3f4"},
         forwarded_allow_ips="172.28.20.2", email_backend="smtp",
         smtp_host="smtp.example.test", smtp_user="smtp-user", smtp_password="smtp" + "-password-value",
-        email_from="sender" + "@" + "example.test")
+        email_from="sender" + "@" + "example.test",
+        # Settings that default to dev values and used to degrade the product silently in production.
+        embeddings_provider="titan",
+        public_base_url="https://qiko.example.test", frontend_url="https://qiko.example.test",
+        cors_allow_origins=["https://qiko.example.test"])
     base.update(overrides)
     return Settings(**base)
 
@@ -164,3 +168,51 @@ def test_rate_limit_backend_failure_fails_open_instead_of_500():
     app.add_middleware(RateLimitMiddleware, limiter=BrokenAsync(),
                        strict_limiter=BrokenAsync(), strict_paths=("/x",))
     assert StarletteTestClient(app).get("/x").status_code == 200
+
+
+def test_non_dev_rejects_silently_degrading_dev_defaults():
+    """These four defaulted to a dev value and broke the product with NO error if the real
+    environment omitted them, which is exactly the class assert_secrets_set exists to prevent."""
+    for env in ("preprod", "live"):
+        # LocalEmbeddings is a SHA-256 hash-bucket embedder, so RAG quietly becomes keyword matching.
+        with pytest.raises(RuntimeError, match="EMBEDDINGS_PROVIDER"):
+            _prod_settings(environment=env, embeddings_provider="local").assert_secrets_set()
+        # public_base_url is baked into every verification / reset / welcome email link.
+        with pytest.raises(RuntimeError, match="PUBLIC_BASE_URL"):
+            _prod_settings(environment=env, public_base_url="http://localhost:3000").assert_secrets_set()
+        with pytest.raises(RuntimeError, match="FRONTEND_URL"):
+            _prod_settings(environment=env, frontend_url="http://127.0.0.1:5173").assert_secrets_set()
+        # require_csrf validates Origin against this list, so a wrong entry 403s every mutation.
+        with pytest.raises(RuntimeError, match="CORS_ALLOW_ORIGINS"):
+            _prod_settings(environment=env,
+                           cors_allow_origins=["http://localhost:3000"]).assert_secrets_set()
+        # dev keeps the convenient defaults.
+        Settings(environment="dev").assert_secrets_set()
+
+
+def test_json_logs_keep_the_diagnostic_context_passed_via_extra():
+    """The formatter built its payload from a fixed key set and dropped `extra` entirely, so every
+    diagnostic logged a bare message with the tenant, source and error stripped out."""
+    import json
+    import logging
+
+    from app.core.logging import JsonFormatter
+
+    record = logging.LogRecord(
+        name="app.test", level=logging.WARNING, pathname=__file__, lineno=1,
+        msg="transactional_email_failed", args=None, exc_info=None)
+    record.flow = "welcome"
+    record.tenant_hint = "acme"
+    record.attempts = 3
+    record.detail = {"nested": True}
+
+    payload = json.loads(JsonFormatter().format(record))
+    assert payload["msg"] == "transactional_email_failed"
+    assert payload["level"] == "WARNING"
+    assert payload["flow"] == "welcome"
+    assert payload["tenant_hint"] == "acme"
+    assert payload["attempts"] == 3
+    assert payload["detail"] == "{'nested': True}"  # non-scalars are repr'd, never dropped
+    # LogRecord internals must not leak into the log line.
+    for noisy in ("args", "pathname", "levelno", "msecs", "exc_text", "stack_info"):
+        assert noisy not in payload

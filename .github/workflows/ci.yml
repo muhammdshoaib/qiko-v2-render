@@ -34,8 +34,12 @@ jobs:
               - 'scripts/sync_openapi.py'
               - 'frontend/packages/api-client/openapi.json'
               - '.github/workflows/ci.yml'
+            # Note: keep each filter's list contiguous (no interleaved comments). A backend route
+            # change regenerates schema.d.ts and can break the Next typecheck, which is why
+            # 'qiko-core/**' is in the frontend filter too.
             frontend:
               - 'frontend/**'
+              - 'qiko-core/**'
               - 'scripts/dev.sh'
               - 'scripts/check_local_contract.py'
               - 'scripts/sync_openapi.py'
@@ -89,6 +93,26 @@ jobs:
     defaults:
       run:
         working-directory: qiko-core
+    # Postgres is required for the row-locking tests. On SQLite `with_for_update()` is a silent
+    # no-op, so tests/test_agent_store.py and tests/test_db_backed_rfp_tree.py were skipped for want
+    # of QIKO_TEST_POSTGRES_URL -- and those are exactly the tests covering the plan worker-limit
+    # race and disable-vs-persistence. The guarantees the code relies on were verified nowhere.
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: qiko
+          POSTGRES_PASSWORD: qiko-ci
+          POSTGRES_DB: qiko_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U qiko -d qiko_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      QIKO_TEST_POSTGRES_URL: postgresql+asyncpg://qiko:qiko-ci@localhost:5432/qiko_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

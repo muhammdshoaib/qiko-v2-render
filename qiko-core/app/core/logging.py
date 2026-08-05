@@ -9,6 +9,11 @@ from app.core.observability import get_request_id
 from app.core.tenancy import get_tenant
 
 
+# Everything LogRecord sets itself; anything else on the record came from `extra`.
+_RESERVED = frozenset(logging.LogRecord("", 0, "", 0, "", None, None).__dict__) | {
+    "message", "asctime", "taskName"}
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload = {
@@ -25,6 +30,14 @@ class JsonFormatter(logging.Formatter):
             payload["request_id"] = rid
         if record.exc_info:
             payload["exc"] = self.formatException(record.exc_info)
+        # Merge the diagnostic context passed as logger.warning(..., extra={...}). It used to be
+        # dropped entirely, so every diagnostic in the codebase logged a bare message with the
+        # tenant, source and error stripped out -- and with LOG_LEVEL=WARNING and no Sentry DSN in
+        # production, that left almost nothing to investigate an incident with.
+        for key, value in record.__dict__.items():
+            if key in _RESERVED or key in payload:
+                continue
+            payload[key] = value if isinstance(value, (str, int, float, bool, type(None))) else repr(value)
         return json.dumps(payload, ensure_ascii=False)
 
 
