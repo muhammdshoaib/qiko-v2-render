@@ -5,9 +5,11 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
+from app.core.tenancy import reset_tenant, set_tenant
 from app.modules.agentcore.generator import Generator
 from app.modules.agentcore.models import AgentResult, Requirement
 from app.modules.agentcore.runtime import AgentCore
+from app.modules.ai import usage
 from app.modules.knowledge.models import Passage
 from app.modules.knowledge.service import KnowledgeService
 from app.modules.workers.config import WorkerConfig
@@ -53,6 +55,23 @@ class Worker:
                      topic: str | None = None,
                      additional_context: list[str] | None = None,
                      recheck_worker: WorkerRecheck | None = None) -> AgentResult:
+        # Bind the worker for AI cost attribution. Every model call in an answer (retrieval
+        # embedding, generation, and any retry) happens below this frame, and AgentCore.run
+        # deliberately takes no agent_id, so binding here avoids threading one through.
+        agent_token = usage.set_agent(self.config.agent_id)
+        tenant_token = set_tenant(self.config.tenant)
+        try:
+            return await self._answer(requirement_id, requirement_text, topic=topic,
+                                      additional_context=additional_context,
+                                      recheck_worker=recheck_worker)
+        finally:
+            usage.reset_agent(agent_token)
+            reset_tenant(tenant_token)
+
+    async def _answer(self, requirement_id: str, requirement_text: str, *,
+                      topic: str | None = None,
+                      additional_context: list[str] | None = None,
+                      recheck_worker: WorkerRecheck | None = None) -> AgentResult:
         if recheck_worker is not None:
             await recheck_worker()
         passages = await self.knowledge.retrieve(
