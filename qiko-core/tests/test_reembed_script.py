@@ -24,6 +24,18 @@ def _load_script():
     return module
 
 
+async def _seed_long(url: str) -> None:
+    """One passage far past Titan's 50k limit, which used to abort the whole rebuild."""
+    engine = create_async_engine(url)
+    async with engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
+    async with sessionmaker.begin() as session:
+        session.add(Passage(id="big", tenant_id="acme", agent_id="a1", doc_id="d1",
+                            text="tender clause. " * 12_000, embedding=[0.0]))  # ~180k chars
+    await engine.dispose()
+
+
 async def _seed(url: str) -> None:
     engine = create_async_engine(url)
     async with engine.begin() as connection:
@@ -87,3 +99,51 @@ def test_apply_is_idempotent(script_env, capsys):
     capsys.readouterr()
     asyncio.run(module._run(argv))
     assert "0 rewritten" in capsys.readouterr().out
+
+
+def test_oversized_passages_are_window_mean_pooled_not_skipped(tmp_path, monkeypatch):
+    """Titan rejects >50k chars outright, which aborted the rebuild on the first oversized row. The
+    text must still get a full-dimension vector via window mean pooling."""
+    url = f"sqlite+aiosqlite:///{tmp_path / 'long.db'}"
+    monkeypatch.setattr(get_settings(), "database_url", url)
+    asyncio.run(_seed_long(url))
+    module = _load_script()
+
+    text = "tender clause. " * 12_000
+    assert len(text) > module.TITAN_MAX_CHARS
+
+    calls: list[int] = []
+
+    class WindowRecordingEmbedder:
+        def embed(self, chunk: str) -> list[float]:
+            calls.append(len(chunk))
+            return [float(len(chunk))] * 4
+
+    pooled = module.embed_text(WindowRecordingEmbedder(), text)
+    # Split into windows below the hard limit, then averaged into ONE vector of the same width.
+    assert len(calls) > 1
+    assert max(calls) <= module.TITAN_MAX_CHARS
+    assert len(pooled) == 4
+    assert pooled == [sum(calls) / len(calls)] * 4
+
+    # and end to end the row is rebuilt rather than blowing up
+    argv = module.argparse.Namespace(apply=True, tenant="acme", batch_size=5)
+    assert asyncio.run(module._run(argv)) == 0
+    dims, _ = asyncio.run(_dims(url))
+    assert dims["big"] == get_settings().embeddings_dim
+
+
+def test_short_passages_take_the_single_call_path(tmp_path, monkeypatch):
+    url = f"sqlite+aiosqlite:///{tmp_path / 'short.db'}"
+    monkeypatch.setattr(get_settings(), "database_url", url)
+    module = _load_script()
+
+    calls: list[str] = []
+
+    class Recorder:
+        def embed(self, chunk: str) -> list[float]:
+            calls.append(chunk)
+            return [1.0, 2.0]
+
+    assert module.embed_text(Recorder(), "short text") == [1.0, 2.0]
+    assert calls == ["short text"], "no windowing for text under the limit"
