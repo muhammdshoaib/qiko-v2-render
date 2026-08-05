@@ -92,9 +92,6 @@ export type CustomerDetail = Customer & {
 // Only the capabilities the server actually enforces today. view_ai_cost, set_cost_caps and
 // view_system_stats arrive with the endpoints they gate, so the UI never offers a permission that
 // does nothing.
-// Only the capabilities the server actually enforces today. view_ai_cost, set_cost_caps and
-// view_system_stats arrive with the endpoints they gate, so the UI never offers a permission that
-// does nothing.
 export type Capability = "view_customers" | "manage_customers" | "manage_workers" | "manage_billing" | "manage_admins";
 
 export const ALL_CAPABILITIES: Capability[] = ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins"];

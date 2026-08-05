@@ -60,24 +60,36 @@ def test_2fa_exchange_bridge(client):
     assert client.post("/api/v1/auth/2fa/exchange", json={"temp_token": token, "secret": secret, "code": "000000"}).status_code == 400
 
 
-def test_admin_bootstrap_is_disabled_outside_dev(client, monkeypatch):
-    """Bootstrap stays dev-only: outside dev the FIRST caller to reach it must never be able to
-    self-appoint. Production provisioning goes through the operator CLI instead.
+def test_admin_bootstrap_invite_and_accept_are_all_disabled_outside_dev(client, monkeypatch):
+    """All three privilege-granting shortcuts stay dev-only outside dev.
 
-    invite/accept are no longer 404 outside dev (a platform admin has to be able to add a colleague
-    without a database edit), so this asserts they are properly GATED rather than absent: a random
-    tenant owner gets 403, never a token."""
+    bootstrap: the first caller to reach it must never be able to self-appoint.
+    invite/accept: the invite token is stateless, replayable for 7 days, unrevocable and returned in
+    the response body, so it is a bearer credential for the highest privilege in the system.
+    Production granting goes through the audited PUT /admin/org/{email}; first-admin provisioning
+    through scripts/provision_platform_admin.py.
+
+    Asserted as 404 with a caller who WOULD otherwise pass the gate, so the assertion actually
+    depends on the environment: a 403 here would prove nothing, since a non-admin gets 403 in every
+    environment and the dependency runs before the body's dev-only check."""
     settings = get_settings()
     monkeypatch.setattr(settings, "environment", Environment.preprod)
     caller = auth_cookies("public", "owner", email="public-owner@invalid")
-
     assert client.post("/api/v1/admin/org/bootstrap", cookies=caller).status_code == 404
-    # not a platform admin at all -> the platform gate rejects it
-    assert client.post("/api/v1/admin/org/invite",
-                       json={"email": "admin@invalid", "role": "viewer"},
-                       cookies=caller).status_code == 403
-    # an unauthenticated redeem attempt cannot mint access for anyone
-    assert client.post("/api/v1/admin/org/accept", json={"token": "anything"}).status_code in (401, 403)
+
+    # a real super_admin with valid CSRF still gets 404: the endpoints are absent, not merely gated
+    from app.modules.identity import csrf as csrf_module
+    from tests.helpers import bootstrap_admin
+
+    boss_email = "b4-boss@invalid"
+    bootstrap_admin(client, boss_email)
+    token = csrf_module.generate_csrf_token()
+    boss = {**auth_cookies("b4", "viewer", email=boss_email), csrf_module.CSRF_COOKIE: token}
+    headers = {csrf_module.CSRF_HEADER: token}
+    assert client.post("/api/v1/admin/org/invite", json={"email": "admin@invalid", "role": "viewer"},
+                       cookies=boss, headers=headers).status_code == 404
+    assert client.post("/api/v1/admin/org/accept", json={"token": "anything"},
+                       cookies=boss).status_code == 404
 
 
 def test_admin_org_rbac(client):

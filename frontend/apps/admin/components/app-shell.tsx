@@ -34,9 +34,11 @@ export function AppShell({ title, children }: { title: string; children: React.R
   const mfaRequired =
     me.error instanceof ApiError && me.error.status === 403 && /mfa/i.test(me.error.message);
   const needsOnboarding = mfaRequired && !pathname.startsWith("/security");
-  const capabilities = me.data?.capabilities ?? [];
-  // Until /admin/me resolves, show everything rather than flashing a shrunken menu.
-  const visibleNav = me.data
+  // A MISSING capabilities field means "unknown", not "none": treating it as an empty list hid
+  // Customers and Invoices from every admin whenever /admin/me came from an older backend, a cached
+  // response or a mock. Only filter once the field is actually present.
+  const capabilities = me.data?.capabilities;
+  const visibleNav = capabilities
     ? NAV.filter((entry) => !entry.requires || capabilities.includes(entry.requires))
     : NAV;
   useEffect(() => {

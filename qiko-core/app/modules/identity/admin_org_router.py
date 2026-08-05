@@ -21,14 +21,17 @@ from app.modules.identity.admin_rbac import (
     parse_capabilities,
 )
 
-# Mirrors admin/router.py: documents the double-submit header so the generated client and any
-# operator reading the schema know the mutation needs it.
+# Documents BOTH halves of the double-submit pair, like admin/router.py, so the generated client and
+# anyone reading the schema knows the mutation needs the header AND the matching cookie.
 _CSRF_OPENAPI = {
-    "parameters": [{
-        "in": "header", "name": csrf.CSRF_HEADER, "required": True,
-        "schema": {"type": "string"},
-        "description": "Double-submit CSRF token; must equal the qiko_csrf cookie.",
-    }]
+    "parameters": [
+        {"in": "header", "name": csrf.CSRF_HEADER, "required": True,
+         "schema": {"type": "string"},
+         "description": "Double-submit CSRF token; must equal the qiko_csrf cookie."},
+        {"in": "cookie", "name": csrf.CSRF_COOKIE, "required": True,
+         "schema": {"type": "string"},
+         "description": "Double-submit CSRF cookie; must equal the x-csrf-token header."},
+    ]
 }
 
 
@@ -171,7 +174,8 @@ def _invited_email(token: str) -> str | None:
 
 
 @router.get("")
-async def list_admins(_identity=Depends(require_platform_admin()), org=Depends(get_admin_org)) -> dict:
+async def list_admins(_identity=Depends(require_platform_capability(Capability.manage_admins)),
+                      org=Depends(get_admin_org)) -> dict:
     """The platform-admin directory. There was no way to enumerate platform admins at all, so the
     admin UI could only look one up by exact email - you could not answer "who has access?"."""
     return {"admins": [_identity_json(identity) for identity in await org.list_admins()]}
@@ -208,7 +212,8 @@ async def grant(email: str, body: GrantBody, request: Request,
 
 
 @router.get("/audit")
-async def audit(limit: int = 50, _identity=Depends(require_platform_admin()),
+async def audit(limit: int = Query(default=50, ge=1, le=200),
+                _identity=Depends(require_platform_capability(Capability.manage_admins)),
                 org=Depends(get_admin_org)) -> dict:
     """Every grant and revoke, newest first. Platform admin is the highest privilege in the system
     and previously left no trail whatsoever."""

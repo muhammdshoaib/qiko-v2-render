@@ -86,7 +86,10 @@ def test_manage_admins_is_not_a_delegable_root_primitive():
 
     async def scenario():
         await org.bootstrap_super_admin(BOSS)
-        await org.grant(BOSS, HELPER, AdminRole.viewer, frozenset({Capability.manage_admins}))
+        # Given BOTH manage_admins and view_customers, so the positive case below is about authority
+        # limits rather than simply lacking the capability.
+        await org.grant(BOSS, HELPER, AdminRole.viewer,
+                        frozenset({Capability.manage_admins, Capability.view_customers}))
 
         # cannot appoint a super_admin
         with pytest.raises(AdminAuthzError):
@@ -101,7 +104,12 @@ def test_manage_admins_is_not_a_delegable_root_primitive():
         with pytest.raises(AdminAuthzError):
             await org.grant(HELPER, "third@invalid", AdminRole.viewer,
                             frozenset({Capability.manage_admins}))
-        # what it CAN do: manage an ordinary viewer
+        # cannot hand out a capability it does not hold itself, so it cannot build a puppet with
+        # more authority than the granter has
+        with pytest.raises(AdminAuthzError):
+            await org.grant(HELPER, "puppet2@invalid", AdminRole.viewer,
+                            frozenset({Capability.manage_customers}))
+        # what it CAN do: pass on a capability it holds, to an ordinary viewer
         managed = await org.grant(HELPER, "ordinary@invalid", AdminRole.viewer,
                                   frozenset({Capability.view_customers}))
         assert managed.capabilities == {Capability.view_customers}
@@ -114,8 +122,11 @@ def test_a_narrowed_admin_really_loses_server_side_access(client):
     manage_customers has to be refused by the API, otherwise "least privilege" is only a UI filter."""
     cookies = _boss(client)
     with_csrf, headers = _csrf(cookies)
+    # A SUPER_ADMIN narrowed to reads only: the role alone would allow every mutation, so this is
+    # the property the feature is sold on. Granting a viewer would have proven nothing, since a
+    # viewer was already refused these endpoints before capabilities existed.
     client.put(f"/api/v1/admin/org/{HELPER}", cookies=with_csrf, headers=headers,
-               json={"role": "viewer", "capabilities": ["view_customers"]})
+               json={"role": "super_admin", "capabilities": ["view_customers"]})
     helper = auth_cookies("plat", "owner", email=HELPER)
     helper_csrf, helper_headers = _csrf(helper)
 
@@ -298,3 +309,49 @@ def test_admin_me_reports_capabilities_so_the_ui_can_hide_what_is_denied(client)
     body = client.get("/api/v1/admin/me", cookies=cookies).json()
     assert body["role"] == "super_admin"
     assert "manage_admins" in body["capabilities"] and "manage_workers" in body["capabilities"]
+
+
+def test_an_unknown_stored_capability_narrows_instead_of_500ing():
+    """A stored name this build does not know (a rollback past a release that added one) must not
+    turn one row into a 500 for /admin/me, the whole directory and the capability gate itself.
+    Dropping it narrows the admin's access, which is the safe direction."""
+    from app.modules.identity.admin_rbac import read_capabilities
+
+    assert read_capabilities(None) is None
+    assert read_capabilities(["view_customers", "from_the_future"]) == {Capability.view_customers}
+    assert read_capabilities(["from_the_future"]) == frozenset()
+    # the INPUT path stays strict, so a typo in a grant is still refused
+    with pytest.raises(ValueError):
+        parse_capabilities(["from_the_future"])
+
+
+def test_an_admin_cannot_grant_a_capability_they_do_not_hold():
+    """Otherwise a viewer holding only manage_admins could give a puppet identity every other
+    capability and then sign in as it."""
+    org = AdminOrg()
+
+    async def scenario():
+        await org.bootstrap_super_admin(BOSS)
+        await org.grant(BOSS, HELPER, AdminRole.viewer, frozenset({Capability.manage_admins}))
+        with pytest.raises(AdminAuthzError):
+            await org.grant(HELPER, "puppet@invalid", AdminRole.viewer,
+                            frozenset({Capability.manage_customers}))
+        # a super_admin holds everything, so the rule never restricts them
+        wide = await org.grant(BOSS, "ok@invalid", AdminRole.viewer,
+                               frozenset({Capability.manage_customers}))
+        assert wide.capabilities == {Capability.manage_customers}
+
+    asyncio.run(scenario())
+
+
+def test_the_directory_and_audit_need_manage_admins_not_merely_membership(client):
+    """They expose every admin's capabilities and the free-text reasons behind each change, which
+    will carry sensitive wording. An admin narrowed to reads of customers should not see them."""
+    cookies = _boss(client)
+    with_csrf, headers = _csrf(cookies)
+    client.put(f"/api/v1/admin/org/{HELPER}", cookies=with_csrf, headers=headers,
+               json={"role": "viewer", "capabilities": ["view_customers"]})
+    helper = auth_cookies("plat", "owner", email=HELPER)
+    assert client.get("/api/v1/admin/customers", cookies=helper).status_code == 200
+    assert client.get("/api/v1/admin/org", cookies=helper).status_code == 403
+    assert client.get("/api/v1/admin/org/audit", cookies=helper).status_code == 403

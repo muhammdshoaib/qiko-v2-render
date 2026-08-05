@@ -72,7 +72,7 @@ from app.modules.identity.admin_rbac import (
     AdminRole,
     Capability,
     effective_capabilities,
-    parse_capabilities,
+    read_capabilities,
 )
 from app.modules.identity.onboarding import hash_otp, new_otp_code
 from app.modules.identity.pending_signup import PendingSignup, hash_signup_code
@@ -1011,7 +1011,7 @@ class SqlAdminOrgStore:
     @staticmethod
     def _to_identity(row) -> AdminIdentity:
         role = AdminRole(row.role)
-        explicit = parse_capabilities(row.capabilities) if row.capabilities is not None else None
+        explicit = read_capabilities(row.capabilities) if row.capabilities is not None else None
         return AdminIdentity(email=row.email, role=role,
                              capabilities=effective_capabilities(role, explicit))
 

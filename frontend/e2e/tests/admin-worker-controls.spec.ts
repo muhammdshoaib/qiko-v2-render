@@ -1,5 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
+// /admin/me returns the effective capability set and the shell filters the nav on it, so mocking
+// only `role` would exercise a payload the server never sends.
+const ADMIN_CAPABILITIES: Record<"viewer" | "super_admin", string[]> = {
+  super_admin: ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins"],
+  viewer: ["view_customers"],
+};
+
 async function mockAdmin(page: Page, role: "viewer" | "super_admin") {
   const mutations: unknown[] = [];
   const customerRequests: string[] = [];
@@ -13,7 +20,7 @@ async function mockAdmin(page: Page, role: "viewer" | "super_admin") {
     const path = new URL(route.request().url()).pathname;
     const method = route.request().method();
     const json = (body: unknown) => route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
-    if (path.endsWith("/admin/me")) return json({ role });
+    if (path.endsWith("/admin/me")) return json({ role, capabilities: ADMIN_CAPABILITIES[role] });
     if (path.endsWith("/admin/customers") && method === "GET") {
       const url = new URL(route.request().url());
       customerRequests.push(url.search);
@@ -80,7 +87,7 @@ test("super-admin can inspect and confirm worker disable", async ({ page }) => {
 test("payment links can be listed and created", async ({ page }) => {
   const requests: unknown[] = [];
   await page.context().addCookies([{ name: "qiko_access", value: "test", url: "http://127.0.0.1:3101" }]);
-  await page.route("**/api/v1/admin/me", (route) => route.fulfill({ contentType: "application/json", body: '{"role":"super_admin"}' }));
+  await page.route("**/api/v1/admin/me", (route) => route.fulfill({ contentType: "application/json", body: JSON.stringify({ role: "super_admin", capabilities: ADMIN_CAPABILITIES.super_admin }) }));
   await page.route("**/api/v1/billing/**", async (route) => {
     const request = route.request();
     if (request.url().includes("payment-links") && request.method() === "POST") requests.push(request.postDataJSON());

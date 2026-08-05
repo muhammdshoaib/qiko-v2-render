@@ -5738,7 +5738,10 @@ export interface operations {
                 "x-csrf-token": string;
             };
             path?: never;
-            cookie?: never;
+            cookie: {
+                /** @description Double-submit CSRF cookie; must equal the x-csrf-token header. */
+                qiko_csrf: string;
+            };
         };
         requestBody: {
             content: {
@@ -5811,7 +5814,10 @@ export interface operations {
             path: {
                 email: string;
             };
-            cookie?: never;
+            cookie: {
+                /** @description Double-submit CSRF cookie; must equal the x-csrf-token header. */
+                qiko_csrf: string;
+            };
         };
         requestBody: {
             content: {
@@ -5853,7 +5859,10 @@ export interface operations {
             path: {
                 email: string;
             };
-            cookie?: never;
+            cookie: {
+                /** @description Double-submit CSRF cookie; must equal the x-csrf-token header. */
+                qiko_csrf: string;
+            };
         };
         requestBody?: never;
         responses: {

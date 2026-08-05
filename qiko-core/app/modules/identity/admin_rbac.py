@@ -65,11 +65,28 @@ def default_capabilities(role: AdminRole) -> frozenset[Capability]:
 
 
 def parse_capabilities(values: Iterable[str] | None) -> frozenset[Capability] | None:
-    """None means "no explicit grant, fall back to the role default". Unknown names are rejected
-    rather than silently dropped, so a typo in a grant can never quietly widen or narrow access."""
+    """Strict parse for INPUT (API bodies, CLI arguments).
+
+    None means "no explicit grant, fall back to the role default". Unknown names are rejected rather
+    than silently dropped, so a typo in a grant can never quietly widen or narrow access.
+    """
     if values is None:
         return None
     return frozenset(Capability(value) for value in values)
+
+
+def read_capabilities(values: Iterable[str] | None) -> frozenset[Capability] | None:
+    """Lenient parse for STORED rows: drop names this build does not know.
+
+    Strict parsing here would raise on read, which turns one unrecognised stored value into a 500 for
+    /admin/me, for the whole directory, and inside the capability gate itself - a fail-LOUD outcome
+    where fail-closed is wanted. Dropping the unknown name narrows the admin's access instead, which
+    is the safe direction. The realistic trigger is a rollback past a release that added a capability.
+    """
+    if values is None:
+        return None
+    known = {capability.value for capability in Capability}
+    return frozenset(Capability(value) for value in values if value in known)
 
 
 def effective_capabilities(role: AdminRole,
@@ -283,6 +300,11 @@ class AdminOrg:
             raise AdminAuthzError("only a super_admin can change a super_admin")
         if capabilities is not None and Capability.manage_admins in capabilities and not actor_is_super:
             raise AdminAuthzError("only a super_admin can delegate manage_admins")
+        # No granting beyond your own authority: otherwise a viewer holding only manage_admins could
+        # give a puppet identity every other capability and then sign in as it. A super_admin holds
+        # everything, so this never restricts them.
+        if capabilities is not None and not frozenset(capabilities) <= actor_identity.capabilities:
+            raise AdminAuthzError("an admin cannot grant a capability they do not hold")
         return await self.store.grant(email, role, capabilities,
                                       changed_by_email=actor, reason=reason)
 

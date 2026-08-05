@@ -17,8 +17,8 @@ Usage (run inside the qiko-core container so settings and credentials resolve):
         --apply --confirm-email ops@example.com
 
     # grant a narrow capability set instead of the role default
-    python scripts/provision_platform_admin.py --email cost@example.com --role viewer \
-        --capabilities view_ai_cost,view_system_stats --apply --confirm-email cost@example.com
+    python scripts/provision_platform_admin.py --email support@example.com --role viewer \
+        --capabilities view_customers,manage_workers --apply --confirm-email support@example.com
 
 Every write is audited in `platform_admin_audit` with `changed_by_email` recording the operator
 identity passed via `--actor` (defaults to `operator-cli`).
