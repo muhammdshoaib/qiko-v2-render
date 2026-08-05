@@ -272,7 +272,30 @@ class PlatformAdmin(Base):
     __tablename__ = "platform_admins"
     email: Mapped[str] = mapped_column(String(320), primary_key=True)
     role: Mapped[str] = mapped_column(String(16))
+    # NULL means "no explicit grant, use the role default". A list means exactly these capabilities,
+    # so a viewer can be given one extra permission without being promoted to super_admin.
+    capabilities: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PlatformAdminAudit(Base):
+    """Append-only record of every platform-admin grant or revoke.
+
+    Mirrors agent_state_audit: who changed whom, the before and after, an optional reason, and when.
+    Platform admin is the highest privilege in the system and had no audit trail at all.
+    """
+
+    __tablename__ = "platform_admin_audit"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    email: Mapped[str] = mapped_column(String(320), index=True)
+    changed_by_email: Mapped[str] = mapped_column(String(320))
+    previous_role: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    role: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    previous_capabilities: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    capabilities: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    __table_args__ = (Index("ix_platform_admin_audit_email_created", "email", "created_at"),)
 
 
 class Lead(Base):

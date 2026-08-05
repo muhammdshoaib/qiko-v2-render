@@ -6,13 +6,16 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LayoutDashboard, Users, BarChart3, Receipt, ShieldCheck, ShieldAlert, LogOut, Menu, X, UserCog, CreditCard } from "lucide-react";
 import { Button, Logo, cn } from "@qiko/ui";
-import { adminMe, ApiError, logout } from "@/lib/api";
+import { adminMe, ApiError, logout, type Capability } from "@/lib/api";
 
-const NAV = [
+// `requires` gates the entry on a capability. Entries without it stay visible to every platform
+// admin, so nothing that worked before disappears. Hiding a denied entry is nicer than letting the
+// admin click into a 403, but it is presentation only: the server enforces every one of these.
+const NAV: { href: string; label: string; icon: typeof Users; requires?: Capability }[] = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard },
-  { href: "/customers", label: "Customers", icon: Users },
+  { href: "/customers", label: "Customers", icon: Users, requires: "view_customers" },
   { href: "/subscriptions", label: "Subscriptions", icon: CreditCard },
-  { href: "/invoices", label: "Invoices", icon: Receipt },
+  { href: "/invoices", label: "Invoices", icon: Receipt, requires: "manage_billing" },
   { href: "/admins", label: "Platform Admins", icon: UserCog },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/security", label: "Security", icon: ShieldCheck },
@@ -31,6 +34,13 @@ export function AppShell({ title, children }: { title: string; children: React.R
   const mfaRequired =
     me.error instanceof ApiError && me.error.status === 403 && /mfa/i.test(me.error.message);
   const needsOnboarding = mfaRequired && !pathname.startsWith("/security");
+  // A MISSING capabilities field means "unknown", not "none": treating it as an empty list hid
+  // Customers and Invoices from every admin whenever /admin/me came from an older backend, a cached
+  // response or a mock. Only filter once the field is actually present.
+  const capabilities = me.data?.capabilities;
+  const visibleNav = capabilities
+    ? NAV.filter((entry) => !entry.requires || capabilities.includes(entry.requires))
+    : NAV;
   useEffect(() => {
     if (needsOnboarding) router.replace("/security");
   }, [needsOnboarding, router]);
@@ -59,7 +69,7 @@ export function AppShell({ title, children }: { title: string; children: React.R
           <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">ADMIN</span>
         </div>
         <nav className="flex flex-col gap-1">
-          {NAV.map(({ href, label, icon: Icon }) => {
+          {visibleNav.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href);
             return (
               <Link key={href} href={href}
@@ -86,7 +96,7 @@ export function AppShell({ title, children }: { title: string; children: React.R
         <div className="flex h-full flex-col">
           <div className="mb-4 flex items-center justify-between"><div><Logo /><span id="mobile-nav-title" className="sr-only">Admin navigation</span></div><Button variant="ghost" size="icon" autoFocus onClick={() => mobileDialog.current?.close()} aria-label="Close menu"><X className="size-5" /></Button></div>
           <nav className="flex flex-col gap-1" aria-label="Admin mobile navigation">
-            {NAV.map(({ href, label, icon: Icon }) => (
+            {visibleNav.map(({ href, label, icon: Icon }) => (
               <Link key={href} href={href} onClick={() => mobileDialog.current?.close()} className={cn("flex min-h-11 items-center gap-2 rounded-md p-2 text-sm", pathname.startsWith(href) ? "bg-sidebar-accent font-medium" : "text-sidebar-foreground/70")}><Icon className="size-4" />{label}</Link>
             ))}
           </nav>

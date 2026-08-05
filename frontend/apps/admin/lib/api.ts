@@ -89,9 +89,39 @@ export type WorkerAudit = {
 export type CustomerDetail = Customer & {
   is_studio: boolean; deleted: boolean; workers: AdminWorker[]; worker_state_audit: WorkerAudit[];
 };
-export const adminMe = () => request<{ role: AdminRole }>("/admin/me");
+// Only the capabilities the server actually enforces today. view_ai_cost, set_cost_caps and
+// view_system_stats arrive with the endpoints they gate, so the UI never offers a permission that
+// does nothing.
+export type Capability = "view_customers" | "manage_customers" | "manage_workers" | "manage_billing" | "manage_admins";
+
+export const ALL_CAPABILITIES: Capability[] = ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins"];
+
+export type PlatformAdmin = { email: string; role: AdminRole; capabilities: Capability[] };
+export type AdminGrantAudit = {
+  id: number | null; email: string; changed_by_email: string;
+  previous_role: AdminRole | null; role: AdminRole | null;
+  previous_capabilities: Capability[] | null; capabilities: Capability[] | null;
+  reason: string | null; created_at: string;
+};
+
+export const adminMe = () =>
+  request<{ role: AdminRole; capabilities: Capability[] }>("/admin/me");
+export const listPlatformAdmins = () =>
+  request<{ admins: PlatformAdmin[] }>("/admin/org");
+export const grantPlatformAdmin = (
+  email: string,
+  body: { role: AdminRole; capabilities: Capability[] | null; reason?: string },
+) => request<PlatformAdmin>(`/admin/org/${encodeURIComponent(email)}`, {
+  method: "PUT", body: JSON.stringify(body),
+});
+export const listPlatformAdminAudit = () =>
+  request<{ entries: AdminGrantAudit[] }>("/admin/org/audit");
 export const adminRoleOf = (email: string) => request<{ email: string; role: AdminRole | null }>(`/admin/org/role/${encodeURIComponent(email)}`);
-export const removePlatformAdmin = (email: string) => request<{ removed: string }>(`/admin/org/${encodeURIComponent(email)}`, { method: "DELETE" });
+export const removePlatformAdmin = (email: string, reason?: string) => {
+  // The reason lands in the audit trail; a UI-originated revoke used to record none.
+  const query = reason ? `?reason=${encodeURIComponent(reason)}` : "";
+  return request<{ removed: string }>(`/admin/org/${encodeURIComponent(email)}${query}`, { method: "DELETE" });
+};
 export const customerDetail = (userId: string) => request<CustomerDetail>(`/admin/customers/${encodeURIComponent(userId)}`);
 export const setCustomerStudio = (customerId: string, enabled: boolean) =>
   request<CustomerDetail>(`/admin/customers/${encodeURIComponent(customerId)}/studio`, {

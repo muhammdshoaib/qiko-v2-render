@@ -38,6 +38,7 @@ from app.db.models import PasswordResetOtp as PasswordResetOtpRow
 from app.db.models import PendingSignup as PendingSignupRow
 from app.db.models import PendingTeamInvite as PendingTeamInviteRow
 from app.db.models import PlatformAdmin as PlatformAdminRow
+from app.db.models import PlatformAdminAudit as PlatformAdminAuditRow
 from app.db.models import PolicyRelease as PolicyReleaseRow
 from app.db.models import RfpPack as RfpPackRow
 from app.db.models import SalesIntelActivityLog as SalesIntelActivityLogRow
@@ -65,7 +66,14 @@ from app.core.deps import WorkerUnavailable
 from app.modules.chat.service import ConversationScopeError, ConversationSummary, Message
 from app.modules.crm.service import Contact, CrmAction
 from app.modules.finance.models import FinanceChatMessage, FinanceFile
-from app.modules.identity.admin_rbac import AdminRole
+from app.modules.identity.admin_rbac import (
+    AdminGrantAudit,
+    AdminIdentity,
+    AdminRole,
+    Capability,
+    effective_capabilities,
+    read_capabilities,
+)
 from app.modules.identity.onboarding import hash_otp, new_otp_code
 from app.modules.identity.pending_signup import PendingSignup, hash_signup_code
 from app.modules.identity import twofa
@@ -922,6 +930,90 @@ class SqlAdminOrgStore:
         async with self.sessionmaker() as s:
             row = (await s.execute(select(PlatformAdminRow).limit(1))).scalars().first()
             return row is None
+
+    async def get_identity(self, email: str) -> AdminIdentity | None:
+        async with self.sessionmaker() as s:
+            row = await s.get(PlatformAdminRow, email.lower())
+            return self._to_identity(row) if row else None
+
+    async def list_admins(self) -> list[AdminIdentity]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(PlatformAdminRow).order_by(PlatformAdminRow.email)
+            )).scalars().all()
+            return [self._to_identity(row) for row in rows]
+
+    async def grant(self, email: str, role: AdminRole,
+                    capabilities: frozenset[Capability] | None, *,
+                    changed_by_email: str, reason: str | None) -> AdminIdentity:
+        """Row-locked upsert plus one audit row, in a single transaction.
+
+        Same shape as SqlAgentStore.set_enabled: SELECT ... FOR UPDATE on the target, capture the
+        previous values before mutating, and write the audit row inside the same transaction so a
+        grant can never land without its audit entry. A no-op change writes no audit row.
+        """
+        key = email.lower()
+        # Persist the EFFECTIVE set: a super_admin implicitly keeps manage_admins, and storing the
+        # requested list without it made platform_admins and the audit under-report the real
+        # authority while GET /admin/org reported the effective one.
+        stored = (sorted(c.value for c in effective_capabilities(role, capabilities))
+                  if capabilities is not None else None)
+        async with self.sessionmaker() as s, s.begin():
+            row = (await s.execute(
+                select(PlatformAdminRow).where(PlatformAdminRow.email == key).with_for_update()
+            )).scalar_one_or_none()
+            previous_role = row.role if row else None
+            previous_caps = list(row.capabilities) if row and row.capabilities is not None else None
+            if row is None:
+                row = PlatformAdminRow(email=key, role=role.value, capabilities=stored)
+                s.add(row)
+            else:
+                row.role = role.value
+                row.capabilities = stored
+            unchanged = previous_role == role.value and previous_caps == stored
+            if not unchanged:
+                s.add(PlatformAdminAuditRow(
+                    email=key, changed_by_email=changed_by_email,
+                    previous_role=previous_role, role=role.value,
+                    previous_capabilities=previous_caps, capabilities=stored,
+                    reason=(reason or "").strip() or None))
+            return AdminIdentity(email=key, role=role,
+                                 capabilities=effective_capabilities(role, capabilities))
+
+    async def revoke(self, email: str, *, changed_by_email: str, reason: str | None) -> None:
+        key = email.lower()
+        async with self.sessionmaker() as s, s.begin():
+            row = (await s.execute(
+                select(PlatformAdminRow).where(PlatformAdminRow.email == key).with_for_update()
+            )).scalar_one_or_none()
+            if row is None:
+                return
+            s.add(PlatformAdminAuditRow(
+                email=key, changed_by_email=changed_by_email,
+                previous_role=row.role, role=None,
+                previous_capabilities=list(row.capabilities) if row.capabilities is not None else None,
+                capabilities=None, reason=(reason or "").strip() or None))
+            await s.delete(row)
+
+    async def list_audit(self, *, limit: int = 50) -> list[AdminGrantAudit]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(PlatformAdminAuditRow)
+                .order_by(PlatformAdminAuditRow.created_at.desc(), PlatformAdminAuditRow.id.desc())
+                .limit(max(1, min(limit, 200)))
+            )).scalars().all()
+            return [AdminGrantAudit(
+                id=row.id, email=row.email, changed_by_email=row.changed_by_email,
+                previous_role=row.previous_role, role=row.role,
+                previous_capabilities=row.previous_capabilities, capabilities=row.capabilities,
+                reason=row.reason, created_at=row.created_at) for row in rows]
+
+    @staticmethod
+    def _to_identity(row) -> AdminIdentity:
+        role = AdminRole(row.role)
+        explicit = read_capabilities(row.capabilities) if row.capabilities is not None else None
+        return AdminIdentity(email=row.email, role=role,
+                             capabilities=effective_capabilities(role, explicit))
 
 
 @dataclass

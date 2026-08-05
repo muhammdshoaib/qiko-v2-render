@@ -60,15 +60,36 @@ def test_2fa_exchange_bridge(client):
     assert client.post("/api/v1/auth/2fa/exchange", json={"temp_token": token, "secret": secret, "code": "000000"}).status_code == 400
 
 
-def test_admin_bootstrap_is_disabled_outside_dev(client, monkeypatch):
+def test_admin_bootstrap_invite_and_accept_are_all_disabled_outside_dev(client, monkeypatch):
+    """All three privilege-granting shortcuts stay dev-only outside dev.
+
+    bootstrap: the first caller to reach it must never be able to self-appoint.
+    invite/accept: the invite token is stateless, replayable for 7 days, unrevocable and returned in
+    the response body, so it is a bearer credential for the highest privilege in the system.
+    Production granting goes through the audited PUT /admin/org/{email}; first-admin provisioning
+    through scripts/provision_platform_admin.py.
+
+    Asserted as 404 with a caller who WOULD otherwise pass the gate, so the assertion actually
+    depends on the environment: a 403 here would prove nothing, since a non-admin gets 403 in every
+    environment and the dependency runs before the body's dev-only check."""
     settings = get_settings()
     monkeypatch.setattr(settings, "environment", Environment.preprod)
     caller = auth_cookies("public", "owner", email="public-owner@invalid")
-
     assert client.post("/api/v1/admin/org/bootstrap", cookies=caller).status_code == 404
-    assert client.post("/api/v1/admin/org/invite",
-                       json={"email": "admin@invalid", "role": "viewer"}, cookies=caller).status_code == 404
-    assert client.post("/api/v1/admin/org/accept", json={"token": "anything"}).status_code == 404
+
+    # a real super_admin with valid CSRF still gets 404: the endpoints are absent, not merely gated
+    from app.modules.identity import csrf as csrf_module
+    from tests.helpers import bootstrap_admin
+
+    boss_email = "b4-boss@invalid"
+    bootstrap_admin(client, boss_email)
+    token = csrf_module.generate_csrf_token()
+    boss = {**auth_cookies("b4", "viewer", email=boss_email), csrf_module.CSRF_COOKIE: token}
+    headers = {csrf_module.CSRF_HEADER: token}
+    assert client.post("/api/v1/admin/org/invite", json={"email": "admin@invalid", "role": "viewer"},
+                       cookies=boss, headers=headers).status_code == 404
+    assert client.post("/api/v1/admin/org/accept", json={"token": "anything"},
+                       cookies=boss).status_code == 404
 
 
 def test_admin_org_rbac(client):
@@ -77,6 +98,18 @@ def test_admin_org_rbac(client):
     # bootstrap is first-run only -- a second caller can't self-escalate afterwards
     other = auth_cookies("b4", "owner", email="other@invalid")
     assert client.post("/api/v1/admin/org/bootstrap", cookies=other).status_code == 409
-    tok = client.post("/api/v1/admin/org/invite", json={"email": "viewer@invalid", "role": "viewer"}, cookies=boss).json()["token"]
-    assert client.post("/api/v1/admin/org/accept", json={"token": tok}, cookies=boss).json()["role"] == "viewer"
+    # invite is now CSRF-protected like every other admin mutation
+    from app.modules.identity import csrf as csrf_module
+
+    token = csrf_module.generate_csrf_token()
+    boss_csrf = {**boss, csrf_module.CSRF_COOKIE: token}
+    headers = {csrf_module.CSRF_HEADER: token}
+    tok = client.post("/api/v1/admin/org/invite", json={"email": "viewer@invalid", "role": "viewer"},
+                      cookies=boss_csrf, headers=headers).json()["token"]
+    # Only the invited person may redeem it: the boss holding the token cannot mint it for someone else.
+    assert client.post("/api/v1/admin/org/accept", json={"token": tok},
+                       cookies=boss).status_code == 400
+    invitee = auth_cookies("b4", "owner", email="viewer@invalid")
+    assert client.post("/api/v1/admin/org/accept", json={"token": tok},
+                       cookies=invitee).json()["role"] == "viewer"
     assert client.get("/api/v1/admin/org/role/viewer@invalid", cookies=boss).json()["role"] == "viewer"

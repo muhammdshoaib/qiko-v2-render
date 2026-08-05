@@ -97,7 +97,9 @@ def test_admin_detail_viewer_reads_all_workers_with_safe_config_and_role(client)
     detail = client.get("/api/v1/admin/customers/acme", cookies=viewer)
 
     assert me.status_code == 200
-    assert me.json() == {"role": "viewer"}
+    # /admin/me now also reports the effective capability set so the UI can hide what the caller
+    # cannot do. A viewer's default is read-only.
+    assert me.json() == {"role": "viewer", "capabilities": ["view_customers"]}
     assert detail.status_code == 200
     assert {worker["id"] for worker in detail.json()["workers"]} == {"a1", "a2", "a3"}
     assert detail.json()["workers"][0]["config"] == {"expertise": "Tender writing"}
@@ -240,7 +242,7 @@ def test_migration_is_single_head_with_enabled_backfill_and_audit_indexes():
     config = Config(str(root / "alembic.ini"))
     config.set_main_option("script_location", str(root / "alembic"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["0031_passage_agent_id"]
+    assert scripts.get_heads() == ["0032_platform_admin_capabilities"]
 
     migration = root / "alembic/versions/0025_agent_enabled_audit.py"
     source = migration.read_text()

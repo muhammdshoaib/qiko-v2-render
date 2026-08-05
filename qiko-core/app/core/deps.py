@@ -95,6 +95,35 @@ def require_platform_admin():
     return _dep
 
 
+def require_platform_capability(capability):
+    """Gate on a fine-grained platform capability rather than the coarse role.
+
+    Deliberately NOT phrased with the substring "mfa": the admin app redirects to 2FA onboarding
+    when a 403 body matches /mfa/i, so a capability denial must not be mistaken for a missing-2FA
+    state (that would send the admin into an enrolment loop they cannot escape).
+    """
+    async def _dep(request: Request, claims: dict = Depends(current_claims)):
+        await _platform_admin_role(request, claims)  # enforces 2FA + registration first
+        email = claims.get("email") or ""
+        identity = await request.app.state.admin_org.identity_of(email)
+        if identity is None or not identity.can(capability):
+            raise HTTPException(
+                status_code=403,
+                detail=f"platform capability required: {getattr(capability, 'value', capability)}")
+        return identity
+
+    return _dep
+
+
+def require_platform_identity():
+    """The caller's platform identity (role + effective capabilities), for read endpoints."""
+    async def _dep(request: Request, claims: dict = Depends(current_claims)):
+        await _platform_admin_role(request, claims)
+        return await request.app.state.admin_org.identity_of(claims.get("email") or "")
+
+    return _dep
+
+
 def require_platform_super_admin():
     """Only a platform super_admin -- for mutating admin endpoints (delete/disable a customer,
     toggle Studio access, manage other admins)."""

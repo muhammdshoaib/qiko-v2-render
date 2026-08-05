@@ -107,6 +107,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/org": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Admins
+         * @description The platform-admin directory. There was no way to enumerate platform admins at all, so the
+         *     admin UI could only look one up by exact email - you could not answer "who has access?".
+         */
+        get: operations["list_admins_api_v1_admin_org_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/org/accept": {
         parameters: {
             query?: never;
@@ -116,8 +137,35 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Accept */
+        /**
+         * Accept
+         * @description Redeem a platform-admin invite. DEV-ONLY, see invite() for why.
+         *
+         *     The identity checks below are kept even in dev: the endpoint used to have no authentication at
+         *     all, so anyone holding a leaked invite could mint platform-admin access for the invited email.
+         */
         post: operations["accept_api_v1_admin_org_accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/org/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Audit
+         * @description Every grant and revoke, newest first. Platform admin is the highest privilege in the system
+         *     and previously left no trail whatsoever.
+         */
+        get: operations["audit_api_v1_admin_org_audit_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -154,7 +202,20 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Invite */
+        /**
+         * Invite
+         * @description Mint an invite token. DEV-ONLY on purpose.
+         *
+         *     The token is stateless: no jti, no server-side record, valid for 7 days, and its value is
+         *     returned in this response body for the caller to paste into email or chat. That makes it a
+         *     replayable, unrevocable bearer credential for the highest privilege in the system - a revoked
+         *     admin could re-post the same token and reinstate themselves, and because accept() writes through
+         *     store.set() rather than the audited grant path, the reinstatement would leave no audit row.
+         *     Production granting goes through the audited, capability-gated PUT /admin/org/{email}, and
+         *     first-admin provisioning through scripts/provision_platform_admin.py. Rebuilding this on the
+         *     PendingTeamInvite pattern (single-use row consumed under FOR UPDATE, emailed to the invitee) is
+         *     the prerequisite for enabling it outside dev.
+         */
         post: operations["invite_api_v1_admin_org_invite_post"];
         delete?: never;
         options?: never;
@@ -192,7 +253,8 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        put?: never;
+        /** Grant */
+        put: operations["grant_api_v1_admin_org__email__put"];
         post?: never;
         /** Remove */
         delete: operations["remove_api_v1_admin_org__email__delete"];
@@ -3791,6 +3853,11 @@ export interface components {
         AdminRole: "super_admin" | "viewer";
         /** AdminSelfOut */
         AdminSelfOut: {
+            /**
+             * Capabilities
+             * @default []
+             */
+            capabilities: string[];
             role: components["schemas"]["AdminRole"];
         };
         /** AdminWorkerOut */
@@ -4344,6 +4411,14 @@ export interface components {
             to: string;
             /** Worker Id */
             worker_id: string;
+        };
+        /** GrantBody */
+        GrantBody: {
+            /** Capabilities */
+            capabilities?: string[] | null;
+            /** Reason */
+            reason?: string | null;
+            role: components["schemas"]["AdminRole"];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -5543,6 +5618,28 @@ export interface operations {
             };
         };
     };
+    list_admins_api_v1_admin_org_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     accept_api_v1_admin_org_accept_post: {
         parameters: {
             query?: never;
@@ -5555,6 +5652,39 @@ export interface operations {
                 "application/json": components["schemas"]["AcceptBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_api_v1_admin_org_audit_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -5603,9 +5733,15 @@ export interface operations {
     invite_api_v1_admin_org_invite_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Double-submit CSRF token; must equal the qiko_csrf cookie. */
+                "x-csrf-token": string;
+            };
             path?: never;
-            cookie?: never;
+            cookie: {
+                /** @description Double-submit CSRF cookie; must equal the x-csrf-token header. */
+                qiko_csrf: string;
+            };
         };
         requestBody: {
             content: {
@@ -5668,14 +5804,65 @@ export interface operations {
             };
         };
     };
-    remove_api_v1_admin_org__email__delete: {
+    grant_api_v1_admin_org__email__put: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Double-submit CSRF token; must equal the qiko_csrf cookie. */
+                "x-csrf-token": string;
+            };
             path: {
                 email: string;
             };
-            cookie?: never;
+            cookie: {
+                /** @description Double-submit CSRF cookie; must equal the x-csrf-token header. */
+                qiko_csrf: string;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GrantBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_api_v1_admin_org__email__delete: {
+        parameters: {
+            query?: {
+                reason?: string | null;
+            };
+            header: {
+                /** @description Double-submit CSRF token; must equal the qiko_csrf cookie. */
+                "x-csrf-token": string;
+            };
+            path: {
+                email: string;
+            };
+            cookie: {
+                /** @description Double-submit CSRF cookie; must equal the x-csrf-token header. */
+                qiko_csrf: string;
+            };
         };
         requestBody?: never;
         responses: {

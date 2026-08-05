@@ -8,20 +8,23 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.deps import (
+    require_platform_capability,
+    require_platform_identity,
     authed_tenant,
     current_claims,
-    require_platform_admin,
-    require_platform_super_admin,
 )
 from app.modules.admin.metrics import Subscription, revenue_metrics
 from app.modules.identity import csrf
-from app.modules.identity.admin_rbac import AdminRole
+from app.modules.identity.admin_rbac import AdminRole, Capability
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 class AdminSelfOut(BaseModel):
     role: AdminRole
+    # The effective capability set, so the admin UI can hide what the caller cannot do instead of
+    # letting them click into a 403.
+    capabilities: list[str] = []
 
 
 class AdminWorkerOut(BaseModel):
@@ -65,13 +68,13 @@ class SubscriptionIn(BaseModel):
 
 @router.post("/revenue")
 def revenue(subs: list[SubscriptionIn], _tenant: str = Depends(authed_tenant),
-            _role=Depends(require_platform_admin())) -> dict:
+            _identity=Depends(require_platform_capability(Capability.view_customers))) -> dict:
     return revenue_metrics([Subscription(**s.model_dump()) for s in subs])
 
 
 @router.get("/customers")
 def customers(request: Request, _tenant: str = Depends(authed_tenant),
-              _role=Depends(require_platform_admin()),
+              _identity=Depends(require_platform_capability(Capability.view_customers)),
               search: str | None = None, plan: str | None = None, page: int = 1) -> dict:
     directory = request.app.state.customers
     result = directory.list(search=search, plan=plan, page=page)
@@ -120,14 +123,15 @@ def _audit_json(entry) -> dict:
 
 @router.get("/me", response_model=AdminSelfOut)
 async def admin_me(_tenant: str = Depends(authed_tenant),
-                   role=Depends(require_platform_admin())) -> dict:
-    return {"role": role.value}
+                   identity=Depends(require_platform_identity())) -> dict:
+    return {"role": identity.role.value,
+            "capabilities": sorted(c.value for c in identity.capabilities)}
 
 
 @router.get("/customers/{user_id}", response_model=CustomerDetailOut)
 async def customer_detail(user_id: str, request: Request,
                           _tenant: str = Depends(authed_tenant),
-                          _role=Depends(require_platform_admin())) -> dict:
+                          _identity=Depends(require_platform_capability(Capability.view_customers))) -> dict:
     record = await run_in_threadpool(request.app.state.customers.details, user_id)
     if record is None:
         raise HTTPException(status_code=404, detail="customer not found")
@@ -174,7 +178,7 @@ def _require_csrf(request: Request) -> None:
 async def set_worker_enabled(customer_id: str, agent_id: str, body: WorkerEnabledBody,
                              request: Request, _tenant: str = Depends(authed_tenant),
                              claims: dict = Depends(current_claims),
-                             _role=Depends(require_platform_super_admin())) -> dict:
+                             _identity=Depends(require_platform_capability(Capability.manage_workers))) -> dict:
     if await run_in_threadpool(request.app.state.customers.details, customer_id) is None:
         raise HTTPException(status_code=404, detail="worker not found")
     agent = await request.app.state.agents.get(customer_id, agent_id)
@@ -194,7 +198,7 @@ class StudioBody(BaseModel):
 @router.post("/customers/{user_id}/studio", openapi_extra=_CSRF_OPENAPI)
 async def customer_studio(user_id: str, body: StudioBody, request: Request,
                           _tenant: str = Depends(authed_tenant),
-                          _role=Depends(require_platform_super_admin())) -> dict:
+                          _identity=Depends(require_platform_capability(Capability.manage_customers))) -> dict:
     if await run_in_threadpool(request.app.state.customers.details, user_id) is None:
         raise HTTPException(status_code=404, detail="customer not found")
     _require_csrf(request)
@@ -210,7 +214,7 @@ async def customer_studio(user_id: str, body: StudioBody, request: Request,
 @router.delete("/customers/{user_id}", openapi_extra=_CSRF_OPENAPI)
 async def customer_delete(user_id: str, request: Request,
                           _tenant: str = Depends(authed_tenant),
-                          _role=Depends(require_platform_super_admin())) -> dict:
+                          _identity=Depends(require_platform_capability(Capability.manage_customers))) -> dict:
     if await run_in_threadpool(request.app.state.customers.details, user_id) is None:
         raise HTTPException(status_code=404, detail="customer not found")
     _require_csrf(request)
@@ -223,7 +227,7 @@ async def customer_delete(user_id: str, request: Request,
 
 @router.get("/overview")
 def overview(request: Request, _tenant: str = Depends(authed_tenant),
-             _role=Depends(require_platform_admin())) -> dict:
+             _identity=Depends(require_platform_capability(Capability.view_customers))) -> dict:
     subs = request.app.state.subscriptions.summary()
     customers_total = request.app.state.customers.list()["total"]
     return {"customers_total": customers_total, **subs}
@@ -231,7 +235,7 @@ def overview(request: Request, _tenant: str = Depends(authed_tenant),
 
 @router.get("/analytics")
 def analytics(request: Request, _tenant: str = Depends(authed_tenant),
-              _role=Depends(require_platform_admin()),
+              _identity=Depends(require_platform_capability(Capability.view_customers)),
               start: str = "2026-01-01", end: str = "2026-12-31") -> dict:
     from app.modules.admin.ga4 import GA4Analytics
 
