@@ -38,7 +38,9 @@ from sqlalchemy import func, select  # noqa: E402
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # noqa: E402
 
 from app.core.config import get_settings  # noqa: E402
+from app.core.tenancy import reset_tenant, set_tenant  # noqa: E402
 from app.db.models import Passage  # noqa: E402
+from app.modules.ai import usage  # noqa: E402
 from app.modules.ai.embeddings import get_embeddings  # noqa: E402
 from app.modules.knowledge.chunking import chunk_text  # noqa: E402
 
@@ -116,17 +118,30 @@ async def _run(args: argparse.Namespace) -> int:
 
         replaced = 0
         created = 0
-        for row in oversized:
-            passage_id, tenant, agent_id, doc_id, _size = row
+        store = None
+        try:
+            from app.db.stores import SqlUsageStore
+
+            store = SqlUsageStore(sessionmaker)
+        except Exception:  # noqa: BLE001 - accounting must never stop the migration
+            store = None
+
+        async def replace_one(passage_id: str, tenant: str, agent_id, doc_id: str) -> int:
+            """Replace one oversized passage with its parts. Returns the number of parts written.
+
+            A proper context manager rather than manual enter/exit: if the transaction raises, the
+            tenant binding and the usage scope must still be unwound, otherwise the next passage would
+            be attributed to the previous tenant.
+            """
             async with sessionmaker() as session, session.begin():
                 original = (await session.execute(
                     select(Passage).where(Passage.id == passage_id).with_for_update()
                 )).scalar_one_or_none()
                 if original is None:
-                    continue  # already handled by a concurrent run
+                    return 0  # already handled by a concurrent run
                 parts = chunk_text(original.text, max_chars=args.max_chars, overlap=args.overlap)
                 if not parts:
-                    continue
+                    return 0
                 # Embedding happens inside the transaction on purpose: if a provider call fails the
                 # transaction rolls back and the original passage is still there, rather than the
                 # document losing a section.
@@ -135,8 +150,23 @@ async def _run(args: argparse.Namespace) -> int:
                         id=_part_id(passage_id, index), tenant_id=tenant, agent_id=agent_id,
                         doc_id=doc_id, text=part, embedding=list(embedder.embed(part))))
                 await session.delete(original)
+                return len(parts)
+
+        for row in oversized:
+            passage_id, tenant, agent_id, doc_id, _size = row
+            # Attribute the embedding spend to the tenant whose passage this is. Without a scope the
+            # instrumentation warned "outside a scope" once per call and the spend, which is real
+            # Bedrock money and the largest single burst this platform makes, went unrecorded.
+            tenant_token = set_tenant(tenant)
+            try:
+                with usage.scope() as events:
+                    parts_written = await replace_one(passage_id, tenant, agent_id, doc_id)
+                    await usage.flush(store, events)
+            finally:
+                reset_tenant(tenant_token)
+            if parts_written:
                 replaced += 1
-                created += len(parts)
+                created += parts_written
             print(f"  ...replaced {replaced}/{len(oversized)}, {created} chunks created", flush=True)
 
         print(f"done: {replaced} passage(s) replaced by {created} chunk(s)")
