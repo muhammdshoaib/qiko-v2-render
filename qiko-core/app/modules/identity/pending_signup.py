@@ -35,6 +35,9 @@ class PendingSignup:
     terms_release_id: str
     privacy_release_id: str
     cookies_release_id: str
+    # The display name typed at signup. It used to be collected by the form and silently dropped,
+    # so every account was created with no name even though users.name exists.
+    name: str | None = None
     invite_version: int | None = None
     attempts_remaining: int = SIGNUP_VERIFICATION_MAX_ATTEMPTS
     completed_at: datetime | None = None
@@ -125,6 +128,7 @@ def make_pending_signup(
     terms_release_id: str,
     privacy_release_id: str,
     cookies_release_id: str,
+    name: str | None = None,
     invite_version: int | None = None,
     ttl: int = SIGNUP_VERIFICATION_TTL_SECONDS,
 ) -> tuple[PendingSignup, str]:
@@ -140,5 +144,6 @@ def make_pending_signup(
         terms_release_id=terms_release_id,
         privacy_release_id=privacy_release_id,
         cookies_release_id=cookies_release_id,
+        name=name,
         invite_version=invite_version,
     ), code

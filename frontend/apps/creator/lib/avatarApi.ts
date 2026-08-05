@@ -44,9 +44,11 @@ export async function addAvatarKnowledge(payload: Record<string, unknown>) {
   return req("/knowledge/ingest", { method: "POST", body: JSON.stringify({ doc_id: docId, text }) });
 }
 
-export async function loginAvatar(body: { email: string; password: string }) {
+export async function loginAvatar(body: { email: string; password: string; totp?: string }) {
   // V2 sets an httpOnly cookie; there is no client token. Return a truthy token so the
   // ported UI's success branch runs, plus the user object.
+  // `totp` is required by POST /auth/login as soon as the account has 2FA enabled -- omitting it
+  // returned 401 "Invalid or missing 2FA code" and locked those users out of the creator app.
   const r = await req<{ user: Record<string, unknown> }>("/auth/login", {
     method: "POST",
     body: JSON.stringify(body),
@@ -57,7 +59,9 @@ export async function loginAvatar(body: { email: string; password: string }) {
 export async function signupAvatar(body: { user_name: string; email: string; password: string; invite_token?: string; terms_release_id: string; privacy_release_id: string; cookies_release_id: string }) {
   return req("/auth/signup", {
     method: "POST",
-    body: JSON.stringify({ email: body.email, password: body.password, invite_token: body.invite_token, accept_policies: true, terms_release_id: body.terms_release_id, privacy_release_id: body.privacy_release_id, cookies_release_id: body.cookies_release_id }),
+    // `name` is forwarded: it used to be accepted here as user_name and silently dropped, so every
+    // account was created with no display name.
+    body: JSON.stringify({ email: body.email, password: body.password, name: body.user_name, invite_token: body.invite_token, accept_policies: true, terms_release_id: body.terms_release_id, privacy_release_id: body.privacy_release_id, cookies_release_id: body.cookies_release_id }),
   });
 }
 

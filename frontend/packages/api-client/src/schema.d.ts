@@ -4870,6 +4870,8 @@ export interface components {
             email: string;
             /** Invite Token */
             invite_token?: string | null;
+            /** Name */
+            name?: string | null;
             /** Password */
             password: string;
             /**

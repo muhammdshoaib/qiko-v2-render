@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { useLocation } from "@/lib/wouter";
 import { useAppDispatch } from "@/store/hooks";
-import { setAuth, setCalendlyToken } from "@/store/slices/authSlice";
+import { setAuth } from "@/store/slices/authSlice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,7 +11,6 @@ import { Loader2, Eye, EyeOff, ArrowLeft, AlertCircle } from "lucide-react";
 import { Link } from "@/lib/wouter";
 import { toast } from "sonner";
 import { loginAvatar } from "@/lib/avatarApi";
-import { resolveDecryptedCalendlyToken } from "@/lib/calendlyToken";
 import { ConsentSettingsButton } from "@/components/consent/ConsentUI";
 
 export default function Login() {
@@ -20,6 +19,9 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [totp, setTotp] = useState("");
+  // Revealed only once the server says this account has 2FA, so the common case stays a 2-field form.
+  const [twoFactorRequired, setTwoFactorRequired] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -29,27 +31,29 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      const res = await loginAvatar({ email, password });
-      
+      const res = await loginAvatar({ email, password, totp: totp.trim() || undefined });
+
       if (res?.data?.token) {
-        const userInfo = res?.data?.user ?? null;
-        const rawCalendly = (userInfo as any)?.calendly_token ?? "";
-        const usableCalendly = rawCalendly ? await resolveDecryptedCalendlyToken(rawCalendly) : "";
-
-        dispatch(setAuth({
-          token: res.data.token,
-          userInfo: userInfo ? { ...(userInfo as any), calendlyToken: usableCalendly || undefined } : null,
-        }));
-        if (usableCalendly) dispatch(setCalendlyToken(usableCalendly));
-
+        // The session lives in an httpOnly cookie; nothing usable is returned to the client.
+        dispatch(setAuth({ token: res.data.token, userInfo: (res?.data?.user as never) ?? null }));
         toast.success("Welcome back!");
         window.location.href = "/dashboard";
       }
-    } catch (error: any) {
-      console.error("Login error:", error);
-      const errorMsg = error.message || "Login failed. Please try again.";
-      setErrorMessage(errorMsg);
-      toast.error(errorMsg);
+    } catch (error: unknown) {
+      const errorMsg = error instanceof Error ? error.message : "Login failed. Please try again.";
+      // POST /auth/login wants the 2FA code in the same request, so a 2FA account fails until the
+      // code is supplied. Reveal the field and ask for it instead of dead-ending the user.
+      if (/2fa|two-factor|totp|authenticator/i.test(errorMsg)) {
+        setTwoFactorRequired(true);
+        const prompt = totp.trim()
+          ? "That code was not accepted. Try the current code from your authenticator, or a backup code."
+          : "This account has two-factor authentication. Enter the code from your authenticator app.";
+        setErrorMessage(prompt);
+        toast.message(prompt);
+      } else {
+        setErrorMessage(errorMsg);
+        toast.error(errorMsg);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -133,6 +137,26 @@ export default function Login() {
                   </button>
                 </div>
               </div>
+
+              {twoFactorRequired && (
+                <div className="space-y-2">
+                  <Label htmlFor="totp" className="text-slate-300">Authenticator or backup code</Label>
+                  <Input
+                    id="totp"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    maxLength={64}
+                    autoFocus
+                    placeholder="6-digit code"
+                    value={totp}
+                    onChange={(e) => setTotp(e.target.value)}
+                    className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:ring-cyan-500/20"
+                  />
+                  <p className="text-xs text-slate-500">
+                    Lost your device? Use one of your saved backup codes.
+                  </p>
+                </div>
+              )}
 
               <Button
                 type="submit"
