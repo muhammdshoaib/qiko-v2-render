@@ -92,9 +92,9 @@ export type CustomerDetail = Customer & {
 // Only the capabilities the server actually enforces today. view_ai_cost, set_cost_caps and
 // view_system_stats arrive with the endpoints they gate, so the UI never offers a permission that
 // does nothing.
-export type Capability = "view_customers" | "manage_customers" | "manage_workers" | "manage_billing" | "manage_admins" | "view_ai_cost" | "view_system_stats";
+export type Capability = "view_customers" | "manage_customers" | "manage_workers" | "manage_billing" | "manage_admins" | "view_ai_cost" | "view_system_stats" | "set_cost_caps";
 
-export const ALL_CAPABILITIES: Capability[] = ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins", "view_ai_cost", "view_system_stats"];
+export const ALL_CAPABILITIES: Capability[] = ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins", "view_ai_cost", "view_system_stats", "set_cost_caps"];
 
 export type PlatformAdmin = { email: string; role: AdminRole; capabilities: Capability[] };
 export type AdminGrantAudit = {
@@ -187,6 +187,21 @@ export const formatBytes = (bytes: number) => {
   while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
   return `${value.toFixed(value < 10 && unit > 0 ? 1 : 0)} ${units[unit]}`;
 };
+
+export type CostCap = {
+  tenant_id: string; agent_id: string | null; monthly_cap_nano_usd: number;
+  unlimited: boolean; alert_threshold_pct: number;
+  updated_by_email: string | null; updated_at: string;
+};
+export const listCostCaps = () =>
+  request<{ platform_key: string; items: CostCap[] }>("/admin/cost-caps");
+export const setCostCap = (tenantId: string, body: { monthly_cap_usd: number; alert_threshold_pct?: number }, agentId?: string) =>
+  request<CostCap>(`/admin/cost-caps/${encodeURIComponent(tenantId)}${agentId ? `?agent_id=${encodeURIComponent(agentId)}` : ""}`,
+    { method: "PUT", body: JSON.stringify(body) });
+export const deleteCostCap = (tenantId: string, agentId?: string) =>
+  request<{ removed: string }>(
+    `/admin/cost-caps/${encodeURIComponent(tenantId)}${agentId ? `?agent_id=${encodeURIComponent(agentId)}` : ""}`,
+    { method: "DELETE" });
 
 export const adminMe = () =>
   request<{ role: AdminRole; capabilities: Capability[] }>("/admin/me");

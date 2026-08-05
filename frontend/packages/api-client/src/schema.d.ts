@@ -47,6 +47,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/cost-caps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cost Caps
+         * @description Every configured cap. Readable with view_ai_cost, since a cap is part of the spend picture.
+         */
+        get: operations["cost_caps_api_v1_admin_cost_caps_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/cost-caps/{tenant_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Cost Cap
+         * @description Set a monthly AI spend cap (QIK-522).
+         *
+         *     Gated on set_cost_caps rather than view_ai_cost: reaching a cap stops a customer's workers
+         *     answering, so this is a mutation of customer-facing behaviour, not a reporting feature.
+         *
+         *     Use tenant_id "*" with no agent_id for the platform default. A worker cap overrides its tenant
+         *     cap, which overrides the default.
+         */
+        put: operations["set_cost_cap_api_v1_admin_cost_caps__tenant_id__put"];
+        post?: never;
+        /** Delete Cost Cap */
+        delete: operations["delete_cost_cap_api_v1_admin_cost_caps__tenant_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/customers": {
         parameters: {
             query?: never;
@@ -4399,6 +4446,16 @@ export interface components {
             /** User Id */
             user_id: string;
         };
+        /** CostCapBody */
+        CostCapBody: {
+            /**
+             * Alert Threshold Pct
+             * @default 80
+             */
+            alert_threshold_pct: number;
+            /** Monthly Cap Usd */
+            monthly_cap_usd: number;
+        };
         /** CreateAgentBody */
         CreateAgentBody: {
             /**
@@ -5649,6 +5706,114 @@ export interface operations {
             header?: never;
             path?: never;
             cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    cost_caps_api_v1_admin_cost_caps_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    set_cost_cap_api_v1_admin_cost_caps__tenant_id__put: {
+        parameters: {
+            query?: {
+                agent_id?: string | null;
+            };
+            header: {
+                /** @description Must match the qiko_csrf cookie. */
+                "X-CSRF-Token": string;
+            };
+            path: {
+                tenant_id: string;
+            };
+            cookie: {
+                /** @description Double-submit CSRF cookie. */
+                qiko_csrf: string;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostCapBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_cost_cap_api_v1_admin_cost_caps__tenant_id__delete: {
+        parameters: {
+            query?: {
+                agent_id?: string | null;
+            };
+            header: {
+                /** @description Must match the qiko_csrf cookie. */
+                "X-CSRF-Token": string;
+            };
+            path: {
+                tenant_id: string;
+            };
+            cookie: {
+                /** @description Double-submit CSRF cookie. */
+                qiko_csrf: string;
+            };
         };
         requestBody?: never;
         responses: {

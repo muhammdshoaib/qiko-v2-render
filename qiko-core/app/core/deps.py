@@ -252,7 +252,8 @@ def get_task_queue(request: Request):
     return request.app.state.task_queue
 
 
-async def assemble_worker(*, sessionmaker, agents, knowledge, tenant: str, agent_id: str | None = None):
+async def assemble_worker(*, sessionmaker, agents, knowledge, tenant: str, agent_id: str | None = None,
+                          cost_guard=None):
     """Assemble a Worker over the shared knowledge service + agentcore (agentic-first).
 
     Request-free core of build_tenant_worker: takes the raw collaborators (a DB sessionmaker for
@@ -302,18 +303,21 @@ async def assemble_worker(*, sessionmaker, agents, knowledge, tenant: str, agent
     worker_config = WorkerConfig(**kwargs)
     return Worker(config=worker_config, knowledge=knowledge,
                   agent=AgentCore(generator=Generator(system_prompt=worker_config.system_prompt),
-                                  threshold=worker_config.gate_threshold, verified=verified))
+                                  threshold=worker_config.gate_threshold, verified=verified),
+                  # None in dev and in tests, so an uncapped environment behaves exactly as before.
+                  cost_guard=cost_guard)
 
 
 async def resolve_available_worker(*, sessionmaker, agents, knowledge, tenant: str,
-                                   agent_id: str, assembler=None) -> tuple[object, WorkerRecheck]:
+                                   agent_id: str, assembler=None,
+                                   cost_guard=None) -> tuple[object, WorkerRecheck]:
     async def recheck() -> None:
         await require_available_worker(agents=agents, tenant=tenant, agent_id=agent_id)
 
     await recheck()
     worker = await (assembler or assemble_worker)(
         sessionmaker=sessionmaker, agents=agents, knowledge=knowledge,
-        tenant=tenant, agent_id=agent_id)
+        tenant=tenant, agent_id=agent_id, cost_guard=cost_guard)
     await recheck()
     return worker, recheck
 
@@ -323,7 +327,8 @@ async def resolve_tenant_worker(request: Request, tenant: str,
     return await resolve_available_worker(
         sessionmaker=getattr(request.app.state, "sessionmaker", None),
         agents=request.app.state.agents, knowledge=request.app.state.knowledge,
-        tenant=tenant, agent_id=agent_id)
+        tenant=tenant, agent_id=agent_id,
+        cost_guard=getattr(request.app.state, "cost_guard", None))
 
 
 async def build_tenant_worker(request: Request, tenant: str, agent_id: str | None = None):
@@ -332,7 +337,8 @@ async def build_tenant_worker(request: Request, tenant: str, agent_id: str | Non
     return await assemble_worker(
         sessionmaker=getattr(request.app.state, "sessionmaker", None),
         agents=request.app.state.agents, knowledge=request.app.state.knowledge,
-        tenant=tenant, agent_id=agent_id)
+        tenant=tenant, agent_id=agent_id,
+        cost_guard=getattr(request.app.state, "cost_guard", None))
 
 
 def stored_credential(cfg: dict, *, flag: str, key: str, label: str) -> str:
