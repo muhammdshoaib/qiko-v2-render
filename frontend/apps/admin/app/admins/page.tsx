@@ -22,6 +22,7 @@ const LABELS: Record<Capability, string> = {
   manage_admins: "Manage admins",
   view_ai_cost: "View AI cost",
   view_system_stats: "View system stats",
+  set_cost_caps: "Set cost caps",
 };
 
 export default function AdminsPage() {

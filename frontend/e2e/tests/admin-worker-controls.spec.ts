@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 // /admin/me returns the effective capability set and the shell filters the nav on it, so mocking
 // only `role` would exercise a payload the server never sends.
 const ADMIN_CAPABILITIES: Record<"viewer" | "super_admin", string[]> = {
-  super_admin: ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins", "view_ai_cost", "view_system_stats"],
+  super_admin: ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins", "view_ai_cost", "view_system_stats", "set_cost_caps"],
   viewer: ["view_customers"],
 };
 

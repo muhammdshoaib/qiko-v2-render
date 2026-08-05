@@ -41,10 +41,9 @@ class Capability(str, Enum):
     granted exactly one extra capability without becoming a super_admin.
     """
 
-    # Deliberately ONLY the capabilities that gate a real endpoint today. Shipping names that
-    # nothing enforces would be worse than not having them: an operator would believe they had
-    # applied least privilege when they had only filtered a menu. set_cost_caps arrives with the
-    # endpoint it gates (QIK-522).
+    # Every capability here gates at least one real endpoint. Shipping a name that nothing enforces
+    # would be worse than not having it: an operator would believe they had applied least privilege
+    # when they had only filtered a menu.
     view_customers = "view_customers"
     manage_customers = "manage_customers"
     manage_workers = "manage_workers"
@@ -56,6 +55,9 @@ class Capability(str, Enum):
     # Infrastructure health and capacity. Separate again: it exposes database size, connection
     # headroom and queue depth, which is operational reconnaissance rather than customer data.
     view_system_stats = "view_system_stats"
+    # Setting a cap can stop a customer's workers answering, so it is a mutation of customer-facing
+    # behaviour and is gated separately from merely reading spend.
+    set_cost_caps = "set_cost_caps"
 
 
 # A super_admin keeps everything, so today's behaviour is unchanged. A viewer keeps read-only

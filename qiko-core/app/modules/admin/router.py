@@ -17,6 +17,7 @@ from app.core.deps import (
     authed_tenant,
     current_claims,
 )
+from app.modules.ai.caps import PLATFORM, UNLIMITED, CostCap
 from app.modules.admin.metrics import Subscription, revenue_metrics
 from app.modules.health.system import (
     database_stats,
@@ -520,3 +521,74 @@ async def system(request: Request, _tenant: str = Depends(authed_tenant),
         "environment": settings.environment.value,
         "version": app_version,
     }
+
+
+class CostCapBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Negative means explicitly unlimited; 0 blocks. See app/modules/ai/caps.py for why the absence
+    # of a row cannot express "unlimited and I meant it".
+    monthly_cap_usd: float = Field(ge=-1)
+    alert_threshold_pct: int = Field(default=80, ge=1, le=100)
+
+
+def _cap_json(cap) -> dict:
+    return {"tenant_id": cap.tenant, "agent_id": cap.agent_id,
+            "monthly_cap_nano_usd": cap.monthly_cap_nano_usd,
+            "unlimited": cap.unlimited,
+            "alert_threshold_pct": cap.alert_threshold_pct,
+            "updated_by_email": cap.updated_by_email,
+            "updated_at": cap.updated_at.isoformat()}
+
+
+@router.get("/cost-caps")
+async def cost_caps(request: Request, _tenant: str = Depends(authed_tenant),
+                    _identity=Depends(require_platform_capability(Capability.view_ai_cost))) -> dict:
+    """Every configured cap. Readable with view_ai_cost, since a cap is part of the spend picture."""
+    caps = await request.app.state.cost_caps.list_all()
+    return {"platform_key": PLATFORM, "items": [_cap_json(cap) for cap in caps]}
+
+
+@router.put("/cost-caps/{tenant_id}", openapi_extra=_CSRF_OPENAPI)
+async def set_cost_cap(tenant_id: str, body: CostCapBody, request: Request,
+                       agent_id: str | None = Query(default=None, max_length=64),
+                       claims: dict = Depends(current_claims),
+                       _tenant: str = Depends(authed_tenant),
+                       _identity=Depends(require_platform_capability(Capability.set_cost_caps))) -> dict:
+    """Set a monthly AI spend cap (QIK-522).
+
+    Gated on set_cost_caps rather than view_ai_cost: reaching a cap stops a customer's workers
+    answering, so this is a mutation of customer-facing behaviour, not a reporting feature.
+
+    Use tenant_id "*" with no agent_id for the platform default. A worker cap overrides its tenant
+    cap, which overrides the default.
+    """
+    _require_csrf(request)
+    cap = CostCap(
+        tenant=tenant_id, agent_id=agent_id,
+        # USD in, nano-USD stored. The API speaks the unit an operator types; the store speaks the
+        # unit that does not round a Titan embedding away.
+        monthly_cap_nano_usd=UNLIMITED if body.monthly_cap_usd < 0
+        else int(round(body.monthly_cap_usd * 1_000_000_000)),
+        alert_threshold_pct=body.alert_threshold_pct,
+        updated_by_email=claims.get("email"), updated_at=datetime.now(timezone.utc))
+    saved = await request.app.state.cost_caps.upsert(cap)
+    # Without this the new cap would not apply until the guard's cache expired, which reads as the
+    # save not having worked.
+    guard = getattr(request.app.state, "cost_guard", None)
+    if guard is not None:
+        guard.invalidate()
+    return _cap_json(saved)
+
+
+@router.delete("/cost-caps/{tenant_id}", openapi_extra=_CSRF_OPENAPI)
+async def delete_cost_cap(tenant_id: str, request: Request,
+                          agent_id: str | None = Query(default=None, max_length=64),
+                          _tenant: str = Depends(authed_tenant),
+                          _identity=Depends(require_platform_capability(Capability.set_cost_caps))) -> dict:
+    _require_csrf(request)
+    await request.app.state.cost_caps.delete(tenant_id, agent_id)
+    guard = getattr(request.app.state, "cost_guard", None)
+    if guard is not None:
+        guard.invalidate()
+    return {"removed": tenant_id, "agent_id": agent_id}

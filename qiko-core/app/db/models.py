@@ -310,6 +310,25 @@ class AiUsageEvent(Base):
     )
 
 
+class AiCostCap(Base):
+    """An admin-set monthly AI spend cap (QIK-522).
+
+    tenant_id "*" with a NULL agent_id is the platform-wide default. A worker row overrides its
+    tenant row, which overrides the default. A cap of 0 blocks, and a NEGATIVE cap means explicitly
+    unlimited: the alternative encoding (no row means unlimited) cannot distinguish "unlimited, and I
+    meant it" from "nobody has configured this yet".
+    """
+
+    __tablename__ = "ai_cost_caps"
+    tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    # Empty string rather than NULL, because a composite primary key cannot contain NULL.
+    agent_id: Mapped[str] = mapped_column(String(64), primary_key=True, default="")
+    monthly_cap_nano_usd: Mapped[int] = mapped_column(BigInteger, default=0)
+    alert_threshold_pct: Mapped[int] = mapped_column(default=80)
+    updated_by_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class PlatformAdminAudit(Base):
     """Append-only record of every platform-admin grant or revoke.
 

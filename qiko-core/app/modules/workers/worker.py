@@ -10,6 +10,7 @@ from app.modules.agentcore.generator import Generator
 from app.modules.agentcore.models import AgentResult, Requirement
 from app.modules.agentcore.runtime import AgentCore
 from app.modules.ai import usage
+from app.modules.ai.caps import CostCapExceeded
 from app.modules.knowledge.models import Passage
 from app.modules.knowledge.service import KnowledgeService
 from app.modules.workers.config import WorkerConfig
@@ -43,6 +44,8 @@ class Worker:
     config: WorkerConfig
     knowledge: KnowledgeService
     agent: AgentCore
+    # Optional so every existing construction site keeps working and dev/tests run uncapped.
+    cost_guard: object | None = None
 
     @property
     def name(self) -> str:
@@ -61,6 +64,13 @@ class Worker:
         agent_token = usage.set_agent(self.config.agent_id)
         tenant_token = set_tenant(self.config.tenant)
         try:
+            # Checked once per answer, not per model call: an answer performs a retrieval embedding, a
+            # generation and possibly retries, and a per-call check would put a database round trip in
+            # front of each of them (QIK-522).
+            if self.cost_guard is not None:
+                decision = await self.cost_guard.check(self.config.tenant, self.config.agent_id)
+                if not decision.allowed:
+                    raise CostCapExceeded(decision)
             return await self._answer(requirement_id, requirement_text, topic=topic,
                                       additional_context=additional_context,
                                       recheck_worker=recheck_worker)

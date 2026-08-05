@@ -57,6 +57,7 @@ from app.core.tenancy import tenant_dependency
 from app.modules.admin.router import router as admin_router
 from app.modules.agents.router import router as agents_router
 from app.modules.agents.service import AgentService
+from app.modules.ai.caps import CostCapExceeded, CostGuard, InMemoryCostCapStore
 from app.modules.ai.usage import InMemoryUsageStore
 from app.modules.assignments.router import router as assignments_router
 from app.modules.assignments.service import AssignmentService
@@ -147,6 +148,7 @@ async def lifespan(app: FastAPI):
             SqlSalesforceConnectionStore,
             SqlTeamsIntegrationStore,
             SqlTeamStore,
+            SqlCostCapStore,
             SqlUsageStore,
             SqlUserStore,
             SqlVectorStore,
@@ -170,7 +172,10 @@ async def lifespan(app: FastAPI):
         # Generic in-app notification inbox (reusable across verticals) + the SI trigger wrapper
         # that the scan/review/assign/push flows call. In-product only (no email/FCM push).
         app.state.ai_usage = SqlUsageStore(sm)  # AI spend survives a redeploy
+        app.state.cost_caps = SqlCostCapStore(sm)
+        app.state.cost_guard = CostGuard(caps=app.state.cost_caps, usage=app.state.ai_usage)
         app.state.notifications = NotificationService(store=SqlNotificationStore(sm))
+        app.state.cost_guard.notifications = app.state.notifications
         sales_notifier = SalesNotificationService(notifications=app.state.notifications)
         app.state.sales_notifier = sales_notifier
         app.state.sales_intel = OpportunityService(
@@ -250,6 +255,23 @@ def create_app() -> FastAPI:
         redoc_url=None,
         lifespan=lifespan,
     )
+
+    @app.exception_handler(CostCapExceeded)
+    async def cost_cap_handler(_request: Request, exc: CostCapExceeded) -> JSONResponse:
+        """A reached cap is a business condition, not a server fault.
+
+        402 rather than 429: the request is not rate limited and retrying will not help until either
+        the cap is raised or the month rolls over, and a 500 would send an operator hunting a bug that
+        does not exist. The body says how much of the cap is used so the message a customer sees can be
+        specific.
+        """
+        decision = exc.decision
+        return JSONResponse(status_code=402, content={
+            "detail": "AI spend cap reached for this month",
+            "spent_nano_usd": decision.spent_nano_usd,
+            "limit_nano_usd": decision.limit_nano_usd,
+            "used_pct": decision.used_pct,
+        })
 
     @app.exception_handler(RequestValidationError)
     async def validation_handler(
@@ -354,7 +376,12 @@ def create_app() -> FastAPI:
     app.state.crm = CrmService(app.state.chat)
     # Generic in-app notification inbox (reusable across verticals) + the SI trigger wrapper.
     app.state.ai_usage = InMemoryUsageStore()
+    app.state.cost_caps = InMemoryCostCapStore()
+    # A guard IS attached, over the in-memory stores, so the enforcement path is exercised by the
+    # test suite rather than existing only in production.
+    app.state.cost_guard = CostGuard(caps=app.state.cost_caps, usage=app.state.ai_usage)
     app.state.notifications = NotificationService()
+    app.state.cost_guard.notifications = app.state.notifications
     app.state.sales_notifier = SalesNotificationService(notifications=app.state.notifications)
     app.state.sales_intel = OpportunityService(scan_interval_minutes=settings.idg_sales_scan_interval_minutes,
                                                notifier=app.state.sales_notifier)

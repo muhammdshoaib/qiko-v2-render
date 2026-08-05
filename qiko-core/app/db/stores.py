@@ -38,6 +38,7 @@ from app.db.models import PasswordResetOtp as PasswordResetOtpRow
 from app.db.models import PendingSignup as PendingSignupRow
 from app.db.models import PendingTeamInvite as PendingTeamInviteRow
 from app.db.models import PlatformAdmin as PlatformAdminRow
+from app.db.models import AiCostCap as AiCostCapRow
 from app.db.models import AiUsageEvent as AiUsageEventRow
 from app.db.models import PlatformAdminAudit as PlatformAdminAuditRow
 from app.db.models import PolicyRelease as PolicyReleaseRow
@@ -67,6 +68,7 @@ from app.core.deps import WorkerUnavailable
 from app.modules.chat.service import ConversationScopeError, ConversationSummary, Message
 from app.modules.crm.service import Contact, CrmAction
 from app.modules.finance.models import FinanceChatMessage, FinanceFile
+from app.modules.ai.caps import CostCap
 from app.modules.ai.usage import AgentUsageSummary, UsageEvent, UsageTotals, summarise_agents
 from app.modules.ai.usage import dimensions as usage_dimensions
 from app.modules.ai.usage import group as usage_group
@@ -2264,3 +2266,43 @@ class SqlUsageStore:
 
     async def platform_agent_usage(self, *, start=None, end=None) -> dict[str, AgentUsageSummary]:
         return summarise_agents(await self._all_rows(start, end))
+
+
+@dataclass
+class SqlCostCapStore:
+    """Durable AI cost caps (QIK-522). Platform-wide, so no tenant filter by design."""
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def upsert(self, cap: CostCap) -> CostCap:
+        async with self.sessionmaker() as s, s.begin():
+            key = (cap.tenant, cap.agent_id or "")
+            row = await s.get(AiCostCapRow, key)
+            if row is None:
+                s.add(AiCostCapRow(
+                    tenant_id=cap.tenant, agent_id=cap.agent_id or "",
+                    monthly_cap_nano_usd=cap.monthly_cap_nano_usd,
+                    alert_threshold_pct=cap.alert_threshold_pct,
+                    updated_by_email=cap.updated_by_email, updated_at=cap.updated_at))
+            else:
+                row.monthly_cap_nano_usd = cap.monthly_cap_nano_usd
+                row.alert_threshold_pct = cap.alert_threshold_pct
+                row.updated_by_email = cap.updated_by_email
+                row.updated_at = cap.updated_at
+            return cap
+
+    async def delete(self, tenant: str, agent_id: str | None) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            row = await s.get(AiCostCapRow, (tenant, agent_id or ""))
+            if row is not None:
+                await s.delete(row)
+
+    async def list_all(self) -> list[CostCap]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(select(AiCostCapRow).order_by(
+                AiCostCapRow.tenant_id, AiCostCapRow.agent_id))).scalars().all()
+            return [CostCap(tenant=row.tenant_id, agent_id=row.agent_id or None,
+                            monthly_cap_nano_usd=row.monthly_cap_nano_usd,
+                            alert_threshold_pct=row.alert_threshold_pct,
+                            updated_by_email=row.updated_by_email,
+                            updated_at=row.updated_at) for row in rows]
