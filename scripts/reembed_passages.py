@@ -40,6 +40,21 @@ from app.core.config import get_settings  # noqa: E402
 from app.db.models import Passage  # noqa: E402
 from app.modules.ai.embeddings import get_embeddings  # noqa: E402
 
+# Titan rejects an input longer than 50k characters outright ("expected maxLength: 50000"). Real
+# corpora contain passages far past that (the largest observed is ~150k), so a single call cannot
+# embed them. Split into windows and mean-pool, which is the standard way to get one representative
+# vector for a long document without discarding content.
+TITAN_MAX_CHARS = 50_000
+WINDOW_CHARS = 40_000  # margin below the hard limit
+
+
+def embed_text(embedder, text: str) -> list[float]:
+    if len(text) <= WINDOW_CHARS:
+        return list(embedder.embed(text))
+    windows = [text[i:i + WINDOW_CHARS] for i in range(0, len(text), WINDOW_CHARS)]
+    vectors = [list(embedder.embed(window)) for window in windows]
+    return [sum(values) / len(values) for values in zip(*vectors, strict=True)]
+
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -66,7 +81,12 @@ async def _run(args: argparse.Namespace) -> int:
 
     async with sessionmaker() as session:
         total = (await session.execute(scoped(select(func.count()).select_from(Passage)))).scalar_one()
-    print(f"passages in scope: {total}")
+    async with sessionmaker() as session:
+        oversized = (await session.execute(scoped(
+            select(func.count()).select_from(Passage).where(func.length(Passage.text) > WINDOW_CHARS)
+        ))).scalar_one()
+    print(f"passages in scope: {total} ({oversized} need window mean-pooling above "
+          f"{WINDOW_CHARS} chars; Titan's hard limit is {TITAN_MAX_CHARS})")
     if total == 0:
         await engine.dispose()
         return 0
@@ -76,10 +96,11 @@ async def _run(args: argparse.Namespace) -> int:
             sample = (await session.execute(scoped(select(Passage).limit(3)))).scalars().all()
         for passage in sample:
             current = passage.embedding or []
-            rebuilt = embedder.embed(passage.text)
+            rebuilt = embed_text(embedder, passage.text)
             changed = "CHANGED" if list(current) != list(rebuilt) else "same"
-            print(f"  {passage.tenant_id}/{passage.doc_id}/{passage.id[:12]}: "
-                  f"stored_dim={len(current)} new_dim={len(rebuilt)} -> {changed}")
+            pooled = " (mean-pooled over windows)" if len(passage.text) > WINDOW_CHARS else ""
+            print(f"  {passage.tenant_id}/{passage.doc_id}/{passage.id[:12]}: chars={len(passage.text)} "
+                  f"stored_dim={len(current)} new_dim={len(rebuilt)} -> {changed}{pooled}")
         print(f"\nDRY RUN: nothing written. Re-run with --apply to rebuild {total} vector(s).")
         await engine.dispose()
         return 0
@@ -95,7 +116,7 @@ async def _run(args: argparse.Namespace) -> int:
             if not rows:
                 break
             for passage in rows:
-                rebuilt = embedder.embed(passage.text)
+                rebuilt = embed_text(embedder, passage.text)
                 if list(passage.embedding or []) != list(rebuilt):
                     passage.embedding = rebuilt
                     rewritten += 1
