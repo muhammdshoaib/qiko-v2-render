@@ -42,10 +42,18 @@ from app.db.models import Passage  # noqa: E402
 from app.modules.ai.embeddings import get_embeddings  # noqa: E402
 from app.modules.knowledge.chunking import chunk_text  # noqa: E402
 
-# Anything above this was produced by the pre-fix chunker. The fixed chunker's ceiling is
-# max_chars + overlap = 900, so a generous threshold avoids re-chunking rows that are merely near the
-# boundary and already fine.
-DEFAULT_THRESHOLD = 2_000
+# 16,000 characters, and the number is not arbitrary. It is the point at which the re-embed tool must
+# start mean-pooling, because Titan refuses input above 8,192 tokens. So above this line a passage is
+# degraded twice over: its citation points at a whole document AND its vector is an average of windows
+# rather than a real embedding of the text.
+#
+# Below the line a passage is merely suboptimal. The live distribution makes the trade concrete:
+# p50=670, p90=2,109, p99=19,985, max=149,579. A 2,000 threshold would rewrite 195 passages, 10.4% of
+# the corpus, most of them only 2.6x the window. That is a retrieval-semantics change at scale for
+# little gain: BM25's idf and avgdl are corpus-wide, so re-chunking a tenth of the corpus shifts the
+# ranking of documents nobody touched. A 16,000 threshold rewrites 28 passages, 1.5%, and those are the
+# ones whose vectors are actually wrong.
+DEFAULT_THRESHOLD = 16_000
 
 
 def _part_id(original_id: str, index: int) -> str:
