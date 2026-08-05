@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 // /admin/me returns the effective capability set and the shell filters the nav on it, so mocking
 // only `role` would exercise a payload the server never sends.
 const ADMIN_CAPABILITIES: Record<"viewer" | "super_admin", string[]> = {
-  super_admin: ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins"],
+  super_admin: ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins", "view_ai_cost"],
   viewer: ["view_customers"],
 };
 
@@ -46,6 +46,16 @@ async function mockAdmin(page: Page, role: "viewer" | "super_admin") {
       total: 1, page: 1, items: [{ id: "w1", tenant_id: "acme", name: "Tender Worker",
         type: "pre_sales_writer", status: "ready", enabled: true,
         created_at: "2026-01-01T00:00:00Z", config: {} }] });
+    if (path.endsWith("/admin/ai-cost") && method === "GET") return json({
+      window_days: 30, totals: { calls: 1, input_tokens: 10, output_tokens: 2,
+        cost_nano_usd: 1000000, unpriced_calls: 0 },
+      tenant: {}, model: {}, operation: {}, day: {} });
+    if (path.endsWith("/admin/worker-monitoring") && method === "GET") return json({
+      total: 1, page: 1, window_days: 30, cost_visible: true,
+      items: [{ tenant_id: "acme", id: "w1", name: "Tender Worker", status: "ready",
+        enabled: true, created_at: "2026-01-01T00:00:00Z", calls: 3,
+        last_seen: "2026-08-01T00:00:00Z", cost_nano_usd: 1000000,
+        input_tokens: 10, output_tokens: 2 }] });
     if (path.endsWith("/enabled") && method === "PATCH") { mutations.push(route.request().postDataJSON()); csrfHeaders.push(route.request().headers()["x-csrf-token"] ?? ""); return json({ id: "w1", name: "Tender Worker", type: "pre_sales_writer", status: "ready", enabled: false, created_at: "2026-01-01T00:00:00Z", config: {} }); }
     return route.fulfill({ status: 404, contentType: "application/json", body: '{"detail":"missing mock"}' });
   });
@@ -145,8 +155,8 @@ test("tablet and mobile navigation expose every Admin destination", async ({ pag
   await expect(page.getByRole("button", { name: "Close menu" })).toBeFocused();
   // One Tab per nav entry plus Sign out. Derived from the label list below rather than hardcoded, so
   // adding a destination cannot silently leave this test asserting the wrong element.
-  const MOBILE_NAV_LABELS = ["Overview", "Customers", "Tenants", "Users", "Workers",
-    "Subscriptions", "Invoices", "Platform Admins", "Analytics", "Security", "Sign out"];
+  const MOBILE_NAV_LABELS = ["Overview", "Customers", "Tenants", "Users", "Workers", "Monitoring",
+    "AI Cost", "Subscriptions", "Invoices", "Platform Admins", "Analytics", "Security", "Sign out"];
   for (let index = 0; index < MOBILE_NAV_LABELS.length; index += 1) await page.keyboard.press("Tab");
   expect(await page.evaluate(() => document.querySelector('[aria-labelledby="mobile-nav-title"]')?.contains(document.activeElement))).toBe(true);
   for (const label of MOBILE_NAV_LABELS) {

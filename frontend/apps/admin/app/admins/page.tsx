@@ -20,6 +20,7 @@ const LABELS: Record<Capability, string> = {
   manage_workers: "Manage workers",
   manage_billing: "Manage billing",
   manage_admins: "Manage admins",
+  view_ai_cost: "View AI cost",
 };
 
 export default function AdminsPage() {

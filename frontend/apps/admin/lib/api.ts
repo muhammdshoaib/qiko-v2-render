@@ -92,9 +92,9 @@ export type CustomerDetail = Customer & {
 // Only the capabilities the server actually enforces today. view_ai_cost, set_cost_caps and
 // view_system_stats arrive with the endpoints they gate, so the UI never offers a permission that
 // does nothing.
-export type Capability = "view_customers" | "manage_customers" | "manage_workers" | "manage_billing" | "manage_admins";
+export type Capability = "view_customers" | "manage_customers" | "manage_workers" | "manage_billing" | "manage_admins" | "view_ai_cost";
 
-export const ALL_CAPABILITIES: Capability[] = ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins"];
+export const ALL_CAPABILITIES: Capability[] = ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins", "view_ai_cost"];
 
 export type PlatformAdmin = { email: string; role: AdminRole; capabilities: Capability[] };
 export type AdminGrantAudit = {
@@ -133,6 +133,32 @@ export const listUsers = (search = "", page = 1, tenantId?: string) =>
 export const listWorkers = (search = "", page = 1, enabled?: boolean) =>
   request<Paged<WorkerRow>>(
     `/admin/workers?${paged(page, { search, enabled: enabled === undefined ? undefined : String(enabled) })}`);
+
+export type UsageTotals = {
+  calls: number; input_tokens: number; output_tokens: number;
+  cost_nano_usd: number; unpriced_calls: number;
+};
+export type AiCost = {
+  window_days: number; totals: UsageTotals;
+  tenant: Record<string, UsageTotals>; model: Record<string, UsageTotals>;
+  operation: Record<string, UsageTotals>; day: Record<string, UsageTotals>;
+};
+export const aiCost = (days = 30) => request<AiCost>(`/admin/ai-cost?days=${days}`);
+
+export type MonitoredWorker = {
+  tenant_id: string; id: string; name: string; status: string; enabled: boolean;
+  created_at: string; calls: number; last_seen: string | null;
+  // Only present for a caller holding view_ai_cost, see cost_visible.
+  cost_nano_usd?: number; input_tokens?: number; output_tokens?: number;
+};
+export const workerMonitoring = (days = 30, page = 1, tenantId?: string) =>
+  request<{ total: number; page: number; window_days: number; cost_visible: boolean; items: MonitoredWorker[] }>(
+    `/admin/worker-monitoring?${paged(page, { days: String(days), tenant_id: tenantId })}`);
+
+/** nano-USD to a human string. Values are integers on purpose, see the pricing module. */
+export const formatUsd = (nanoUsd: number) =>
+  (nanoUsd / 1_000_000_000).toLocaleString(undefined, { style: "currency", currency: "USD",
+    minimumFractionDigits: 2, maximumFractionDigits: nanoUsd < 10_000_000 ? 6 : 2 });
 
 export const adminMe = () =>
   request<{ role: AdminRole; capabilities: Capability[] }>("/admin/me");

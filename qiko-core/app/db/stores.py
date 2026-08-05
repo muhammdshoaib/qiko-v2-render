@@ -67,7 +67,8 @@ from app.core.deps import WorkerUnavailable
 from app.modules.chat.service import ConversationScopeError, ConversationSummary, Message
 from app.modules.crm.service import Contact, CrmAction
 from app.modules.finance.models import FinanceChatMessage, FinanceFile
-from app.modules.ai.usage import UsageEvent, UsageTotals
+from app.modules.ai.usage import AgentUsageSummary, UsageEvent, UsageTotals, summarise_agents
+from app.modules.ai.usage import dimensions as usage_dimensions
 from app.modules.ai.usage import group as usage_group
 from app.modules.identity.admin_rbac import (
     AdminGrantAudit,
@@ -2220,3 +2221,46 @@ class SqlUsageStore:
     async def daily(self, tenant: str, *, start=None, end=None) -> dict[str, UsageTotals]:
         return usage_group(await self._rows(tenant, start, end),
                            lambda event: event.created_at.date().isoformat())
+
+    async def _all_rows(self, start, end) -> list[UsageEvent]:
+        # Cross-tenant: the platform AI-spend view ONLY.
+        query = select(AiUsageEventRow)
+        if start is not None:
+            query = query.where(AiUsageEventRow.created_at >= start)
+        if end is not None:
+            query = query.where(AiUsageEventRow.created_at <= end)
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(query)).scalars().all()
+            return [UsageEvent(
+                tenant=row.tenant_id, agent_id=row.agent_id, model_id=row.model_id,
+                operation=row.operation, input_tokens=row.input_tokens,
+                output_tokens=row.output_tokens, cost_nano_usd=row.cost_nano_usd,
+                created_at=row.created_at, priced=row.priced) for row in rows]
+
+    async def platform_totals(self, *, start=None, end=None) -> UsageTotals:
+        # Cross-tenant. Aggregated in SQL rather than in Python: this is the one query that must stay
+        # cheap as the table grows, because it is the headline number on the dashboard.
+        async with self.sessionmaker() as s:
+            query = select(
+                func.coalesce(func.sum(AiUsageEventRow.input_tokens), 0),
+                func.coalesce(func.sum(AiUsageEventRow.output_tokens), 0),
+                func.coalesce(func.sum(AiUsageEventRow.cost_nano_usd), 0),
+                func.count(),
+            )
+            unpriced = select(func.count()).where(AiUsageEventRow.priced.is_(False))
+            if start is not None:
+                query = query.where(AiUsageEventRow.created_at >= start)
+                unpriced = unpriced.where(AiUsageEventRow.created_at >= start)
+            if end is not None:
+                query = query.where(AiUsageEventRow.created_at <= end)
+                unpriced = unpriced.where(AiUsageEventRow.created_at <= end)
+            row = (await s.execute(query)).one()
+            return UsageTotals(input_tokens=int(row[0]), output_tokens=int(row[1]),
+                               cost_nano_usd=int(row[2]), calls=int(row[3]),
+                               unpriced_calls=int((await s.execute(unpriced)).scalar_one()))
+
+    async def platform_by(self, dimension: str, *, start=None, end=None) -> dict[str, UsageTotals]:
+        return usage_group(await self._all_rows(start, end), usage_dimensions()[dimension])
+
+    async def platform_agent_usage(self, *, start=None, end=None) -> dict[str, AgentUsageSummary]:
+        return summarise_agents(await self._all_rows(start, end))

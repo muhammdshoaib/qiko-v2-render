@@ -117,12 +117,42 @@ class UsageTotals:
 
 class UsageStore(Protocol):
     async def add_many(self, events: list[UsageEvent]) -> None: ...
+    # Cross-tenant: the platform AI-spend view ONLY. Separate methods rather than an optional
+    # tenant=None argument, so an accidental omission cannot silently widen a tenant-scoped call.
+    async def platform_totals(self, *, start: datetime | None = None,
+                              end: datetime | None = None) -> UsageTotals: ...
+    async def platform_by(self, dimension: str, *, start: datetime | None = None,
+                          end: datetime | None = None) -> dict[str, UsageTotals]: ...
+    async def platform_agent_usage(self, *, start: datetime | None = None,
+                                   end: datetime | None = None) -> dict[str, AgentUsageSummary]: ...
     async def totals(self, tenant: str, *, start: datetime | None = None,
                      end: datetime | None = None) -> UsageTotals: ...
     async def totals_by_agent(self, tenant: str, *, start: datetime | None = None,
                               end: datetime | None = None) -> dict[str, UsageTotals]: ...
     async def daily(self, tenant: str, *, start: datetime | None = None,
                     end: datetime | None = None) -> dict[str, UsageTotals]: ...
+
+
+@dataclass(frozen=True)
+class AgentUsageSummary:
+    """One worker's spend plus when it was last seen, for the monitoring view."""
+
+    tenant: str | None
+    agent_id: str | None
+    totals: UsageTotals
+    last_seen: datetime | None
+
+
+def dimensions() -> dict:
+    """The breakdowns the platform spend view offers. A dict rather than four methods so adding one
+    is a single entry and the API surface does not grow a method per chart."""
+    return _DIMENSIONS
+
+
+_DIMENSIONS = {"tenant": lambda event: event.tenant or "unattributed",
+               "model": lambda event: base_model_id(event.model_id),
+               "operation": lambda event: event.operation,
+               "day": lambda event: event.created_at.date().isoformat()}
 
 
 @dataclass
@@ -150,6 +180,19 @@ class InMemoryUsageStore:
                     end: datetime | None = None) -> dict[str, UsageTotals]:
         return group(self._in_window(tenant, start, end),
                      lambda e: e.created_at.date().isoformat())
+
+    def _all_in_window(self, start, end) -> list[UsageEvent]:
+        return [e for e in self.events
+                if (start is None or e.created_at >= start) and (end is None or e.created_at <= end)]
+
+    async def platform_totals(self, *, start=None, end=None) -> UsageTotals:
+        return accumulate(self._all_in_window(start, end))
+
+    async def platform_by(self, dimension: str, *, start=None, end=None) -> dict[str, UsageTotals]:
+        return group(self._all_in_window(start, end), _DIMENSIONS[dimension])
+
+    async def platform_agent_usage(self, *, start=None, end=None) -> dict[str, AgentUsageSummary]:
+        return summarise_agents(self._all_in_window(start, end))
 
 
 def accumulate(events: list[UsageEvent]) -> UsageTotals:
@@ -245,3 +288,21 @@ async def flush(store: UsageStore | None, events: list[UsageEvent]) -> None:
     except Exception as error:  # noqa: BLE001 - accounting must not fail the request
         logger.warning("ai usage flush failed", extra={
             "source": "ai.usage", "error": str(error), "count": len(events)})
+
+
+def summarise_agents(events: list[UsageEvent]) -> dict[str, AgentUsageSummary]:
+    """Per-worker spend keyed "tenant/agent", including workers with no agent id.
+
+    Unattributed spend gets its own bucket rather than being dropped, so the monitoring view's total
+    always reconciles with the platform total.
+    """
+    buckets: dict[str, list[UsageEvent]] = {}
+    for event in events:
+        buckets.setdefault(f"{event.tenant or 'unattributed'}/{event.agent_id or 'unattributed'}",
+                           []).append(event)
+    summaries: dict[str, AgentUsageSummary] = {}
+    for key, rows in sorted(buckets.items()):
+        summaries[key] = AgentUsageSummary(
+            tenant=rows[0].tenant, agent_id=rows[0].agent_id, totals=accumulate(rows),
+            last_seen=max(row.created_at for row in rows))
+    return summaries
