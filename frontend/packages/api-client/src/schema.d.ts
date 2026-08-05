@@ -1791,7 +1791,19 @@ export interface paths {
         /** Whatsapp Verify */
         get: operations["whatsapp_verify_api_v1_channels_whatsapp_webhook_get"];
         put?: never;
-        /** Whatsapp Inbound */
+        /**
+         * Whatsapp Inbound
+         * @description Inbound WhatsApp webhook. DISABLED by default, and honest about why.
+         *
+         *     The adapter only de-duplicates and returns message ids: it never resolves a worker, never calls
+         *     worker.answer and never replies, despite a docstring that claimed inbound text was routed through
+         *     agentcore. Meta reads a 200 as "delivered and handled" and will not retry, so every customer
+         *     message was being silently dropped while the platform reported success.
+         *
+         *     Returning 501 rather than removing the route keeps the webhook URL registered and gives an operator
+         *     an unambiguous signal, instead of a 404 that looks like a misconfiguration. Set
+         *     CHANNELS_INBOUND_ENABLED=true only once the routing is actually implemented.
+         */
         post: operations["whatsapp_inbound_api_v1_channels_whatsapp_webhook_post"];
         delete?: never;
         options?: never;

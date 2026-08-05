@@ -46,6 +46,7 @@ from app.modules.channels.sessions import ChannelSessionStore
 from app.modules.channels.slack_oauth import InstallationStore, SlackOAuth, WorkspaceLinkStore
 from app.modules.channels.teams_integration import TeamsNotifier
 from app.modules.chat.files import FileGenerator
+from app.modules.storage.backend import InMemoryStorage, S3Storage
 from app.modules.identity.admin_rbac import AdminOrg
 from app.modules.identity.onboarding import OtpStore
 from app.modules.identity.pending_signup import InMemoryPendingSignupStore
@@ -426,7 +427,11 @@ def create_app() -> FastAPI:
     app.state.channel_sessions = ChannelSessionStore()
     app.state.slack_oauth = SlackOAuth(InstallationStore())
     app.state.slack_links = WorkspaceLinkStore()
-    app.state.file_generator = FileGenerator()
+    # S3 when configured, the dev dict otherwise. The guard in assert_secrets_set means a non-dev
+    # environment cannot start without a bucket, so this cannot silently degrade in production.
+    settings = get_settings()
+    app.state.file_generator = FileGenerator(
+        S3Storage(bucket=settings.s3_bucket) if settings.s3_bucket else InMemoryStorage())
     app.state.task_queue = build_task_queue(task_registry)
 
     # Every request is tenant-scoped.

@@ -135,9 +135,33 @@ def test_billing_webhook_checkout_links_tenant_and_activates(client):
 def test_channels_whatsapp_public(client):
     assert client.get("/api/v1/channels/whatsapp/webhook",
                       params={"hub.mode": "subscribe", "hub.verify_token": "x", "hub.challenge": "123"}).status_code == 403
+
+
+def test_whatsapp_inbound_does_not_claim_to_have_handled_a_message(client):
+    """This test previously asserted the defect as a feature.
+
+    The adapter only de-duplicates and returns ids: it never resolves a worker, generates an answer or
+    replies. Meta reads a 200 as "delivered and handled" and will not retry, so every customer message
+    was silently dropped while the platform reported success. Until routing exists the endpoint says
+    501 (audit H9)."""
     payload = {"entry": [{"changes": [{"value": {"messages": [
         {"id": "wamid.1", "from": "155", "type": "text", "text": {"body": "hi"}}]}}]}]}
-    assert client.post("/api/v1/channels/whatsapp/webhook", json=payload).json()["processed"] == ["wamid.1"]
+    response = client.post("/api/v1/channels/whatsapp/webhook", json=payload)
+    assert response.status_code == 501
+    assert "not implemented" in response.json()["detail"]
+
+
+def test_whatsapp_inbound_still_de_duplicates_once_explicitly_enabled(client, monkeypatch):
+    """The flag is the honesty gate, not a kill switch for working code: with it on, the existing
+    de-duplication behaviour is unchanged, so enabling it after implementing routing needs no rework."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "channels_inbound_enabled", True)
+    payload = {"entry": [{"changes": [{"value": {"messages": [
+        {"id": "wamid.2", "from": "155", "type": "text", "text": {"body": "hi"}}]}}]}]}
+    assert client.post("/api/v1/channels/whatsapp/webhook", json=payload).json()["processed"] == ["wamid.2"]
+    # a replay of the same id is dropped
+    assert client.post("/api/v1/channels/whatsapp/webhook", json=payload).json()["processed"] == []
 
 
 def test_excel_search(client):

@@ -62,6 +62,7 @@ def _prod_settings(**overrides):
         forwarded_allow_ips="172.28.20.2", email_backend="smtp",
         smtp_host="smtp.example.test", smtp_user="smtp-user", smtp_password="smtp" + "-password-value",
         email_from="sender" + "@" + "example.test",
+        s3_bucket="qiko-generated-files",
         # Settings that default to dev values and used to degrade the product silently in production.
         embeddings_provider="titan",
         public_base_url="https://qiko.example.test", frontend_url="https://qiko.example.test",
