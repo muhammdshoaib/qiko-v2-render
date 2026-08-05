@@ -71,6 +71,13 @@ function trackPageErrors(page: Page): string[] {
   return errors;
 }
 
+// Run this file serially. The tests are independent, but the shared live environment is not: under
+// the config's fullyParallel default these auth flows contend on it and time out nondeterministically
+// against qiko.ai (14/14 serially, flaky in parallel), while preprod stays green either way. A login
+// suite is fast enough (~19s) that serial execution is the right trade for determinism, and it also
+// stops the suite generating a burst of concurrent auth traffic against a production host.
+test.describe.configure({ mode: "serial" });
+
 test.beforeEach(async ({ page }) => {
   await seedConsent(page);
   // /api/v1/consent sits on the STRICT rate limiter (10/min per IP+path). Across a suite this file
