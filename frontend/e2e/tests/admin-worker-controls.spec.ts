@@ -33,6 +33,19 @@ async function mockAdmin(page: Page, role: "viewer" | "super_admin") {
       worker_state_audit: [{ id: 1, agent_id: "w1", changed_by_email: "admin@invalid", previous_enabled: true, enabled: false, reason: "Contract paused", created_at: "2026-07-01T00:00:00Z" }],
     });
     if (path.endsWith("/studio") && method === "POST") { studioRequests.push(route.request().postDataJSON()); return json({ user_id: "acme", email: "owner@invalid", plan: "pro", earnings_cents: 12500, is_studio: false, deleted: false, workers: [], worker_state_audit: [] }); }
+    // The three cross-tenant directories (QIK-515/516/520). Without these branches the catch-all
+    // below 404s them, and the nav test navigates through pages that fetch on mount.
+    if (path.endsWith("/admin/tenants") && method === "GET") return json({
+      total: 1, page: 1, items: [{ tenant_id: "acme", email: "owner@invalid", plan: "pro",
+        earnings_cents: 12500, user_count: 3, worker_count: 2, is_studio: true }] });
+    if (path.endsWith("/admin/users") && method === "GET") return json({
+      total: 1, page: 1, items: [{ id: "u1", email: "owner@invalid", name: "Acme Owner",
+        tenant_id: "acme", role: "owner", role_label: "Owner", twofa_enabled: true,
+        is_platform_admin: false, platform_role: null, platform_capabilities: [] }] });
+    if (path.endsWith("/admin/workers") && method === "GET") return json({
+      total: 1, page: 1, items: [{ id: "w1", tenant_id: "acme", name: "Tender Worker",
+        type: "pre_sales_writer", status: "ready", enabled: true,
+        created_at: "2026-01-01T00:00:00Z", config: {} }] });
     if (path.endsWith("/enabled") && method === "PATCH") { mutations.push(route.request().postDataJSON()); csrfHeaders.push(route.request().headers()["x-csrf-token"] ?? ""); return json({ id: "w1", name: "Tender Worker", type: "pre_sales_writer", status: "ready", enabled: false, created_at: "2026-01-01T00:00:00Z", config: {} }); }
     return route.fulfill({ status: 404, contentType: "application/json", body: '{"detail":"missing mock"}' });
   });
@@ -130,9 +143,13 @@ test("tablet and mobile navigation expose every Admin destination", async ({ pag
   const menu = page.getByRole("button", { name: "Open navigation" });
   await menu.click();
   await expect(page.getByRole("button", { name: "Close menu" })).toBeFocused();
-  for (let index = 0; index < 8; index += 1) await page.keyboard.press("Tab");
+  // One Tab per nav entry plus Sign out. Derived from the label list below rather than hardcoded, so
+  // adding a destination cannot silently leave this test asserting the wrong element.
+  const MOBILE_NAV_LABELS = ["Overview", "Customers", "Tenants", "Users", "Workers",
+    "Subscriptions", "Invoices", "Platform Admins", "Analytics", "Security", "Sign out"];
+  for (let index = 0; index < MOBILE_NAV_LABELS.length; index += 1) await page.keyboard.press("Tab");
   expect(await page.evaluate(() => document.querySelector('[aria-labelledby="mobile-nav-title"]')?.contains(document.activeElement))).toBe(true);
-  for (const label of ["Overview", "Customers", "Subscriptions", "Invoices", "Platform Admins", "Analytics", "Security", "Sign out"]) {
+  for (const label of MOBILE_NAV_LABELS) {
     await expect(page.getByText(label, { exact: true }).last()).toBeVisible();
   }
   await page.keyboard.press("Escape");

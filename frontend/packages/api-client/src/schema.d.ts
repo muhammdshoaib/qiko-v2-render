@@ -297,6 +297,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/tenants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tenants
+         * @description The tenant directory (QIK-515).
+         *
+         *     A "customer" already IS a tenant in this codebase, so this is the same rows as /admin/customers
+         *     with the counts the console needs and never had: how many people are on the account and how many
+         *     workers it runs. Both were already derivable and simply not surfaced.
+         */
+        get: operations["tenants_api_v1_admin_tenants_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Users
+         * @description The site-wide user directory, annotated with platform access where a user also holds it.
+         *
+         *     Two independent role systems exist: the TENANT role lives on users.role, while platform-admin
+         *     access is keyed by EMAIL in platform_admins with no foreign key between them. This lists users and
+         *     marks which of them also hold platform access. It is deliberately NOT the answer to "who has
+         *     platform access" -- an operator provisioned by scripts/provision_platform_admin.py who never
+         *     signed up has no user row and so appears nowhere here. GET /admin/org is that answer.
+         *
+         *     The SCOPE of someone's platform authority is shown only to a caller holding manage_admins.
+         *     QIK-513 put GET /admin/org behind that capability precisely so a read-only viewer cannot enumerate
+         *     who holds manage_admins, which is the privilege-escalation root; leaking the same set through a
+         *     weaker gate here would have undone that decision.
+         *
+         *     No password hash, TOTP secret or session id is exposed: the fields are listed explicitly, and the
+         *     store returns a projection that never loads them.
+         */
+        get: operations["users_api_v1_admin_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/workers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Workers
+         * @description The cross-tenant worker directory (QIK-520).
+         *
+         *     The enable/disable enforcement already exists per customer, but there was no way to see every
+         *     worker on the platform at once, so answering "which workers are disabled right now" meant opening
+         *     customers one by one. Config goes through the same allowlist as the customer detail view, so no
+         *     secret key can leak into a directory listing.
+         */
+        get: operations["workers_api_v1_admin_workers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents": {
         parameters: {
             query?: never;
@@ -5922,6 +6005,112 @@ export interface operations {
                 "application/json": components["schemas"]["SubscriptionIn"][];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tenants_api_v1_admin_tenants_get: {
+        parameters: {
+            query?: {
+                search?: string | null;
+                plan?: string | null;
+                page?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    users_api_v1_admin_users_get: {
+        parameters: {
+            query?: {
+                search?: string | null;
+                tenant_id?: string | null;
+                page?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    workers_api_v1_admin_workers_get: {
+        parameters: {
+            query?: {
+                search?: string | null;
+                tenant_id?: string | null;
+                enabled?: boolean | null;
+                page?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

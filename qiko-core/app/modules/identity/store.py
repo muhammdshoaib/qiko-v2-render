@@ -10,6 +10,22 @@ from app.modules.identity import twofa
 from app.modules.identity.security import hash_password, verify_password
 
 
+@dataclass(frozen=True)
+class UserDirectoryEntry:
+    """Exactly the columns the platform-admin user directory renders.
+
+    Separate from User on purpose: it cannot carry a password hash, a TOTP secret or a session id, so
+    a directory listing can never grow into a credential leak by someone adding a field later.
+    """
+
+    id: str
+    email: str
+    name: str | None
+    tenant: str | None
+    role: Role
+    twofa_enabled: bool
+
+
 @dataclass
 class User:
     id: str
@@ -28,6 +44,14 @@ class UserStore(Protocol):
     async def get_by_email(self, email: str) -> User | None: ...
     async def get_by_id(self, user_id: str) -> User | None: ...
     async def list_by_tenant(self, tenant: str) -> list[User]: ...
+    # Cross-tenant: the platform-admin user directory ONLY. Every other caller must go through
+    # list_by_tenant, which is why this is a separate method rather than an optional argument.
+    #
+    # Returns a PROJECTION, not User: a directory needs six columns, and loading the entity would
+    # decrypt every TOTP secret on the event loop and hold every password hash in memory to render a
+    # twenty-row list. It would also make a single row whose ciphertext no longer decrypts (after an
+    # ENCRYPTION_KEY rotation) fail the whole endpoint for everyone.
+    async def list_all(self) -> list[UserDirectoryEntry]: ...
     async def set_sid(self, user_id: str, sid: str | None) -> None: ...
     async def enable_twofa(self, user_id: str, secret: str,
                            backup_code_hashes: dict[str, str] | None = None) -> None: ...
@@ -59,6 +83,11 @@ class InMemoryUserStore:
 
     async def list_by_tenant(self, tenant: str) -> list[User]:
         return [u for u in self._by_id.values() if u.tenant == tenant]
+
+    async def list_all(self) -> list[UserDirectoryEntry]:
+        # Cross-tenant: platform-admin directory only.
+        return sorted((_directory_entry(user) for user in self._by_id.values()),
+                      key=lambda entry: entry.email)
 
     async def set_sid(self, user_id: str, sid: str | None) -> None:
         user = self._by_id.get(user_id)
@@ -112,3 +141,8 @@ def seeded_store() -> InMemoryUserStore:
                         password_hash=hash_password("change-me-locally"),
                         tenant="qiko", role=Role.owner))
     return store
+
+
+def _directory_entry(user: User) -> UserDirectoryEntry:
+    return UserDirectoryEntry(id=user.id, email=user.email, name=user.name, tenant=user.tenant,
+                              role=user.role, twofa_enabled=user.twofa_enabled)

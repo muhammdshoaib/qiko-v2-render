@@ -55,6 +55,8 @@ class AgentStore(Protocol):
     async def count(self, tenant: str) -> int: ...
     async def get(self, tenant: str, agent_id: str) -> Agent | None: ...
     async def get_by_id(self, agent_id: str) -> Agent | None: ...
+    # Cross-tenant: the platform-admin worker directory ONLY. Every tenant-facing caller uses list().
+    async def list_all(self) -> list[Agent]: ...
     async def mark_ready(self, tenant: str, agent_id: str) -> Agent: ...
     async def update_config(self, tenant: str, agent_id: str, patch: dict) -> Agent: ...
     async def set_enabled(self, tenant: str, agent_id: str, enabled: bool, *,
@@ -81,6 +83,11 @@ class InMemoryAgentStore:
 
     async def list(self, tenant: str) -> list[Agent]:
         return list(self._by_tenant.get(tenant, []))
+
+    async def list_all(self) -> list[Agent]:
+        # Cross-tenant: platform-admin worker directory only. Sorted to match the SQL store.
+        return sorted((a for agents in self._by_tenant.values() for a in agents),
+                      key=lambda agent: (agent.tenant, agent.id))
 
     async def count(self, tenant: str) -> int:
         return len(self._by_tenant.get(tenant, []))
@@ -145,6 +152,10 @@ class AgentService:
 
     async def list(self, tenant: str) -> list[Agent]:
         return await self.store.list(tenant)
+
+    async def list_all(self) -> list[Agent]:
+        # Cross-tenant: platform-admin worker directory only.
+        return await self.store.list_all()
 
     async def get(self, tenant: str, agent_id: str) -> Agent | None:
         return await self.store.get(tenant, agent_id)
