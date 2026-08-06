@@ -842,7 +842,7 @@ async def admin_audit(request: Request, _tenant: str = Depends(authed_tenant),
                       request_id: str | None = Query(default=None, max_length=64),
                       search: str | None = Query(default=None, max_length=200),
                       days: int = Query(default=7, ge=1, le=400),
-                      cursor: int | None = Query(default=None, ge=1),
+                      cursor: str | None = Query(default=None, max_length=64),
                       limit: int = Query(default=100, ge=1, le=500)) -> dict:
     """The platform audit trail.
 
@@ -867,15 +867,26 @@ async def admin_audit(request: Request, _tenant: str = Depends(authed_tenant),
 
     hidden = audit_actions.unreadable_actions(
         lambda capability: identity is not None and identity.can(capability))
+    parsed_cursor = None
+    if cursor:
+        # The cursor carries the whole sort key, so paging cannot skip a row whose timestamp and id
+        # disagree in order. Rejected rather than ignored when malformed: silently returning page one
+        # is how a UI loops forever.
+        stamp, _, raw_id = cursor.partition("|")
+        try:
+            parsed_cursor = (datetime.fromisoformat(stamp), int(raw_id))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="malformed cursor") from None
+
     rows = await store.list(
         actions_to_hide=hidden, action=action, category=category, outcome=outcome,
         tenant_id=tenant_id, actor_id=actor_id, target_id=target_id, request_id=request_id,
         search=search, since=datetime.now(timezone.utc) - timedelta(days=days),
-        cursor_id=cursor, limit=limit + 1)
+        cursor=parsed_cursor, limit=limit + 1)
 
     has_more = len(rows) > limit
     page = rows[:limit]
-    return {"items": page, "next_cursor": page[-1]["id"] if has_more and page else None,
+    return {"items": page, "next_cursor": page[-1]["_cursor"] if has_more and page else None,
             "has_more": has_more, "window_days": days,
             # Stated rather than left as a silent gap, so an operator who cannot see spend events knows
             # they exist rather than concluding nothing happened.

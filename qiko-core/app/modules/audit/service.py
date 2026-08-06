@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
 import os
@@ -57,10 +58,15 @@ _SECRET_KEY_PATTERN = re.compile(
     r"signature|private[_-]?key|bearer|encrypted",
     re.IGNORECASE,
 )
-# Values that are recognisably credentials regardless of what the key is called.
+# Values that are recognisably credentials regardless of what the key is called. NOT anchored: an
+# earlier version used ^ and therefore missed "Bearer sk_live_...", which is the shape a secret
+# actually arrives in.
 _SECRET_VALUE_PATTERN = re.compile(
-    r"^(sk_live_|sk_test_|whsec_|xoxb-|xoxp-|ghp_|AKIA|-----BEGIN|ey[A-Za-z0-9_-]{10,}\.)",
+    r"(sk_live_|sk_test_|whsec_|xoxb-|xoxp-|ghp_|AKIA[0-9A-Z]{16}|-----BEGIN|ey[A-Za-z0-9_-]{10,}\.)",
 )
+# Containers we know how to walk. Anything else is stringified and screened rather than trusted:
+# a dataclass or a pydantic model reaching the JSON serialiser would dump every attribute it has.
+_WALKABLE = (list, tuple, set, frozenset)
 REDACTED = "[redacted]"
 
 # An audit row must never become an exfiltration channel or a log-bloat vector.
@@ -100,21 +106,51 @@ def fingerprint_of(value: str | None) -> str | None:
     """
     if not value:
         return None
-    key = (get_settings().encryption_key or "audit").encode()
-    return hmac.new(key, value.encode(), hashlib.sha256).hexdigest()[:12]
+    key = get_settings().encryption_key
+    if not key:
+        # Refuses rather than falling back to a constant. A public HMAC key turns the fingerprint into
+        # an offline verification oracle for any low-entropy secret, which is worse than no
+        # fingerprint. encryption_key is empty only in dev, where assert_secrets_set does not run.
+        return None
+    return hmac.new(key.encode(), value.encode(), hashlib.sha256).hexdigest()[:12]
+
+
+MAX_VALUE_CHARS = 2_000
 
 
 def _scrub(value: Any, depth: int = 0) -> Any:
+    """Reduce a value to something safe to store.
+
+    Fails closed at every branch. The allowlist is the real defence; this exists for the case where
+    someone adds a field to an allowlist without thinking about what can be inside it, so it has to
+    assume the worst about shapes it does not recognise.
+    """
     if depth > 4:
         return REDACTED
     if isinstance(value, dict):
-        return {k: (REDACTED if _SECRET_KEY_PATTERN.search(str(k)) else _scrub(v, depth + 1))
-                for k, v in value.items()}
-    if isinstance(value, list):
-        return [_scrub(item, depth + 1) for item in value[:50]]
-    if isinstance(value, str) and _SECRET_VALUE_PATTERN.search(value):
-        return REDACTED
-    return value
+        out = {}
+        for key, item in value.items():
+            text_key = str(key)
+            # A secret can be the KEY as easily as the value, and a key is written verbatim.
+            if _SECRET_VALUE_PATTERN.search(text_key):
+                return REDACTED
+            out[text_key] = REDACTED if _SECRET_KEY_PATTERN.search(text_key) else _scrub(item, depth + 1)
+        return out
+    if isinstance(value, _WALKABLE):
+        # Tuples, sets and frozensets used to fall through untouched, and a set is not even JSON
+        # serialisable, so the row would have failed at flush instead of being redacted.
+        return [_scrub(item, depth + 1) for item in list(value)[:50]]
+    if value is None or isinstance(value, bool | int | float):
+        # Screened as text too: a numeric one-time code is still a credential.
+        return REDACTED if _SECRET_VALUE_PATTERN.search(str(value)) else value
+    if isinstance(value, str):
+        if _SECRET_VALUE_PATTERN.search(value):
+            return REDACTED
+        return value[:MAX_VALUE_CHARS]
+    # Anything else: an object, bytes, a dataclass. Stringified and screened rather than handed to a
+    # JSON serialiser that would repr every attribute.
+    text = str(value)
+    return REDACTED if _SECRET_VALUE_PATTERN.search(text) else text[:MAX_VALUE_CHARS]
 
 
 def diff(spec_action: str, before: dict | None, after: dict | None) -> dict:
@@ -141,8 +177,14 @@ def build_row(event: AuditEvent, *, request=None) -> dict:
     spec = spec_for(event.action)
     settings = get_settings()
 
-    changes = _scrub({k: v for k, v in (event.changes or {}).items()
-                      if k in spec.diff_fields or k in {"from", "to"}})
+    # Strictly the action's allowlist. An earlier version also let through top-level "from"/"to",
+    # which diff() never produces and which therefore only served as a hole large enough to carry
+    # anything at all.
+    changes = _scrub({k: v for k, v in (event.changes or {}).items() if k in spec.diff_fields})
+    if len(json.dumps(changes, default=str)) > MAX_METADATA_BYTES:
+        # Several allowlisted fields are tenant free text, so the diff needs the same ceiling the
+        # metadata already had.
+        changes = {"truncated": True, "fields": sorted(changes)}
     metadata = _scrub(event.metadata or {})
     encoded = json.dumps(metadata, default=str)
     if len(encoded) > MAX_METADATA_BYTES:
@@ -160,7 +202,7 @@ def build_row(event: AuditEvent, *, request=None) -> dict:
         "action": event.action,
         "category": spec.category,
         "outcome": event.outcome,
-        "message": _render(spec.template, event),
+        "message": _render(spec.template, event, changes),
         "occurred_at": event.occurred_at,
         "actor_type": event.actor_type,
         "actor_id": event.actor_id,
@@ -172,9 +214,7 @@ def build_row(event: AuditEvent, *, request=None) -> dict:
         # The tenant the event is ABOUT, which is not always the actor's own.
         "tenant_id": event.tenant_id or get_tenant(),
         "request_id": get_request_id(),
-        # Trusted only as far as the proxy allowlist already trusts it; see FORWARDED_ALLOW_IPS.
-        "source_ip": (headers.get("x-forwarded-for", "").split(",")[0].strip()
-                      or (client.host if client else None)) or None,
+        "source_ip": _client_ip(headers, client),
         "user_agent": (headers.get("user-agent") or "")[:256] or None,
         "route": route,
         "service": os.environ.get("QIKO_SERVICE", "api"),
@@ -185,27 +225,70 @@ def build_row(event: AuditEvent, *, request=None) -> dict:
     }
 
 
-def _render(template: str, event: AuditEvent) -> str:
+def _client_ip(headers, client) -> str | None:
+    """The caller's address, from a header the client cannot forge.
+
+    NOT the leftmost X-Forwarded-For. Cloudflare APPENDS to that header rather than replacing it, and
+    Caddy forwards it upstream untrimmed, so `X-Forwarded-For: 8.8.8.8` from any client lands in the
+    leftmost position. Recording it would be attribution poisoning in the one store that exists for
+    attribution. CF-Connecting-IP is overwritten by Cloudflare on every request, and scope["client"]
+    has already been rewritten by uvicorn's proxy-headers handling within FORWARDED_ALLOW_IPS.
+
+    Validated before storing, so a malformed header cannot become a value that looks like an address.
+    """
+    candidate = (headers.get("cf-connecting-ip") or "").strip() if headers else ""
+    if not candidate and client is not None:
+        candidate = getattr(client, "host", "") or ""
+    if not candidate:
+        return None
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return None
+
+
+def _render(template: str, event: AuditEvent, changes: dict) -> str:
+    """Render the sentence from the SCRUBBED diff.
+
+    Reading the raw changes here would have let a value that _scrub redacted reappear verbatim in a
+    column every reader sees. The diff shape also matters: diff() produces {"provider": {"from":
+    ..., "to": ...}}, so taking the field directly would have rendered a dict into the sentence.
+    """
     if not template:
         return event.action
+    provider = changes.get("provider", "")
+    if isinstance(provider, dict):
+        provider = provider.get("to") or provider.get("from") or ""
     try:
         return template.format(
             actor=event.actor_label or event.actor_id or "system",
             target=event.target_label or event.target_id or "",
-            provider=(event.changes or {}).get("provider", ""),
+            provider=provider,
         )[:512]
-    except (KeyError, IndexError):  # pragma: no cover - a template typo, caught by the registry test
+    except Exception:  # noqa: BLE001 - a template typo must never take down a write, least of all one
+        # inside a caller's transaction. The registry test renders every template so this stays unhit.
+        logger.error("audit template failed to render", extra={
+            "source": "audit", "action": event.action})
         return event.action
 
 
-def _mirror(row: dict) -> None:
-    """A structured line on stdout as well as the row.
+# Fields safe to echo into application logs. Deliberately excludes every label, the reason, the IP and
+# the user agent: those are the row's PII payload, and application logs sit outside this store's
+# retention window and outside its erasure path, so pseudonymising a row would leave the same data
+# behind in the log stream.
+_MIRROR_FIELDS = ("event_id", "action", "category", "outcome", "actor_type", "target_type",
+                  "tenant_id", "request_id", "environment", "service")
 
-    Costs nothing and buys two things: a backstop if the insert fails, and log streaming becomes a
-    shipping config change rather than a project if a customer ever asks for it.
+
+def _mirror(row: dict) -> None:
+    """A correlation line on stdout alongside the row.
+
+    Logged at WARNING, not INFO, because live runs LOG_LEVEL=WARNING: at INFO this was silently
+    dropped in production, so the backstop it claimed to provide did not exist where it mattered.
+    Identifiers only, so it is a pointer into the audit store rather than a second copy of it.
     """
-    logger.info("audit", extra={"source": "audit", "audit_event": {
-        k: v for k, v in row.items() if k not in {"changes", "event_metadata"}}})
+    logger.warning("audit", extra={"source": "audit", "audit_event": {
+        field: row.get(field) for field in _MIRROR_FIELDS}})
 
 
 async def record_in(session, store, event: AuditEvent, *, request=None) -> None:
@@ -216,9 +299,19 @@ async def record_in(session, store, event: AuditEvent, *, request=None) -> None:
 
 
 async def record(store, event: AuditEvent, *, request=None) -> None:
-    """Write after the fact, never raising. For everything below CRITICAL."""
+    """Write after the fact, never raising. For everything below CRITICAL.
+
+    A CRITICAL action arriving here is a wiring mistake, not a runtime condition: the whole point of
+    the durability split is that money, access, credentials and deletions cannot be written on a path
+    that is allowed to lose the row. It is logged rather than raised, because refusing at this point
+    would fail a request whose mutation has already committed, which is the exact outcome the
+    non-fatal rule exists to avoid. The route-coverage test is what stops it happening.
+    """
     if store is None:
         return
+    if is_critical(event.action):
+        logger.error("critical audit event written on the non-transactional path", extra={
+            "source": "audit", "action": event.action, "target": event.target_id})
     row = build_row(event, request=request)
     _mirror(row)
     try:
@@ -240,15 +333,24 @@ class InMemoryAuditStore:
 
     rows: list[dict] = field(default_factory=list)
 
+    _next_id: int = 1
+
     def add_in(self, _session, row: dict) -> None:
-        self.rows.append(row)
+        self._assign(row)
 
     async def add(self, row: dict) -> None:
-        self.rows.append(row)
+        self._assign(row)
+
+    def _assign(self, row: dict) -> None:
+        # The SQL store gets its id from the database. Without one here the router's cursor handling
+        # raised on any page past the first, so dev and tests diverged from production exactly where
+        # the paging bug lived.
+        self.rows.append({**row, "_row_id": self._next_id})
+        self._next_id += 1
 
     async def list(self, *, actions_to_hide=None, action=None, category=None, outcome=None,
                    tenant_id=None, actor_id=None, target_id=None, request_id=None, search=None,
-                   since=None, until=None, cursor_id=None, limit=100) -> list[dict]:
+                   since=None, until=None, cursor=None, limit=100) -> list[dict]:
         hidden = set(actions_to_hide or ())
         rows = [row for row in self.rows if row["action"] not in hidden]
         for key, value in (("action", action), ("category", category), ("outcome", outcome),
@@ -265,6 +367,18 @@ class InMemoryAuditStore:
             rows = [row for row in rows if needle in " ".join(
                 str(row.get(field_name) or "") for field_name in
                 ("message", "actor_label", "target_label")).lower()]
-        rows = sorted(rows, key=lambda row: row["occurred_at"], reverse=True)
-        return [{**row, "metadata": row.get("event_metadata", {}),
-                 "occurred_at": row["occurred_at"].isoformat()} for row in rows[:limit]]
+        # Same order and same cursor semantics as SQL, including the tiebreak, so a paging bug cannot
+        # hide in the difference between the two stores.
+        rows = sorted(rows, key=lambda row: (row["occurred_at"], row["_row_id"]), reverse=True)
+        if cursor is not None:
+            cursor_time, cursor_id = cursor
+            rows = [row for row in rows
+                    if (row["occurred_at"], row["_row_id"]) < (cursor_time, cursor_id)]
+        out = []
+        for row in rows[:limit]:
+            item = {k: v for k, v in row.items() if k not in {"_row_id", "event_metadata"}}
+            item["metadata"] = row.get("event_metadata", {})
+            item["occurred_at"] = row["occurred_at"].isoformat()
+            item["_cursor"] = f"{row['occurred_at'].isoformat()}|{row['_row_id']}"
+            out.append(item)
+        return out

@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, func, or_, select, text
+from sqlalchemy import and_, delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.crypto import decrypt, encrypt
@@ -2345,7 +2345,7 @@ class SqlAuditStore:
                    tenant_id: str | None = None, actor_id: str | None = None,
                    target_id: str | None = None, request_id: str | None = None,
                    search: str | None = None, since=None, until=None,
-                   cursor_id: int | None = None, limit: int = 100) -> list[dict]:
+                   cursor: tuple | None = None, limit: int = 100) -> list[dict]:
         query = select(AuditEventRow)
         # Applied in SQL, never after the LIMIT. Filtering a fetched page returns short pages with no
         # indication that more exist and, with a cursor, skips rows entirely.
@@ -2362,26 +2362,43 @@ class SqlAuditStore:
         if until is not None:
             query = query.where(AuditEventRow.occurred_at <= until)
         if search:
-            needle = f"%{search.lower()}%"
+            # autoescape, because % and _ are wildcards and a TRAILING BACKSLASH is a Postgres error
+            # rather than a no-match: an admin typing one would get a 500 from a search box.
             query = query.where(or_(
-                func.lower(AuditEventRow.message).like(needle),
-                func.lower(func.coalesce(AuditEventRow.actor_label, "")).like(needle),
-                func.lower(func.coalesce(AuditEventRow.target_label, "")).like(needle)))
-        # Keyset paging on the descending stream. No OFFSET and no COUNT(*): both are what make an
-        # audit page unusable once the table is large, and a total is not worth a full scan.
-        if cursor_id is not None:
-            query = query.where(AuditEventRow.id < cursor_id)
+                func.lower(AuditEventRow.message).contains(search.lower(), autoescape=True),
+                func.lower(func.coalesce(AuditEventRow.actor_label, "")).contains(
+                    search.lower(), autoescape=True),
+                func.lower(func.coalesce(AuditEventRow.target_label, "")).contains(
+                    search.lower(), autoescape=True)))
+        # Keyset paging. No OFFSET and no COUNT: both are what make an audit page unusable once the
+        # table is large, and the total is not worth a full scan.
+        #
+        # The predicate compares the WHOLE sort key, not just the id. occurred_at is set when the event
+        # happens while id is assigned at insert, and the non-transactional writer commits after the
+        # mutation, so two concurrent requests routinely land with the two in opposite order. An
+        # id-only cursor then skips rows outright, which for an audit page means some events are
+        # invisible depending on where you happened to page.
+        if cursor is not None:
+            cursor_time, cursor_id = cursor
+            query = query.where(or_(
+                AuditEventRow.occurred_at < cursor_time,
+                and_(AuditEventRow.occurred_at == cursor_time, AuditEventRow.id < cursor_id)))
         query = query.order_by(AuditEventRow.occurred_at.desc(), AuditEventRow.id.desc())
 
         async with self.sessionmaker() as s:
-            rows = (await s.execute(query.limit(max(1, min(limit, 500))))).scalars().all()
+            # No clamp here: the caller asks for limit + 1 to detect a further page, and clamping it
+            # back down made has_more permanently false at the maximum page size.
+            rows = (await s.execute(query.limit(max(1, min(limit, 1000))))).scalars().all()
             return [_audit_json(row) for row in rows]
 
 
 def _audit_json(row: AuditEventRow) -> dict:
     """Fields listed explicitly, never the ORM object: the same rule every other admin read follows."""
     return {
-        "id": row.id, "event_id": row.event_id, "action": row.action, "category": row.category,
+        # The sequential id is deliberately NOT returned. A reader who is excluded from some actions
+        # could otherwise count the gaps and learn exactly how many hidden events exist, which is the
+        # disclosure the per-action read gate was preventing.
+        "event_id": row.event_id, "action": row.action, "category": row.category,
         "outcome": row.outcome, "message": row.message,
         "occurred_at": row.occurred_at.isoformat() if row.occurred_at else None,
         "actor_type": row.actor_type, "actor_id": row.actor_id, "actor_label": row.actor_label,
@@ -2391,4 +2408,6 @@ def _audit_json(row: AuditEventRow) -> dict:
         "service": row.service, "environment": row.environment,
         "changes": dict(row.changes or {}), "metadata": dict(row.event_metadata or {}),
         "reason": row.reason,
+        # Opaque to the client, and it carries the whole sort key so paging cannot skip.
+        "_cursor": f"{row.occurred_at.isoformat()}|{row.id}",
     }

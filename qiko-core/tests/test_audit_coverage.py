@@ -56,7 +56,7 @@ def test_every_mutating_route_is_audited_or_excused_in_writing():
     the gap is visible in the repository rather than only in a report."""
     app = create_app()
     routes = _mutating_routes(app)
-    accounted = set(NOT_AUDITED) | set(AUDIT_BACKLOG)
+    accounted = set(NOT_AUDITED) | set(AUDIT_BACKLOG) | set(LEGACY_AUDITED)
     unaccounted = sorted(routes - accounted - set(INSTRUMENTED))
     assert not unaccounted, (
         "these mutating routes are neither audited, nor backlogged, nor excused. Add them to "
@@ -64,13 +64,30 @@ def test_every_mutating_route_is_audited_or_excused_in_writing():
         "\n  ".join(f"{method} {path}" for method, path in unaccounted))
 
 
-def test_nothing_is_both_excused_and_instrumented():
-    overlap = set(NOT_AUDITED) & set(INSTRUMENTED)
-    assert not overlap, f"contradictory declarations: {overlap}"
+def test_nothing_is_declared_twice():
+    sets = {"NOT_AUDITED": set(NOT_AUDITED), "AUDIT_BACKLOG": set(AUDIT_BACKLOG),
+            "LEGACY_AUDITED": set(LEGACY_AUDITED), "INSTRUMENTED": set(INSTRUMENTED)}
+    for first in sets:
+        for second in sets:
+            if first < second:
+                overlap = sets[first] & sets[second]
+                assert not overlap, f"{first} and {second} both claim: {overlap}"
+
+
+def test_the_instrumented_set_matches_the_source():
+    """Nothing otherwise ties this set to reality: a route could be declared instrumented with no code
+    behind it, which is the failure mode that makes a coverage test worse than none."""
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parents[1] / "app" / "modules" / "admin" / "router.py"
+    text = source.read_text()
+    writes = text.count("audit.record(request.app.state.audit")
+    assert writes == len(INSTRUMENTED), (
+        f"{writes} audit writes in the admin router but {len(INSTRUMENTED)} routes declared")
 
 
 def test_every_excuse_says_something():
-    for route, reason in {**NOT_AUDITED, **AUDIT_BACKLOG}.items():
+    for route, reason in {**NOT_AUDITED, **AUDIT_BACKLOG, **LEGACY_AUDITED}.items():
         assert len(reason) > 20, f"{route} needs a real reason, got {reason!r}"
 
 
@@ -160,18 +177,38 @@ def test_only_changed_fields_appear():
     assert changed == {}
 
 
-def test_a_secret_fingerprint_distinguishes_rotation_from_a_re_save():
+def test_a_secret_fingerprint_distinguishes_rotation_from_a_re_save(monkeypatch):
     """A bare changed=true cannot tell an incident responder whether the value was actually rotated."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "encryption_key", "Enc" + "rypt-Z9y8X7w6V5u4T3s2R1q0P9o8N7m6")
     first = fingerprint_of("hunter2")
     assert first == fingerprint_of("hunter2"), "stable for the same value"
     assert first != fingerprint_of("hunter3"), "different for a different value"
     assert first and len(first) == 12 and "hunter2" not in first
 
 
-def test_oversized_metadata_is_truncated_visibly():
+def test_no_fingerprint_at_all_rather_than_one_under_a_public_key(monkeypatch):
+    """The fallback used to be the constant "audit", which turns the fingerprint into an offline
+    verification oracle for any low-entropy secret. No fingerprint is better than that one."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "encryption_key", "")
+    assert fingerprint_of("hunter2") is None
+
+
+def test_an_oversized_single_value_is_capped():
+    """A tenant free-text field is not a place to hide a megabyte."""
     row = build_row(AuditEvent(action=registry.DOCUMENT_INGESTED, target_id="d1",
                                metadata={"blob": "x" * 20_000}))
-    assert row["event_metadata"] == {"truncated": True, "original_bytes": pytest.approx(20_014, abs=50)}
+    assert len(row["event_metadata"]["blob"]) == 2_000
+
+
+def test_oversized_metadata_overall_is_truncated_visibly():
+    """Truncated explicitly rather than silently, so a reader knows something was dropped."""
+    row = build_row(AuditEvent(action=registry.DOCUMENT_INGESTED, target_id="d1",
+                               metadata={f"field{i}": "y" * 500 for i in range(40)}))
+    assert row["event_metadata"]["truncated"] is True
 
 
 def test_the_message_is_rendered_at_write_time():
@@ -189,7 +226,8 @@ def test_an_unregistered_action_is_refused():
 
 # --- the declared state of the world ---------------------------------------------------------------
 
-# Instrumented today.
+# Writes to audit_events today. Verified against the source, not merely declared: a route could
+# otherwise be moved into this set with no code behind it.
 INSTRUMENTED: set[tuple[str, str]] = {
     ("POST", "/api/v1/admin/customers/{user_id}/studio"),
     ("DELETE", "/api/v1/admin/customers/{user_id}"),
@@ -197,11 +235,22 @@ INSTRUMENTED: set[tuple[str, str]] = {
     ("DELETE", "/api/v1/admin/cost-caps/{tenant_id}"),
     ("PUT", "/api/v1/admin/users/{user_id}/role"),
     ("PUT", "/api/v1/admin/workers/{tenant_id}/{agent_id}/status"),
-    ("PATCH", "/api/v1/admin/customers/{customer_id}/workers/{agent_id}/enabled"),
-    ("PUT", "/api/v1/admin/org/{email}"),
-    ("DELETE", "/api/v1/admin/org/{email}"),
-    ("POST", "/api/v1/consent"),
-    ("POST", "/api/v1/consent/anonymous"),
+}
+
+# Audited, but into a table that predates the unified stream. Folding these in is leg E2: until then,
+# claiming them as "instrumented" would assert a single stream that does not exist. Each is genuinely
+# recorded, so they are neither a gap nor yet the thing this change is building.
+LEGACY_AUDITED: dict[tuple[str, str], str] = {
+    ("PATCH", "/api/v1/admin/customers/{customer_id}/workers/{agent_id}/enabled"):
+        "agent_state_audit, written inside the row-locked transaction; migrate in leg E2",
+    ("PUT", "/api/v1/admin/org/{email}"):
+        "platform_admin_audit, written in the same transaction as the grant; migrate in leg E2",
+    ("DELETE", "/api/v1/admin/org/{email}"):
+        "platform_admin_audit, written in the same transaction as the revoke; migrate in leg E2",
+    ("POST", "/api/v1/consent"):
+        "consent_records, which is legal evidence with its own append-only guarantees and must not move",
+    ("POST", "/api/v1/consent/anonymous"):
+        "consent_records, same; the audit trail should reference a decision_id rather than copy it",
 }
 
 
@@ -495,3 +544,136 @@ AUDIT_BACKLOG: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/signal/scan"): (
         "MEDIUM: leg E2. State change with an identifiable actor, not yet instrumented."),
 }
+
+
+# --- what the security gate found -------------------------------------------------------------------
+
+def test_a_reader_cannot_count_the_rows_they_are_not_allowed_to_see():
+    """Excluding rows in SQL is pointless if the response hands back a sequential id: a reader sees
+    ids 1, 2, 5, 9 and learns exactly how many hidden events sit between them."""
+    from app.db.stores import _audit_json
+
+    class Row:
+        id = 42
+        event_id = "e-1"
+        action = registry.LOGIN_SUCCEEDED
+        category = registry.AUTH
+        outcome = "success"
+        message = "x signed in"
+        occurred_at = __import__("datetime").datetime(2026, 8, 5, tzinfo=__import__("datetime").timezone.utc)
+        actor_type = actor_id = actor_label = on_behalf_of = None
+        target_type = "user"
+        target_id = target_label = tenant_id = request_id = None
+        source_ip = user_agent = route = None
+        service = "api"
+        environment = "dev"
+        changes = event_metadata = {}
+        reason = None
+
+    payload = _audit_json(Row())
+    assert "id" not in payload, "the sequential id must not be returned"
+    # The cursor carries the id, but as an opaque compound the reader has no reason to decompose and
+    # which is meaningless without the timestamp it is paired with.
+    assert payload["_cursor"].endswith("|42")
+
+
+def test_secrets_survive_none_of_the_container_shapes():
+    """An earlier version walked only dicts and lists, so a tuple or a set carried a value straight
+    through, and a set is not even JSON serialisable so the row would have failed at flush."""
+    from app.modules.audit.service import _scrub
+
+    for shape in (("sk_live_abc",), {"sk_live_abc"}, frozenset({"sk_live_abc"}),
+                  ["sk_live_abc"], {"x": ["sk_live_abc"]}):
+        assert "sk_live_abc" not in str(_scrub(shape)), f"leaked through {type(shape).__name__}"
+
+
+def test_a_secret_in_the_key_is_caught_too():
+    from app.modules.audit.service import _scrub
+
+    assert "sk_live_abc" not in str(_scrub({"sk_live_abc": "value"}))
+
+
+def test_a_secret_in_the_middle_of_a_string_is_caught():
+    """The pattern used to be anchored at the start, which misses the shape a token actually arrives
+    in: inside an Authorization header value or a sentence."""
+    from app.modules.audit.service import _scrub
+
+    assert _scrub("Bearer sk_live_abcdef") == "[redacted]"
+    assert _scrub({"note": "the key is ghp_abcdef"})["note"] == "[redacted]"
+
+
+def test_an_object_is_not_handed_to_the_serialiser_intact():
+    """A dataclass or a model reaching the JSON column would dump every attribute it has."""
+    from dataclasses import dataclass as dc
+
+    from app.modules.audit.service import _scrub
+
+    @dc
+    class Credentials:
+        token: str = "sk_live_secret"
+
+    assert "sk_live_secret" not in str(_scrub(Credentials()))
+
+
+def test_the_diff_allowlist_has_no_from_to_hole():
+    """A previous version also admitted top-level "from"/"to" keys, which diff() never produces and
+    which therefore only served as a gap wide enough to carry anything."""
+    row = build_row(AuditEvent(action=registry.WORKER_STATUS_CHANGED, target_id="w1",
+                               changes={"from": "anything at all", "to": "anything at all"}))
+    assert row["changes"] == {}
+
+
+def test_the_message_is_rendered_from_the_scrubbed_diff():
+    """Rendering from the raw changes would let a value that _scrub redacted reappear verbatim in a
+    column every reader sees, and the diff shape would render a dict into the sentence."""
+    row = build_row(AuditEvent(
+        action=registry.CREDENTIAL_SET, actor_label="ops@qiko.ai", target_label="Tender Bot",
+        changes={"provider": {"from": None, "to": "slack"}}))
+    assert row["message"] == "ops@qiko.ai set the slack credential on Tender Bot"
+
+
+def test_every_template_in_the_registry_renders():
+    """One rendering test covered one template. A typo in any of the other forty raises at write time,
+    and on the transactional path that would take down the caller's mutation."""
+    for action in registry.ACTIONS:
+        row = build_row(AuditEvent(action=action, actor_label="a@b", target_label="t",
+                                   changes={"provider": "slack"} if "provider" in
+                                   registry.spec_for(action).diff_fields else {}))
+        assert row["message"] and "{" not in row["message"], f"{action} did not render"
+
+
+def test_the_source_address_cannot_be_forged_by_a_header():
+    """Cloudflare APPENDS to X-Forwarded-For and Caddy forwards it untrimmed, so its leftmost value is
+    whatever the client sent. Recording that is attribution poisoning in the store whose only job is
+    attribution."""
+    from app.modules.audit.service import _client_ip
+
+    class Client:
+        host = "203.0.113.9"
+
+    forged = {"x-forwarded-for": "8.8.8.8", "cf-connecting-ip": "203.0.113.9"}
+    assert _client_ip(forged, Client()) == "203.0.113.9"
+    assert _client_ip({"x-forwarded-for": "8.8.8.8"}, Client()) == "203.0.113.9"
+    # A malformed value must not become a stored string that looks like an address.
+    assert _client_ip({"cf-connecting-ip": "not-an-ip"}, None) is None
+
+
+def test_the_stdout_mirror_is_a_pointer_not_a_second_copy(caplog):
+    """It used to echo every label, the reason, the IP and the user agent into application logs, which
+    sit outside this store's retention and outside its erasure path, and it did so at INFO, which live
+    drops entirely."""
+    import logging
+
+    from app.modules.audit.service import _mirror
+
+    row = build_row(AuditEvent(action=registry.TENANT_ROLE_CHANGED, actor_label="ops@qiko.ai",
+                               target_label="victim@acme.invalid", reason="a private note"))
+    with caplog.at_level(logging.WARNING):
+        _mirror(row)
+    mirrored = caplog.records[-1].audit_event
+    assert "ops@qiko.ai" not in str(mirrored) and "victim@acme.invalid" not in str(mirrored)
+    assert "a private note" not in str(mirrored)
+    assert mirrored["event_id"] == row["event_id"], "it must still point at the row"
+    # WARNING, not INFO: live runs LOG_LEVEL=WARNING, so at INFO the backstop did not exist where it
+    # was needed.
+    assert caplog.records[-1].levelno == logging.WARNING

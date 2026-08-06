@@ -5891,7 +5891,7 @@ export interface operations {
                 request_id?: string | null;
                 search?: string | null;
                 days?: number;
-                cursor?: number | null;
+                cursor?: string | null;
                 limit?: number;
             };
             header?: never;

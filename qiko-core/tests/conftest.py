@@ -1,7 +1,19 @@
 import pytest
 from fastapi.testclient import TestClient
 
+from app.core.config import get_settings
 from app.main import create_app
+
+# Applied at IMPORT, not in a fixture, because four test modules mint auth cookies at module level and
+# pytest imports those modules during collection, before any fixture runs. A session fixture therefore
+# raised the TTL just too late to matter.
+#
+# The property worth having is that the suite's own runtime cannot decide whether it passes. With the
+# production TTL of 900 seconds it passed only while it finished inside fifteen minutes; once it grew
+# past that, a dozen tests started failing with "invalid or expired token" in ways that looked like a
+# real regression and reproduced nowhere in isolation. Token expiry itself stays covered by
+# tests/test_identity_units.py::test_expired_token_rejected, which builds its own expired token.
+get_settings().access_token_ttl_seconds = 24 * 60 * 60
 
 
 @pytest.fixture(autouse=True)

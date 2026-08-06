@@ -64,6 +64,42 @@ def upgrade() -> None:
     op.create_index("ix_audit_events_actor_time", "audit_events", ["actor_id", "occurred_at"])
     op.create_index("ix_audit_events_target", "audit_events", ["target_type", "target_id"])
 
+    # Carry anything already recorded across rather than dropping it. Production is empty, but preprod
+    # has run 0036 and any QA pass that toggled Studio or set a cost cap wrote rows there. Destroying
+    # audit evidence as a side effect of improving the audit system is the wrong default, and the
+    # mapping is six action names.
+    bind = op.get_bind()
+    legacy_actions = {
+        "studio_toggled": ("admin.studio_toggled", "admin", "tenant"),
+        "customer_soft_deleted": ("admin.customer_soft_deleted", "admin", "tenant"),
+        "cost_cap_set": ("billing.cost_cap_set", "billing", "cost_cap"),
+        "cost_cap_removed": ("billing.cost_cap_removed", "billing", "cost_cap"),
+        "tenant_role_changed": ("access.tenant_role_changed", "access", "user"),
+        "worker_status_changed": ("admin.worker_status_changed", "admin", "worker"),
+    }
+    rows = bind.execute(sa.text(
+        "SELECT action, target_id, tenant_id, actor_email, before, after, reason, created_at "
+        "FROM admin_action_audit")).mappings().all()
+    for index, row in enumerate(rows):
+        action, category, target_type = legacy_actions.get(
+            row["action"], (f"admin.{row['action']}", "admin", "unknown"))
+        bind.execute(sa.text(
+            "INSERT INTO audit_events (event_id, schema_version, action, category, outcome, message, "
+            "occurred_at, recorded_at, actor_type, actor_id, actor_label, target_type, target_id, "
+            "tenant_id, service, environment, changes, event_metadata, reason) VALUES "
+            "(:event_id, 0, :action, :category, 'success', :message, :occurred_at, :occurred_at, "
+            "'platform_admin', :actor, :actor, :target_type, :target_id, :tenant_id, 'migration', "
+            "'unknown', :changes, '{}', :reason)"),
+            {"event_id": f"legacy-0037-{index}", "action": action, "category": category,
+             "message": f"{row['actor_email']} performed {action}",
+             "occurred_at": row["created_at"], "actor": row["actor_email"],
+             "target_type": target_type, "target_id": row["target_id"],
+             "tenant_id": row["tenant_id"],
+             # schema_version 0 marks a carried row: before/after were free-text strings there, so
+             # they cannot be turned into a typed diff after the fact and are kept as they were.
+             "changes": f'{{"legacy": {{"from": "{row["before"]}", "to": "{row["after"]}"}}}}',
+             "reason": row["reason"]})
+
     op.drop_table("admin_action_audit")
 
 
@@ -81,4 +117,7 @@ def downgrade() -> None:
         sa.Column("reason", sa.Text(), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
     )
+    # A faithful inverse recreates 0036's indexes too, not just its columns.
+    for column in ("action", "target_id", "tenant_id", "actor_email", "created_at"):
+        op.create_index(f"ix_admin_action_audit_{column}", "admin_action_audit", [column])
     op.drop_table("audit_events")
