@@ -58,6 +58,9 @@ class AgentStore(Protocol):
     # Cross-tenant: the platform-admin worker directory ONLY. Every tenant-facing caller uses list().
     async def list_all(self) -> list[Agent]: ...
     async def mark_ready(self, tenant: str, agent_id: str) -> Agent: ...
+    # Any allowed status, unlike mark_ready which is one-way to "ready". Nothing could move a worker
+    # back to training after a bad ingest.
+    async def set_status(self, tenant: str, agent_id: str, status: str) -> Agent | None: ...
     async def update_config(self, tenant: str, agent_id: str, patch: dict) -> Agent: ...
     async def set_enabled(self, tenant: str, agent_id: str, enabled: bool, *,
                           changed_by_email: str, reason: str | None) -> Agent: ...
@@ -102,6 +105,13 @@ class InMemoryAgentStore:
             for a in agents:
                 if a.id == agent_id:
                     return a
+        return None
+
+    async def set_status(self, tenant: str, agent_id: str, status: str) -> Agent | None:
+        for a in self._by_tenant.get(tenant, []):
+            if a.id == agent_id:
+                a.status = status
+                return a
         return None
 
     async def mark_ready(self, tenant: str, agent_id: str) -> Agent:
@@ -170,6 +180,17 @@ class AgentService:
             return await self.store.add_with_limit(agent, plan.worker_limit)
         except PlanLimitError as exc:
             raise PlanLimitError(f"plan '{plan.name}' allows {plan.worker_limit} worker(s)") from exc
+
+    async def set_status(self, tenant: str, agent_id: str, status: str) -> Agent | None:
+        """Set an agent's lifecycle status to any allowed value.
+
+        mark_ready is one-way and hardcodes "ready", so nothing in the platform could move a worker
+        back to training after a bad ingest. The status set is asserted here as well as at the HTTP
+        boundary, so an internal caller cannot write a value the rest of the code does not understand.
+        """
+        if status not in AGENT_STATUSES:
+            raise ValueError(f"unknown agent status: {status}")
+        return await self.store.set_status(tenant, agent_id, status)
 
     async def mark_ready(self, tenant: str, agent_id: str) -> Agent:
         return await self.store.mark_ready(tenant, agent_id)
