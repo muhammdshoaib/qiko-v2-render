@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import and_, delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.crypto import decrypt, encrypt
@@ -38,7 +38,7 @@ from app.db.models import PasswordResetOtp as PasswordResetOtpRow
 from app.db.models import PendingSignup as PendingSignupRow
 from app.db.models import PendingTeamInvite as PendingTeamInviteRow
 from app.db.models import PlatformAdmin as PlatformAdminRow
-from app.db.models import AdminActionAudit as AdminActionAuditRow
+from app.db.models import AuditEventRow
 from app.db.models import AiCostCap as AiCostCapRow
 from app.db.models import AiUsageEvent as AiUsageEventRow
 from app.db.models import PlatformAdminAudit as PlatformAdminAuditRow
@@ -69,7 +69,6 @@ from app.core.deps import WorkerUnavailable
 from app.modules.chat.service import ConversationScopeError, ConversationSummary, Message
 from app.modules.crm.service import Contact, CrmAction
 from app.modules.finance.models import FinanceChatMessage, FinanceFile
-from app.modules.admin.audit import AdminAction
 from app.modules.ai.caps import CostCap
 from app.modules.ai.usage import AgentUsageSummary, UsageEvent, UsageTotals, summarise_agents
 from app.modules.ai.usage import dimensions as usage_dimensions
@@ -2322,29 +2321,93 @@ class SqlCostCapStore:
 
 
 @dataclass
-class SqlAdminAuditStore:
-    """Durable admin action audit. Platform-wide by design, so no tenant filter."""
+class SqlAuditStore:
+    """The platform-wide audit trail. Cross-tenant by definition, so no tenant filter."""
 
     sessionmaker: async_sessionmaker[AsyncSession]
 
-    async def add(self, entry: AdminAction) -> None:
-        async with self.sessionmaker() as s, s.begin():
-            s.add(AdminActionAuditRow(
-                action=entry.action, target_type=entry.target_type, target_id=entry.target_id,
-                tenant_id=entry.tenant_id, actor_email=entry.actor_email, before=entry.before,
-                after=entry.after, reason=entry.reason, created_at=entry.created_at))
+    def add_in(self, session, row: dict) -> None:
+        """Write inside the CALLER's transaction, for CRITICAL actions.
 
-    async def list(self, *, action=None, tenant_id=None, target_id=None, limit=100) -> list[AdminAction]:
-        query = select(AdminActionAuditRow).order_by(AdminActionAuditRow.created_at.desc())
-        if action is not None:
-            query = query.where(AdminActionAuditRow.action == action)
-        if tenant_id is not None:
-            query = query.where(AdminActionAuditRow.tenant_id == tenant_id)
-        if target_id is not None:
-            query = query.where(AdminActionAuditRow.target_id == target_id)
+        Synchronous and takes the session, so the row is part of the same unit of work as the mutation
+        it records. A committed mutation therefore cannot exist without its audit row, and a rolled
+        back one cannot leave a row claiming it happened.
+        """
+        session.add(AuditEventRow(**row))
+
+    async def add(self, row: dict) -> None:
+        """Write afterwards, in its own transaction, for everything below CRITICAL."""
+        async with self.sessionmaker() as s, s.begin():
+            s.add(AuditEventRow(**row))
+
+    async def list(self, *, actions_to_hide: list[str] | None = None, action: str | None = None,
+                   category: str | None = None, outcome: str | None = None,
+                   tenant_id: str | None = None, actor_id: str | None = None,
+                   target_id: str | None = None, request_id: str | None = None,
+                   search: str | None = None, since=None, until=None,
+                   cursor: tuple | None = None, limit: int = 100) -> list[dict]:
+        query = select(AuditEventRow)
+        # Applied in SQL, never after the LIMIT. Filtering a fetched page returns short pages with no
+        # indication that more exist and, with a cursor, skips rows entirely.
+        if actions_to_hide:
+            query = query.where(AuditEventRow.action.notin_(actions_to_hide))
+        for column, value in ((AuditEventRow.action, action), (AuditEventRow.category, category),
+                              (AuditEventRow.outcome, outcome), (AuditEventRow.tenant_id, tenant_id),
+                              (AuditEventRow.actor_id, actor_id), (AuditEventRow.target_id, target_id),
+                              (AuditEventRow.request_id, request_id)):
+            if value is not None:
+                query = query.where(column == value)
+        if since is not None:
+            query = query.where(AuditEventRow.occurred_at >= since)
+        if until is not None:
+            query = query.where(AuditEventRow.occurred_at <= until)
+        if search:
+            # autoescape, because % and _ are wildcards and a TRAILING BACKSLASH is a Postgres error
+            # rather than a no-match: an admin typing one would get a 500 from a search box.
+            query = query.where(or_(
+                func.lower(AuditEventRow.message).contains(search.lower(), autoescape=True),
+                func.lower(func.coalesce(AuditEventRow.actor_label, "")).contains(
+                    search.lower(), autoescape=True),
+                func.lower(func.coalesce(AuditEventRow.target_label, "")).contains(
+                    search.lower(), autoescape=True)))
+        # Keyset paging. No OFFSET and no COUNT: both are what make an audit page unusable once the
+        # table is large, and the total is not worth a full scan.
+        #
+        # The predicate compares the WHOLE sort key, not just the id. occurred_at is set when the event
+        # happens while id is assigned at insert, and the non-transactional writer commits after the
+        # mutation, so two concurrent requests routinely land with the two in opposite order. An
+        # id-only cursor then skips rows outright, which for an audit page means some events are
+        # invisible depending on where you happened to page.
+        if cursor is not None:
+            cursor_time, cursor_id = cursor
+            query = query.where(or_(
+                AuditEventRow.occurred_at < cursor_time,
+                and_(AuditEventRow.occurred_at == cursor_time, AuditEventRow.id < cursor_id)))
+        query = query.order_by(AuditEventRow.occurred_at.desc(), AuditEventRow.id.desc())
+
         async with self.sessionmaker() as s:
-            rows = (await s.execute(query.limit(max(1, min(limit, 500))))).scalars().all()
-            return [AdminAction(
-                action=row.action, target_type=row.target_type, target_id=row.target_id,
-                tenant_id=row.tenant_id, actor_email=row.actor_email, before=row.before,
-                after=row.after, reason=row.reason, created_at=row.created_at) for row in rows]
+            # No clamp here: the caller asks for limit + 1 to detect a further page, and clamping it
+            # back down made has_more permanently false at the maximum page size.
+            rows = (await s.execute(query.limit(max(1, min(limit, 1000))))).scalars().all()
+            return [_audit_json(row) for row in rows]
+
+
+def _audit_json(row: AuditEventRow) -> dict:
+    """Fields listed explicitly, never the ORM object: the same rule every other admin read follows."""
+    return {
+        # The sequential id is deliberately NOT returned. A reader who is excluded from some actions
+        # could otherwise count the gaps and learn exactly how many hidden events exist, which is the
+        # disclosure the per-action read gate was preventing.
+        "event_id": row.event_id, "action": row.action, "category": row.category,
+        "outcome": row.outcome, "message": row.message,
+        "occurred_at": row.occurred_at.isoformat() if row.occurred_at else None,
+        "actor_type": row.actor_type, "actor_id": row.actor_id, "actor_label": row.actor_label,
+        "on_behalf_of": row.on_behalf_of, "target_type": row.target_type, "target_id": row.target_id,
+        "target_label": row.target_label, "tenant_id": row.tenant_id, "request_id": row.request_id,
+        "source_ip": row.source_ip, "user_agent": row.user_agent, "route": row.route,
+        "service": row.service, "environment": row.environment,
+        "changes": dict(row.changes or {}), "metadata": dict(row.event_metadata or {}),
+        "reason": row.reason,
+        # Opaque to the client, and it carries the whole sort key so paging cannot skip.
+        "_cursor": f"{row.occurred_at.isoformat()}|{row.id}",
+    }

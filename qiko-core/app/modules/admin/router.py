@@ -18,7 +18,8 @@ from app.core.deps import (
     current_claims,
 )
 from app.modules.ai.caps import PLATFORM, UNLIMITED, CostCap
-from app.modules.admin import audit
+from app.modules.audit import registry as audit_actions
+from app.modules.audit import service as audit
 from app.modules.admin.metrics import Subscription, revenue_metrics
 from app.modules.health.system import (
     database_stats,
@@ -240,10 +241,13 @@ async def customer_studio(user_id: str, body: StudioBody, request: Request,
             request.app.state.customers.set_studio, user_id, body.enabled
         )
         # Previously the only trace was admin_customer_flags.updated_at, with no actor at all.
-        await audit.record(getattr(request.app.state, "admin_audit", None), audit.AdminAction(
-            action=audit.STUDIO_TOGGLED, target_type="tenant", target_id=user_id, tenant_id=user_id,
-            actor_email=str(claims.get("email") or ""),
-            before=str(bool(before.is_studio)), after=str(bool(body.enabled))))
+        await audit.record(request.app.state.audit, audit.AuditEvent(
+            action=audit_actions.STUDIO_TOGGLED, target_id=user_id, target_label=before.email,
+            tenant_id=user_id, actor_type=audit.PLATFORM_ADMIN,
+            actor_id=str(claims.get("email") or ""), actor_label=str(claims.get("email") or ""),
+            changes=audit.diff(audit_actions.STUDIO_TOGGLED,
+                               {"is_studio": bool(before.is_studio)},
+                               {"is_studio": bool(body.enabled)})), request=request)
         return _customer_json(record)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="customer not found") from exc
@@ -263,12 +267,14 @@ async def customer_delete(user_id: str, request: Request,
         record = await run_in_threadpool(request.app.state.customers.soft_delete, user_id)
         # This hides a tenant platform-wide, anonymises its email and has no reversal endpoint, and it
         # recorded nothing at all: not who did it, not when, not why.
-        await audit.record(getattr(request.app.state, "admin_audit", None), audit.AdminAction(
-            action=audit.CUSTOMER_SOFT_DELETED, target_type="tenant", target_id=user_id,
-            tenant_id=user_id, actor_email=str(claims.get("email") or ""),
-            # NOT the email. Soft delete exists to anonymise it, so copying it into a table that
-            # view_customers can read would undo the erasure it was performing.
-            before="active", after="deleted", reason=reason))
+        # NOT the email. Soft delete exists to anonymise it, so copying it into a table an operator
+        # can read would undo the erasure it was performing.
+        await audit.record(request.app.state.audit, audit.AuditEvent(
+            action=audit_actions.CUSTOMER_SOFT_DELETED, target_id=user_id, tenant_id=user_id,
+            actor_type=audit.PLATFORM_ADMIN, actor_id=str(claims.get("email") or ""),
+            actor_label=str(claims.get("email") or ""), reason=reason,
+            changes=audit.diff(audit_actions.CUSTOMER_SOFT_DELETED,
+                               {"state": "active"}, {"state": "deleted"})), request=request)
         return _customer_json(record)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="customer not found") from exc
@@ -653,11 +659,15 @@ async def set_cost_cap(tenant_id: str, body: CostCapBody, request: Request,
     existing = next((c for c in await request.app.state.cost_caps.list_all()
                      if c.tenant == tenant_id and c.agent_id == agent_id), None)
     saved = await request.app.state.cost_caps.upsert(cap)
-    await audit.record(getattr(request.app.state, "admin_audit", None), audit.AdminAction(
-        action=audit.COST_CAP_SET, target_type="cost_cap", target_id=f"{tenant_id}/{agent_id or ''}",
-        tenant_id=tenant_id, actor_email=str(claims.get("email") or ""),
-        before=str(existing.monthly_cap_nano_usd) if existing else None,
-        after=str(cap.monthly_cap_nano_usd)))
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.COST_CAP_SET, target_id=f"{tenant_id}/{agent_id or ''}",
+        tenant_id=tenant_id, actor_type=audit.PLATFORM_ADMIN,
+        actor_id=str(claims.get("email") or ""), actor_label=str(claims.get("email") or ""),
+        changes=audit.diff(
+            audit_actions.COST_CAP_SET,
+            {"monthly_cap_nano_usd": existing.monthly_cap_nano_usd} if existing else {},
+            {"monthly_cap_nano_usd": cap.monthly_cap_nano_usd,
+             "alert_threshold_pct": cap.alert_threshold_pct})), request=request)
     # Without this the new cap would not apply until the guard's cache expired, which reads as the
     # save not having worked.
     guard = getattr(request.app.state, "cost_guard", None)
@@ -677,11 +687,13 @@ async def delete_cost_cap(tenant_id: str, request: Request,
                     if c.tenant == tenant_id and c.agent_id == agent_id), None)
     await request.app.state.cost_caps.delete(tenant_id, agent_id)
     # The cap row carried updated_by_email, so deleting the cap deleted the only record of who set it.
-    await audit.record(getattr(request.app.state, "admin_audit", None), audit.AdminAction(
-        action=audit.COST_CAP_REMOVED, target_type="cost_cap",
-        target_id=f"{tenant_id}/{agent_id or ''}", tenant_id=tenant_id,
-        actor_email=str(claims.get("email") or ""),
-        before=str(removed.monthly_cap_nano_usd) if removed else None, after=None))
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.COST_CAP_REMOVED, target_id=f"{tenant_id}/{agent_id or ''}",
+        tenant_id=tenant_id, actor_type=audit.PLATFORM_ADMIN,
+        actor_id=str(claims.get("email") or ""), actor_label=str(claims.get("email") or ""),
+        changes=audit.diff(audit_actions.COST_CAP_REMOVED,
+                           {"monthly_cap_nano_usd": removed.monthly_cap_nano_usd} if removed else {},
+                           {})), request=request)
     guard = getattr(request.app.state, "cost_guard", None)
     if guard is not None:
         guard.invalidate()
@@ -746,10 +758,13 @@ async def set_tenant_role(user_id: str, body: TenantRoleBody, request: Request,
 
     previous = user.role.value
     await store.set_role(user_id, target)
-    await audit.record(getattr(request.app.state, "admin_audit", None), audit.AdminAction(
-        action=audit.TENANT_ROLE_CHANGED, target_type="user", target_id=user_id,
-        tenant_id=user.tenant, actor_email=str(claims.get("email") or ""),
-        before=previous, after=target.value, reason=body.reason))
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.TENANT_ROLE_CHANGED, target_id=user_id, target_label=user.email,
+        tenant_id=user.tenant, actor_type=audit.PLATFORM_ADMIN,
+        actor_id=str(claims.get("email") or ""), actor_label=str(claims.get("email") or ""),
+        reason=body.reason,
+        changes=audit.diff(audit_actions.TENANT_ROLE_CHANGED,
+                           {"role": previous}, {"role": target.value})), request=request)
     return {"id": user_id, "email": user.email, "tenant_id": user.tenant,
             "role": target.value, "role_label": ROLE_LABELS.get(target, target.value),
             "previous_role": previous}
@@ -805,48 +820,91 @@ async def set_worker_status(tenant_id: str, agent_id: str, body: WorkerStatusBod
     updated = await request.app.state.agents.set_status(tenant_id, agent_id, body.status)
     if updated is None:
         raise HTTPException(status_code=404, detail="worker not found")
-    await audit.record(getattr(request.app.state, "admin_audit", None), audit.AdminAction(
-        action=audit.WORKER_STATUS_CHANGED, target_type="worker", target_id=agent_id,
-        tenant_id=tenant_id, actor_email=str(claims.get("email") or ""),
-        before=previous, after=body.status, reason=body.reason))
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.WORKER_STATUS_CHANGED, target_id=agent_id, target_label=agent.name,
+        tenant_id=tenant_id, actor_type=audit.PLATFORM_ADMIN,
+        actor_id=str(claims.get("email") or ""), actor_label=str(claims.get("email") or ""),
+        reason=body.reason,
+        changes=audit.diff(audit_actions.WORKER_STATUS_CHANGED,
+                           {"status": previous}, {"status": body.status})), request=request)
     return _worker_json(updated) | {"tenant_id": tenant_id, "changed": True}
-
-
-# Which capability a reader needs to see rows for a given action. An audit row necessarily contains the
-# before/after of the thing it records, so reading it is reading that thing.
-_AUDIT_READ_CAPABILITY: dict[str, Capability] = {
-    audit.COST_CAP_SET: Capability.view_ai_cost,
-    audit.COST_CAP_REMOVED: Capability.view_ai_cost,
-}
 
 
 @router.get("/audit")
 async def admin_audit(request: Request, _tenant: str = Depends(authed_tenant),
                       identity=Depends(require_platform_capability(Capability.view_customers)),
                       action: str | None = Query(default=None, max_length=64),
+                      category: str | None = Query(default=None, max_length=24),
+                      outcome: str | None = Query(default=None, max_length=16),
                       tenant_id: str | None = Query(default=None, max_length=64),
+                      actor_id: str | None = Query(default=None, max_length=320),
                       target_id: str | None = Query(default=None, max_length=320),
+                      request_id: str | None = Query(default=None, max_length=64),
+                      search: str | None = Query(default=None, max_length=200),
+                      days: int = Query(default=7, ge=1, le=400),
+                      cursor: str | None = Query(default=None, max_length=64),
                       limit: int = Query(default=100, ge=1, le=500)) -> dict:
-    """The platform-admin action trail. Readable by anyone who can see customers.
+    """The platform audit trail.
 
     Read is deliberately wider than WRITE: knowing that an operator disabled a tenant is exactly the
     context another operator needs before touching the same account, and withholding it produces the
     "why is this customer suspended and nobody knows" support ticket.
 
-    But it is NOT uniformly wider. An audit row contains the before and after of the thing it records,
-    so reading the row is reading that thing. Cost-cap rows carry the cap value, which
-    GET /admin/cost-caps gates on view_ai_cost precisely because per-account spend reveals unit
-    economics. Returning them here on view_customers would make this endpoint a way around that gate,
-    which is the same mistake the user directory made with platform authority and the worker monitoring
-    view nearly made with spend columns. Rows the caller cannot read are filtered out rather than
-    redacted, because a row saying "a cap was changed, value hidden" still discloses that the tenant is
-    capped at all.
+    But not uniformly wider. An audit row contains the before and after of the thing it records, so
+    reading the row is reading that thing. Spend caps carry amounts that GET /admin/cost-caps gates on
+    view_ai_cost, and access grants carry capability sets that GET /admin/org gates on manage_admins.
+    The registry declares the read capability per action, and the exclusion is applied IN SQL:
+    filtering a page after fetching it returns short pages with no indication that more exist, and
+    with a cursor it skips rows outright.
+
+    Keyset paging and no total. A COUNT over a filtered multi-million-row table is what makes an audit
+    page unusable, and the number is not worth a full scan. The window is bounded so no query is ever
+    unbounded.
     """
-    store = getattr(request.app.state, "admin_audit", None)
+    store = getattr(request.app.state, "audit", None)
     if store is None:
-        return {"items": []}
-    entries = await store.list(action=action, tenant_id=tenant_id, target_id=target_id, limit=limit)
-    readable = [entry for entry in entries
-                if _AUDIT_READ_CAPABILITY.get(entry.action) is None
-                or (identity is not None and identity.can(_AUDIT_READ_CAPABILITY[entry.action]))]
-    return {"items": [audit.entry_json(entry) for entry in readable]}
+        return {"items": [], "next_cursor": None, "has_more": False}
+
+    hidden = audit_actions.unreadable_actions(
+        lambda capability: identity is not None and identity.can(capability))
+    parsed_cursor = None
+    if cursor:
+        # The cursor carries the whole sort key, so paging cannot skip a row whose timestamp and id
+        # disagree in order. Rejected rather than ignored when malformed: silently returning page one
+        # is how a UI loops forever.
+        stamp, _, raw_id = cursor.partition("|")
+        try:
+            parsed_cursor = (datetime.fromisoformat(stamp), int(raw_id))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="malformed cursor") from None
+
+    rows = await store.list(
+        actions_to_hide=hidden, action=action, category=category, outcome=outcome,
+        tenant_id=tenant_id, actor_id=actor_id, target_id=target_id, request_id=request_id,
+        search=search, since=datetime.now(timezone.utc) - timedelta(days=days),
+        cursor=parsed_cursor, limit=limit + 1)
+
+    has_more = len(rows) > limit
+    page = rows[:limit]
+    return {"items": page, "next_cursor": page[-1]["_cursor"] if has_more and page else None,
+            "has_more": has_more, "window_days": days,
+            # Stated rather than left as a silent gap, so an operator who cannot see spend events knows
+            # they exist rather than concluding nothing happened.
+            "hidden_actions": len(hidden)}
+
+
+@router.get("/audit/actions")
+async def audit_action_catalogue(
+        _tenant: str = Depends(authed_tenant),
+        identity=Depends(require_platform_capability(Capability.view_customers))) -> dict:
+    """The action taxonomy, so the UI builds its filters from the same source of truth as the writer
+    instead of a hardcoded list that drifts."""
+    def can(capability) -> bool:
+        return identity is not None and identity.can(capability)
+
+    visible = [spec for spec in audit_actions.REGISTRY.values()
+               if spec.read_capability is None or can(spec.read_capability)]
+    return {"categories": sorted({spec.category for spec in visible}),
+            "actions": [{"action": spec.action, "category": spec.category,
+                         "target_type": spec.target_type}
+                        for spec in sorted(visible, key=lambda s: (s.category, s.action))]}

@@ -56,22 +56,45 @@ export interface paths {
         };
         /**
          * Admin Audit
-         * @description The platform-admin action trail. Readable by anyone who can see customers.
+         * @description The platform audit trail.
          *
          *     Read is deliberately wider than WRITE: knowing that an operator disabled a tenant is exactly the
          *     context another operator needs before touching the same account, and withholding it produces the
          *     "why is this customer suspended and nobody knows" support ticket.
          *
-         *     But it is NOT uniformly wider. An audit row contains the before and after of the thing it records,
-         *     so reading the row is reading that thing. Cost-cap rows carry the cap value, which
-         *     GET /admin/cost-caps gates on view_ai_cost precisely because per-account spend reveals unit
-         *     economics. Returning them here on view_customers would make this endpoint a way around that gate,
-         *     which is the same mistake the user directory made with platform authority and the worker monitoring
-         *     view nearly made with spend columns. Rows the caller cannot read are filtered out rather than
-         *     redacted, because a row saying "a cap was changed, value hidden" still discloses that the tenant is
-         *     capped at all.
+         *     But not uniformly wider. An audit row contains the before and after of the thing it records, so
+         *     reading the row is reading that thing. Spend caps carry amounts that GET /admin/cost-caps gates on
+         *     view_ai_cost, and access grants carry capability sets that GET /admin/org gates on manage_admins.
+         *     The registry declares the read capability per action, and the exclusion is applied IN SQL:
+         *     filtering a page after fetching it returns short pages with no indication that more exist, and
+         *     with a cursor it skips rows outright.
+         *
+         *     Keyset paging and no total. A COUNT over a filtered multi-million-row table is what makes an audit
+         *     page unusable, and the number is not worth a full scan. The window is bounded so no query is ever
+         *     unbounded.
          */
         get: operations["admin_audit_api_v1_admin_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/audit/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Audit Action Catalogue
+         * @description The action taxonomy, so the UI builds its filters from the same source of truth as the writer
+         *     instead of a hardcoded list that drifts.
+         */
+        get: operations["audit_action_catalogue_api_v1_admin_audit_actions_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5860,8 +5883,15 @@ export interface operations {
         parameters: {
             query?: {
                 action?: string | null;
+                category?: string | null;
+                outcome?: string | null;
                 tenant_id?: string | null;
+                actor_id?: string | null;
                 target_id?: string | null;
+                request_id?: string | null;
+                search?: string | null;
+                days?: number;
+                cursor?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -5888,6 +5918,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_action_catalogue_api_v1_admin_audit_actions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

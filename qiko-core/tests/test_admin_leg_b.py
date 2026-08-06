@@ -9,7 +9,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from app.modules.admin import audit
+from app.modules.audit import registry as audit_actions
+from app.modules.audit import service as audit
 from app.modules.admin.sorting import USER_SORTS, apply_sort
 from app.modules.agents.service import Agent
 from app.modules.identity import csrf
@@ -165,10 +166,11 @@ def test_role_change_is_audited_with_before_and_after(client):
     with_csrf, headers = _csrf(_admin(client))
     client.put("/api/v1/admin/users/legb-editor/role", cookies=with_csrf, headers=headers,
                json={"role": "admin", "reason": "support request 41"})
-    trail = client.get("/api/v1/admin/audit?action=tenant_role_changed", cookies=_admin(client)).json()
+    trail = client.get("/api/v1/admin/audit?action=access.tenant_role_changed", cookies=_admin(client)).json()
     entry = trail["items"][0]
-    assert entry["before"] == "editor" and entry["after"] == "admin"
-    assert entry["actor_email"] == ADMIN and entry["reason"] == "support request 41"
+    # A field-level diff rather than two opaque strings: only what changed, keeping its native type.
+    assert entry["changes"] == {"role": {"from": "editor", "to": "admin"}}
+    assert entry["actor_label"] == ADMIN and entry["reason"] == "support request 41"
 
 
 def test_changing_a_role_needs_manage_customers_and_csrf(client):
@@ -208,7 +210,7 @@ def test_setting_the_same_status_is_a_no_op_and_writes_no_audit_row(client):
     response = client.put("/api/v1/admin/workers/acme/w1/status", cookies=with_csrf, headers=headers,
                           json={"status": "training"})
     assert response.json()["changed"] is False
-    trail = client.get("/api/v1/admin/audit?action=worker_status_changed", cookies=_admin(client)).json()
+    trail = client.get("/api/v1/admin/audit?action=admin.worker_status_changed", cookies=_admin(client)).json()
     assert trail["items"] == []
 
 
@@ -234,18 +236,18 @@ def test_the_previously_silent_mutations_now_leave_a_trace(client):
 
     actions = {entry["action"] for entry in
                client.get("/api/v1/admin/audit", cookies=cookies).json()["items"]}
-    assert {"cost_cap_set", "cost_cap_removed"} <= actions
+    assert {"billing.cost_cap_set", "billing.cost_cap_removed"} <= actions
 
 
 def test_an_audit_write_failure_never_fails_the_mutation():
     """The mutation is already committed and its result already returned. Telling an operator their
     change failed when it did not, and having them repeat it, is worse than losing an audit row."""
     class Broken:
-        async def add(self, _entry):
+        async def add(self, _row):
             raise RuntimeError("audit table is gone")
 
-    entry = audit.AdminAction(action=audit.STUDIO_TOGGLED, target_type="tenant", target_id="acme",
-                              actor_email="a@b", created_at=datetime.now(timezone.utc))
+    entry = audit.AuditEvent(action=audit_actions.STUDIO_TOGGLED, target_id="acme",
+                             actor_label="a@b", occurred_at=datetime.now(timezone.utc))
     asyncio.run(audit.record(Broken(), entry))  # must not raise
 
 
@@ -258,16 +260,17 @@ def test_the_audit_trail_is_filterable(client):
     client.put("/api/v1/admin/cost-caps/beta", cookies=with_csrf, headers=headers,
                json={"monthly_cap_usd": 1})
 
-    by_action = client.get("/api/v1/admin/audit?action=tenant_role_changed", cookies=cookies).json()
-    assert all(e["action"] == "tenant_role_changed" for e in by_action["items"])
+    by_action = client.get("/api/v1/admin/audit?action=access.tenant_role_changed", cookies=cookies).json()
+    assert all(e["action"] == "access.tenant_role_changed" for e in by_action["items"])
     by_tenant = client.get("/api/v1/admin/audit?tenant_id=beta", cookies=cookies).json()
     assert all(e["tenant_id"] == "beta" for e in by_tenant["items"])
 
 
 def test_every_recorded_action_is_a_known_one():
     """A free-form action string means an audit row nobody can find later."""
-    assert audit.STUDIO_TOGGLED in audit.ACTIONS
-    assert len(audit.ACTIONS) == 6
+    assert audit_actions.STUDIO_TOGGLED in audit_actions.ACTIONS
+    # The registry is the closed set; a typo becomes a failing test rather than an unfindable row.
+    assert len(audit_actions.ACTIONS) > 30
 
 
 # --- what the security gate found -------------------------------------------------------------------
@@ -286,7 +289,7 @@ def test_the_audit_trail_is_not_a_way_around_the_spend_gate(client):
 
     reader = _grant(client, "caps.blind@invalid", [Capability.view_customers.value])
     visible = client.get("/api/v1/admin/audit", cookies=reader).json()["items"]
-    assert all(entry["action"] != "cost_cap_set" for entry in visible), \
+    assert all(entry["action"] != "billing.cost_cap_set" for entry in visible), \
         "a view_customers reader must not learn cap values from the audit trail"
     assert "7500000000" not in str(visible)
 
@@ -294,7 +297,7 @@ def test_the_audit_trail_is_not_a_way_around_the_spend_gate(client):
     coster = _grant(client, "caps.reader@invalid",
                     [Capability.view_customers.value, Capability.view_ai_cost.value])
     allowed = client.get("/api/v1/admin/audit", cookies=coster).json()["items"]
-    assert any(entry["action"] == "cost_cap_set" for entry in allowed)
+    assert any(entry["action"] == "billing.cost_cap_set" for entry in allowed)
 
 
 def test_an_admin_cannot_change_their_own_tenant_role(client):
@@ -378,7 +381,8 @@ def test_soft_delete_does_not_copy_the_email_into_the_audit(client):
 
     trail = client.get("/api/v1/admin/audit", cookies=cookies).json()["items"]
     actions = {entry["action"] for entry in trail}
-    assert {"studio_toggled", "customer_soft_deleted"} <= actions, "both were previously unaudited"
-    deleted = next(e for e in trail if e["action"] == "customer_soft_deleted")
-    assert deleted["before"] == "active" and deleted["reason"] == "fraud"
-    assert "@" not in str(deleted["before"]), "the email must not survive in the audit"
+    assert {"admin.studio_toggled", "admin.customer_soft_deleted"} <= actions, "both were previously unaudited"
+    deleted = next(e for e in trail if e["action"] == "admin.customer_soft_deleted")
+    assert deleted["changes"] == {"state": {"from": "active", "to": "deleted"}}
+    assert deleted["reason"] == "fraud"
+    assert "@" not in str(deleted["changes"]), "the email must not survive in the audit"

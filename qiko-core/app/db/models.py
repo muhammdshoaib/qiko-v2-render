@@ -329,31 +329,81 @@ class AiCostCap(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
-class AdminActionAudit(Base):
-    """Every platform-admin mutation that is not a worker toggle or an access grant.
+class AuditEventRow(Base):
+    """The platform-wide audit trail.
 
-    Three mutations left no trace at all: the Studio toggle, the customer soft delete (which hides a
-    tenant platform-wide and has no reversal endpoint), and cost-cap changes (which can stop a
-    customer's workers answering). The cap row carried updated_by_email, so deleting the cap deleted
-    the only evidence of who had set it.
+    One table, not a fifth shape-specific one. The two older tables each model exactly one mutation
+    (agent_state_audit models `enabled`, platform_admin_audit models grants), which is why a third was
+    added and then a fourth was about to be. A single stream is also what the read UI, retention,
+    pseudonymisation and export each need to implement once rather than per table.
 
-    One generic table rather than a table per mutation, because the existing two are shape-specific
-    (agent_state_audit models `enabled`, platform_admin_audit models grants) and a third narrow table
-    would have meant a fourth next time. `before` and `after` are free-form text so a caller records
-    whatever is meaningful for that action without a migration per field.
+    No foreign keys, deliberately. An FK to users or agents would either block a deletion or
+    cascade-delete the history of it, and the history of a deletion is the row that matters most.
+    actor_label and target_label are snapshots taken at write time so a row still reads after the thing
+    it refers to is gone or anonymised.
+
+    Fields beyond the obvious exist because ISO 27002 8.15 names them as required log content and none
+    of the previous tables had any: outcome, source address, user agent, and the identity of the
+    service and environment that produced the event.
     """
 
-    __tablename__ = "admin_action_audit"
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    __tablename__ = "audit_events"
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # Stable across environments and exports, so a row can be referenced or de-duplicated without
+    # relying on an autoincrement that differs per database.
+    event_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)
+    schema_version: Mapped[int] = mapped_column(default=1)
+
     action: Mapped[str] = mapped_column(String(64), index=True)
+    category: Mapped[str] = mapped_column(String(24), index=True)
+    outcome: Mapped[str] = mapped_column(String(16), default="success", index=True)
+    # Rendered at write time so the sentence is fixed at the moment it happened, survives a later
+    # rename, and makes a CSV export readable without the UI.
+    message: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+    # Split on purpose: when it happened, and when we managed to write it down.
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+    actor_type: Mapped[str] = mapped_column(String(20), default="system", index=True)
+    actor_id: Mapped[str | None] = mapped_column(String(320), nullable=True, index=True)
+    actor_label: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    # Support access: the human who initiated is the actor, the impersonated party goes here.
+    on_behalf_of: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     target_type: Mapped[str] = mapped_column(String(32))
-    target_id: Mapped[str] = mapped_column(String(320), index=True)
+    target_id: Mapped[str | None] = mapped_column(String(320), nullable=True, index=True)
+    target_label: Mapped[str | None] = mapped_column(String(320), nullable=True)
+    # The tenant the event is ABOUT. NULL means platform scope; no "*" sentinel, because a sentinel in
+    # an indexed filter column is a trap the cost-cap table already had to live with.
     tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
-    actor_email: Mapped[str] = mapped_column(String(320), index=True)
-    before: Mapped[str | None] = mapped_column(Text, nullable=True)
-    after: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    # Nulled after six months while the event itself is kept, which is the cheapest answer to a
+    # minimisation challenge that does not cost an event.
+    source_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    route: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    service: Mapped[str] = mapped_column(String(32), default="api")
+    environment: Mapped[str] = mapped_column(String(16), default="dev")
+
+    # Only the fields that changed, from a per-action allowlist. Never a snapshot: a snapshot copies
+    # personal data into a second store and would carry encrypted credentials out of a worker config.
+    changes: Mapped[dict] = mapped_column(JSON, default=dict)
+    event_metadata: Mapped[dict] = mapped_column(JSON, default=dict)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+    # Set when an erasure request pseudonymises the row in place. Rows are never deleted for erasure:
+    # gaps in an audit trail are indistinguishable from tampering.
+    subject_pseudonym: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    pseudonymised_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_audit_events_occurred_desc", "occurred_at", "id"),
+        Index("ix_audit_events_tenant_time", "tenant_id", "occurred_at"),
+        Index("ix_audit_events_actor_time", "actor_id", "occurred_at"),
+        Index("ix_audit_events_target", "target_type", "target_id"),
+    )
 
 
 class PlatformAdminAudit(Base):

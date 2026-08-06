@@ -58,7 +58,7 @@ from app.core.tenancy import tenant_dependency
 from app.modules.admin.router import router as admin_router
 from app.modules.agents.router import router as agents_router
 from app.modules.agents.service import AgentService
-from app.modules.admin.audit import InMemoryAdminAuditStore
+from app.modules.audit.service import InMemoryAuditStore
 from app.modules.ai.caps import CostCapExceeded, CostGuard, InMemoryCostCapStore
 from app.modules.ai.usage import InMemoryUsageStore
 from app.modules.assignments.router import router as assignments_router
@@ -150,7 +150,7 @@ async def lifespan(app: FastAPI):
             SqlSalesforceConnectionStore,
             SqlTeamsIntegrationStore,
             SqlTeamStore,
-            SqlAdminAuditStore,
+            SqlAuditStore,
             SqlCostCapStore,
             SqlUsageStore,
             SqlUserStore,
@@ -176,7 +176,7 @@ async def lifespan(app: FastAPI):
         # that the scan/review/assign/push flows call. In-product only (no email/FCM push).
         app.state.ai_usage = SqlUsageStore(sm)  # AI spend survives a redeploy
         app.state.cost_caps = SqlCostCapStore(sm)
-        app.state.admin_audit = SqlAdminAuditStore(sm)
+        app.state.audit = SqlAuditStore(sm)
         app.state.cost_guard = CostGuard(caps=app.state.cost_caps, usage=app.state.ai_usage)
         app.state.notifications = NotificationService(store=SqlNotificationStore(sm))
         app.state.cost_guard.notifications = app.state.notifications
@@ -381,7 +381,7 @@ def create_app() -> FastAPI:
     # Generic in-app notification inbox (reusable across verticals) + the SI trigger wrapper.
     app.state.ai_usage = InMemoryUsageStore()
     app.state.cost_caps = InMemoryCostCapStore()
-    app.state.admin_audit = InMemoryAdminAuditStore()
+    app.state.audit = InMemoryAuditStore()
     # A guard IS attached, over the in-memory stores, so the enforcement path is exercised by the
     # test suite rather than existing only in production.
     app.state.cost_guard = CostGuard(caps=app.state.cost_caps, usage=app.state.ai_usage)
