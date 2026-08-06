@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, true
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, Text, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -327,6 +327,33 @@ class AiCostCap(Base):
     alert_threshold_pct: Mapped[int] = mapped_column(default=80)
     updated_by_email: Mapped[str | None] = mapped_column(String(320), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class AdminActionAudit(Base):
+    """Every platform-admin mutation that is not a worker toggle or an access grant.
+
+    Three mutations left no trace at all: the Studio toggle, the customer soft delete (which hides a
+    tenant platform-wide and has no reversal endpoint), and cost-cap changes (which can stop a
+    customer's workers answering). The cap row carried updated_by_email, so deleting the cap deleted
+    the only evidence of who had set it.
+
+    One generic table rather than a table per mutation, because the existing two are shape-specific
+    (agent_state_audit models `enabled`, platform_admin_audit models grants) and a third narrow table
+    would have meant a fourth next time. `before` and `after` are free-form text so a caller records
+    whatever is meaningful for that action without a migration per field.
+    """
+
+    __tablename__ = "admin_action_audit"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    action: Mapped[str] = mapped_column(String(64), index=True)
+    target_type: Mapped[str] = mapped_column(String(32))
+    target_id: Mapped[str] = mapped_column(String(320), index=True)
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    actor_email: Mapped[str] = mapped_column(String(320), index=True)
+    before: Mapped[str | None] = mapped_column(Text, nullable=True)
+    after: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
 
 
 class PlatformAdminAudit(Base):

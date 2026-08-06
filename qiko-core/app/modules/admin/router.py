@@ -18,6 +18,7 @@ from app.core.deps import (
     current_claims,
 )
 from app.modules.ai.caps import PLATFORM, UNLIMITED, CostCap
+from app.modules.admin import audit
 from app.modules.admin.metrics import Subscription, revenue_metrics
 from app.modules.health.system import (
     database_stats,
@@ -26,9 +27,19 @@ from app.modules.health.system import (
     readiness,
     redis_stats,
 )
-from app.modules.admin.pagination import paginate
+from app.modules.admin.pagination import MAX_PAGE_SIZE, PAGE_SIZE, paginate
+from app.modules.admin.sorting import (
+    MONITORING_SORTS,
+    TENANT_SORTS,
+    USER_SORTS,
+    WORKER_SORTS,
+    apply_sort,
+)
 from app.modules.identity import csrf
 from app.modules.identity.admin_rbac import AdminRole, Capability
+from app.modules.agents.service import AGENT_STATUSES
+from app.modules.identity.rbac import Role
+from app.modules.identity.team_access import ASSIGNABLE_ROLES
 from app.modules.identity.team_access import ROLE_LABELS
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -91,10 +102,14 @@ def customers(request: Request, _tenant: str = Depends(authed_tenant),
               _identity=Depends(require_platform_capability(Capability.view_customers)),
               search: str | None = Query(default=None, max_length=200),
               plan: str | None = Query(default=None, max_length=40),
-              page: int = Query(default=1, ge=1)) -> dict:
+              sort: str | None = Query(default=None, max_length=32),
+              order: str = Query(default="desc", pattern="^(asc|desc)$"),
+              page: int = Query(default=1, ge=1),
+              page_size: int = Query(default=PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE)) -> dict:
     directory = request.app.state.customers
-    result = directory.list(search=search, plan=plan, page=page)
-    return {"total": result["total"], "page": result["page"],
+    result = directory.list(search=search, plan=plan, page=page, page_size=page_size,
+                            sort=sort, order=order)
+    return {"total": result["total"], "page": result["page"], "page_size": page_size,
             "items": [{"user_id": r.user_id, "email": r.email, "plan": r.plan,
                        "earnings_cents": r.earnings_cents} for r in result["items"]]}
 
@@ -213,15 +228,22 @@ class StudioBody(BaseModel):
 
 @router.post("/customers/{user_id}/studio", openapi_extra=_CSRF_OPENAPI)
 async def customer_studio(user_id: str, body: StudioBody, request: Request,
+                          claims: dict = Depends(current_claims),
                           _tenant: str = Depends(authed_tenant),
                           _identity=Depends(require_platform_capability(Capability.manage_customers))) -> dict:
-    if await run_in_threadpool(request.app.state.customers.details, user_id) is None:
+    before = await run_in_threadpool(request.app.state.customers.details, user_id)
+    if before is None:
         raise HTTPException(status_code=404, detail="customer not found")
     _require_csrf(request)
     try:
         record = await run_in_threadpool(
             request.app.state.customers.set_studio, user_id, body.enabled
         )
+        # Previously the only trace was admin_customer_flags.updated_at, with no actor at all.
+        await audit.record(getattr(request.app.state, "admin_audit", None), audit.AdminAction(
+            action=audit.STUDIO_TOGGLED, target_type="tenant", target_id=user_id, tenant_id=user_id,
+            actor_email=str(claims.get("email") or ""),
+            before=str(bool(before.is_studio)), after=str(bool(body.enabled))))
         return _customer_json(record)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="customer not found") from exc
@@ -229,13 +251,24 @@ async def customer_studio(user_id: str, body: StudioBody, request: Request,
 
 @router.delete("/customers/{user_id}", openapi_extra=_CSRF_OPENAPI)
 async def customer_delete(user_id: str, request: Request,
+                          claims: dict = Depends(current_claims),
+                          reason: str | None = Query(default=None, max_length=1000),
                           _tenant: str = Depends(authed_tenant),
                           _identity=Depends(require_platform_capability(Capability.manage_customers))) -> dict:
-    if await run_in_threadpool(request.app.state.customers.details, user_id) is None:
+    before = await run_in_threadpool(request.app.state.customers.details, user_id)
+    if before is None:
         raise HTTPException(status_code=404, detail="customer not found")
     _require_csrf(request)
     try:
         record = await run_in_threadpool(request.app.state.customers.soft_delete, user_id)
+        # This hides a tenant platform-wide, anonymises its email and has no reversal endpoint, and it
+        # recorded nothing at all: not who did it, not when, not why.
+        await audit.record(getattr(request.app.state, "admin_audit", None), audit.AdminAction(
+            action=audit.CUSTOMER_SOFT_DELETED, target_type="tenant", target_id=user_id,
+            tenant_id=user_id, actor_email=str(claims.get("email") or ""),
+            # NOT the email. Soft delete exists to anonymise it, so copying it into a table that
+            # view_customers can read would undo the erasure it was performing.
+            before="active", after="deleted", reason=reason))
         return _customer_json(record)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="customer not found") from exc
@@ -273,15 +306,20 @@ def tenants(request: Request, _tenant: str = Depends(authed_tenant),
             _identity=Depends(require_platform_capability(Capability.view_customers)),
             search: str | None = Query(default=None, max_length=200),
             plan: str | None = Query(default=None, max_length=40),
-            page: int = Query(default=1, ge=1)) -> dict:
+            sort: str | None = Query(default=None, max_length=32),
+            order: str = Query(default="desc", pattern="^(asc|desc)$"),
+            page: int = Query(default=1, ge=1),
+            page_size: int = Query(default=PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE)) -> dict:
     """The tenant directory (QIK-515).
 
     A "customer" already IS a tenant in this codebase, so this is the same rows as /admin/customers
     with the counts the console needs and never had: how many people are on the account and how many
     workers it runs. Both were already derivable and simply not surfaced.
     """
-    result = request.app.state.customers.list(search=search, plan=plan, page=page)
-    return {"total": result["total"], "page": result["page"], "items": [{
+    result = request.app.state.customers.list(search=search, plan=plan, page=page,
+                                              page_size=page_size, sort=sort, order=order,
+                                              sort_spec=TENANT_SORTS)
+    return {"total": result["total"], "page": result["page"], "page_size": page_size, "items": [{
         "tenant_id": record.user_id, "email": record.email, "plan": record.plan,
         "earnings_cents": record.earnings_cents, "user_count": record.users,
         "worker_count": record.agents, "is_studio": record.is_studio,
@@ -322,7 +360,15 @@ async def users(request: Request, _tenant: str = Depends(authed_tenant),
                 identity=Depends(require_platform_capability(Capability.view_customers)),
                 search: str | None = Query(default=None, max_length=200),
                 tenant_id: str | None = Query(default=None, max_length=64),
-                page: int = Query(default=1, ge=1)) -> dict:
+                role: str | None = Query(default=None, max_length=32),
+                # "Who has not turned on 2FA" is the question an operator actually asks of a user
+                # directory, and it could not be asked at all before.
+                twofa: bool | None = None,
+                platform_admins_only: bool = False,
+                sort: str | None = Query(default=None, max_length=32),
+                order: str = Query(default="asc", pattern="^(asc|desc)$"),
+                page: int = Query(default=1, ge=1),
+                page_size: int = Query(default=PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE)) -> dict:
     """The site-wide user directory, annotated with platform access where a user also holds it.
 
     Two independent role systems exist: the TENANT role lives on users.role, while platform-admin
@@ -354,10 +400,18 @@ async def users(request: Request, _tenant: str = Depends(authed_tenant),
                 if needle in user.email.lower() or needle in (user.name or "").lower()]
     rows = sorted(rows, key=lambda user: user.email)
 
-    result = paginate(rows, page=page)
-    return {"total": result["total"], "page": result["page"],
-            "items": [_user_directory_json(user, platform, show_authority=show_authority)
-                      for user in result["items"]]}
+    if role:
+        rows = [user for user in rows if user.role.value == role]
+    if twofa is not None:
+        rows = [user for user in rows if bool(user.twofa_enabled) is twofa]
+    if platform_admins_only:
+        rows = [user for user in rows if user.email.lower() in platform]
+
+    items = [_user_directory_json(user, platform, show_authority=show_authority) for user in rows]
+    items = apply_sort(items, USER_SORTS, sort, order)
+    result = paginate(items, page=page, page_size=page_size)
+    return {"total": result["total"], "page": result["page"], "page_size": page_size,
+            "items": result["items"]}
 
 
 class WorkerDirectoryRow(AdminWorkerOut):
@@ -369,7 +423,12 @@ async def workers(request: Request, _tenant: str = Depends(authed_tenant),
                   _identity=Depends(require_platform_capability(Capability.view_customers)),
                   search: str | None = Query(default=None, max_length=200),
                   tenant_id: str | None = Query(default=None, max_length=64),
-                  enabled: bool | None = None, page: int = Query(default=1, ge=1)) -> dict:
+                  enabled: bool | None = None,
+                  status: str | None = Query(default=None, max_length=32),
+                  sort: str | None = Query(default=None, max_length=32),
+                  order: str = Query(default="asc", pattern="^(asc|desc)$"),
+                  page: int = Query(default=1, ge=1),
+                  page_size: int = Query(default=PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE)) -> dict:
     """The cross-tenant worker directory (QIK-520).
 
     The enable/disable enforcement already exists per customer, but there was no way to see every
@@ -389,10 +448,14 @@ async def workers(request: Request, _tenant: str = Depends(authed_tenant),
         rows = [agent for agent in rows
                 if needle in agent.name.lower() or needle in agent.id.lower()]
 
-    result = paginate(rows, page=page)
-    return {"total": result["total"], "page": result["page"],
-            "items": [{**_worker_json(agent), "tenant_id": agent.tenant}
-                      for agent in result["items"]]}
+    if status:
+        rows = [agent for agent in rows if agent.status == status]
+
+    items = [{**_worker_json(agent), "tenant_id": agent.tenant} for agent in rows]
+    items = apply_sort(items, WORKER_SORTS, sort, order)
+    result = paginate(items, page=page, page_size=page_size)
+    return {"total": result["total"], "page": result["page"], "page_size": page_size,
+            "items": result["items"]}
 
 
 _MAX_WINDOW_DAYS = 400
@@ -437,7 +500,14 @@ async def worker_monitoring(request: Request, _tenant: str = Depends(authed_tena
                             identity=Depends(require_platform_capability(Capability.view_customers)),
                             days: int = Query(default=30, ge=1, le=_MAX_WINDOW_DAYS),
                             tenant_id: str | None = Query(default=None, max_length=64),
-                            page: int = Query(default=1, ge=1)) -> dict:
+                            # The monitoring view had no search at all, so finding one worker among
+                            # hundreds meant paging until it appeared.
+                            search: str | None = Query(default=None, max_length=200),
+                            enabled: bool | None = None,
+                            sort: str | None = Query(default=None, max_length=32),
+                            order: str = Query(default="desc", pattern="^(asc|desc)$"),
+                            page: int = Query(default=1, ge=1),
+                            page_size: int = Query(default=PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE)) -> dict:
     """Every worker with its state and recent activity (QIK-521).
 
     Answers "is this worker alive and being used", which previously required opening each customer and
@@ -471,11 +541,19 @@ async def worker_monitoring(request: Request, _tenant: str = Depends(authed_tena
             row["output_tokens"] = summary.totals.output_tokens if summary else 0
         rows.append(row)
 
-    # Busiest first: an operator opening this page is looking for the outliers, not an alphabet.
+    if search:
+        needle = search.lower()
+        rows = [row for row in rows
+                if needle in (row["name"] or "").lower() or needle in row["id"].lower()]
+    if enabled is not None:
+        rows = [row for row in rows if row["enabled"] is enabled]
+    # Busiest first by default: an operator opening this page is looking for the outliers, not an
+    # alphabet. An explicit sort overrides it.
     rows.sort(key=lambda row: (-row["calls"], row["tenant_id"] or "", row["id"]))
-    result = paginate(rows, page=page)
-    return {"total": result["total"], "page": result["page"], "window_days": days,
-            "cost_visible": show_cost, "items": result["items"]}
+    rows = apply_sort(rows, MONITORING_SORTS, sort, order)
+    result = paginate(rows, page=page, page_size=page_size)
+    return {"total": result["total"], "page": result["page"], "page_size": page_size,
+            "window_days": days, "cost_visible": show_cost, "items": result["items"]}
 
 
 @router.get("/system")
@@ -572,7 +650,14 @@ async def set_cost_cap(tenant_id: str, body: CostCapBody, request: Request,
         else int(round(body.monthly_cap_usd * 1_000_000_000)),
         alert_threshold_pct=body.alert_threshold_pct,
         updated_by_email=claims.get("email"), updated_at=datetime.now(timezone.utc))
+    existing = next((c for c in await request.app.state.cost_caps.list_all()
+                     if c.tenant == tenant_id and c.agent_id == agent_id), None)
     saved = await request.app.state.cost_caps.upsert(cap)
+    await audit.record(getattr(request.app.state, "admin_audit", None), audit.AdminAction(
+        action=audit.COST_CAP_SET, target_type="cost_cap", target_id=f"{tenant_id}/{agent_id or ''}",
+        tenant_id=tenant_id, actor_email=str(claims.get("email") or ""),
+        before=str(existing.monthly_cap_nano_usd) if existing else None,
+        after=str(cap.monthly_cap_nano_usd)))
     # Without this the new cap would not apply until the guard's cache expired, which reads as the
     # save not having worked.
     guard = getattr(request.app.state, "cost_guard", None)
@@ -584,11 +669,184 @@ async def set_cost_cap(tenant_id: str, body: CostCapBody, request: Request,
 @router.delete("/cost-caps/{tenant_id}", openapi_extra=_CSRF_OPENAPI)
 async def delete_cost_cap(tenant_id: str, request: Request,
                           agent_id: str | None = Query(default=None, max_length=64),
+                          claims: dict = Depends(current_claims),
                           _tenant: str = Depends(authed_tenant),
                           _identity=Depends(require_platform_capability(Capability.set_cost_caps))) -> dict:
     _require_csrf(request)
+    removed = next((c for c in await request.app.state.cost_caps.list_all()
+                    if c.tenant == tenant_id and c.agent_id == agent_id), None)
     await request.app.state.cost_caps.delete(tenant_id, agent_id)
+    # The cap row carried updated_by_email, so deleting the cap deleted the only record of who set it.
+    await audit.record(getattr(request.app.state, "admin_audit", None), audit.AdminAction(
+        action=audit.COST_CAP_REMOVED, target_type="cost_cap",
+        target_id=f"{tenant_id}/{agent_id or ''}", tenant_id=tenant_id,
+        actor_email=str(claims.get("email") or ""),
+        before=str(removed.monthly_cap_nano_usd) if removed else None, after=None))
     guard = getattr(request.app.state, "cost_guard", None)
     if guard is not None:
         guard.invalidate()
     return {"removed": tenant_id, "agent_id": agent_id}
+
+
+class TenantRoleBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: str = Field(min_length=1, max_length=32)
+    reason: str | None = Field(default=None, max_length=1000)
+
+
+@router.put("/users/{user_id}/role", openapi_extra=_CSRF_OPENAPI)
+async def set_tenant_role(user_id: str, body: TenantRoleBody, request: Request,
+                          claims: dict = Depends(current_claims),
+                          _tenant: str = Depends(authed_tenant),
+                          _identity=Depends(require_platform_capability(Capability.manage_customers))) -> dict:
+    """Change any user's TENANT role, from any tenant.
+
+    PUT /identity/users/{id}/role already existed but is tenant-scoped: it reads the tenant from the
+    caller's own token and 404s on a user outside it, so a platform admin could only change users in
+    the tenant they happen to be signed into. There was no cross-tenant path at all, which is why the
+    user directory was read-only.
+
+    The tenant-facing invariants are preserved exactly, because they are correctness rules and not
+    merely permission checks:
+      - owner is never assignable (ASSIGNABLE_ROLES), so a tenant cannot gain a second owner;
+      - the current owner's role cannot be changed, which is what stops a tenant being left ownerless
+        and therefore unadministrable by its own team.
+
+    Gated on manage_customers rather than manage_admins: this changes a customer's internal
+    permissions, not platform authority. Audited, because nothing recorded a tenant role change before,
+    on either the tenant-facing endpoint or anywhere else.
+    """
+    _require_csrf(request)
+    store = get_user_store()
+    # Cross-tenant: the platform-admin console resolves a user by primary key regardless of tenant,
+    # which is the whole point of this endpoint. Every tenant-facing caller goes through
+    # list_by_tenant or a tenant-filtered lookup.
+    user = await store.get_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+    try:
+        target = Role(body.role)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"unknown role: {body.role}") from None
+    if target not in ASSIGNABLE_ROLES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"role '{body.role}' cannot be assigned; assignable: "
+                   f"{', '.join(sorted(r.value for r in ASSIGNABLE_ROLES))}")
+    if user.role is Role.owner:
+        raise HTTPException(status_code=409, detail="the tenant owner's role cannot be changed")
+    # No self-service, matching AdminOrg.grant. Without this, a platform admin holding manage_customers
+    # who is merely a viewer in some tenant could promote THEMSELVES to tenant admin, and tenant admin
+    # carries Stripe portal access, payment-link creation and subscription cancel/resume. That would
+    # make manage_customers an indirect grant of manage_billing, which is exactly the separation the
+    # capability split exists to enforce.
+    if user.email.lower() == str(claims.get("email") or "").lower():
+        raise HTTPException(status_code=409, detail="an admin cannot change their own tenant role")
+
+    previous = user.role.value
+    await store.set_role(user_id, target)
+    await audit.record(getattr(request.app.state, "admin_audit", None), audit.AdminAction(
+        action=audit.TENANT_ROLE_CHANGED, target_type="user", target_id=user_id,
+        tenant_id=user.tenant, actor_email=str(claims.get("email") or ""),
+        before=previous, after=target.value, reason=body.reason))
+    return {"id": user_id, "email": user.email, "tenant_id": user.tenant,
+            "role": target.value, "role_label": ROLE_LABELS.get(target, target.value),
+            "previous_role": previous}
+
+
+class WorkerStatusBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: str = Field(min_length=1, max_length=32)
+    reason: str | None = Field(default=None, max_length=1000)
+
+
+@router.put("/workers/{tenant_id}/{agent_id}/status", openapi_extra=_CSRF_OPENAPI)
+async def set_worker_status(tenant_id: str, agent_id: str, body: WorkerStatusBody, request: Request,
+                            claims: dict = Depends(current_claims),
+                            _tenant: str = Depends(authed_tenant),
+                            _identity=Depends(require_platform_capability(Capability.manage_workers))) -> dict:
+    """Set a worker's lifecycle status.
+
+    Before this, status could only ever move forward: POST /agents/{id}/ready hardcodes "ready" and
+    nothing anywhere could return a worker to training. So a worker whose ingest produced a bad corpus
+    stayed advertised as ready, and the only remedy was to disable it entirely, which is a different
+    and blunter statement to the customer.
+
+    Addressed by tenant and worker rather than by customer, so it is callable from the worker directory
+    where the operator actually is. Audited, because agent_state_audit models `enabled` only and has no
+    shape for a status change.
+
+    Backward only. See the guard below for why publishing is not the platform's call to make.
+    """
+    _require_csrf(request)
+    if body.status not in AGENT_STATUSES:
+        raise HTTPException(
+            status_code=422,
+            detail=f"unknown status: {body.status}. Allowed: {', '.join(sorted(AGENT_STATUSES))}")
+    # Deliberately one direction only. "ready" is the gate the PUBLIC chat checks
+    # (chat/public_router.py:62), so moving a worker forward would publish it on the customer's behalf,
+    # which is a claim the tenant should make and can already make via POST /agents/{id}/ready. Pulling
+    # a worker back is the safety action, and it is the one this endpoint exists for.
+    if body.status != "training":
+        raise HTTPException(
+            status_code=422,
+            detail="an admin can only move a worker back to training; publishing is the tenant's call "
+                   "via POST /agents/{agent_id}/ready")
+    agent = await request.app.state.agents.get(tenant_id, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="worker not found")
+    if agent.status == body.status:
+        # Idempotent, and deliberately writes no audit row: a no-op is not a change.
+        return _worker_json(agent) | {"tenant_id": tenant_id, "changed": False}
+
+    previous = agent.status
+    updated = await request.app.state.agents.set_status(tenant_id, agent_id, body.status)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="worker not found")
+    await audit.record(getattr(request.app.state, "admin_audit", None), audit.AdminAction(
+        action=audit.WORKER_STATUS_CHANGED, target_type="worker", target_id=agent_id,
+        tenant_id=tenant_id, actor_email=str(claims.get("email") or ""),
+        before=previous, after=body.status, reason=body.reason))
+    return _worker_json(updated) | {"tenant_id": tenant_id, "changed": True}
+
+
+# Which capability a reader needs to see rows for a given action. An audit row necessarily contains the
+# before/after of the thing it records, so reading it is reading that thing.
+_AUDIT_READ_CAPABILITY: dict[str, Capability] = {
+    audit.COST_CAP_SET: Capability.view_ai_cost,
+    audit.COST_CAP_REMOVED: Capability.view_ai_cost,
+}
+
+
+@router.get("/audit")
+async def admin_audit(request: Request, _tenant: str = Depends(authed_tenant),
+                      identity=Depends(require_platform_capability(Capability.view_customers)),
+                      action: str | None = Query(default=None, max_length=64),
+                      tenant_id: str | None = Query(default=None, max_length=64),
+                      target_id: str | None = Query(default=None, max_length=320),
+                      limit: int = Query(default=100, ge=1, le=500)) -> dict:
+    """The platform-admin action trail. Readable by anyone who can see customers.
+
+    Read is deliberately wider than WRITE: knowing that an operator disabled a tenant is exactly the
+    context another operator needs before touching the same account, and withholding it produces the
+    "why is this customer suspended and nobody knows" support ticket.
+
+    But it is NOT uniformly wider. An audit row contains the before and after of the thing it records,
+    so reading the row is reading that thing. Cost-cap rows carry the cap value, which
+    GET /admin/cost-caps gates on view_ai_cost precisely because per-account spend reveals unit
+    economics. Returning them here on view_customers would make this endpoint a way around that gate,
+    which is the same mistake the user directory made with platform authority and the worker monitoring
+    view nearly made with spend columns. Rows the caller cannot read are filtered out rather than
+    redacted, because a row saying "a cap was changed, value hidden" still discloses that the tenant is
+    capped at all.
+    """
+    store = getattr(request.app.state, "admin_audit", None)
+    if store is None:
+        return {"items": []}
+    entries = await store.list(action=action, tenant_id=tenant_id, target_id=target_id, limit=limit)
+    readable = [entry for entry in entries
+                if _AUDIT_READ_CAPABILITY.get(entry.action) is None
+                or (identity is not None and identity.can(_AUDIT_READ_CAPABILITY[entry.action]))]
+    return {"items": [audit.entry_json(entry) for entry in readable]}

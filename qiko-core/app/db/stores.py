@@ -38,6 +38,7 @@ from app.db.models import PasswordResetOtp as PasswordResetOtpRow
 from app.db.models import PendingSignup as PendingSignupRow
 from app.db.models import PendingTeamInvite as PendingTeamInviteRow
 from app.db.models import PlatformAdmin as PlatformAdminRow
+from app.db.models import AdminActionAudit as AdminActionAuditRow
 from app.db.models import AiCostCap as AiCostCapRow
 from app.db.models import AiUsageEvent as AiUsageEventRow
 from app.db.models import PlatformAdminAudit as PlatformAdminAuditRow
@@ -68,6 +69,7 @@ from app.core.deps import WorkerUnavailable
 from app.modules.chat.service import ConversationScopeError, ConversationSummary, Message
 from app.modules.crm.service import Contact, CrmAction
 from app.modules.finance.models import FinanceChatMessage, FinanceFile
+from app.modules.admin.audit import AdminAction
 from app.modules.ai.caps import CostCap
 from app.modules.ai.usage import AgentUsageSummary, UsageEvent, UsageTotals, summarise_agents
 from app.modules.ai.usage import dimensions as usage_dimensions
@@ -370,6 +372,17 @@ class SqlAgentStore:
         async with self.sessionmaker() as s:
             row = await s.get(AgentRow, agent_id)
             return self._to_domain(row) if row is not None else None
+
+    async def set_status(self, tenant: str, agent_id: str, status: str) -> Agent | None:
+        # Tenant-filtered like every other store method; the admin endpoint resolves the tenant first.
+        async with self.sessionmaker() as s, s.begin():
+            row = (await s.execute(select(AgentRow).where(
+                AgentRow.tenant_id == tenant, AgentRow.id == agent_id).with_for_update()
+            )).scalar_one_or_none()
+            if row is None:
+                return None
+            row.status = status
+            return self._to_domain(row)
 
     async def mark_ready(self, tenant: str, agent_id: str) -> Agent:
         async with self.sessionmaker() as s, s.begin():
@@ -2306,3 +2319,32 @@ class SqlCostCapStore:
                             alert_threshold_pct=row.alert_threshold_pct,
                             updated_by_email=row.updated_by_email,
                             updated_at=row.updated_at) for row in rows]
+
+
+@dataclass
+class SqlAdminAuditStore:
+    """Durable admin action audit. Platform-wide by design, so no tenant filter."""
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def add(self, entry: AdminAction) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(AdminActionAuditRow(
+                action=entry.action, target_type=entry.target_type, target_id=entry.target_id,
+                tenant_id=entry.tenant_id, actor_email=entry.actor_email, before=entry.before,
+                after=entry.after, reason=entry.reason, created_at=entry.created_at))
+
+    async def list(self, *, action=None, tenant_id=None, target_id=None, limit=100) -> list[AdminAction]:
+        query = select(AdminActionAuditRow).order_by(AdminActionAuditRow.created_at.desc())
+        if action is not None:
+            query = query.where(AdminActionAuditRow.action == action)
+        if tenant_id is not None:
+            query = query.where(AdminActionAuditRow.tenant_id == tenant_id)
+        if target_id is not None:
+            query = query.where(AdminActionAuditRow.target_id == target_id)
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(query.limit(max(1, min(limit, 500))))).scalars().all()
+            return [AdminAction(
+                action=row.action, target_type=row.target_type, target_id=row.target_id,
+                tenant_id=row.tenant_id, actor_email=row.actor_email, before=row.before,
+                after=row.after, reason=row.reason, created_at=row.created_at) for row in rows]

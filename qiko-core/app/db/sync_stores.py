@@ -29,6 +29,7 @@ from app.db.models import Tenant as TenantRow
 from app.db.models import User as UserRow
 from app.modules.admin.customers import CustomerRecord
 from app.modules.admin.pagination import PAGE_SIZE, paginate
+from app.modules.admin.sorting import CUSTOMER_SORTS, apply_sort
 from app.modules.billing.payment_links import PaymentLinkLog
 from app.modules.billing.subscriptions import Subscription
 from app.modules.billing.webhook import Invoice
@@ -243,7 +244,9 @@ class SqlCustomerDirectory:
         return records
 
     def list(self, *, search: str | None = None, plan: str | None = None,
-             page: int = 1, page_size: int = PAGE_SIZE) -> dict:
+             page: int = 1, page_size: int = PAGE_SIZE,
+             sort: str | None = None, order: str = "desc",
+             sort_spec: dict | None = None) -> dict:
         with self.sessionmaker() as s:
             rows = [r for r in self._records(s).values() if not r.deleted]
         if search:
@@ -251,7 +254,10 @@ class SqlCustomerDirectory:
             rows = [r for r in rows if q in r.email.lower() or q in r.user_id.lower()]
         if plan and plan != "all":
             rows = [r for r in rows if r.plan == plan]
+        # Highest earning first stays the default, because that is the order an operator scanning
+        # the customer list actually wants. An explicit sort overrides it.
         rows.sort(key=lambda r: r.earnings_cents, reverse=True)
+        rows = apply_sort(rows, sort_spec or CUSTOMER_SORTS, sort, order)
         return paginate(rows, page=page, page_size=page_size)
 
     def details(self, user_id: str) -> CustomerRecord | None:

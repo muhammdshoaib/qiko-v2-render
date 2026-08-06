@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.modules.admin.pagination import PAGE_SIZE, paginate
+from app.modules.admin.sorting import CUSTOMER_SORTS, apply_sort
 
 
 @dataclass
@@ -36,14 +37,19 @@ class CustomerDirectory:
         self._by_id[rec.user_id] = rec
 
     def list(self, *, search: str | None = None, plan: str | None = None,
-             page: int = 1, page_size: int = PAGE_SIZE) -> dict:
+             page: int = 1, page_size: int = PAGE_SIZE,
+             sort: str | None = None, order: str = "desc",
+             sort_spec: dict | None = None) -> dict:
         rows = [r for r in self._by_id.values() if not r.deleted]
         if search:
             s = search.lower()
             rows = [r for r in rows if s in r.email.lower() or s in r.user_id.lower()]
         if plan and plan != "all":
             rows = [r for r in rows if r.plan == plan]
+        # Highest earning first stays the default, because that is the order an operator scanning
+        # the customer list actually wants. An explicit sort overrides it.
         rows.sort(key=lambda r: r.earnings_cents, reverse=True)
+        rows = apply_sort(rows, sort_spec or CUSTOMER_SORTS, sort, order)
         return paginate(rows, page=page, page_size=page_size)
 
     def details(self, user_id: str) -> CustomerRecord | None:

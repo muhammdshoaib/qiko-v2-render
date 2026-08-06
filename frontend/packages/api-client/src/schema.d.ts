@@ -47,6 +47,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Admin Audit
+         * @description The platform-admin action trail. Readable by anyone who can see customers.
+         *
+         *     Read is deliberately wider than WRITE: knowing that an operator disabled a tenant is exactly the
+         *     context another operator needs before touching the same account, and withholding it produces the
+         *     "why is this customer suspended and nobody knows" support ticket.
+         *
+         *     But it is NOT uniformly wider. An audit row contains the before and after of the thing it records,
+         *     so reading the row is reading that thing. Cost-cap rows carry the cap value, which
+         *     GET /admin/cost-caps gates on view_ai_cost precisely because per-account spend reveals unit
+         *     economics. Returning them here on view_customers would make this endpoint a way around that gate,
+         *     which is the same mistake the user directory made with platform authority and the worker monitoring
+         *     view nearly made with spend columns. Rows the caller cannot read are filtered out rather than
+         *     redacted, because a row saying "a cap was changed, value hidden" still discloses that the tenant is
+         *     capped at all.
+         */
+        get: operations["admin_audit_api_v1_admin_audit_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/cost-caps": {
         parameters: {
             query?: never;
@@ -460,6 +493,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/users/{user_id}/role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Tenant Role
+         * @description Change any user's TENANT role, from any tenant.
+         *
+         *     PUT /identity/users/{id}/role already existed but is tenant-scoped: it reads the tenant from the
+         *     caller's own token and 404s on a user outside it, so a platform admin could only change users in
+         *     the tenant they happen to be signed into. There was no cross-tenant path at all, which is why the
+         *     user directory was read-only.
+         *
+         *     The tenant-facing invariants are preserved exactly, because they are correctness rules and not
+         *     merely permission checks:
+         *       - owner is never assignable (ASSIGNABLE_ROLES), so a tenant cannot gain a second owner;
+         *       - the current owner's role cannot be changed, which is what stops a tenant being left ownerless
+         *         and therefore unadministrable by its own team.
+         *
+         *     Gated on manage_customers rather than manage_admins: this changes a customer's internal
+         *     permissions, not platform authority. Audited, because nothing recorded a tenant role change before,
+         *     on either the tenant-facing endpoint or anywhere else.
+         */
+        put: operations["set_tenant_role_api_v1_admin_users__user_id__role_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/worker-monitoring": {
         parameters: {
             query?: never;
@@ -506,6 +574,37 @@ export interface paths {
          */
         get: operations["workers_api_v1_admin_workers_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/workers/{tenant_id}/{agent_id}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Worker Status
+         * @description Set a worker's lifecycle status.
+         *
+         *     Before this, status could only ever move forward: POST /agents/{id}/ready hardcodes "ready" and
+         *     nothing anywhere could return a worker to training. So a worker whose ingest produced a bad corpus
+         *     stayed advertised as ready, and the only remedy was to disable it entirely, which is a different
+         *     and blunter statement to the customer.
+         *
+         *     Addressed by tenant and worker rather than by customer, so it is callable from the worker directory
+         *     where the operator actually is. Audited, because agent_state_audit models `enabled` only and has no
+         *     shape for a status change.
+         *
+         *     Backward only. See the guard below for why publishing is not the platform's call to make.
+         */
+        put: operations["set_worker_status_api_v1_admin_workers__tenant_id___agent_id__status_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -5364,6 +5463,13 @@ export interface components {
             /** Webhook Url */
             webhook_url: string;
         };
+        /** TenantRoleBody */
+        TenantRoleBody: {
+            /** Reason */
+            reason?: string | null;
+            /** Role */
+            role: string;
+        };
         /** TransitionBody */
         TransitionBody: {
             /** Stage */
@@ -5583,6 +5689,13 @@ export interface components {
             /** Reason */
             reason: string | null;
         };
+        /** WorkerStatusBody */
+        WorkerStatusBody: {
+            /** Reason */
+            reason?: string | null;
+            /** Status */
+            status: string;
+        };
         /** FeedbackBody */
         app__modules__agentcore__batch_router__FeedbackBody: {
             /** Agent Id */
@@ -5743,6 +5856,42 @@ export interface operations {
             };
         };
     };
+    admin_audit_api_v1_admin_audit_get: {
+        parameters: {
+            query?: {
+                action?: string | null;
+                tenant_id?: string | null;
+                target_id?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     cost_caps_api_v1_admin_cost_caps_get: {
         parameters: {
             query?: never;
@@ -5856,7 +6005,10 @@ export interface operations {
             query?: {
                 search?: string | null;
                 plan?: string | null;
+                sort?: string | null;
+                order?: string;
                 page?: number;
+                page_size?: number;
             };
             header?: never;
             path?: never;
@@ -5961,7 +6113,9 @@ export interface operations {
     };
     customer_delete_api_v1_admin_customers__user_id__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                reason?: string | null;
+            };
             header: {
                 /** @description Must match the qiko_csrf cookie. */
                 "X-CSRF-Token": string;
@@ -6415,7 +6569,10 @@ export interface operations {
             query?: {
                 search?: string | null;
                 plan?: string | null;
+                sort?: string | null;
+                order?: string;
                 page?: number;
+                page_size?: number;
             };
             header?: never;
             path?: never;
@@ -6450,7 +6607,13 @@ export interface operations {
             query?: {
                 search?: string | null;
                 tenant_id?: string | null;
+                role?: string | null;
+                twofa?: boolean | null;
+                platform_admins_only?: boolean;
+                sort?: string | null;
+                order?: string;
                 page?: number;
+                page_size?: number;
             };
             header?: never;
             path?: never;
@@ -6480,12 +6643,60 @@ export interface operations {
             };
         };
     };
+    set_tenant_role_api_v1_admin_users__user_id__role_put: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Must match the qiko_csrf cookie. */
+                "X-CSRF-Token": string;
+            };
+            path: {
+                user_id: string;
+            };
+            cookie: {
+                /** @description Double-submit CSRF cookie. */
+                qiko_csrf: string;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TenantRoleBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     worker_monitoring_api_v1_admin_worker_monitoring_get: {
         parameters: {
             query?: {
                 days?: number;
                 tenant_id?: string | null;
+                search?: string | null;
+                enabled?: boolean | null;
+                sort?: string | null;
+                order?: string;
                 page?: number;
+                page_size?: number;
             };
             header?: never;
             path?: never;
@@ -6521,13 +6732,61 @@ export interface operations {
                 search?: string | null;
                 tenant_id?: string | null;
                 enabled?: boolean | null;
+                status?: string | null;
+                sort?: string | null;
+                order?: string;
                 page?: number;
+                page_size?: number;
             };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_worker_status_api_v1_admin_workers__tenant_id___agent_id__status_put: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Must match the qiko_csrf cookie. */
+                "X-CSRF-Token": string;
+            };
+            path: {
+                tenant_id: string;
+                agent_id: string;
+            };
+            cookie: {
+                /** @description Double-submit CSRF cookie. */
+                qiko_csrf: string;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkerStatusBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
