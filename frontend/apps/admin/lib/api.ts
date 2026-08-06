@@ -155,6 +155,13 @@ export const workerMonitoring = (days = 30, page = 1, tenantId?: string) =>
   request<{ total: number; page: number; window_days: number; cost_visible: boolean; items: MonitoredWorker[] }>(
     `/admin/worker-monitoring?${paged(page, { days: String(days), tenant_id: tenantId })}`);
 
+/** Cents to a human string. USD because that is what Stripe is charged in
+ * (qiko-core/app/integrations/clients.py:57 sends currency "usd"), and because the tenants page used
+ * to render the same earnings_cents figure as GBP while customers hardcoded a "$" prefix. Three
+ * spellings of one number is a bug that a right-aligned money column makes obvious. */
+export const formatMoney = (cents: number) =>
+  (cents / 100).toLocaleString(undefined, { style: "currency", currency: "USD" });
+
 /** nano-USD to a human string. Values are integers on purpose, see the pricing module. */
 export const formatUsd = (nanoUsd: number) =>
   (nanoUsd / 1_000_000_000).toLocaleString(undefined, { style: "currency", currency: "USD",
@@ -213,8 +220,10 @@ export const grantPlatformAdmin = (
 ) => request<PlatformAdmin>(`/admin/org/${encodeURIComponent(email)}`, {
   method: "PUT", body: JSON.stringify(body),
 });
-export const listPlatformAdminAudit = () =>
-  request<{ entries: AdminGrantAudit[] }>("/admin/org/audit");
+// The server accepts limit 1..200 and defaults to 50. Not passing it capped the access log at 50 with
+// no indication, so an operator reviewing who changed what silently saw a truncated history.
+export const listPlatformAdminAudit = (limit = 200) =>
+  request<{ entries: AdminGrantAudit[] }>(`/admin/org/audit?limit=${limit}`);
 export const adminRoleOf = (email: string) => request<{ email: string; role: AdminRole | null }>(`/admin/org/role/${encodeURIComponent(email)}`);
 export const removePlatformAdmin = (email: string, reason?: string) => {
   // The reason lands in the audit trail; a UI-originated revoke used to record none.

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, Card, CardContent, Input } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
@@ -25,11 +25,65 @@ const LABELS: Record<Capability, string> = {
   set_cost_caps: "Set cost caps",
 };
 
+/** Removing an admin used to go through window.confirm: unstyleable, unannounced to assistive tech,
+ *  and it gave no place to record the reason that the audit trail stores. This is the same native
+ *  <dialog> pattern the customer detail view already uses, including focus restore to the trigger. */
+function ConfirmRemoval({ email, reason, onReasonChange, opener, onConfirm, onCancel, pending }: {
+  email: string | null;
+  reason: string;
+  onReasonChange: (value: string) => void;
+  opener: HTMLElement | null;
+  onConfirm: () => void;
+  onCancel: () => void;
+  pending: boolean;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    if (email && !dialog.open) dialog.showModal();
+    if (!email && dialog.open) dialog.close();
+  }, [email]);
+
+  const close = () => {
+    onCancel();
+    // The element must be back in the layout before it can take focus.
+    requestAnimationFrame(() => opener?.focus());
+  };
+
+  return (
+    <dialog ref={dialogRef} aria-labelledby="confirm-removal-title"
+      onClose={close}
+      // Escape must not abandon a request that is already in flight.
+      onCancel={(event) => { if (pending) event.preventDefault(); }}
+      className="w-[min(92vw,28rem)] rounded-2xl border border-border bg-card p-5 text-foreground backdrop:bg-black/50">
+      <h2 id="confirm-removal-title" className="text-lg font-semibold">Remove platform access</h2>
+      <p className="mt-2 text-sm text-muted-foreground">
+        {email} will lose access to the admin console. This is recorded in the audit trail.
+      </p>
+      <label className="mt-4 block">
+        <span className="text-sm">Reason (optional)</span>
+        <Input className="mt-1" value={reason} onChange={(event) => onReasonChange(event.target.value)}
+          placeholder="Why is access being removed?" />
+      </label>
+      <div className="mt-5 flex justify-end gap-2">
+        <Button variant="outline" className="min-h-11" disabled={pending} onClick={close}>Cancel</Button>
+        <Button variant="destructive" className="min-h-11" disabled={pending} onClick={onConfirm}>
+          {pending ? "Removing..." : "Remove access"}
+        </Button>
+      </div>
+    </dialog>
+  );
+}
+
 export default function AdminsPage() {
+  const [pendingRemoval, setPendingRemoval] = useState<string | null>(null);
+  const removeOpener = useRef<HTMLElement | null>(null);
   const qc = useQueryClient();
   const me = useQuery({ queryKey: ["admin-me"], queryFn: adminMe });
   const admins = useQuery({ queryKey: ["platform-admins"], queryFn: listPlatformAdmins });
-  const audit = useQuery({ queryKey: ["platform-admin-audit"], queryFn: listPlatformAdminAudit });
+  const audit = useQuery({ queryKey: ["platform-admin-audit"], queryFn: () => listPlatformAdminAudit() });
 
   const canManage = me.data?.capabilities?.includes("manage_admins") ?? false;
   const [email, setEmail] = useState("");
@@ -93,10 +147,11 @@ export default function AdminsPage() {
                     variant="destructive"
                     size="sm"
                     disabled={remove.isPending}
-                    onClick={() =>
-                      window.confirm(`Remove ${admin.email} from platform administration?`) &&
-                      remove.mutate(admin.email)}
-                    title="The reason field below is recorded in the audit trail"
+                    onClick={(event) => {
+                      removeOpener.current = event.currentTarget;
+                      setPendingRemoval(admin.email);
+                    }}
+                    aria-label={`Remove ${admin.email} from platform administration`}
                   >
                     Remove
                   </Button>
@@ -178,6 +233,18 @@ export default function AdminsPage() {
           </CardContent>
         </Card>
       </div>
+      <ConfirmRemoval
+        email={pendingRemoval}
+        reason={reason}
+        onReasonChange={setReason}
+        opener={removeOpener.current}
+        pending={remove.isPending}
+        onCancel={() => setPendingRemoval(null)}
+        onConfirm={() => {
+          if (pendingRemoval) remove.mutate(pendingRemoval);
+          setPendingRemoval(null);
+        }}
+      />
     </AppShell>
   );
 }

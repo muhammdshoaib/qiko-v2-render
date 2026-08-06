@@ -51,7 +51,7 @@ export default function ForgotPasswordPage() {
               <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@company.com" required />
             </div>
-            {message && <p className="text-sm text-muted-foreground">{message}</p>}
+            {message && <p role="status" className="text-sm text-muted-foreground">{message}</p>}
             <Button type="submit" className="w-full" disabled={loading}>{loading ? "Sending..." : "Send one-time code"}</Button>
           </form>
           <p className="mt-4 text-xs text-muted-foreground">

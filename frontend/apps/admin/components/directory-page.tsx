@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { Button, Card, CardContent, Input, Skeleton } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
@@ -17,7 +17,10 @@ type Props<T> = {
   fetchPage: (search: string, page: number) => Promise<{ total: number; page: number; items: T[] }>;
   renderRow: (row: T) => ReactNode;
   rowKey: (row: T) => string;
-  emptyMessage: string;
+  // Called with whether a search or filter is narrowing the view, because "No workers match this
+  // filter" was shown even when the platform genuinely had zero workers, and vice versa.
+  emptyMessage: (filtered: boolean) => string;
+  onClearFilters?: () => void;
   filters?: ReactNode;
   /** Included in the query key so a filter change refetches. */
   filterToken?: string;
@@ -34,7 +37,7 @@ type Props<T> = {
  */
 export function DirectoryPage<T>({
   title, searchLabel, searchPlaceholder, queryKey, fetchPage, renderRow, rowKey,
-  emptyMessage, filters, filterToken = "",
+  emptyMessage, filters, filterToken = "", onClearFilters,
 }: Props<T>) {
   const [search, setSearch] = useState("");
   const [query, setQuery] = useState("");
@@ -46,6 +49,10 @@ export function DirectoryPage<T>({
     queryKey: [queryKey, query, page, filterToken],
     queryFn: () => fetchPage(query, page),
     enabled: me.isSuccess,
+    // Without this the query key change on every page or filter click made isLoading true again and
+    // the whole list collapsed into skeleton bars, which is the single most dated-feeling thing in
+    // the console. Keeping the previous rows and dimming them is what current admin UIs do.
+    placeholderData: keepPreviousData,
   });
 
   useEffect(() => {
@@ -100,7 +107,16 @@ export function DirectoryPage<T>({
         <div className="space-y-3" aria-busy={rows.isFetching}>
           {rows.isLoading && [0, 1, 2].map((index) => <Skeleton key={index} className="h-20 w-full" />)}
           {rows.data?.items.length === 0 && (
-            <Card><CardContent className="py-6 text-sm text-muted-foreground">{emptyMessage}</CardContent></Card>
+            <Card><CardContent className="py-6 text-center text-sm text-muted-foreground">
+              {emptyMessage(Boolean(query) || filterToken !== "")}
+              {(Boolean(query) || filterToken !== "") && onClearFilters && (
+                <div>
+                  <Button variant="outline" className="mt-3 min-h-11" onClick={onClearFilters}>
+                    Clear filters
+                  </Button>
+                </div>
+              )}
+            </CardContent></Card>
           )}
           {rows.data?.items.map((row) => (
             <Card key={rowKey(row)}><CardContent className="py-4">{renderRow(row)}</CardContent></Card>

@@ -69,7 +69,7 @@ export default function LoginPage() {
                 value={totp} onChange={(event) => setTotp(event.target.value)}
                 placeholder="Required when 2FA is enabled" />
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
             <Button type="submit" className="w-full" disabled={busy}>{busy ? "Signing in..." : "Sign in"}</Button>
           </form>
           <div className="mt-4 flex items-center text-xs text-muted-foreground">
