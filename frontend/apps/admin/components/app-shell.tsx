@@ -11,8 +11,11 @@ import { adminMe, ApiError, logout, type Capability } from "@/lib/api";
 // `requires` gates the entry on a capability. Entries without it stay visible to every platform
 // admin, so nothing that worked before disappears. Hiding a denied entry is nicer than letting the
 // admin click into a 403, but it is presentation only: the server enforces every one of these.
+// Every destination declares the capability its BACKEND actually enforces. Four entries used to
+// declare none while their endpoints required one, so a narrowed admin saw the nav item, clicked it,
+// and got an error card. A menu that offers what it cannot deliver is worse than a shorter menu.
 const NAV: { href: string; label: string; icon: typeof Users; requires?: Capability }[] = [
-  { href: "/overview", label: "Overview", icon: LayoutDashboard },
+  { href: "/overview", label: "Overview", icon: LayoutDashboard, requires: "view_customers" },
   { href: "/customers", label: "Customers", icon: Users, requires: "view_customers" },
   { href: "/tenants", label: "Tenants", icon: Building2, requires: "view_customers" },
   { href: "/users", label: "Users", icon: UsersRound, requires: "view_customers" },
@@ -20,10 +23,10 @@ const NAV: { href: string; label: string; icon: typeof Users; requires?: Capabil
   { href: "/monitoring", label: "Monitoring", icon: Activity, requires: "view_customers" },
   { href: "/ai-cost", label: "AI Cost", icon: Coins, requires: "view_ai_cost" },
   { href: "/system", label: "System", icon: Server, requires: "view_system_stats" },
-  { href: "/subscriptions", label: "Subscriptions", icon: CreditCard },
+  { href: "/subscriptions", label: "Subscriptions", icon: CreditCard, requires: "view_customers" },
   { href: "/invoices", label: "Invoices", icon: Receipt, requires: "manage_billing" },
-  { href: "/admins", label: "Platform Admins", icon: UserCog },
-  { href: "/analytics", label: "Analytics", icon: BarChart3 },
+  { href: "/admins", label: "Platform Admins", icon: UserCog, requires: "manage_admins" },
+  { href: "/analytics", label: "Analytics", icon: BarChart3, requires: "view_customers" },
   { href: "/security", label: "Security", icon: ShieldCheck },
 ];
 

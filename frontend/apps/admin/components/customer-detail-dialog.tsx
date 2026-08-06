@@ -8,16 +8,21 @@ import {
   customerDetail,
   setCustomerStudio,
   setWorkerEnabled,
-  type AdminRole,
+  type Capability,
   type AdminWorker,
 } from "@/lib/api";
 
-export function CustomerDetailDialog({ customerId, role, opener, onClose }: {
+export function CustomerDetailDialog({ customerId, capabilities, opener, onClose }: {
   customerId: string | null;
-  role: AdminRole;
+  // Capabilities, not the coarse role. The server gates Studio on manage_customers and the worker
+  // toggle on manage_workers, so comparing to "super_admin" hid actions from admins who were
+  // explicitly granted them, and would have shown them to a narrowed super_admin who was not.
+  capabilities: Capability[] | undefined;
   opener: HTMLElement | null;
   onClose: () => void;
 }) {
+  const canManageCustomers = capabilities?.includes("manage_customers") ?? false;
+  const canManageWorkers = capabilities?.includes("manage_workers") ?? false;
   const dialogRef = useRef<HTMLDialogElement>(null);
   const confirmDialogRef = useRef<HTMLDialogElement>(null);
   const confirmTrigger = useRef<HTMLElement | null>(null);
@@ -103,13 +108,13 @@ export function CustomerDetailDialog({ customerId, role, opener, onClose }: {
               <Summary label="Email" value={detail.data.email} />
               <Summary label="Plan" value={detail.data.plan} />
               <Summary label="Revenue" value={`$${(detail.data.earnings_cents / 100).toFixed(2)}`} />
-              <div className="rounded-xl border border-border p-3"><p className="text-xs text-muted-foreground">Studio</p><p className="mt-1 text-sm font-semibold">{detail.data.is_studio ? "Enabled" : "Disabled"}</p>{role === "super_admin" && <Button className="mt-2" size="sm" variant="outline" disabled={studioUpdate.isPending} onClick={() => studioUpdate.mutate()}>{detail.data.is_studio ? "Disable Studio" : "Enable Studio"}</Button>}</div>
+              <div className="rounded-xl border border-border p-3"><p className="text-xs text-muted-foreground">Studio</p><p className="mt-1 text-sm font-semibold">{detail.data.is_studio ? "Enabled" : "Disabled"}</p>{canManageCustomers && <Button className="mt-2" size="sm" variant="outline" disabled={studioUpdate.isPending} onClick={() => studioUpdate.mutate()}>{detail.data.is_studio ? "Disable Studio" : "Enable Studio"}</Button>}</div>
             </section>
             {studioUpdate.isError && <p role="alert" className="text-sm text-destructive">Studio access update failed. Retry.</p>}
 
-            {role === "viewer" && (
+            {!canManageWorkers && (
               <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
-                Read-only access. Only a super-admin can change worker availability.
+                Read-only access. Changing worker availability needs the Manage workers capability.
               </div>
             )}
 
@@ -126,7 +131,7 @@ export function CustomerDetailDialog({ customerId, role, opener, onClose }: {
                           <Badge variant={worker.enabled ? "success" : "muted"}>{worker.enabled ? "Enabled" : "Disabled"}</Badge>
                         </div>
                       </div>
-                      {role === "super_admin" && (
+                      {canManageWorkers && (
                         <Button variant={worker.enabled ? "destructive" : "default"} onClick={(event) => { confirmTrigger.current = event.currentTarget; setConfirmWorker(worker); setReason(""); }}>
                           {worker.enabled ? "Disable worker" : "Enable worker"}
                         </Button>

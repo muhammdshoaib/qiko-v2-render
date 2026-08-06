@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { Badge, Button, Card, CardContent, Input, Skeleton } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import { CustomerDetailDialog } from "@/components/customer-detail-dialog";
-import { adminMe, listCustomers, type Customer } from "@/lib/api";
+import { formatMoney, adminMe, listCustomers, type Customer } from "@/lib/api";
 
 const PAGE_SIZE = 20;
 
@@ -21,6 +21,8 @@ export default function CustomersPage() {
     queryKey: ["customers", query, page],
     queryFn: () => listCustomers(query, page),
     enabled: me.isSuccess,
+    // Keep the rows on screen while the next page loads instead of collapsing to skeletons.
+    placeholderData: keepPreviousData,
   });
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export default function CustomersPage() {
                   <Badge variant="muted">{customer.plan}</Badge>
                 </div>
                 <div className="flex items-center justify-between gap-4 sm:justify-end">
-                  <span className="text-sm font-semibold tabular-nums">${(customer.earnings_cents / 100).toFixed(2)}</span>
+                  <span className="text-sm font-semibold tabular-nums">{formatMoney(customer.earnings_cents)}</span>
                   <Button
                     variant="outline"
                     onClick={(event) => { opener.current = event.currentTarget; setSelected(customer.user_id); }}
@@ -87,7 +89,7 @@ export default function CustomersPage() {
       {me.data && (
         <CustomerDetailDialog
           customerId={selected}
-          role={me.data.role}
+          capabilities={me.data.capabilities}
           opener={opener.current}
           onClose={() => setSelected(null)}
         />

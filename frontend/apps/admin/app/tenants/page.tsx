@@ -2,7 +2,7 @@
 
 import { Badge } from "@qiko/ui";
 import { DirectoryPage } from "@/components/directory-page";
-import { listTenants, type TenantRow } from "@/lib/api";
+import { formatMoney, listTenants, type TenantRow } from "@/lib/api";
 
 export default function TenantsPage() {
   return (
@@ -13,7 +13,7 @@ export default function TenantsPage() {
       queryKey="admin-tenants"
       fetchPage={(search, page) => listTenants(search, page)}
       rowKey={(row) => row.tenant_id}
-      emptyMessage="No tenants yet."
+      emptyMessage={(filtered) => filtered ? "No tenants match this search." : "No tenants yet."}
       renderRow={(row) => (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
@@ -30,7 +30,7 @@ export default function TenantsPage() {
               {row.worker_count} {row.worker_count === 1 ? "worker" : "workers"}
             </span>
             <span className="tabular-nums">
-              {(row.earnings_cents / 100).toLocaleString(undefined, { style: "currency", currency: "GBP" })}
+              {formatMoney(row.earnings_cents)}
             </span>
           </div>
         </div>

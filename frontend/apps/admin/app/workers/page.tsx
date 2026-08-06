@@ -20,7 +20,8 @@ export default function WorkersPage() {
       filterToken={filter}
       fetchPage={(search, page) => listWorkers(search, page, enabled)}
       rowKey={(row) => `${row.tenant_id}-${row.id}`}
-      emptyMessage="No workers match this filter."
+      onClearFilters={() => setFilter("all")}
+      emptyMessage={(filtered) => filtered ? "No workers match this search or filter." : "No workers yet."}
       filters={
         <div role="group" aria-label="Filter by state" className="flex gap-2">
           {(["all", "enabled", "disabled"] as Filter[]).map((option) => (

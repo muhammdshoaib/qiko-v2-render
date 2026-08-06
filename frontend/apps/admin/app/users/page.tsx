@@ -13,7 +13,7 @@ export default function UsersPage() {
       queryKey="admin-users"
       fetchPage={(search, page) => listUsers(search, page)}
       rowKey={(row) => row.id}
-      emptyMessage="No users yet."
+      emptyMessage={(filtered) => filtered ? "No users match this search." : "No users yet."}
       renderRow={(row) => (
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="min-w-0">
