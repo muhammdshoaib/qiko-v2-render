@@ -39,9 +39,18 @@ def _grant(client, email: str, capabilities: list[str]) -> dict:
 
 
 def _seed(client) -> None:
-    """Ids are namespaced. An earlier version used "u-owner", which is the id tests/test_twofa_api.py
+    """Customer records as well as users and workers: the studio and soft-delete endpoints resolve the
+    customer directory first and 404 without one, which silently made an audit assertion vacuous.
+
+    Ids are namespaced. An earlier version used "u-owner", which is the id tests/test_twofa_api.py
     authenticates as, so seeding it here made that file fail depending on execution order."""
     from app.core.deps import get_user_store
+    from app.modules.admin.customers import CustomerRecord
+
+    client.app.state.customers.add(CustomerRecord("acme", "owner@acme.invalid", "pro",
+                                                  stripe_paid_cents=5000, agents=1, users=2))
+    client.app.state.customers.add(CustomerRecord("beta", "owner@beta.invalid", "free",
+                                                  agents=1, users=1))
 
     async def seed() -> None:
         store = get_user_store()
@@ -259,3 +268,117 @@ def test_every_recorded_action_is_a_known_one():
     """A free-form action string means an audit row nobody can find later."""
     assert audit.STUDIO_TOGGLED in audit.ACTIONS
     assert len(audit.ACTIONS) == 6
+
+
+# --- what the security gate found -------------------------------------------------------------------
+
+def test_the_audit_trail_is_not_a_way_around_the_spend_gate(client):
+    """This is the third time this shape of mistake was made in this console, so it gets a test.
+
+    /admin/cost-caps is gated on view_ai_cost because per-account spend reveals unit economics. An
+    audit row contains the before and after of the thing it records, so returning cost-cap rows on
+    view_customers would disclose exactly the values that gate protects.
+    """
+    cookies = _admin(client)
+    with_csrf, headers = _csrf(cookies)
+    client.put("/api/v1/admin/cost-caps/acme", cookies=with_csrf, headers=headers,
+               json={"monthly_cap_usd": 7.5})
+
+    reader = _grant(client, "caps.blind@invalid", [Capability.view_customers.value])
+    visible = client.get("/api/v1/admin/audit", cookies=reader).json()["items"]
+    assert all(entry["action"] != "cost_cap_set" for entry in visible), \
+        "a view_customers reader must not learn cap values from the audit trail"
+    assert "7500000000" not in str(visible)
+
+    # and a view_ai_cost holder does see them
+    coster = _grant(client, "caps.reader@invalid",
+                    [Capability.view_customers.value, Capability.view_ai_cost.value])
+    allowed = client.get("/api/v1/admin/audit", cookies=coster).json()["items"]
+    assert any(entry["action"] == "cost_cap_set" for entry in allowed)
+
+
+def test_an_admin_cannot_change_their_own_tenant_role(client):
+    """AdminOrg.grant already refuses self-service and explains why. Without the same rule here, a
+    platform admin holding manage_customers who is merely a viewer in some tenant could promote
+    themselves to tenant admin, which carries Stripe portal access, payment-link creation and
+    subscription cancel/resume: an indirect grant of manage_billing."""
+    from app.core.deps import get_user_store
+
+    async def seed_self() -> None:
+        await get_user_store().add(User(id="legb-self", email=ADMIN, password_hash="x",
+                                        tenant="acme", role=Role.viewer, name="The Admin"))
+
+    asyncio.run(seed_self())
+    with_csrf, headers = _csrf(_admin(client))
+    response = client.put("/api/v1/admin/users/legb-self/role", cookies=with_csrf, headers=headers,
+                          json={"role": "admin"})
+    assert response.status_code == 409
+    assert "own tenant role" in response.json()["detail"]
+
+
+def test_an_admin_cannot_publish_a_workers_readiness(client):
+    """"ready" is the gate the PUBLIC chat checks, so moving a worker forward would publish it on the
+    customer's behalf. Pulling one back is the safety action this endpoint exists for."""
+    _seed(client)
+    with_csrf, headers = _csrf(_admin(client))
+    response = client.put("/api/v1/admin/workers/acme/w1/status", cookies=with_csrf, headers=headers,
+                          json={"status": "ready"})
+    assert response.status_code == 422
+    assert "tenant's call" in response.json()["detail"]
+
+
+def test_the_capabilities_are_distinct_from_each_other_not_just_from_read_only(client):
+    """The first version of these tests only proved a view_customers caller is refused, which would
+    have stayed green if the two write gates had been swapped."""
+    _seed(client)
+    workers_only = _grant(client, "w.only@invalid", [Capability.manage_workers.value])
+    customers_only = _grant(client, "c.only@invalid", [Capability.manage_customers.value])
+
+    with_csrf, headers = _csrf(workers_only)
+    assert client.put("/api/v1/admin/users/legb-editor/role", cookies=with_csrf, headers=headers,
+                      json={"role": "admin"}).status_code == 403
+
+    with_csrf, headers = _csrf(customers_only)
+    assert client.put("/api/v1/admin/workers/beta/w2/status", cookies=with_csrf, headers=headers,
+                      json={"status": "training"}).status_code == 403
+
+
+def test_a_directory_cannot_sort_by_a_field_it_does_not_return(client):
+    """Ordering by a hidden field discloses that field's ordering without ever showing it.
+    /admin/customers returns no counts; /admin/tenants returns both and may sort by them."""
+    cookies = _admin(client)
+    assert client.get("/api/v1/admin/customers?sort=users", cookies=cookies).status_code == 422
+    assert client.get("/api/v1/admin/tenants?sort=users", cookies=cookies).status_code == 200
+
+
+def test_a_bad_sort_order_is_refused(client):
+    assert client.get("/api/v1/admin/users?sort=email&order=sideways",
+                      cookies=_admin(client)).status_code == 422
+
+
+def test_platform_admins_only_does_not_widen_what_a_viewer_learns(client):
+    """The filter must not become a way to enumerate platform authority, which QIK-513 put behind
+    manage_admins."""
+    _seed(client)
+    reader = _grant(client, "narrow.pa@invalid", [Capability.view_customers.value])
+    body = client.get("/api/v1/admin/users?platform_admins_only=true", cookies=reader).json()
+    for row in body["items"]:
+        assert row["platform_role"] is None and row["platform_capabilities"] == []
+
+
+def test_soft_delete_does_not_copy_the_email_into_the_audit(client):
+    """Soft delete exists to anonymise the email. Recording it in a table that view_customers can read
+    would undo the erasure it was performing."""
+    _seed(client)
+    cookies = _admin(client)
+    with_csrf, headers = _csrf(cookies)
+    client.post("/api/v1/admin/customers/acme/studio", cookies=with_csrf, headers=headers,
+                json={"enabled": True})
+    client.delete("/api/v1/admin/customers/acme?reason=fraud", cookies=with_csrf, headers=headers)
+
+    trail = client.get("/api/v1/admin/audit", cookies=cookies).json()["items"]
+    actions = {entry["action"] for entry in trail}
+    assert {"studio_toggled", "customer_soft_deleted"} <= actions, "both were previously unaudited"
+    deleted = next(e for e in trail if e["action"] == "customer_soft_deleted")
+    assert deleted["before"] == "active" and deleted["reason"] == "fraud"
+    assert "@" not in str(deleted["before"]), "the email must not survive in the audit"

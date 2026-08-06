@@ -30,6 +30,7 @@ from app.modules.health.system import (
 from app.modules.admin.pagination import MAX_PAGE_SIZE, PAGE_SIZE, paginate
 from app.modules.admin.sorting import (
     MONITORING_SORTS,
+    TENANT_SORTS,
     USER_SORTS,
     WORKER_SORTS,
     apply_sort,
@@ -265,7 +266,9 @@ async def customer_delete(user_id: str, request: Request,
         await audit.record(getattr(request.app.state, "admin_audit", None), audit.AdminAction(
             action=audit.CUSTOMER_SOFT_DELETED, target_type="tenant", target_id=user_id,
             tenant_id=user_id, actor_email=str(claims.get("email") or ""),
-            before=before.email, after="deleted", reason=reason))
+            # NOT the email. Soft delete exists to anonymise it, so copying it into a table that
+            # view_customers can read would undo the erasure it was performing.
+            before="active", after="deleted", reason=reason))
         return _customer_json(record)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="customer not found") from exc
@@ -314,7 +317,8 @@ def tenants(request: Request, _tenant: str = Depends(authed_tenant),
     workers it runs. Both were already derivable and simply not surfaced.
     """
     result = request.app.state.customers.list(search=search, plan=plan, page=page,
-                                              page_size=page_size, sort=sort, order=order)
+                                              page_size=page_size, sort=sort, order=order,
+                                              sort_spec=TENANT_SORTS)
     return {"total": result["total"], "page": result["page"], "page_size": page_size, "items": [{
         "tenant_id": record.user_id, "email": record.email, "plan": record.plan,
         "earnings_cents": record.earnings_cents, "user_count": record.users,
@@ -715,6 +719,9 @@ async def set_tenant_role(user_id: str, body: TenantRoleBody, request: Request,
     """
     _require_csrf(request)
     store = get_user_store()
+    # Cross-tenant: the platform-admin console resolves a user by primary key regardless of tenant,
+    # which is the whole point of this endpoint. Every tenant-facing caller goes through
+    # list_by_tenant or a tenant-filtered lookup.
     user = await store.get_by_id(user_id)
     if user is None:
         raise HTTPException(status_code=404, detail="user not found")
@@ -729,6 +736,13 @@ async def set_tenant_role(user_id: str, body: TenantRoleBody, request: Request,
                    f"{', '.join(sorted(r.value for r in ASSIGNABLE_ROLES))}")
     if user.role is Role.owner:
         raise HTTPException(status_code=409, detail="the tenant owner's role cannot be changed")
+    # No self-service, matching AdminOrg.grant. Without this, a platform admin holding manage_customers
+    # who is merely a viewer in some tenant could promote THEMSELVES to tenant admin, and tenant admin
+    # carries Stripe portal access, payment-link creation and subscription cancel/resume. That would
+    # make manage_customers an indirect grant of manage_billing, which is exactly the separation the
+    # capability split exists to enforce.
+    if user.email.lower() == str(claims.get("email") or "").lower():
+        raise HTTPException(status_code=409, detail="an admin cannot change their own tenant role")
 
     previous = user.role.value
     await store.set_role(user_id, target)
@@ -761,14 +775,25 @@ async def set_worker_status(tenant_id: str, agent_id: str, body: WorkerStatusBod
     and blunter statement to the customer.
 
     Addressed by tenant and worker rather than by customer, so it is callable from the worker directory
-    where the operator actually is. Validated against the same AGENT_STATUSES the rest of the platform
-    uses, and audited: agent_state_audit models `enabled` only and has no shape for a status change.
+    where the operator actually is. Audited, because agent_state_audit models `enabled` only and has no
+    shape for a status change.
+
+    Backward only. See the guard below for why publishing is not the platform's call to make.
     """
     _require_csrf(request)
     if body.status not in AGENT_STATUSES:
         raise HTTPException(
             status_code=422,
             detail=f"unknown status: {body.status}. Allowed: {', '.join(sorted(AGENT_STATUSES))}")
+    # Deliberately one direction only. "ready" is the gate the PUBLIC chat checks
+    # (chat/public_router.py:62), so moving a worker forward would publish it on the customer's behalf,
+    # which is a claim the tenant should make and can already make via POST /agents/{id}/ready. Pulling
+    # a worker back is the safety action, and it is the one this endpoint exists for.
+    if body.status != "training":
+        raise HTTPException(
+            status_code=422,
+            detail="an admin can only move a worker back to training; publishing is the tenant's call "
+                   "via POST /agents/{agent_id}/ready")
     agent = await request.app.state.agents.get(tenant_id, agent_id)
     if agent is None:
         raise HTTPException(status_code=404, detail="worker not found")
@@ -787,21 +812,41 @@ async def set_worker_status(tenant_id: str, agent_id: str, body: WorkerStatusBod
     return _worker_json(updated) | {"tenant_id": tenant_id, "changed": True}
 
 
+# Which capability a reader needs to see rows for a given action. An audit row necessarily contains the
+# before/after of the thing it records, so reading it is reading that thing.
+_AUDIT_READ_CAPABILITY: dict[str, Capability] = {
+    audit.COST_CAP_SET: Capability.view_ai_cost,
+    audit.COST_CAP_REMOVED: Capability.view_ai_cost,
+}
+
+
 @router.get("/audit")
 async def admin_audit(request: Request, _tenant: str = Depends(authed_tenant),
-                      _identity=Depends(require_platform_capability(Capability.view_customers)),
+                      identity=Depends(require_platform_capability(Capability.view_customers)),
                       action: str | None = Query(default=None, max_length=64),
                       tenant_id: str | None = Query(default=None, max_length=64),
                       target_id: str | None = Query(default=None, max_length=320),
                       limit: int = Query(default=100, ge=1, le=500)) -> dict:
     """The platform-admin action trail. Readable by anyone who can see customers.
 
-    Read is deliberately wider than write: knowing that an operator disabled a tenant is exactly the
+    Read is deliberately wider than WRITE: knowing that an operator disabled a tenant is exactly the
     context another operator needs before touching the same account, and withholding it produces the
-    "why is this customer suspended, nobody knows" support ticket.
+    "why is this customer suspended and nobody knows" support ticket.
+
+    But it is NOT uniformly wider. An audit row contains the before and after of the thing it records,
+    so reading the row is reading that thing. Cost-cap rows carry the cap value, which
+    GET /admin/cost-caps gates on view_ai_cost precisely because per-account spend reveals unit
+    economics. Returning them here on view_customers would make this endpoint a way around that gate,
+    which is the same mistake the user directory made with platform authority and the worker monitoring
+    view nearly made with spend columns. Rows the caller cannot read are filtered out rather than
+    redacted, because a row saying "a cap was changed, value hidden" still discloses that the tenant is
+    capped at all.
     """
     store = getattr(request.app.state, "admin_audit", None)
     if store is None:
         return {"items": []}
     entries = await store.list(action=action, tenant_id=tenant_id, target_id=target_id, limit=limit)
-    return {"items": [audit.entry_json(entry) for entry in entries]}
+    readable = [entry for entry in entries
+                if _AUDIT_READ_CAPABILITY.get(entry.action) is None
+                or (identity is not None and identity.can(_AUDIT_READ_CAPABILITY[entry.action]))]
+    return {"items": [audit.entry_json(entry) for entry in readable]}

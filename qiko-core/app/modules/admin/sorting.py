@@ -32,10 +32,18 @@ def _text(value: Any) -> str:
     return str(value or "").lower()
 
 
+# /admin/customers returns user_id, email, plan and earnings only.
 CUSTOMER_SORTS: SortSpec = {
     "email": lambda row: _text(row.email),
     "plan": lambda row: _text(row.plan),
     "earnings": lambda row: row.earnings_cents,
+}
+
+# /admin/tenants returns the same rows plus the two counts, so it can sort by them. Kept as a separate
+# spec rather than one shared map, because sorting by a field the response does not contain lets a
+# caller infer that field's ordering without ever being shown it.
+TENANT_SORTS: SortSpec = {
+    **CUSTOMER_SORTS,
     "users": lambda row: getattr(row, "users", 0),
     "workers": lambda row: getattr(row, "agents", 0),
 }

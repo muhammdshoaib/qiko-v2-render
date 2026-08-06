@@ -58,9 +58,18 @@ export interface paths {
          * Admin Audit
          * @description The platform-admin action trail. Readable by anyone who can see customers.
          *
-         *     Read is deliberately wider than write: knowing that an operator disabled a tenant is exactly the
+         *     Read is deliberately wider than WRITE: knowing that an operator disabled a tenant is exactly the
          *     context another operator needs before touching the same account, and withholding it produces the
-         *     "why is this customer suspended, nobody knows" support ticket.
+         *     "why is this customer suspended and nobody knows" support ticket.
+         *
+         *     But it is NOT uniformly wider. An audit row contains the before and after of the thing it records,
+         *     so reading the row is reading that thing. Cost-cap rows carry the cap value, which
+         *     GET /admin/cost-caps gates on view_ai_cost precisely because per-account spend reveals unit
+         *     economics. Returning them here on view_customers would make this endpoint a way around that gate,
+         *     which is the same mistake the user directory made with platform authority and the worker monitoring
+         *     view nearly made with spend columns. Rows the caller cannot read are filtered out rather than
+         *     redacted, because a row saying "a cap was changed, value hidden" still discloses that the tenant is
+         *     capped at all.
          */
         get: operations["admin_audit_api_v1_admin_audit_get"];
         put?: never;
@@ -590,8 +599,10 @@ export interface paths {
          *     and blunter statement to the customer.
          *
          *     Addressed by tenant and worker rather than by customer, so it is callable from the worker directory
-         *     where the operator actually is. Validated against the same AGENT_STATUSES the rest of the platform
-         *     uses, and audited: agent_state_audit models `enabled` only and has no shape for a status change.
+         *     where the operator actually is. Audited, because agent_state_audit models `enabled` only and has no
+         *     shape for a status change.
+         *
+         *     Backward only. See the guard below for why publishing is not the platform's call to make.
          */
         put: operations["set_worker_status_api_v1_admin_workers__tenant_id___agent_id__status_put"];
         post?: never;
