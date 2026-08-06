@@ -25,7 +25,7 @@ DURABLE_STORES = (
     "pack_tree", "assignments", "notifications", "sales_intel", "sales_intel_ingest_filters",
     "salesforce_auth", "finance", "teams", "leads", "teams_notifier", "subscriptions",
     "admin_org",
-    "ai_usage", "cost_caps", "admin_audit", "otp_store", "pending_invites", "pending_signups", "consent", "customers",
+    "ai_usage", "cost_caps", "audit", "otp_store", "pending_invites", "pending_signups", "consent", "customers",
     "payment_links",
 )
 

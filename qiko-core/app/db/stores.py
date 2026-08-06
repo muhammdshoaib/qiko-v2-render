@@ -11,7 +11,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import delete, func, select, text
+from sqlalchemy import delete, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.crypto import decrypt, encrypt
@@ -38,7 +38,7 @@ from app.db.models import PasswordResetOtp as PasswordResetOtpRow
 from app.db.models import PendingSignup as PendingSignupRow
 from app.db.models import PendingTeamInvite as PendingTeamInviteRow
 from app.db.models import PlatformAdmin as PlatformAdminRow
-from app.db.models import AdminActionAudit as AdminActionAuditRow
+from app.db.models import AuditEventRow
 from app.db.models import AiCostCap as AiCostCapRow
 from app.db.models import AiUsageEvent as AiUsageEventRow
 from app.db.models import PlatformAdminAudit as PlatformAdminAuditRow
@@ -69,7 +69,6 @@ from app.core.deps import WorkerUnavailable
 from app.modules.chat.service import ConversationScopeError, ConversationSummary, Message
 from app.modules.crm.service import Contact, CrmAction
 from app.modules.finance.models import FinanceChatMessage, FinanceFile
-from app.modules.admin.audit import AdminAction
 from app.modules.ai.caps import CostCap
 from app.modules.ai.usage import AgentUsageSummary, UsageEvent, UsageTotals, summarise_agents
 from app.modules.ai.usage import dimensions as usage_dimensions
@@ -2322,29 +2321,74 @@ class SqlCostCapStore:
 
 
 @dataclass
-class SqlAdminAuditStore:
-    """Durable admin action audit. Platform-wide by design, so no tenant filter."""
+class SqlAuditStore:
+    """The platform-wide audit trail. Cross-tenant by definition, so no tenant filter."""
 
     sessionmaker: async_sessionmaker[AsyncSession]
 
-    async def add(self, entry: AdminAction) -> None:
-        async with self.sessionmaker() as s, s.begin():
-            s.add(AdminActionAuditRow(
-                action=entry.action, target_type=entry.target_type, target_id=entry.target_id,
-                tenant_id=entry.tenant_id, actor_email=entry.actor_email, before=entry.before,
-                after=entry.after, reason=entry.reason, created_at=entry.created_at))
+    def add_in(self, session, row: dict) -> None:
+        """Write inside the CALLER's transaction, for CRITICAL actions.
 
-    async def list(self, *, action=None, tenant_id=None, target_id=None, limit=100) -> list[AdminAction]:
-        query = select(AdminActionAuditRow).order_by(AdminActionAuditRow.created_at.desc())
-        if action is not None:
-            query = query.where(AdminActionAuditRow.action == action)
-        if tenant_id is not None:
-            query = query.where(AdminActionAuditRow.tenant_id == tenant_id)
-        if target_id is not None:
-            query = query.where(AdminActionAuditRow.target_id == target_id)
+        Synchronous and takes the session, so the row is part of the same unit of work as the mutation
+        it records. A committed mutation therefore cannot exist without its audit row, and a rolled
+        back one cannot leave a row claiming it happened.
+        """
+        session.add(AuditEventRow(**row))
+
+    async def add(self, row: dict) -> None:
+        """Write afterwards, in its own transaction, for everything below CRITICAL."""
+        async with self.sessionmaker() as s, s.begin():
+            s.add(AuditEventRow(**row))
+
+    async def list(self, *, actions_to_hide: list[str] | None = None, action: str | None = None,
+                   category: str | None = None, outcome: str | None = None,
+                   tenant_id: str | None = None, actor_id: str | None = None,
+                   target_id: str | None = None, request_id: str | None = None,
+                   search: str | None = None, since=None, until=None,
+                   cursor_id: int | None = None, limit: int = 100) -> list[dict]:
+        query = select(AuditEventRow)
+        # Applied in SQL, never after the LIMIT. Filtering a fetched page returns short pages with no
+        # indication that more exist and, with a cursor, skips rows entirely.
+        if actions_to_hide:
+            query = query.where(AuditEventRow.action.notin_(actions_to_hide))
+        for column, value in ((AuditEventRow.action, action), (AuditEventRow.category, category),
+                              (AuditEventRow.outcome, outcome), (AuditEventRow.tenant_id, tenant_id),
+                              (AuditEventRow.actor_id, actor_id), (AuditEventRow.target_id, target_id),
+                              (AuditEventRow.request_id, request_id)):
+            if value is not None:
+                query = query.where(column == value)
+        if since is not None:
+            query = query.where(AuditEventRow.occurred_at >= since)
+        if until is not None:
+            query = query.where(AuditEventRow.occurred_at <= until)
+        if search:
+            needle = f"%{search.lower()}%"
+            query = query.where(or_(
+                func.lower(AuditEventRow.message).like(needle),
+                func.lower(func.coalesce(AuditEventRow.actor_label, "")).like(needle),
+                func.lower(func.coalesce(AuditEventRow.target_label, "")).like(needle)))
+        # Keyset paging on the descending stream. No OFFSET and no COUNT(*): both are what make an
+        # audit page unusable once the table is large, and a total is not worth a full scan.
+        if cursor_id is not None:
+            query = query.where(AuditEventRow.id < cursor_id)
+        query = query.order_by(AuditEventRow.occurred_at.desc(), AuditEventRow.id.desc())
+
         async with self.sessionmaker() as s:
             rows = (await s.execute(query.limit(max(1, min(limit, 500))))).scalars().all()
-            return [AdminAction(
-                action=row.action, target_type=row.target_type, target_id=row.target_id,
-                tenant_id=row.tenant_id, actor_email=row.actor_email, before=row.before,
-                after=row.after, reason=row.reason, created_at=row.created_at) for row in rows]
+            return [_audit_json(row) for row in rows]
+
+
+def _audit_json(row: AuditEventRow) -> dict:
+    """Fields listed explicitly, never the ORM object: the same rule every other admin read follows."""
+    return {
+        "id": row.id, "event_id": row.event_id, "action": row.action, "category": row.category,
+        "outcome": row.outcome, "message": row.message,
+        "occurred_at": row.occurred_at.isoformat() if row.occurred_at else None,
+        "actor_type": row.actor_type, "actor_id": row.actor_id, "actor_label": row.actor_label,
+        "on_behalf_of": row.on_behalf_of, "target_type": row.target_type, "target_id": row.target_id,
+        "target_label": row.target_label, "tenant_id": row.tenant_id, "request_id": row.request_id,
+        "source_ip": row.source_ip, "user_agent": row.user_agent, "route": row.route,
+        "service": row.service, "environment": row.environment,
+        "changes": dict(row.changes or {}), "metadata": dict(row.event_metadata or {}),
+        "reason": row.reason,
+    }
