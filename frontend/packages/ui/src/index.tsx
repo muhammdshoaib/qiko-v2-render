@@ -22,7 +22,16 @@ const buttonVariants = cva(
         ghost: "hover:bg-muted",
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
       },
-      size: { sm: "h-8 px-3", default: "h-10 px-4 py-2", lg: "h-11 px-6", icon: "size-10" },
+      // 44px is the WCAG 2.5.5 / Apple HIG minimum touch target, and these primitives were below it:
+      // Input and the default Button were 40px, the icon Button 40x40. Fixed here rather than per page,
+      // because a per-usage className has to be repeated at all 19 call sites and will be forgotten at
+      // the 20th. The chat composers, including the PUBLIC embed widget, put an Input next to an icon
+      // Button in the same flex row, so the two must move together or they misalign by 4px.
+      //
+      // sm stays at 32px on purpose: it is a compact secondary action (30 uses, all next to a larger
+      // primary control), and raising it would remove the only compact variant. WCAG allows this where
+      // an equivalent control is available; do not use sm as the primary action on a mobile surface.
+      size: { sm: "h-8 px-3", default: "h-11 px-4 py-2", lg: "h-12 px-6", icon: "size-11" },
     },
     defaultVariants: { variant: "default", size: "default" },
   },
@@ -40,7 +49,8 @@ export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInp
   return (
     <input
       className={cn(
-        "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm",
+        // h-11, not h-10: see the touch target note on the Button size variants above.
+        "flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm",
         "placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2",
         "focus-visible:ring-ring disabled:opacity-50",
         className,
