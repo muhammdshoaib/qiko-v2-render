@@ -1,11 +1,9 @@
 import * as React from "react";
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
 import { cva, type VariantProps } from "class-variance-authority";
 
-export function cn(...inputs: ClassValue[]): string {
-  return twMerge(clsx(inputs));
-}
+import { cn } from "./cn";
+
+export { cn };
 
 /* ---------- Button ---------- */
 const buttonVariants = cva(
@@ -117,3 +115,19 @@ export function Logo({ className, iconOnly = false }: { className?: string; icon
   const src = iconOnly ? "/qiko-icon.png" : "/qiko-logo.webp";
   return <img src={src} alt="Qiko" className={cn(iconOnly ? "h-8 w-8" : "h-7 w-auto", className)} />;
 }
+
+/* ---------- Re-exports ----------
+ * Split into files by concern once the package outgrew a single one, but kept re-exported here so
+ * every consumer keeps importing from "@qiko/ui" and no call site has to know the layout.
+ */
+export {
+  Alert,
+  Checkbox,
+  Dialog,
+  Pagination,
+  SegmentedFilter,
+  Select,
+  Textarea,
+  type Segment,
+} from "./controls";
+export { DataTable, type Column, type DataTableProps, type SortOrder } from "./data-table";
