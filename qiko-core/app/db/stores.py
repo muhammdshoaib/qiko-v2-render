@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import secrets
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -391,12 +392,30 @@ class SqlAgentStore:
             row.status = "ready"
             return self._to_domain(row)
 
-    async def update_config(self, tenant: str, agent_id: str, patch: dict) -> Agent:
+    async def update_config(self, tenant: str, agent_id: str, patch: dict, *,
+                            audit: Callable[[dict], dict] | None = None) -> Agent:
+        """Merge-patch the config, optionally writing an audit row in the SAME transaction.
+
+        `audit` receives the previous config, taken under the row lock, and returns the row to write.
+        A callback rather than a prepared row because of a bug this shape prevents: a caller that read
+        the agent beforehand to capture its old state was holding a LIVE reference that the update
+        then mutated, so every credential audit reported that nothing had changed. Snapshotting inside
+        the transaction makes that impossible rather than merely fixed.
+
+        Writing the row here rather than afterwards is the discipline set_enabled already uses: a
+        credential rotation cannot land without a record of who performed it.
+        """
         async with self.sessionmaker() as s, s.begin():
-            row = await s.get(AgentRow, agent_id)
-            if row is None or row.tenant_id != tenant:
+            row = (await s.execute(
+                select(AgentRow).where(AgentRow.tenant_id == tenant, AgentRow.id == agent_id)
+                .with_for_update()
+            )).scalar_one_or_none()
+            if row is None:
                 raise KeyError(agent_id)
-            row.config = {**(row.config or {}), **patch}
+            previous = dict(row.config or {})
+            row.config = {**previous, **patch}
+            if audit is not None:
+                s.add(AuditEventRow(**audit(previous)))
             return self._to_domain(row)
 
     async def set_enabled(self, tenant: str, agent_id: str, enabled: bool, *,
