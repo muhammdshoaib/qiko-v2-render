@@ -20,14 +20,16 @@ from __future__ import annotations
 import logging
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import Settings, get_settings
-from app.core.deps import authed_tenant, get_pending_invites, require_role
+from app.core.deps import current_claims, authed_tenant, get_pending_invites, require_role
 from app.modules.email.sender import EmailSender, get_email_sender
 from app.modules.email.templates import team_invite_email
+from app.modules.audit import registry as audit_actions
+from app.modules.audit import service as audit
 from app.modules.identity.rbac import Role
 from app.modules.identity.router import get_store
 from app.modules.identity.store import User, UserStore
@@ -99,6 +101,7 @@ async def list_users(tenant: str = Depends(authed_tenant), store: UserStore = De
 @router.post("/users/invite")
 async def invite_user(
     body: InviteBody,
+    request: Request,
     tenant: str = Depends(authed_tenant),
     claims: dict = _admin,
     store: UserStore = Depends(get_store),
@@ -116,6 +119,15 @@ async def invite_user(
         raise HTTPException(status_code=409, detail="an invitation for that email is already pending")
 
     invite = await pending.add(tenant, email, body.role)
+    # Recorded here, before the email is attempted, so a send that fails still leaves evidence that a
+    # role offer was created against this address. The token itself is never recorded: it is a
+    # bearer credential that grants tenant access.
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.INVITE_SENT, target_id=invite.email, tenant_id=tenant,
+        actor_type=audit.USER, actor_id=str(claims.get("sub") or ""),
+        actor_label=str(claims.get("email") or ""),
+        changes=audit.diff(audit_actions.INVITE_SENT, {}, {"role": invite.role.value})),
+        request=request)
     invite_token = create_team_invite_token(
         tenant=tenant, email=invite.email, role=invite.role.value,
         invite_version=int(invite.invited_at * 1_000_000))
@@ -155,27 +167,58 @@ async def invite_user(
 
 
 @router.put("/users/{user_id}/role")
-async def update_role(user_id: str, body: RoleBody, tenant: str = Depends(authed_tenant),
+async def update_role(user_id: str, body: RoleBody, request: Request,
+                      claims: dict = Depends(current_claims),
+                      tenant: str = Depends(authed_tenant),
                       _r: dict = _admin, store: UserStore = Depends(get_store)) -> dict:
     """Change a member's role. owner/admin only. The account owner's role is protected and the
-    owner role is never assignable (so the last owner can't be demoted away)."""
+    owner role is never assignable (so the last owner can't be demoted away).
+
+    The platform-admin equivalent of this has been audited since leg B; the tenant-facing one, which
+    is the path a customer's own admin actually uses, recorded nothing.
+    """
     _assert_assignable(body.role)
     user = await _get_tenant_user(user_id, tenant, store)
     if user.role is Role.owner:
         raise HTTPException(status_code=400, detail="cannot change the owner's role")
+    previous = user.role.value
     await store.set_role(user_id, body.role)
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.TENANT_ROLE_CHANGED, target_id=user_id, target_label=user.email,
+        tenant_id=tenant, actor_type=audit.USER, actor_id=str(claims.get("sub") or ""),
+        actor_label=str(claims.get("email") or ""),
+        changes=audit.diff(audit_actions.TENANT_ROLE_CHANGED,
+                           {"role": previous}, {"role": body.role.value})), request=request)
     updated = await store.get_by_id(user_id)
     return _user_dict(updated) if updated else _user_dict(user)
 
 
 @router.delete("/users/{user_id}")
-async def remove_user(user_id: str, tenant: str = Depends(authed_tenant), _r: dict = _admin,
+async def remove_user(user_id: str, request: Request,
+                      claims: dict = Depends(current_claims),
+                      reason: str | None = Query(default=None, max_length=1000),
+                      tenant: str = Depends(authed_tenant), _r: dict = _admin,
                       store: UserStore = Depends(get_store)) -> dict:
     """Remove a member from the tenant. owner/admin only. The account owner can never be removed
-    (protects the last owner / sole-owner-removing-themselves)."""
+    (protects the last owner / sole-owner-removing-themselves).
+
+    This is a HARD delete: the row is gone, and it cascades the user's MFA backup codes. Until now it
+    recorded nothing whatsoever, which made it the largest evidential gap in the platform. A leaver
+    sample is the first thing an access review asks for, and the answer was that we could not produce
+    one, because the only record of a user having existed was the row we had just destroyed.
+
+    The audit row is written BEFORE the delete for that reason, and it carries the email as its label:
+    an access-removal record that cannot say who was removed answers nothing. That is a different case
+    from the tenant soft delete, whose whole purpose is anonymising the address.
+    """
     user = await _get_tenant_user(user_id, tenant, store)
     if user.role is Role.owner:
         raise HTTPException(status_code=400, detail="cannot remove the owner")
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.TENANT_MEMBER_REMOVED, target_id=user_id, target_label=user.email,
+        tenant_id=tenant, actor_type=audit.USER, actor_id=str(claims.get("sub") or ""),
+        actor_label=str(claims.get("email") or ""), reason=reason,
+        metadata={"role": user.role.value, "hard_delete": True}), request=request)
     await store.delete(user_id)
     return {"removed": user_id}
 

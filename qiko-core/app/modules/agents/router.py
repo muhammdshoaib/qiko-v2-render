@@ -276,6 +276,7 @@ async def disconnect_salesforce(agent_id: str, request: Request,
 
 @router.post("/{agent_id}/salesforce-credentials/test")
 async def test_salesforce_credentials(agent_id: str, request: Request,
+                                      claims: dict = Depends(current_claims),
                                       tenant: str = Depends(authed_tenant),
                                       _role: dict = Depends(require_role(Role.editor)),
                                       svc=Depends(get_agents)) -> dict:
@@ -288,6 +289,9 @@ async def test_salesforce_credentials(agent_id: str, request: Request,
     if agent is None:
         raise HTTPException(status_code=404, detail="agent not found")
     _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+    await audit_credentials.record_credential_exercised(
+        request.app.state.audit, provider="salesforce", tenant=tenant, agent_id=agent_id,
+        claims=claims, request=request)
     cfg = agent.config
     if not cfg.get("salesforce_credentials_added"):
         raise HTTPException(status_code=422, detail="no Salesforce connection configured for this worker")
@@ -371,6 +375,7 @@ async def disconnect_calendly(agent_id: str, request: Request,
 
 @router.post("/{agent_id}/calendly-credentials/test")
 async def test_calendly_credentials(agent_id: str, request: Request,
+                                    claims: dict = Depends(current_claims),
                                     tenant: str = Depends(authed_tenant),
                                     _role: dict = Depends(require_role(Role.editor)),
                                     svc=Depends(get_agents)) -> dict:
@@ -382,6 +387,9 @@ async def test_calendly_credentials(agent_id: str, request: Request,
     if agent is None:
         raise HTTPException(status_code=404, detail="agent not found")
     _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+    await audit_credentials.record_credential_exercised(
+        request.app.state.audit, provider="calendly", tenant=tenant, agent_id=agent_id,
+        claims=claims, request=request)
     cfg = agent.config
     client = CalendlyClient(token=stored_credential(
         cfg, flag="calendly_credentials_added", key="calendly_token_encrypted", label="Calendly"))
@@ -459,6 +467,7 @@ async def disconnect_clickup(agent_id: str, request: Request,
 
 @router.post("/{agent_id}/clickup-credentials/test")
 async def test_clickup_credentials(agent_id: str, request: Request,
+                                   claims: dict = Depends(current_claims),
                                    tenant: str = Depends(authed_tenant),
                                    _role: dict = Depends(require_role(Role.editor)),
                                    svc=Depends(get_agents)) -> dict:
@@ -470,6 +479,9 @@ async def test_clickup_credentials(agent_id: str, request: Request,
     if agent is None:
         raise HTTPException(status_code=404, detail="agent not found")
     _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+    await audit_credentials.record_credential_exercised(
+        request.app.state.audit, provider="clickup", tenant=tenant, agent_id=agent_id,
+        claims=claims, request=request)
     cfg = agent.config
     client = ClickUpClient(api_token=stored_credential(
         cfg, flag="clickup_credentials_added", key="clickup_api_token_encrypted", label="ClickUp"))
@@ -550,6 +562,7 @@ async def disconnect_slack(agent_id: str, request: Request,
 
 @router.post("/{agent_id}/slack-credentials/test")
 async def test_slack_credentials(agent_id: str, request: Request,
+                                 claims: dict = Depends(current_claims),
                                  tenant: str = Depends(authed_tenant),
                                  _role: dict = Depends(require_role(Role.editor)),
                                  svc=Depends(get_agents)) -> dict:
@@ -561,6 +574,9 @@ async def test_slack_credentials(agent_id: str, request: Request,
     if agent is None:
         raise HTTPException(status_code=404, detail="agent not found")
     _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+    await audit_credentials.record_credential_exercised(
+        request.app.state.audit, provider="slack", tenant=tenant, agent_id=agent_id,
+        claims=claims, request=request)
     client = SlackClient(bot_token=stored_credential(
         agent.config, flag="slack_credentials_added", key="slack_bot_token_encrypted", label="Slack"))
     try:
@@ -644,6 +660,7 @@ async def disconnect_gmail(agent_id: str, request: Request,
 
 @router.post("/{agent_id}/gmail-credentials/test")
 async def test_gmail_credentials(agent_id: str, request: Request,
+                                 claims: dict = Depends(current_claims),
                                  tenant: str = Depends(authed_tenant),
                                  _role: dict = Depends(require_role(Role.editor)),
                                  svc=Depends(get_agents)) -> dict:
@@ -655,6 +672,9 @@ async def test_gmail_credentials(agent_id: str, request: Request,
     if agent is None:
         raise HTTPException(status_code=404, detail="agent not found")
     _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+    await audit_credentials.record_credential_exercised(
+        request.app.state.audit, provider="gmail", tenant=tenant, agent_id=agent_id,
+        claims=claims, request=request)
     cfg = agent.config
     client = GmailSmtpClient(
         address=cfg.get("gmail_address") or "",

@@ -2474,6 +2474,15 @@ export interface paths {
          * Remove User
          * @description Remove a member from the tenant. owner/admin only. The account owner can never be removed
          *     (protects the last owner / sole-owner-removing-themselves).
+         *
+         *     This is a HARD delete: the row is gone, and it cascades the user's MFA backup codes. Until now it
+         *     recorded nothing whatsoever, which made it the largest evidential gap in the platform. A leaver
+         *     sample is the first thing an access review asks for, and the answer was that we could not produce
+         *     one, because the only record of a user having existed was the row we had just destroyed.
+         *
+         *     The audit row is written BEFORE the delete for that reason, and it carries the email as its label:
+         *     an access-removal record that cannot say who was removed answers nothing. That is a different case
+         *     from the tenant soft delete, whose whole purpose is anonymising the address.
          */
         delete: operations["remove_user_api_v1_identity_users__user_id__delete"];
         options?: never;
@@ -2493,6 +2502,9 @@ export interface paths {
          * Update Role
          * @description Change a member's role. owner/admin only. The account owner's role is protected and the
          *     owner role is never assignable (so the last owner can't be demoted away).
+         *
+         *     The platform-admin equivalent of this has been audited since leg B; the tenant-facing one, which
+         *     is the path a customer's own admin actually uses, recorded nothing.
          */
         put: operations["update_role_api_v1_identity_users__user_id__role_put"];
         post?: never;
@@ -10883,7 +10895,9 @@ export interface operations {
     };
     remove_user_api_v1_identity_users__user_id__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                reason?: string | null;
+            };
             header?: never;
             path: {
                 user_id: string;
