@@ -117,9 +117,6 @@ def test_the_instrumented_set_matches_the_source():
 def test_no_backlogged_route_is_already_audited():
     """The failure this exists for: a route gets instrumented and the ledger is never updated, so the
     file understates coverage and the next person re-does work that is already done."""
-    from pathlib import Path
-
-    root = Path(__file__).resolve().parents[1] / "app" / "modules"
     audited_modules = {relative.split("/")[0] for relative in AUDIT_WRITERS}
     for method, route in AUDIT_BACKLOG:
         segment = route.split("/api/v1/")[1].split("/")[0]
