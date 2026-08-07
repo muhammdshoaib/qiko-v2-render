@@ -74,18 +74,22 @@ def credential_audit(*, action: str, provider: str, tenant: str, agent_id: str,
     return build
 
 
-async def record_credential_tested(store, *, provider: str, tenant: str, agent_id: str,
-                                   agent_name: str | None, claims: dict, ok: bool,
-                                   request=None) -> None:
-    """A credential was decrypted and used against the third party.
+async def record_credential_exercised(store, *, provider: str, tenant: str, agent_id: str,
+                                      claims: dict, request=None) -> None:
+    """A stored credential was decrypted and used against the third party.
 
-    Not a state change, so it would ordinarily be below the audit line. It is here because it is the
-    cheapest available signal that a leaked encryption key is being exercised: a burst of credential
-    tests across tenants looks like nothing in application logs and unmistakable here.
+    Recorded at the point of DECRYPTION rather than after the call, and deliberately without an
+    outcome. The signal this exists for is "a stored secret was taken out and used", which is the
+    cheapest available indication that a leaked encryption key is being exercised: a burst of these
+    across tenants looks like nothing in application logs and is unmistakable here. Whether the third
+    party then accepted the credential is the user's problem, not a security signal, and waiting for
+    it would mean a network timeout could swallow the record.
+
+    Not a state change, so it sits below the durability line: losing one is acceptable, and it must
+    never fail the request it is observing.
     """
     actor_id, actor_label = _actor(claims)
     await audit.record(store, audit.AuditEvent(
-        action=registry.CREDENTIAL_TESTED, target_id=agent_id, target_label=agent_name,
-        tenant_id=tenant, actor_type=audit.USER, actor_id=actor_id, actor_label=actor_label,
-        outcome=audit.SUCCESS if ok else audit.FAILURE,
-        changes={"provider": provider, "result": "ok" if ok else "failed"}), request=request)
+        action=registry.CREDENTIAL_TESTED, target_id=agent_id, tenant_id=tenant,
+        actor_type=audit.USER, actor_id=actor_id, actor_label=actor_label,
+        changes={"provider": provider, "result": "attempted"}), request=request)

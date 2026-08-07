@@ -1,12 +1,14 @@
 """Teams HTTP API (tenant-scoped)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.core.deps import authed_tenant, get_teams, require_role
+from app.core.deps import authed_tenant, current_claims, get_teams, require_role
 from app.modules.identity.rbac import Role
 from app.modules.teams.invites import InviteError, accept_invite, create_invite, set_invite_password
+from app.modules.audit import registry as audit_actions
+from app.modules.audit import service as audit
 from app.modules.teams.service import TeamError
 
 router = APIRouter(prefix="/teams", tags=["teams"])
@@ -49,12 +51,31 @@ async def members(team_id: str, tenant: str = Depends(authed_tenant), svc=Depend
     return {"team_id": team_id, "members": {u: r.value for u, r in (await svc.members(team_id)).items()}}
 
 
+async def _record_access(request, action: str, tenant: str, claims: dict, team_id: str,
+                         user_id: str, after: dict) -> None:
+    """One shape for all three membership mutations.
+
+    Team membership is a second, independent way to reach a tenant's data, alongside the identity
+    role. An access review that only looked at identity roles would miss every grant made here, which
+    is the failure mode that makes a leaver sample wrong rather than merely incomplete.
+    """
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=action, target_id=user_id, tenant_id=tenant, actor_type=audit.USER,
+        actor_id=str(claims.get("sub") or ""), actor_label=str(claims.get("email") or ""),
+        changes=audit.diff(action, {}, after),
+        metadata={"team_id": team_id, "via": "team"}), request=request)
+
+
 @router.post("/{team_id}/members")
-async def add_member(team_id: str, body: MemberBody, tenant: str = Depends(authed_tenant),
+async def add_member(team_id: str, body: MemberBody, request: Request,
+                     claims: dict = Depends(current_claims), tenant: str = Depends(authed_tenant),
                      _r: dict = _admin, svc=Depends(get_teams)) -> dict:
     await _get_owned_team(team_id, tenant, svc)
     try:
-        return _members(await svc.add_member(team_id, body.user_id, body.role))
+        members = _members(await svc.add_member(team_id, body.user_id, body.role))
+        await _record_access(request, audit_actions.TENANT_MEMBER_ADDED, tenant, claims,
+                             team_id, body.user_id, {"role": body.role.value})
+        return members
     except TeamError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except KeyError as e:
@@ -66,11 +87,15 @@ class RoleBody(BaseModel):
 
 
 @router.put("/{team_id}/members/{user_id}")
-async def update_member(team_id: str, user_id: str, body: RoleBody, tenant: str = Depends(authed_tenant),
+async def update_member(team_id: str, user_id: str, body: RoleBody, request: Request,
+                        claims: dict = Depends(current_claims), tenant: str = Depends(authed_tenant),
                         _r: dict = _admin, svc=Depends(get_teams)) -> dict:
     await _get_owned_team(team_id, tenant, svc)
     try:
-        return _members(await svc.update_role(team_id, user_id, body.role))
+        members = _members(await svc.update_role(team_id, user_id, body.role))
+        await _record_access(request, audit_actions.TENANT_ROLE_CHANGED, tenant, claims,
+                             team_id, user_id, {"role": body.role.value})
+        return members
     except TeamError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except KeyError as e:
@@ -78,11 +103,15 @@ async def update_member(team_id: str, user_id: str, body: RoleBody, tenant: str 
 
 
 @router.delete("/{team_id}/members/{user_id}")
-async def remove_member(team_id: str, user_id: str, tenant: str = Depends(authed_tenant),
+async def remove_member(team_id: str, user_id: str, request: Request,
+                        claims: dict = Depends(current_claims), tenant: str = Depends(authed_tenant),
                         _r: dict = _admin, svc=Depends(get_teams)) -> dict:
     await _get_owned_team(team_id, tenant, svc)
     try:
-        return _members(await svc.remove_member(team_id, user_id))
+        members = _members(await svc.remove_member(team_id, user_id))
+        await _record_access(request, audit_actions.TENANT_MEMBER_REMOVED, tenant, claims,
+                             team_id, user_id, {})
+        return members
     except TeamError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except KeyError as e:

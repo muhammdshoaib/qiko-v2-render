@@ -74,23 +74,60 @@ def test_nothing_is_declared_twice():
                 assert not overlap, f"{first} and {second} both claim: {overlap}"
 
 
+# Modules that write audit rows, and how many of their mutating routes do. Counted per module rather
+# than globally, because a single total can be kept in step with itself while drifting from reality:
+# an earlier version compared len(INSTRUMENTED) against a sum I updated at the same time, so eleven
+# credential routes stayed listed as backlog for a whole release after they were instrumented, and
+# nothing noticed. A ledger that can be wrong in the safe direction is still wrong.
+AUDIT_WRITERS: dict[str, int] = {
+    "admin/router.py": 6,
+    "billing/router.py": 2,
+    "agents/router.py": 16,
+    "identity/users_router.py": 3,
+    "teams/router.py": 3,
+}
+
+
 def test_the_instrumented_set_matches_the_source():
-    """Nothing otherwise ties this set to reality: a route could be declared instrumented with no code
-    behind it, which is the failure mode that makes a coverage test worse than none."""
+    """Nothing else ties this set to reality: a route could be declared instrumented with no code
+    behind it, or instrumented in code while still listed as a gap."""
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1] / "app" / "modules"
-    # Counted per module so a route cannot be declared instrumented with no code behind it, which is
-    # the failure mode that makes a coverage test worse than none.
-    expected = {"admin/router.py": 6, "billing/router.py": 2}
-    for relative, routes in expected.items():
+    for relative, count in AUDIT_WRITERS.items():
         text = (root / relative).read_text()
-        # The billing endpoints write an attempt and an outcome per route, so count the routes that
-        # write at all rather than the writes.
-        assert "audit.record" in text, f"{relative} declares instrumented routes but never writes"
-    declared = len(INSTRUMENTED)
-    assert declared == sum(expected.values()), (
-        f"{declared} routes declared instrumented, expected {sum(expected.values())}")
+        # Counted across every writer name, because billing uses the synchronous path and the
+        # credential and team helpers each have their own.
+        writes = sum(text.count(marker) for marker in (
+            "audit.record(", "audit.record_sync(", "credential_audit(",
+            "record_credential_exercised(", "_record_access("))
+        assert writes >= count, f"{relative} declares {count} audited routes but writes {writes} times"
+
+    declared_by_module: dict[str, int] = {}
+    for _method, route in INSTRUMENTED:
+        segment = route.split("/api/v1/")[1].split("/")[0]
+        module = {"admin": "admin/router.py", "billing": "billing/router.py",
+                  "agents": "agents/router.py", "identity": "identity/users_router.py",
+                  "teams": "teams/router.py"}[segment]
+        declared_by_module[module] = declared_by_module.get(module, 0) + 1
+    assert declared_by_module == AUDIT_WRITERS, (
+        f"the ledger and the code disagree: declared {declared_by_module}, expected {AUDIT_WRITERS}")
+
+
+def test_no_backlogged_route_is_already_audited():
+    """The failure this exists for: a route gets instrumented and the ledger is never updated, so the
+    file understates coverage and the next person re-does work that is already done."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1] / "app" / "modules"
+    audited_modules = {relative.split("/")[0] for relative in AUDIT_WRITERS}
+    for method, route in AUDIT_BACKLOG:
+        segment = route.split("/api/v1/")[1].split("/")[0]
+        if segment not in audited_modules:
+            continue
+        # Modules that write audit rows must not also carry backlogged routes with an audited shape.
+        assert "-credentials" not in route, (
+            f"{method} {route} looks instrumented but is still listed as a gap")
 
 
 def test_every_excuse_says_something():
@@ -267,6 +304,28 @@ INSTRUMENTED: set[tuple[str, str]] = {
     ("PUT", "/api/v1/admin/workers/{tenant_id}/{agent_id}/status"),
     ("POST", "/api/v1/billing/payment-links"),
     ("POST", "/api/v1/billing/payment-links/mark-paid"),
+    ("POST", "/api/v1/agents/{agent_id}/vapi-credentials"),
+    ("POST", "/api/v1/agents/{agent_id}/salesforce-credentials"),
+    ("DELETE", "/api/v1/agents/{agent_id}/salesforce-credentials"),
+    ("POST", "/api/v1/agents/{agent_id}/calendly-credentials"),
+    ("DELETE", "/api/v1/agents/{agent_id}/calendly-credentials"),
+    ("POST", "/api/v1/agents/{agent_id}/clickup-credentials"),
+    ("DELETE", "/api/v1/agents/{agent_id}/clickup-credentials"),
+    ("POST", "/api/v1/agents/{agent_id}/slack-credentials"),
+    ("DELETE", "/api/v1/agents/{agent_id}/slack-credentials"),
+    ("POST", "/api/v1/agents/{agent_id}/gmail-credentials"),
+    ("DELETE", "/api/v1/agents/{agent_id}/gmail-credentials"),
+    ("PUT", "/api/v1/identity/users/{user_id}/role"),
+    ("DELETE", "/api/v1/identity/users/{user_id}"),
+    ("POST", "/api/v1/identity/users/invite"),
+    ("POST", "/api/v1/teams/{team_id}/members"),
+    ("PUT", "/api/v1/teams/{team_id}/members/{user_id}"),
+    ("DELETE", "/api/v1/teams/{team_id}/members/{user_id}"),
+    ("POST", "/api/v1/agents/{agent_id}/salesforce-credentials/test"),
+    ("POST", "/api/v1/agents/{agent_id}/calendly-credentials/test"),
+    ("POST", "/api/v1/agents/{agent_id}/clickup-credentials/test"),
+    ("POST", "/api/v1/agents/{agent_id}/slack-credentials/test"),
+    ("POST", "/api/v1/agents/{agent_id}/gmail-credentials/test"),
 }
 
 # Audited, but into a table that predates the unified stream. Folding these in is leg E2: until then,
@@ -291,13 +350,7 @@ LEGACY_AUDITED: dict[tuple[str, str], str] = {
 AUDIT_BACKLOG: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/channels/teams/test"): (
         "CRITICAL access: leg E2 wave 3. Changes who can reach a tenant, including a hard delete."),
-    ("POST", "/api/v1/identity/users/invite"): (
-        "CRITICAL access: leg E2 wave 3. Changes who can reach a tenant, including a hard delete."),
     ("DELETE", "/api/v1/identity/users/pending/{email}"): (
-        "CRITICAL access: leg E2 wave 3. Changes who can reach a tenant, including a hard delete."),
-    ("DELETE", "/api/v1/identity/users/{user_id}"): (
-        "CRITICAL access: leg E2 wave 3. Changes who can reach a tenant, including a hard delete."),
-    ("PUT", "/api/v1/identity/users/{user_id}/role"): (
         "CRITICAL access: leg E2 wave 3. Changes who can reach a tenant, including a hard delete."),
     ("POST", "/api/v1/teams"): (
         "CRITICAL access: leg E2 wave 3. Changes who can reach a tenant, including a hard delete."),
@@ -306,12 +359,6 @@ AUDIT_BACKLOG: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/teams/invites/set-password"): (
         "CRITICAL access: leg E2 wave 3. Changes who can reach a tenant, including a hard delete."),
     ("POST", "/api/v1/teams/{team_id}/invites"): (
-        "CRITICAL access: leg E2 wave 3. Changes who can reach a tenant, including a hard delete."),
-    ("POST", "/api/v1/teams/{team_id}/members"): (
-        "CRITICAL access: leg E2 wave 3. Changes who can reach a tenant, including a hard delete."),
-    ("DELETE", "/api/v1/teams/{team_id}/members/{user_id}"): (
-        "CRITICAL access: leg E2 wave 3. Changes who can reach a tenant, including a hard delete."),
-    ("PUT", "/api/v1/teams/{team_id}/members/{user_id}"): (
         "CRITICAL access: leg E2 wave 3. Changes who can reach a tenant, including a hard delete."),
     ("POST", "/api/v1/auth/2fa/backup-codes/regenerate"): (
         "CRITICAL auth: leg E2 wave 4. No authentication trail exists at all, which is the standard SOC 2 CC6.1 finding."),
@@ -373,38 +420,6 @@ AUDIT_BACKLOG: dict[tuple[str, str], str] = {
         "CRITICAL secret: leg E2 wave 2. Persists or clears a third-party credential, two of them unauthenticated."),
     ("POST", "/api/v1/sales-intelligence/{agent_id}/salesforce/disconnect"): (
         "CRITICAL secret: leg E2 wave 2. Persists or clears a third-party credential, two of them unauthenticated."),
-    ("DELETE", "/api/v1/agents/{agent_id}/calendly-credentials"): (
-        "CRITICAL secret: leg E2 wave 2. Writes or destroys an encrypted integration credential."),
-    ("POST", "/api/v1/agents/{agent_id}/calendly-credentials"): (
-        "CRITICAL secret: leg E2 wave 2. Writes or destroys an encrypted integration credential."),
-    ("POST", "/api/v1/agents/{agent_id}/calendly-credentials/test"): (
-        "CRITICAL secret: leg E2 wave 2. Writes or destroys an encrypted integration credential."),
-    ("DELETE", "/api/v1/agents/{agent_id}/clickup-credentials"): (
-        "CRITICAL secret: leg E2 wave 2. Writes or destroys an encrypted integration credential."),
-    ("POST", "/api/v1/agents/{agent_id}/clickup-credentials"): (
-        "CRITICAL secret: leg E2 wave 2. Writes or destroys an encrypted integration credential."),
-    ("POST", "/api/v1/agents/{agent_id}/clickup-credentials/test"): (
-        "CRITICAL secret: leg E2 wave 2. Writes or destroys an encrypted integration credential."),
-    ("DELETE", "/api/v1/agents/{agent_id}/gmail-credentials"): (
-        "CRITICAL secret: leg E2 wave 2. Writes or destroys an encrypted integration credential."),
-    ("POST", "/api/v1/agents/{agent_id}/gmail-credentials"): (
-        "CRITICAL secret: leg E2 wave 2. Writes or destroys an encrypted integration credential."),
-    ("POST", "/api/v1/agents/{agent_id}/gmail-credentials/test"): (
-        "CRITICAL secret: leg E2 wave 2. Writes or destroys an encrypted integration credential."),
-    ("DELETE", "/api/v1/agents/{agent_id}/salesforce-credentials"): (
-        "CRITICAL secret: leg E2 wave 2. Writes or destroys an encrypted integration credential."),
-    ("POST", "/api/v1/agents/{agent_id}/salesforce-credentials"): (
-        "CRITICAL secret: leg E2 wave 2. Writes or destroys an encrypted integration credential."),
-    ("POST", "/api/v1/agents/{agent_id}/salesforce-credentials/test"): (
-        "CRITICAL secret: leg E2 wave 2. Writes or destroys an encrypted integration credential."),
-    ("DELETE", "/api/v1/agents/{agent_id}/slack-credentials"): (
-        "CRITICAL secret: leg E2 wave 2. Writes or destroys an encrypted integration credential."),
-    ("POST", "/api/v1/agents/{agent_id}/slack-credentials"): (
-        "CRITICAL secret: leg E2 wave 2. Writes or destroys an encrypted integration credential."),
-    ("POST", "/api/v1/agents/{agent_id}/slack-credentials/test"): (
-        "CRITICAL secret: leg E2 wave 2. Writes or destroys an encrypted integration credential."),
-    ("POST", "/api/v1/agents/{agent_id}/vapi-credentials"): (
-        "CRITICAL secret: leg E2 wave 2. Writes or destroys an encrypted integration credential."),
     ("PUT", "/api/v1/agents/{agent_id}/config"): (
         "HIGH config: leg E2. Free-form patch that can reach any config key."),
     ("PUT", "/api/v1/agents/{agent_id}/sources/persona"): (
