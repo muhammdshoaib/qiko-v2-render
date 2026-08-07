@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
@@ -61,7 +62,10 @@ class AgentStore(Protocol):
     # Any allowed status, unlike mark_ready which is one-way to "ready". Nothing could move a worker
     # back to training after a bad ingest.
     async def set_status(self, tenant: str, agent_id: str, status: str) -> Agent | None: ...
-    async def update_config(self, tenant: str, agent_id: str, patch: dict) -> Agent: ...
+    # `audit` receives the config as it was under the row lock and returns the audit row to write in
+    # the same transaction. See SqlAgentStore.update_config for why it is a callback.
+    async def update_config(self, tenant: str, agent_id: str, patch: dict, *,
+                            audit: Callable[[dict], dict] | None = None) -> Agent: ...
     async def set_enabled(self, tenant: str, agent_id: str, enabled: bool, *,
                           changed_by_email: str, reason: str | None) -> Agent: ...
     async def list_state_audit(self, tenant: str, *, limit: int = 50) -> list[AgentStateAudit]: ...
@@ -71,6 +75,9 @@ class AgentStore(Protocol):
 class InMemoryAgentStore:
     _by_tenant: dict[str, list[Agent]] = field(default_factory=dict)
     _audit: list[AgentStateAudit] = field(default_factory=list)
+    # Where a same-transaction audit row goes when there is no transaction. Wired to the in-memory
+    # audit store in main.py so dev and tests see the same rows production would write.
+    audit_store: object | None = None
     _limit_locks: dict[str, asyncio.Lock] = field(default_factory=dict)
 
     async def add(self, agent: Agent) -> Agent:
@@ -121,10 +128,16 @@ class InMemoryAgentStore:
                 return a
         raise KeyError(agent_id)
 
-    async def update_config(self, tenant: str, agent_id: str, patch: dict) -> Agent:
+    async def update_config(self, tenant: str, agent_id: str, patch: dict, *,
+                            audit: Callable[[dict], dict] | None = None) -> Agent:
         for a in self._by_tenant.get(tenant, []):
             if a.id == agent_id:
+                # Snapshot BEFORE the merge. This store hands back live objects, so a caller that read
+                # the agent first held a reference this line then mutated.
+                previous = dict(a.config or {})
                 a.config = {**a.config, **patch}
+                if audit is not None and self.audit_store is not None:
+                    self.audit_store.add_in(None, audit(previous))
                 return a
         raise KeyError(agent_id)
 
@@ -195,9 +208,10 @@ class AgentService:
     async def mark_ready(self, tenant: str, agent_id: str) -> Agent:
         return await self.store.mark_ready(tenant, agent_id)
 
-    async def update_config(self, tenant: str, agent_id: str, patch: dict) -> Agent:
+    async def update_config(self, tenant: str, agent_id: str, patch: dict, *,
+                            audit: Callable[[dict], dict] | None = None) -> Agent:
         """Merge-patch the agent's free-form config (e.g. Background/Tone wizard fields)."""
-        return await self.store.update_config(tenant, agent_id, patch)
+        return await self.store.update_config(tenant, agent_id, patch, audit=audit)
 
     async def set_enabled(self, tenant: str, agent_id: str, enabled: bool, *,
                           changed_by_email: str, reason: str | None = None) -> Agent:

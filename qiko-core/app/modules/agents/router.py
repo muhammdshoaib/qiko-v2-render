@@ -9,8 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 
-from app.core.crypto import encrypt
+from app.core.crypto import decrypt, encrypt
 from app.core.deps import (
+    current_claims,
     authed_tenant,
     get_agents,
     get_subscriptions,
@@ -18,6 +19,8 @@ from app.core.deps import (
     resolve_tenant_worker,
     stored_credential,
 )
+from app.modules.audit import credentials as audit_credentials
+from app.modules.audit import registry as audit_actions
 from app.modules.agents.service import AGENT_TYPES, Agent, PlanLimitError
 from app.modules.billing.plans import get_plan
 from app.modules.identity.rbac import Role
@@ -118,8 +121,24 @@ def _mask(secret: str) -> str:
     return f"{secret[:4]}{'*' * max(len(secret) - 4, 4)}" if secret else ""
 
 
+def _plaintext_of_config(config: dict, key: str) -> str | None:
+    """Decrypt a stored credential so the audit can fingerprint the value being replaced.
+
+    Takes the config dict rather than the agent, because it is called with the snapshot the store
+    captured under the row lock. The plaintext never leaves the audit helper.
+    """
+    stored = (config or {}).get(key)
+    if not stored:
+        return None
+    try:
+        return decrypt(stored)
+    except Exception:  # noqa: BLE001 - a key rotation must not fail a credential write
+        return None
+
+
 @router.post("/{agent_id}/vapi-credentials")
-async def save_vapi_credentials(agent_id: str, body: VapiCredentialsBody, tenant: str = Depends(authed_tenant),
+async def save_vapi_credentials(agent_id: str, body: VapiCredentialsBody, request: Request,
+                                claims: dict = Depends(current_claims), tenant: str = Depends(authed_tenant),
                                 _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_agents)) -> dict:
     """Voice connection (Vapi.ai). The secret key is encrypted at rest and never returned in
     plaintext again -- only a masked preview, unlike the Laravel VapiCredentialsController this
@@ -130,7 +149,10 @@ async def save_vapi_credentials(agent_id: str, body: VapiCredentialsBody, tenant
             "vapi_public_key": body.vapi_public_key,
             "vapi_api_key_encrypted": encrypt(body.vapi_api_key),
             "vapi_credentials_added": True,
-        })
+        }, audit=audit_credentials.credential_audit(
+            action=audit_actions.CREDENTIAL_SET, provider="vapi", tenant=tenant, agent_id=agent_id,
+            agent_name=agent_id, claims=claims, secret=body.vapi_api_key,
+            decrypt_previous=lambda cfg: _plaintext_of_config(cfg, "vapi_api_key_encrypted"), request=request))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
     return _vapi_view(agent)
@@ -203,7 +225,8 @@ def _salesforce_view(agent: Agent) -> dict:
 
 
 @router.post("/{agent_id}/salesforce-credentials")
-async def save_salesforce_credentials(agent_id: str, body: SalesforceCredentialsBody,
+async def save_salesforce_credentials(agent_id: str, body: SalesforceCredentialsBody, request: Request,
+                                      claims: dict = Depends(current_claims),
                                       tenant: str = Depends(authed_tenant),
                                       _role: dict = Depends(require_role(Role.editor)),
                                       svc=Depends(get_agents)) -> dict:
@@ -215,7 +238,10 @@ async def save_salesforce_credentials(agent_id: str, body: SalesforceCredentials
             "salesforce_client_secret_encrypted": encrypt(body.client_secret),
             "salesforce_instance_url": body.instance_url.rstrip("/"),
             "salesforce_credentials_added": True,
-        })
+        }, audit=audit_credentials.credential_audit(
+            action=audit_actions.CREDENTIAL_SET, provider="salesforce", tenant=tenant, agent_id=agent_id,
+            agent_name=agent_id, claims=claims, secret=body.client_secret,
+            decrypt_previous=lambda cfg: _plaintext_of_config(cfg, "salesforce_client_secret_encrypted"), request=request))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
     return _salesforce_view(agent)
@@ -231,14 +257,18 @@ async def get_salesforce_credentials(agent_id: str, tenant: str = Depends(authed
 
 
 @router.delete("/{agent_id}/salesforce-credentials")
-async def disconnect_salesforce(agent_id: str, tenant: str = Depends(authed_tenant),
+async def disconnect_salesforce(agent_id: str, request: Request,
+                                claims: dict = Depends(current_claims),tenant: str = Depends(authed_tenant),
                                 _role: dict = Depends(require_role(Role.editor)),
                                 svc=Depends(get_agents)) -> dict:
     try:
         await svc.update_config(tenant, agent_id, {
             "salesforce_client_id": None, "salesforce_client_secret_encrypted": None,
             "salesforce_instance_url": None, "salesforce_credentials_added": False,
-        })
+        }, audit=audit_credentials.credential_audit(
+            action=audit_actions.CREDENTIAL_REMOVED, provider="salesforce", tenant=tenant, agent_id=agent_id,
+            agent_name=agent_id, claims=claims, secret=None,
+            decrypt_previous=lambda cfg: _plaintext_of_config(cfg, "salesforce_client_secret_encrypted"), request=request))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
     return {"disconnected": True}
@@ -295,7 +325,8 @@ def _calendly_view(agent: Agent) -> dict:
 
 
 @router.post("/{agent_id}/calendly-credentials")
-async def save_calendly_credentials(agent_id: str, body: CalendlyCredentialsBody,
+async def save_calendly_credentials(agent_id: str, body: CalendlyCredentialsBody, request: Request,
+                                    claims: dict = Depends(current_claims),
                                     tenant: str = Depends(authed_tenant),
                                     _role: dict = Depends(require_role(Role.editor)),
                                     svc=Depends(get_agents)) -> dict:
@@ -303,7 +334,10 @@ async def save_calendly_credentials(agent_id: str, body: CalendlyCredentialsBody
         agent = await svc.update_config(tenant, agent_id, {
             "calendly_token_encrypted": encrypt(body.token),
             "calendly_credentials_added": True,
-        })
+        }, audit=audit_credentials.credential_audit(
+            action=audit_actions.CREDENTIAL_SET, provider="calendly", tenant=tenant, agent_id=agent_id,
+            agent_name=agent_id, claims=claims, secret=body.token,
+            decrypt_previous=lambda cfg: _plaintext_of_config(cfg, "calendly_token_encrypted"), request=request))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
     return _calendly_view(agent)
@@ -319,13 +353,17 @@ async def get_calendly_credentials(agent_id: str, tenant: str = Depends(authed_t
 
 
 @router.delete("/{agent_id}/calendly-credentials")
-async def disconnect_calendly(agent_id: str, tenant: str = Depends(authed_tenant),
+async def disconnect_calendly(agent_id: str, request: Request,
+                              claims: dict = Depends(current_claims),tenant: str = Depends(authed_tenant),
                               _role: dict = Depends(require_role(Role.editor)),
                               svc=Depends(get_agents)) -> dict:
     try:
         await svc.update_config(tenant, agent_id, {
             "calendly_token_encrypted": None, "calendly_credentials_added": False,
-        })
+        }, audit=audit_credentials.credential_audit(
+            action=audit_actions.CREDENTIAL_REMOVED, provider="calendly", tenant=tenant, agent_id=agent_id,
+            agent_name=agent_id, claims=claims, secret=None,
+            decrypt_previous=lambda cfg: _plaintext_of_config(cfg, "calendly_token_encrypted"), request=request))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
     return {"disconnected": True}
@@ -373,7 +411,8 @@ def _clickup_view(agent: Agent) -> dict:
 
 
 @router.post("/{agent_id}/clickup-credentials")
-async def save_clickup_credentials(agent_id: str, body: ClickUpCredentialsBody,
+async def save_clickup_credentials(agent_id: str, body: ClickUpCredentialsBody, request: Request,
+                                   claims: dict = Depends(current_claims),
                                    tenant: str = Depends(authed_tenant),
                                    _role: dict = Depends(require_role(Role.editor)),
                                    svc=Depends(get_agents)) -> dict:
@@ -382,7 +421,10 @@ async def save_clickup_credentials(agent_id: str, body: ClickUpCredentialsBody,
             "clickup_api_token_encrypted": encrypt(body.api_token),
             "clickup_default_list_id": body.default_list_id or None,
             "clickup_credentials_added": True,
-        })
+        }, audit=audit_credentials.credential_audit(
+            action=audit_actions.CREDENTIAL_SET, provider="clickup", tenant=tenant, agent_id=agent_id,
+            agent_name=agent_id, claims=claims, secret=body.api_token,
+            decrypt_previous=lambda cfg: _plaintext_of_config(cfg, "clickup_api_token_encrypted"), request=request))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
     return _clickup_view(agent)
@@ -398,14 +440,18 @@ async def get_clickup_credentials(agent_id: str, tenant: str = Depends(authed_te
 
 
 @router.delete("/{agent_id}/clickup-credentials")
-async def disconnect_clickup(agent_id: str, tenant: str = Depends(authed_tenant),
+async def disconnect_clickup(agent_id: str, request: Request,
+                             claims: dict = Depends(current_claims),tenant: str = Depends(authed_tenant),
                              _role: dict = Depends(require_role(Role.editor)),
                              svc=Depends(get_agents)) -> dict:
     try:
         await svc.update_config(tenant, agent_id, {
             "clickup_api_token_encrypted": None, "clickup_default_list_id": None,
             "clickup_credentials_added": False,
-        })
+        }, audit=audit_credentials.credential_audit(
+            action=audit_actions.CREDENTIAL_REMOVED, provider="clickup", tenant=tenant, agent_id=agent_id,
+            agent_name=agent_id, claims=claims, secret=None,
+            decrypt_previous=lambda cfg: _plaintext_of_config(cfg, "clickup_api_token_encrypted"), request=request))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
     return {"disconnected": True}
@@ -456,7 +502,8 @@ def _slack_view(agent: Agent) -> dict:
 
 
 @router.post("/{agent_id}/slack-credentials")
-async def save_slack_credentials(agent_id: str, body: SlackCredentialsBody,
+async def save_slack_credentials(agent_id: str, body: SlackCredentialsBody, request: Request,
+                                 claims: dict = Depends(current_claims),
                                  tenant: str = Depends(authed_tenant),
                                  _role: dict = Depends(require_role(Role.editor)),
                                  svc=Depends(get_agents)) -> dict:
@@ -465,7 +512,10 @@ async def save_slack_credentials(agent_id: str, body: SlackCredentialsBody,
             "slack_bot_token_encrypted": encrypt(body.bot_token),
             "slack_default_channel": body.default_channel or None,
             "slack_credentials_added": True,
-        })
+        }, audit=audit_credentials.credential_audit(
+            action=audit_actions.CREDENTIAL_SET, provider="slack", tenant=tenant, agent_id=agent_id,
+            agent_name=agent_id, claims=claims, secret=body.bot_token,
+            decrypt_previous=lambda cfg: _plaintext_of_config(cfg, "slack_bot_token_encrypted"), request=request))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
     return _slack_view(agent)
@@ -481,14 +531,18 @@ async def get_slack_credentials(agent_id: str, tenant: str = Depends(authed_tena
 
 
 @router.delete("/{agent_id}/slack-credentials")
-async def disconnect_slack(agent_id: str, tenant: str = Depends(authed_tenant),
+async def disconnect_slack(agent_id: str, request: Request,
+                           claims: dict = Depends(current_claims),tenant: str = Depends(authed_tenant),
                            _role: dict = Depends(require_role(Role.editor)),
                            svc=Depends(get_agents)) -> dict:
     try:
         await svc.update_config(tenant, agent_id, {
             "slack_bot_token_encrypted": None, "slack_default_channel": None,
             "slack_credentials_added": False,
-        })
+        }, audit=audit_credentials.credential_audit(
+            action=audit_actions.CREDENTIAL_REMOVED, provider="slack", tenant=tenant, agent_id=agent_id,
+            agent_name=agent_id, claims=claims, secret=None,
+            decrypt_previous=lambda cfg: _plaintext_of_config(cfg, "slack_bot_token_encrypted"), request=request))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
     return {"disconnected": True}
@@ -541,7 +595,8 @@ def _gmail_view(agent: Agent) -> dict:
 
 
 @router.post("/{agent_id}/gmail-credentials")
-async def save_gmail_credentials(agent_id: str, body: GmailCredentialsBody,
+async def save_gmail_credentials(agent_id: str, body: GmailCredentialsBody, request: Request,
+                                 claims: dict = Depends(current_claims),
                                  tenant: str = Depends(authed_tenant),
                                  _role: dict = Depends(require_role(Role.editor)),
                                  svc=Depends(get_agents)) -> dict:
@@ -551,7 +606,10 @@ async def save_gmail_credentials(agent_id: str, body: GmailCredentialsBody,
             "gmail_address": body.address,
             "gmail_app_password_encrypted": encrypt(body.app_password),
             "gmail_credentials_added": True,
-        })
+        }, audit=audit_credentials.credential_audit(
+            action=audit_actions.CREDENTIAL_SET, provider="gmail", tenant=tenant, agent_id=agent_id,
+            agent_name=agent_id, claims=claims, secret=body.app_password,
+            decrypt_previous=lambda cfg: _plaintext_of_config(cfg, "gmail_app_password_encrypted"), request=request))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
     return _gmail_view(agent)
@@ -567,14 +625,18 @@ async def get_gmail_credentials(agent_id: str, tenant: str = Depends(authed_tena
 
 
 @router.delete("/{agent_id}/gmail-credentials")
-async def disconnect_gmail(agent_id: str, tenant: str = Depends(authed_tenant),
+async def disconnect_gmail(agent_id: str, request: Request,
+                           claims: dict = Depends(current_claims),tenant: str = Depends(authed_tenant),
                            _role: dict = Depends(require_role(Role.editor)),
                            svc=Depends(get_agents)) -> dict:
     try:
         await svc.update_config(tenant, agent_id, {
             "gmail_address": None, "gmail_app_password_encrypted": None,
             "gmail_credentials_added": False,
-        })
+        }, audit=audit_credentials.credential_audit(
+            action=audit_actions.CREDENTIAL_REMOVED, provider="gmail", tenant=tenant, agent_id=agent_id,
+            agent_name=agent_id, claims=claims, secret=None,
+            decrypt_previous=lambda cfg: _plaintext_of_config(cfg, "gmail_app_password_encrypted"), request=request))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
     return {"disconnected": True}

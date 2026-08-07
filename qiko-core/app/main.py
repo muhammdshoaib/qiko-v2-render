@@ -384,6 +384,9 @@ def create_app() -> FastAPI:
     app.state.ai_usage = InMemoryUsageStore()
     app.state.cost_caps = InMemoryCostCapStore()
     app.state.audit = InMemoryAuditStore()
+    # The in-memory agent store writes same-transaction audit rows here, mirroring what the SQL
+    # store does inside its own transaction.
+    app.state.agents.store.audit_store = app.state.audit
     # A guard IS attached, over the in-memory stores, so the enforcement path is exercised by the
     # test suite rather than existing only in production.
     app.state.cost_guard = CostGuard(caps=app.state.cost_caps, usage=app.state.ai_usage)
