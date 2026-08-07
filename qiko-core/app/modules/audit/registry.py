@@ -44,6 +44,12 @@ CATEGORIES = frozenset({AUTH, ACCESS, ADMIN, BILLING, DATA, CONFIG, PRIVACY})
 # request turns an audit outage into a product outage.
 CRITICAL = "critical"
 STANDARD = "standard"
+# Actions whose real effect happens at a third party. Atomicity with our database is impossible by
+# construction: Stripe has already created the link when our transaction rolls back. So the honest
+# shape is not a single row written transactionally, it is the intent recorded BEFORE the call and the
+# outcome after, which is the start/succeed/fail triple the Salesforce push path already uses. A
+# timeout is the case that makes this matter: the call may well have succeeded.
+EXTERNAL = "external"
 
 
 @dataclass(frozen=True)
@@ -94,6 +100,7 @@ CHECKOUT_STARTED = "billing.checkout_started"
 BILLING_PORTAL_OPENED = "billing.portal_opened"
 SUBSCRIPTION_CANCELLED = "billing.subscription_cancelled"
 SUBSCRIPTION_RESUMED = "billing.subscription_resumed"
+PAYMENT_LINK_ATTEMPTED = "billing.payment_link_attempted"
 PAYMENT_LINK_CREATED = "billing.payment_link_created"
 PAYMENT_LINK_MARKED_PAID = "billing.payment_link_marked_paid"
 STRIPE_WEBHOOK_APPLIED = "billing.stripe_webhook_applied"
@@ -161,22 +168,27 @@ _SPECS: tuple[ActionSpec, ...] = (
 
     # Money. All CRITICAL and all gated on manage_billing, because the amounts are commercial detail.
     _spec(CHECKOUT_STARTED, BILLING, "tenant", read_capability=Capability.manage_billing,
-          diff_fields=("plan",), template="{actor} started checkout"),
+          durability=EXTERNAL, diff_fields=("plan",), template="{actor} started checkout"),
     _spec(BILLING_PORTAL_OPENED, BILLING, "tenant", read_capability=Capability.manage_billing,
           # Worth recording precisely because what happens next is invisible to us: the customer can
           # change or cancel their plan inside Stripe, and this row is the only handoff marker.
           template="{actor} opened the Stripe billing portal"),
     _spec(SUBSCRIPTION_CANCELLED, BILLING, "tenant", read_capability=Capability.manage_billing,
-          durability=CRITICAL, template="{actor} cancelled the subscription"),
+          durability=EXTERNAL, template="{actor} cancelled the subscription"),
     _spec(SUBSCRIPTION_RESUMED, BILLING, "tenant", read_capability=Capability.manage_billing,
-          durability=CRITICAL, template="{actor} resumed the subscription"),
+          durability=EXTERNAL, template="{actor} resumed the subscription"),
+    _spec(PAYMENT_LINK_ATTEMPTED, BILLING, "payment_link", read_capability=Capability.manage_billing,
+          durability=EXTERNAL, diff_fields=("amount_cents", "customer_email", "recurring"),
+          # Written before the provider is called. If the call times out the money may still have
+          # moved, and an attempt with no outcome is exactly the row an operator needs to go and check.
+          template="{actor} is creating a payment link"),
     _spec(PAYMENT_LINK_CREATED, BILLING, "payment_link", read_capability=Capability.manage_billing,
-          durability=CRITICAL, diff_fields=("amount_cents", "customer_email", "recurring"),
+          durability=EXTERNAL, diff_fields=("amount_cents", "customer_email", "recurring"),
           template="{actor} created a payment link"),
     _spec(PAYMENT_LINK_MARKED_PAID, BILLING, "payment_link", read_capability=Capability.manage_billing,
           # An operator declaring money received without money moving. If one row in this table ever
-          # matters in a dispute, it is this one.
-          durability=CRITICAL, diff_fields=("amount_cents", "status"),
+          # matters in a dispute, it is this one. Local-only, so it can and must be transactional.
+          durability=CRITICAL, diff_fields=("amount_cents", "status", "links_marked"),
           template="{actor} marked a payment link paid"),
     _spec(STRIPE_WEBHOOK_APPLIED, BILLING, "tenant", read_capability=Capability.manage_billing,
           durability=CRITICAL, diff_fields=("plan", "status"),

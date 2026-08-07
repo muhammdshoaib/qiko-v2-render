@@ -79,11 +79,18 @@ def test_the_instrumented_set_matches_the_source():
     behind it, which is the failure mode that makes a coverage test worse than none."""
     from pathlib import Path
 
-    source = Path(__file__).resolve().parents[1] / "app" / "modules" / "admin" / "router.py"
-    text = source.read_text()
-    writes = text.count("audit.record(request.app.state.audit")
-    assert writes == len(INSTRUMENTED), (
-        f"{writes} audit writes in the admin router but {len(INSTRUMENTED)} routes declared")
+    root = Path(__file__).resolve().parents[1] / "app" / "modules"
+    # Counted per module so a route cannot be declared instrumented with no code behind it, which is
+    # the failure mode that makes a coverage test worse than none.
+    expected = {"admin/router.py": 6, "billing/router.py": 2}
+    for relative, routes in expected.items():
+        text = (root / relative).read_text()
+        # The billing endpoints write an attempt and an outcome per route, so count the routes that
+        # write at all rather than the writes.
+        assert "audit.record" in text, f"{relative} declares instrumented routes but never writes"
+    declared = len(INSTRUMENTED)
+    assert declared == sum(expected.values()), (
+        f"{declared} routes declared instrumented, expected {sum(expected.values())}")
 
 
 def test_every_excuse_says_something():
@@ -98,16 +105,15 @@ def test_every_action_is_internally_consistent():
         assert spec.action == action, "the key and the action must agree"
         assert spec.category in registry.CATEGORIES, f"{action} has an unknown category"
         assert spec.target_type, f"{action} needs a target type"
-        assert spec.durability in {registry.CRITICAL, registry.STANDARD}
+        assert spec.durability in {registry.CRITICAL, registry.STANDARD, registry.EXTERNAL}
 
 
-def test_money_access_credentials_and_deletions_are_transactional():
-    """Getting the durability backwards is the main design risk. A payment-link audit that can silently
-    vanish is worthless; a chat-volume audit that can fail a request turns an audit outage into a
-    product outage."""
+def test_local_money_access_credentials_and_deletions_are_transactional():
+    """Getting the durability backwards is the main design risk: a chat-volume audit that can fail a
+    request turns an audit outage into a product outage, and an access-change audit that can silently
+    vanish is worthless."""
     must_be_critical = {
-        registry.PAYMENT_LINK_CREATED, registry.PAYMENT_LINK_MARKED_PAID,
-        registry.SUBSCRIPTION_CANCELLED, registry.COST_CAP_SET,
+        registry.PAYMENT_LINK_MARKED_PAID, registry.COST_CAP_SET,
         registry.PLATFORM_ACCESS_GRANTED, registry.PLATFORM_ACCESS_REVOKED,
         registry.TENANT_ROLE_CHANGED, registry.TENANT_MEMBER_ADDED, registry.TENANT_MEMBER_REMOVED,
         registry.CREDENTIAL_SET, registry.CREDENTIAL_REMOVED,
@@ -116,6 +122,30 @@ def test_money_access_credentials_and_deletions_are_transactional():
     }
     for action in must_be_critical:
         assert registry.spec_for(action).durability == CRITICAL, f"{action} must be transactional"
+
+
+def test_actions_whose_effect_is_at_a_third_party_are_not_pretended_to_be_transactional():
+    """Stripe has already created the link when our transaction rolls back, so claiming atomicity
+    would be a lie in the docstring rather than a property of the code. Those actions are recorded as
+    an attempt and then an outcome instead, which is what actually answers "did the money move" after
+    a timeout."""
+    for action in (registry.PAYMENT_LINK_ATTEMPTED, registry.PAYMENT_LINK_CREATED,
+                   registry.CHECKOUT_STARTED, registry.SUBSCRIPTION_CANCELLED,
+                   registry.SUBSCRIPTION_RESUMED):
+        assert registry.spec_for(action).durability == registry.EXTERNAL
+
+
+def test_a_payment_link_records_an_attempt_before_the_provider_is_called():
+    """A timeout is the case that matters: the link may exist and the customer may already have been
+    emailed. An attempt with no matching outcome is the row that sends someone to look."""
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "app" / "modules" / "billing" / "router.py").read_text()
+    attempt = source.index("PAYMENT_LINK_ATTEMPTED")
+    call = source.index("links.create(")
+    outcome = source.index("PAYMENT_LINK_CREATED")
+    assert attempt < call < outcome, "the attempt must be recorded before the provider call"
+    assert "outcome=audit.FAILURE" in source, "a provider failure must be recorded, not just raised"
 
 
 def test_spend_and_authority_rows_carry_their_read_gate():
@@ -235,6 +265,8 @@ INSTRUMENTED: set[tuple[str, str]] = {
     ("DELETE", "/api/v1/admin/cost-caps/{tenant_id}"),
     ("PUT", "/api/v1/admin/users/{user_id}/role"),
     ("PUT", "/api/v1/admin/workers/{tenant_id}/{agent_id}/status"),
+    ("POST", "/api/v1/billing/payment-links"),
+    ("POST", "/api/v1/billing/payment-links/mark-paid"),
 }
 
 # Audited, but into a table that predates the unified stream. Folding these in is leg E2: until then,
@@ -324,10 +356,6 @@ AUDIT_BACKLOG: dict[tuple[str, str], str] = {
     ("DELETE", "/api/v1/sales-intelligence/{agent_id}/sources/{source_key}"): (
         "CRITICAL deletion: leg E2 wave 5. Destroys customer data with no record of who or why."),
     ("POST", "/api/v1/billing/checkout"): (
-        "CRITICAL money: leg E2 wave 1. Nothing records who moved or claimed money."),
-    ("POST", "/api/v1/billing/payment-links"): (
-        "CRITICAL money: leg E2 wave 1. Nothing records who moved or claimed money."),
-    ("POST", "/api/v1/billing/payment-links/mark-paid"): (
         "CRITICAL money: leg E2 wave 1. Nothing records who moved or claimed money."),
     ("POST", "/api/v1/billing/subscription/activate"): (
         "CRITICAL money: leg E2 wave 1. Nothing records who moved or claimed money."),

@@ -323,6 +323,26 @@ async def record(store, event: AuditEvent, *, request=None) -> None:
             "actor": event.actor_label, "error": str(error)})
 
 
+def record_sync(store, event: AuditEvent, *, request=None) -> None:
+    """Write from a synchronous handler, never raising.
+
+    The billing endpoints are plain `def`, so they run in a threadpool and cannot await. Rather than
+    make them async (which would put a blocking Stripe call on the event loop, a much worse trade),
+    the row is written through the store's synchronous path. asyncio.to_thread propagates context
+    variables, so the request id and tenant are still correct here.
+    """
+    if store is None:
+        return
+    row = build_row(event, request=request)
+    _mirror(row)
+    try:
+        store.add_sync(row)
+    except Exception as error:  # noqa: BLE001 - see the module docstring
+        logger.error("audit write failed", extra={
+            "source": "audit", "action": event.action, "target": event.target_id,
+            "actor": event.actor_label, "error": str(error)})
+
+
 def is_critical(action: str) -> bool:
     return spec_for(action).durability == CRITICAL
 
@@ -339,6 +359,9 @@ class InMemoryAuditStore:
         self._assign(row)
 
     async def add(self, row: dict) -> None:
+        self._assign(row)
+
+    def add_sync(self, row: dict) -> None:
         self._assign(row)
 
     def _assign(self, row: dict) -> None:
