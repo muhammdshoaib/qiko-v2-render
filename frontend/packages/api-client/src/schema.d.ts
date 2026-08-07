@@ -1510,7 +1510,15 @@ export interface paths {
         /** List Payment Links */
         get: operations["list_payment_links_api_v1_billing_payment_links_get"];
         put?: never;
-        /** Create Payment Link */
+        /**
+         * Create Payment Link
+         * @description Create a Stripe payment link and email it to a customer.
+         *
+         *     Audited as an attempt and then an outcome, rather than one row after the fact. The effect is at
+         *     Stripe, so no database transaction can contain it: if the call times out, the link may well exist
+         *     and the customer may already have been emailed. An attempt with no matching outcome is exactly the
+         *     row an operator needs in order to go and look.
+         */
         post: operations["create_payment_link_api_v1_billing_payment_links_post"];
         delete?: never;
         options?: never;
@@ -1527,7 +1535,14 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Mark Paid */
+        /**
+         * Mark Paid
+         * @description Mark a customer's payment links paid without a payment having been received.
+         *
+         *     An operator declaring money received. If one row in this table ever matters in a dispute, it is
+         *     this one, and until now it left no trace at all. Purely local, unlike link creation, so it is
+         *     recorded once with its outcome rather than as an attempt and a result.
+         */
         post: operations["mark_paid_api_v1_billing_payment_links_mark_paid_post"];
         delete?: never;
         options?: never;

@@ -176,7 +176,7 @@ async def lifespan(app: FastAPI):
         # that the scan/review/assign/push flows call. In-product only (no email/FCM push).
         app.state.ai_usage = SqlUsageStore(sm)  # AI spend survives a redeploy
         app.state.cost_caps = SqlCostCapStore(sm)
-        app.state.audit = SqlAuditStore(sm)
+        app.state.audit = SqlAuditStore(sm)  # sync half attached with the directory below
         app.state.cost_guard = CostGuard(caps=app.state.cost_caps, usage=app.state.ai_usage)
         app.state.notifications = NotificationService(store=SqlNotificationStore(sm))
         app.state.cost_guard.notifications = app.state.notifications
@@ -240,6 +240,8 @@ async def lifespan(app: FastAPI):
             gateway=app.state.payment_links.gateway, email=app.state.payment_links.email,
             store=SqlPaymentLinkStore(sync_sm))
         app.state.customers = SqlCustomerDirectory(sync_sm)
+        # The billing endpoints are synchronous, so the audit store needs the same sync engine.
+        app.state.audit.sync_sessionmaker = sync_sm
     try:
         yield
     finally:

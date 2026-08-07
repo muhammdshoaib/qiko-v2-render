@@ -2325,6 +2325,11 @@ class SqlAuditStore:
     """The platform-wide audit trail. Cross-tenant by definition, so no tenant filter."""
 
     sessionmaker: async_sessionmaker[AsyncSession]
+    # The synchronous sessionmaker the customer directory already uses. Passed in rather than built
+    # per write, because the billing endpoints are plain `def` (they make blocking Stripe calls, so
+    # making them async to suit the audit writer would move that block onto the event loop) and
+    # building an engine per audit row would be a connection pool per event.
+    sync_sessionmaker: object | None = None
 
     def add_in(self, session, row: dict) -> None:
         """Write inside the CALLER's transaction, for CRITICAL actions.
@@ -2339,6 +2344,18 @@ class SqlAuditStore:
         """Write afterwards, in its own transaction, for everything below CRITICAL."""
         async with self.sessionmaker() as s, s.begin():
             s.add(AuditEventRow(**row))
+
+    def add_sync(self, row: dict) -> None:
+        """Write from a synchronous handler.
+
+        The billing endpoints are plain `def` and run in a threadpool, so they cannot await. They also
+        make blocking HTTP calls to Stripe, which is exactly why they are not async: making them async
+        to suit the audit writer would put that blocking call on the event loop.
+        """
+        if self.sync_sessionmaker is None:
+            raise RuntimeError("no synchronous sessionmaker configured for the audit store")
+        with self.sync_sessionmaker() as session, session.begin():
+            session.add(AuditEventRow(**row))
 
     async def list(self, *, actions_to_hide: list[str] | None = None, action: str | None = None,
                    category: str | None = None, outcome: str | None = None,

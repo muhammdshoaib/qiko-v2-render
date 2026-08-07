@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, field_validator
 from app.core.config import get_settings
 from app.core.deps import (
     authed_tenant,
+    current_claims,
     get_payment_links,
     get_stripe_webhook,
     get_subscriptions,
@@ -20,6 +21,8 @@ from app.core.deps import (
 from app.modules.billing.subscriptions import CheckoutUnavailableError
 from app.modules.billing.team_billing import team_plan
 from app.modules.billing.webhook import verify_stripe_signature
+from app.modules.audit import registry as audit_actions
+from app.modules.audit import service as audit
 from app.modules.identity import csrf
 from app.modules.identity.admin_rbac import Capability
 from app.modules.identity.rbac import Role
@@ -170,13 +173,39 @@ class PaymentLinkBody(BaseModel):
 
 @router.post("/payment-links")
 def create_payment_link(body: PaymentLinkBody, request: Request,
+                        claims: dict = Depends(current_claims),
                         _tenant: str = Depends(authed_tenant),
                         _identity=Depends(require_platform_capability(Capability.manage_billing)), links=Depends(get_payment_links)) -> dict:
+    """Create a Stripe payment link and email it to a customer.
+
+    Audited as an attempt and then an outcome, rather than one row after the fact. The effect is at
+    Stripe, so no database transaction can contain it: if the call times out, the link may well exist
+    and the customer may already have been emailed. An attempt with no matching outcome is exactly the
+    row an operator needs in order to go and look.
+    """
     csrf.require_csrf(request)
+    actor = str(claims.get("email") or "")
+    changes = audit.diff(audit_actions.PAYMENT_LINK_ATTEMPTED, {}, {
+        "amount_cents": body.amount_cents, "customer_email": body.customer_email,
+        "recurring": body.recurring})
+    audit.record_sync(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.PAYMENT_LINK_ATTEMPTED, target_id=body.customer_email,
+        actor_type=audit.PLATFORM_ADMIN, actor_id=actor, actor_label=actor,
+        changes=changes), request=request)
     try:
         log = links.create(body.customer_email, body.amount_cents, recurring=body.recurring)
     except httpx.HTTPError as e:
+        audit.record_sync(request.app.state.audit, audit.AuditEvent(
+            action=audit_actions.PAYMENT_LINK_CREATED, target_id=body.customer_email,
+            actor_type=audit.PLATFORM_ADMIN, actor_id=actor, actor_label=actor,
+            outcome=audit.FAILURE, changes=changes,
+            metadata={"error": type(e).__name__}), request=request)
         raise HTTPException(status_code=502, detail="payment provider error") from e
+    audit.record_sync(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.PAYMENT_LINK_CREATED, target_id=log.session_id,
+        target_label=body.customer_email, actor_type=audit.PLATFORM_ADMIN,
+        actor_id=actor, actor_label=actor, changes=changes,
+        metadata={"session_id": log.session_id}), request=request)
     return {"session_id": log.session_id, "url": log.url, "status": log.status}
 
 
@@ -185,11 +214,26 @@ class MarkPaidBody(BaseModel):
 
 
 @router.post("/payment-links/mark-paid")
-def mark_paid(body: MarkPaidBody, request: Request, _tenant: str = Depends(authed_tenant),
+def mark_paid(body: MarkPaidBody, request: Request, claims: dict = Depends(current_claims),
+              _tenant: str = Depends(authed_tenant),
               _identity=Depends(require_platform_capability(Capability.manage_billing)), links=Depends(get_payment_links)) -> dict:
+    """Mark a customer's payment links paid without a payment having been received.
+
+    An operator declaring money received. If one row in this table ever matters in a dispute, it is
+    this one, and until now it left no trace at all. Purely local, unlike link creation, so it is
+    recorded once with its outcome rather than as an attempt and a result.
+    """
     csrf.require_csrf(request)
     # Validated body (was a raw dict -> a missing customer_email 500'd instead of a clean 422).
-    return {"marked": links.mark_as_paid_for_user(body.customer_email)}
+    marked = links.mark_as_paid_for_user(body.customer_email)
+    actor = str(claims.get("email") or "")
+    audit.record_sync(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.PAYMENT_LINK_MARKED_PAID, target_id=body.customer_email,
+        actor_type=audit.PLATFORM_ADMIN, actor_id=actor, actor_label=actor,
+        changes=audit.diff(audit_actions.PAYMENT_LINK_MARKED_PAID,
+                           {"status": "pending"}, {"status": "paid", "links_marked": marked})),
+        request=request)
+    return {"marked": marked}
 
 
 @router.get("/payment-links")
