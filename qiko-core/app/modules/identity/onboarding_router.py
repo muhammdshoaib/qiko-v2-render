@@ -28,6 +28,8 @@ from app.modules.identity.pending_signup import (
 )
 from app.modules.identity.rbac import Role
 from app.modules.identity.router import get_store
+from app.modules.audit import registry as audit_actions
+from app.modules.audit import service as audit
 from app.modules.identity.security import hash_password
 from app.modules.identity.store import User, UserStore
 from app.modules.identity.team_access import ASSIGNABLE_ROLES, PendingInviteStore
@@ -306,10 +308,35 @@ class ResetBody(BaseModel):
 
 
 @router.post("/reset-password")
-async def reset_password(body: ResetBody, otp=Depends(get_otp_store), store: UserStore = Depends(get_store)) -> dict:
+async def reset_password(body: ResetBody, request: Request, otp=Depends(get_otp_store),
+                         store: UserStore = Depends(get_store)) -> dict:
+    """Set a new password from a one-time code.
+
+    An unauthenticated endpoint that changes who can log in, which makes it the most consequential
+    thing in this module and the one that recorded nothing. Note the deliberate silence in the
+    response: a valid code for an address with no account still returns {"reset": true}, so the
+    endpoint is not an account-existence oracle. The audit records what actually happened.
+
+    No fingerprint of the password, unlike the integration credentials. A keyed truncated HMAC of a
+    human-chosen password, across many users, is a correlation risk that buys nothing: nobody needs to
+    know whether a password was reused, only that it changed and by which route.
+    """
     if not await otp.verify(body.email, body.otp):
+        await audit.record(request.app.state.audit, audit.AuditEvent(
+            action=audit_actions.PASSWORD_RESET_REQUESTED, target_id=body.email,
+            target_label=body.email, actor_type=audit.ANONYMOUS, outcome=audit.FAILURE,
+            metadata={"reason": "invalid_or_expired_code"}), request=request)
         raise HTTPException(status_code=400, detail="invalid or expired code")
     user = await store.get_by_email(body.email)
     if user:
         await store.set_password(user.id, hash_password(body.new_password))
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.PASSWORD_CHANGED, target_id=user.id if user else body.email,
+        target_label=body.email, tenant_id=user.tenant if user else None,
+        actor_type=audit.ANONYMOUS, outcome=audit.SUCCESS if user else audit.FAILURE,
+        changes=audit.diff(audit_actions.PASSWORD_CHANGED, {}, {"method": "reset_token"}),
+        # Recorded because the endpoint deliberately does not tell the caller: a reset against an
+        # address with no account is either a typo or reconnaissance, and only this row distinguishes
+        # them later.
+        metadata={"account_existed": bool(user)}), request=request)
     return {"reset": True}

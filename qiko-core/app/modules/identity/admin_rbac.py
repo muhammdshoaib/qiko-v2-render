@@ -44,6 +44,12 @@ class Capability(str, Enum):
     # Every capability here gates at least one real endpoint. Shipping a name that nothing enforces
     # would be worse than not having it: an operator would believe they had applied least privilege
     # when they had only filtered a menu.
+    # Reading the audit trail is its own privilege, not a by-product of seeing the customer list. The
+    # trail aggregates evidence about every privileged action, and once authentication events are in it
+    # a reader learns which accounts exist, when each colleague works, and from which addresses. That
+    # is peer surveillance and an account-existence oracle, and neither is something a read-only
+    # customer viewer should acquire by default. Deliberately NOT in the viewer default set.
+    view_audit = "view_audit"
     view_customers = "view_customers"
     manage_customers = "manage_customers"
     manage_workers = "manage_workers"

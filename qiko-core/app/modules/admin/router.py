@@ -832,7 +832,7 @@ async def set_worker_status(tenant_id: str, agent_id: str, body: WorkerStatusBod
 
 @router.get("/audit")
 async def admin_audit(request: Request, _tenant: str = Depends(authed_tenant),
-                      identity=Depends(require_platform_capability(Capability.view_customers)),
+                      identity=Depends(require_platform_capability(Capability.view_audit)),
                       action: str | None = Query(default=None, max_length=64),
                       category: str | None = Query(default=None, max_length=24),
                       outcome: str | None = Query(default=None, max_length=16),
@@ -846,9 +846,12 @@ async def admin_audit(request: Request, _tenant: str = Depends(authed_tenant),
                       limit: int = Query(default=100, ge=1, le=500)) -> dict:
     """The platform audit trail.
 
-    Read is deliberately wider than WRITE: knowing that an operator disabled a tenant is exactly the
-    context another operator needs before touching the same account, and withholding it produces the
-    "why is this customer suspended and nobody knows" support ticket.
+    Gated on view_audit, which is NOT in the viewer default set. Read used to sit on view_customers,
+    on the reasoning that knowing an operator disabled a tenant is context another operator needs. That
+    reasoning still holds for the admin and access categories, but it stopped being sufficient once
+    authentication events landed here: a failed-login trail tells a reader which accounts exist, when
+    each colleague works and from which addresses. Wider than the write gates, narrower than the
+    customer list.
 
     But not uniformly wider. An audit row contains the before and after of the thing it records, so
     reading the row is reading that thing. Spend caps carry amounts that GET /admin/cost-caps gates on
@@ -896,7 +899,7 @@ async def admin_audit(request: Request, _tenant: str = Depends(authed_tenant),
 @router.get("/audit/actions")
 async def audit_action_catalogue(
         _tenant: str = Depends(authed_tenant),
-        identity=Depends(require_platform_capability(Capability.view_customers))) -> dict:
+        identity=Depends(require_platform_capability(Capability.view_audit))) -> dict:
     """The action taxonomy, so the UI builds its filters from the same source of truth as the writer
     instead of a hardcoded list that drifts."""
     def can(capability) -> bool:

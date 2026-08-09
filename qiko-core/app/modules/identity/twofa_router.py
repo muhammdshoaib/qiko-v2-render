@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from app.core.deps import current_claims
+from app.modules.audit import registry as audit_actions
+from app.modules.audit import service as audit
 from app.modules.identity import csrf, twofa
 from app.modules.identity.onboarding import (
     exchange_temp_token,
@@ -60,6 +62,13 @@ async def verify_setup(body: VerifyBody, request: Request,
                      for code in backup_codes}
     await store.enable_twofa(claims["sub"], body.secret, backup_hashes)
     await store.set_sid(claims["sub"], None)
+    # The secret and the codes are never recorded: they ARE the second factor.
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.MFA_ENROLLED, target_id=claims["sub"],
+        target_label=str(claims.get("email") or ""), tenant_id=str(claims.get("tenant") or "") or None,
+        actor_type=audit.USER, actor_id=claims["sub"], actor_label=str(claims.get("email") or ""),
+        metadata={"replaced_existing": bool(user.twofa_enabled),
+                  "backup_codes_issued": len(backup_codes)}), request=request)
     return {"enabled": True, "reauthentication_required": True, "backup_codes": backup_codes}
 
 

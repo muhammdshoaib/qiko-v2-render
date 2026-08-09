@@ -287,7 +287,10 @@ def test_the_audit_trail_is_not_a_way_around_the_spend_gate(client):
     client.put("/api/v1/admin/cost-caps/acme", cookies=with_csrf, headers=headers,
                json={"monthly_cap_usd": 7.5})
 
-    reader = _grant(client, "caps.blind@invalid", [Capability.view_customers.value])
+    # view_audit is now required to read the trail at all, so the reader needs it: the point of this
+    # test is that view_ai_cost is what gates the AMOUNTS, not that the trail is unreadable.
+    reader = _grant(client, "caps.blind@invalid",
+                    [Capability.view_customers.value, Capability.view_audit.value])
     visible = client.get("/api/v1/admin/audit", cookies=reader).json()["items"]
     assert all(entry["action"] != "billing.cost_cap_set" for entry in visible), \
         "a view_customers reader must not learn cap values from the audit trail"
@@ -295,7 +298,8 @@ def test_the_audit_trail_is_not_a_way_around_the_spend_gate(client):
 
     # and a view_ai_cost holder does see them
     coster = _grant(client, "caps.reader@invalid",
-                    [Capability.view_customers.value, Capability.view_ai_cost.value])
+                    [Capability.view_customers.value, Capability.view_audit.value,
+                     Capability.view_ai_cost.value])
     allowed = client.get("/api/v1/admin/audit", cookies=coster).json()["items"]
     assert any(entry["action"] == "billing.cost_cap_set" for entry in allowed)
 
