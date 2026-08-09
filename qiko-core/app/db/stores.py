@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, delete, func, or_, select, text
+from sqlalchemy import and_, delete, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.crypto import decrypt, encrypt
@@ -2430,6 +2430,87 @@ class SqlAuditStore:
             # back down made has_more permanently false at the maximum page size.
             rows = (await s.execute(query.limit(max(1, min(limit, 1000))))).scalars().all()
             return [_audit_json(row) for row in rows]
+
+
+    async def apply_retention(self, now=None) -> dict:
+        """Delete expired events and null expired network identifiers.
+
+        Two separate cutoffs on purpose: the event is evidence and lives for 13 months, the address is
+        an identifier attached to it and lives for 6. Nulling in place costs a field rather than an
+        event, so the completeness the trail relies on is untouched.
+        """
+        from app.modules.audit.retention import DELETE_BATCH, cutoffs
+
+        event_cutoff, network_cutoff = cutoffs(now)
+        deleted = 0
+        async with self.sessionmaker() as s:
+            # Batched, because one unbounded DELETE over a large table holds a long lock and can time
+            # out halfway, leaving an unpredictable amount done.
+            while True:
+                async with s.begin():
+                    ids = (await s.execute(
+                        select(AuditEventRow.id)
+                        .where(AuditEventRow.occurred_at < event_cutoff)
+                        .limit(DELETE_BATCH))).scalars().all()
+                    if not ids:
+                        break
+                    await s.execute(delete(AuditEventRow).where(AuditEventRow.id.in_(ids)))
+                    deleted += len(ids)
+                if len(ids) < DELETE_BATCH:
+                    break
+
+            async with s.begin():
+                cleared = (await s.execute(
+                    update(AuditEventRow)
+                    .where(AuditEventRow.occurred_at < network_cutoff,
+                           or_(AuditEventRow.source_ip.is_not(None),
+                               AuditEventRow.user_agent.is_not(None)))
+                    .values(source_ip=None, user_agent=None))).rowcount or 0
+
+        return {"events_deleted": deleted, "addresses_cleared": cleared,
+                "cutoff_events": event_cutoff.isoformat(),
+                "cutoff_network": network_cutoff.isoformat()}
+
+    async def pseudonymise_subject(self, identifier: str, pseudonym: str, *,
+                                   audit_row: Callable[[int], dict] | None = None) -> int:
+        """Replace a subject's identifiers in place. Rows are never deleted for erasure.
+
+        A gap in an audit trail is indistinguishable from tampering, so erasure replaces the identifying
+        fields and leaves the timestamps, action, outcome and diffs exactly as they were. The row still
+        proves that something happened, to whom under a stable pseudonym, and when.
+
+        Matches on target and actor identifiers, not on the label alone: a subject can appear as the
+        thing acted upon in one row and the actor in another, and an erasure that only handled one of
+        those would leave the address behind in the other.
+        """
+        needle = identifier.strip().lower()
+        matches = or_(func.lower(AuditEventRow.target_id) == needle,
+                      func.lower(AuditEventRow.target_label) == needle,
+                      func.lower(AuditEventRow.actor_id) == needle,
+                      func.lower(AuditEventRow.actor_label) == needle)
+        async with self.sessionmaker() as s, s.begin():
+            if audit_row is not None:
+                # Counted and recorded INSIDE the erasure's transaction. An erasure that lands without
+                # its own record is the one case a regulator asks about directly, and unlike the other
+                # CRITICAL actions no restructuring is needed: the erasure and its audit row live in
+                # this store, so they share a unit of work. Counting here rather than passing a
+                # prepared row is what lets the record carry the real number instead of omitting it.
+                affected = (await s.execute(
+                    select(func.count()).select_from(AuditEventRow).where(matches))).scalar() or 0
+                s.add(AuditEventRow(**audit_row(affected)))
+            result = await s.execute(
+                update(AuditEventRow)
+                .where(matches)
+                .values(target_id=pseudonym, target_label=None, actor_id=pseudonym,
+                        actor_label=None, source_ip=None, user_agent=None,
+                        # The rendered sentence embeds the labels, so leaving it would have left the
+                        # address in place in the one field a human actually reads. Replaced with the
+                        # action rather than re-rendered: a pseudonym in a sentence reads as noise, and
+                        # the structured columns already carry everything a reader needs.
+                        message=AuditEventRow.action,
+                        subject_pseudonym=pseudonym,
+                        pseudonymised_at=datetime.now(timezone.utc)))
+            return result.rowcount or 0
 
 
 def _audit_json(row: AuditEventRow) -> dict:

@@ -392,6 +392,43 @@ class InMemoryAuditStore:
         self.rows.append({**row, "_row_id": self._next_id})
         self._next_id += 1
 
+    async def apply_retention(self, now=None) -> dict:
+        from app.modules.audit.retention import cutoffs
+
+        event_cutoff, network_cutoff = cutoffs(now)
+        before = len(self.rows)
+        self.rows = [row for row in self.rows if row["occurred_at"] >= event_cutoff]
+        cleared = 0
+        for row in self.rows:
+            if row["occurred_at"] < network_cutoff and (row.get("source_ip") or row.get("user_agent")):
+                row["source_ip"] = None
+                row["user_agent"] = None
+                cleared += 1
+        return {"events_deleted": before - len(self.rows), "addresses_cleared": cleared,
+                "cutoff_events": event_cutoff.isoformat(),
+                "cutoff_network": network_cutoff.isoformat()}
+
+    async def pseudonymise_subject(self, identifier: str, pseudonym: str, *,
+                                   audit_row=None) -> int:
+        needle = identifier.strip().lower()
+        matching = [row for row in self.rows
+                    if needle in {str(row.get(field) or "").lower() for field in
+                                  ("target_id", "target_label", "actor_id", "actor_label")}]
+        if audit_row is not None:
+            self._assign(audit_row(len(matching)))
+        touched = 0
+        for row in list(self.rows):
+            if needle in {str(row.get(field) or "").lower() for field in
+                          ("target_id", "target_label", "actor_id", "actor_label")}:
+                # message is rendered from the labels, so it carries the address too. Leaving it
+                # would put the erased value back in the one field a human reads.
+                row.update(target_id=pseudonym, target_label=None, actor_id=pseudonym,
+                           actor_label=None, source_ip=None, user_agent=None,
+                           message=row["action"], subject_pseudonym=pseudonym,
+                           pseudonymised_at=datetime.now(timezone.utc))
+                touched += 1
+        return touched
+
     async def list(self, *, actions_to_hide=None, action=None, category=None, outcome=None,
                    tenant_id=None, actor_id=None, target_id=None, request_id=None, search=None,
                    since=None, until=None, cursor=None, limit=100) -> list[dict]:

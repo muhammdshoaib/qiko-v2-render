@@ -80,7 +80,7 @@ def test_nothing_is_declared_twice():
 # credential routes stayed listed as backlog for a whole release after they were instrumented, and
 # nothing noticed. A ledger that can be wrong in the safe direction is still wrong.
 AUDIT_WRITERS: dict[str, int] = {
-    "admin/router.py": 6,
+    "admin/router.py": 7,
     "billing/router.py": 2,
     "agents/router.py": 16,
     "identity/users_router.py": 3,
@@ -108,7 +108,7 @@ def test_the_instrumented_set_matches_the_source():
         # credential and team helpers each have their own.
         writes = sum(text.count(marker) for marker in (
             "audit.record(", "audit.record_sync(", "credential_audit(",
-            "record_credential_exercised(", "_record_access("))
+            "record_credential_exercised(", "_record_access(", "audit_row=build_record"))
         assert writes >= count, f"{relative} declares {count} audited routes but writes {writes} times"
 
     # /auth routes are split across three modules, so the first path segment is not enough on its own.
@@ -343,6 +343,7 @@ INSTRUMENTED: set[tuple[str, str]] = {
     ("POST", "/api/v1/auth/login"),
     ("POST", "/api/v1/auth/reset-password"),
     ("POST", "/api/v1/auth/2fa/verify-setup"),
+    ("POST", "/api/v1/admin/audit/erase"),
 }
 
 # Audited, but into a table that predates the unified stream. Folding these in is leg E2: until then,
@@ -744,7 +745,7 @@ def test_every_critical_action_with_a_call_site_has_a_transactional_one():
 
     # The transactional writers: the store adds the row to the caller's own session.
     transactional_markers = ("credential_audit(", "audit=audit_credentials", "store.add_in(",
-                             "audit.record_in(")
+                             "audit.record_in(", "audit_row=build_record")
 
     offenders = []
     for action, spec in registry.REGISTRY.items():
