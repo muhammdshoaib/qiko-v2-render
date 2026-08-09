@@ -10,6 +10,8 @@ import secrets
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel
 
+from app.modules.audit import registry as audit_actions
+from app.modules.audit import service as audit
 from app.modules.identity import cookies, csrf, tokens, twofa
 from app.modules.identity.rbac import Role, role_allows
 from app.modules.identity.security import verify_password
@@ -46,20 +48,60 @@ def _require_csrf(request: Request) -> None:
 
 
 @router.post("/login")
-async def login(payload: LoginRequest, response: Response, store: UserStore = Depends(get_store)) -> dict:
-    user = await store.get_by_email(payload.email.lower())
+async def login(payload: LoginRequest, response: Response, request: Request,
+                store: UserStore = Depends(get_store)) -> dict:
+    """Authenticate, and record the attempt either way.
+
+    There was no authentication trail of any kind, which is the single most commonly raised finding in
+    a SOC 2 CC6.1 sample: the auditor asks for successes AND failures and there is nothing to hand
+    over. Failures are the more useful half.
+
+    The failure reason is recorded, and the distinction matters operationally rather than
+    theoretically: many failures against many unknown addresses is password spraying, many against one
+    known address is a targeted attack, and a wrong 2FA code on a correct password means the password
+    itself is already compromised. Collapsing those into "login failed" throws away the only signal
+    worth having.
+
+    The response to the caller stays deliberately uniform. "Invalid credentials" for both an unknown
+    account and a wrong password is what stops the ENDPOINT being an account-existence oracle; the
+    distinction lives only in the audit trail, which is why that trail is gated on view_audit and not
+    on view_customers.
+    """
+    email = payload.email.lower()
+    user = await store.get_by_email(email)
     if not user or not verify_password(payload.password, user.password_hash):
+        await audit.record(request.app.state.audit, audit.AuditEvent(
+            action=audit_actions.LOGIN_FAILED, target_id=email, target_label=email,
+            tenant_id=user.tenant if user else None, actor_type=audit.ANONYMOUS,
+            outcome=audit.FAILURE,
+            metadata={"reason": "bad_password" if user else "unknown_account"}), request=request)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
+    used_backup_code = False
     if user.twofa_enabled:
         provided = payload.totp or ""
         verified = twofa.verify_totp(user.totp_secret or "", provided)
         if not verified:
             verified = await store.consume_backup_code(user.id, provided)
+            used_backup_code = verified
         if not verified:
+            # The password was correct and only the second factor failed, so this is the event that
+            # says a credential is already compromised. It is not the same as a failed password.
+            await audit.record(request.app.state.audit, audit.AuditEvent(
+                action=audit_actions.MFA_FAILED, target_id=user.id, target_label=email,
+                tenant_id=user.tenant, actor_type=audit.USER, actor_id=user.id,
+                actor_label=email, outcome=audit.FAILURE,
+                metadata={"reason": "missing" if not provided else "invalid"}), request=request)
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or missing 2FA code")
     sid = secrets.token_urlsafe(16)
     await store.set_sid(user.id, sid)
     _issue(response, user, sid, mfa=user.twofa_enabled)
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.LOGIN_SUCCEEDED, target_id=user.id, target_label=email,
+        tenant_id=user.tenant, actor_type=audit.USER, actor_id=user.id, actor_label=email,
+        metadata={"mfa": bool(user.twofa_enabled),
+                  # A backup code is single-use and finite, so it is worth surfacing: a customer
+                  # signing in with one has lost their authenticator and will need help soon.
+                  "backup_code_used": used_backup_code}), request=request)
     return {"user": _public_user(user)}
 
 

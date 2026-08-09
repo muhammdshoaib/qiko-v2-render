@@ -58,9 +58,12 @@ export interface paths {
          * Admin Audit
          * @description The platform audit trail.
          *
-         *     Read is deliberately wider than WRITE: knowing that an operator disabled a tenant is exactly the
-         *     context another operator needs before touching the same account, and withholding it produces the
-         *     "why is this customer suspended and nobody knows" support ticket.
+         *     Gated on view_audit, which is NOT in the viewer default set. Read used to sit on view_customers,
+         *     on the reasoning that knowing an operator disabled a tenant is context another operator needs. That
+         *     reasoning still holds for the admin and access categories, but it stopped being sufficient once
+         *     authentication events landed here: a failed-login trail tells a reader which accounts exist, when
+         *     each colleague works and from which addresses. Wider than the write gates, narrower than the
+         *     customer list.
          *
          *     But not uniformly wider. An audit row contains the before and after of the thing it records, so
          *     reading the row is reading that thing. Spend caps carry amounts that GET /admin/cost-caps gates on
@@ -1351,7 +1354,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Login */
+        /**
+         * Login
+         * @description Authenticate, and record the attempt either way.
+         *
+         *     There was no authentication trail of any kind, which is the single most commonly raised finding in
+         *     a SOC 2 CC6.1 sample: the auditor asks for successes AND failures and there is nothing to hand
+         *     over. Failures are the more useful half.
+         *
+         *     The failure reason is recorded, and the distinction matters operationally rather than
+         *     theoretically: many failures against many unknown addresses is password spraying, many against one
+         *     known address is a targeted attack, and a wrong 2FA code on a correct password means the password
+         *     itself is already compromised. Collapsing those into "login failed" throws away the only signal
+         *     worth having.
+         *
+         *     The response to the caller stays deliberately uniform. "Invalid credentials" for both an unknown
+         *     account and a wrong password is what stops the ENDPOINT being an account-existence oracle; the
+         *     distinction lives only in the audit trail, which is why that trail is gated on view_audit and not
+         *     on view_customers.
+         */
         post: operations["login_api_v1_auth_login_post"];
         delete?: never;
         options?: never;
@@ -1424,7 +1445,19 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Reset Password */
+        /**
+         * Reset Password
+         * @description Set a new password from a one-time code.
+         *
+         *     An unauthenticated endpoint that changes who can log in, which makes it the most consequential
+         *     thing in this module and the one that recorded nothing. Note the deliberate silence in the
+         *     response: a valid code for an address with no account still returns {"reset": true}, so the
+         *     endpoint is not an account-existence oracle. The audit records what actually happened.
+         *
+         *     No fingerprint of the password, unlike the integration credentials. A keyed truncated HMAC of a
+         *     human-chosen password, across many users, is a correlation risk that buys nothing: nobody needs to
+         *     know whether a password was reused, only that it changed and by which route.
+         */
         post: operations["reset_password_api_v1_auth_reset_password_post"];
         delete?: never;
         options?: never;

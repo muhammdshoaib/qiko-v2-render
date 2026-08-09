@@ -37,7 +37,7 @@ NOT_AUDITED: dict[tuple[str, str], str] = {
         "autosave-shaped; the meaningful events are lock/unlock, which are ~111 per tender instead of thousands"),
     ("POST", "/api/v1/notifications/{notification_id}/read"): "read-tracking; read_at is already the record",
     ("POST", "/api/v1/notifications/read-all"): "bulk read-tracking; nobody has ever litigated who marked a notification read",
-    ("POST", "/api/v1/auth/refresh"): "one per token expiry per tab; the login and the revocation are audited",
+    ("POST", "/api/v1/auth/refresh"): "one per token expiry per tab; the login itself is now audited, and a revoked session already logs",
 }
 
 
@@ -89,6 +89,10 @@ AUDIT_WRITERS: dict[str, int] = {
     "chat/router.py": 1,
     "rfp/router.py": 1,
     "finance/router.py": 1,
+    # One route each, though login writes three different events (success, bad password, bad 2FA).
+    "identity/router.py": 1,
+    "identity/onboarding_router.py": 1,
+    "identity/twofa_router.py": 1,
 }
 
 
@@ -107,14 +111,21 @@ def test_the_instrumented_set_matches_the_source():
             "record_credential_exercised(", "_record_access("))
         assert writes >= count, f"{relative} declares {count} audited routes but writes {writes} times"
 
+    # /auth routes are split across three modules, so the first path segment is not enough on its own.
+    EXPLICIT = {
+        "/api/v1/auth/login": "identity/router.py",
+        "/api/v1/auth/reset-password": "identity/onboarding_router.py",
+        "/api/v1/auth/2fa/verify-setup": "identity/twofa_router.py",
+    }
     declared_by_module: dict[str, int] = {}
     for _method, route in INSTRUMENTED:
         segment = route.split("/api/v1/")[1].split("/")[0]
-        module = {"admin": "admin/router.py", "billing": "billing/router.py",
-                  "agents": "agents/router.py", "identity": "identity/users_router.py",
-                  "teams": "teams/router.py", "knowledge": "knowledge/router.py",
-                  "chat": "chat/router.py", "rfp": "rfp/router.py",
-                  "finance": "finance/router.py"}[segment]
+        module = EXPLICIT.get(route) or {
+            "admin": "admin/router.py", "billing": "billing/router.py",
+            "agents": "agents/router.py", "identity": "identity/users_router.py",
+            "teams": "teams/router.py", "knowledge": "knowledge/router.py",
+            "chat": "chat/router.py", "rfp": "rfp/router.py",
+            "finance": "finance/router.py"}[segment]
         declared_by_module[module] = declared_by_module.get(module, 0) + 1
     assert declared_by_module == AUDIT_WRITERS, (
         f"the ledger and the code disagree: declared {declared_by_module}, expected {AUDIT_WRITERS}")
@@ -333,6 +344,9 @@ INSTRUMENTED: set[tuple[str, str]] = {
     ("DELETE", "/api/v1/chat/history/{conversation_id}"),
     ("DELETE", "/api/v1/rfp/packs/{pack_id}"),
     ("DELETE", "/api/v1/finance/{agent_id}/files"),
+    ("POST", "/api/v1/auth/login"),
+    ("POST", "/api/v1/auth/reset-password"),
+    ("POST", "/api/v1/auth/2fa/verify-setup"),
 }
 
 # Audited, but into a table that predates the unified stream. Folding these in is leg E2: until then,
@@ -373,13 +387,7 @@ AUDIT_BACKLOG: dict[tuple[str, str], str] = {
         "CRITICAL auth: leg E2 wave 4. No authentication trail exists at all, which is the standard SOC 2 CC6.1 finding."),
     ("POST", "/api/v1/auth/2fa/setup"): (
         "CRITICAL auth: leg E2 wave 4. No authentication trail exists at all, which is the standard SOC 2 CC6.1 finding."),
-    ("POST", "/api/v1/auth/2fa/verify-setup"): (
-        "CRITICAL auth: leg E2 wave 4. No authentication trail exists at all, which is the standard SOC 2 CC6.1 finding."),
     ("POST", "/api/v1/auth/forgot-password"): (
-        "CRITICAL auth: leg E2 wave 4. No authentication trail exists at all, which is the standard SOC 2 CC6.1 finding."),
-    ("POST", "/api/v1/auth/login"): (
-        "CRITICAL auth: leg E2 wave 4. No authentication trail exists at all, which is the standard SOC 2 CC6.1 finding."),
-    ("POST", "/api/v1/auth/reset-password"): (
         "CRITICAL auth: leg E2 wave 4. No authentication trail exists at all, which is the standard SOC 2 CC6.1 finding."),
     ("POST", "/api/v1/auth/signup"): (
         "CRITICAL auth: leg E2 wave 4. No authentication trail exists at all, which is the standard SOC 2 CC6.1 finding."),
