@@ -70,11 +70,24 @@ export const authMe = () => request<{ user: { id: string; email: string; role: s
 export const forgotPassword = (email: string) =>
   request("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
 
+/** A sort the SERVER understands. The key is validated against a per-endpoint allowlist and an unknown
+ *  one is a 422, not a silent fallback, so this type exists to keep the client honest about which keys
+ *  each directory actually offers. */
+export type ListSort = { sort: string; order: "asc" | "desc" };
+
+const applySort = (params: URLSearchParams, sort?: ListSort) => {
+  if (!sort) return;
+  params.set("sort", sort.sort);
+  params.set("order", sort.order);
+};
+
 export type Customer = { user_id: string; email: string; plan: string; earnings_cents: number };
-export const listCustomers = (search = "", page = 1) => {
+export const listCustomers = (search = "", page = 1, sort?: ListSort) => {
   const params = new URLSearchParams({ page: String(page) });
   if (search) params.set("search", search);
-  return request<{ total: number; page: number; items: Customer[] }>(`/admin/customers?${params}`);
+  applySort(params, sort);
+  return request<{ total: number; page: number; page_size?: number; items: Customer[] }>(
+    `/admin/customers?${params}`);
 };
 
 export type AdminRole = "viewer" | "super_admin";
@@ -125,19 +138,37 @@ export type WorkerRow = AdminWorker & { tenant_id: string };
 
 type Paged<T> = { total: number; page: number; items: T[] };
 
-const paged = (page: number, extra: Record<string, string | undefined> = {}) => {
+const paged = (page: number, extra: Record<string, string | undefined> = {}, sort?: ListSort) => {
   const params = new URLSearchParams({ page: String(page) });
   for (const [key, value] of Object.entries(extra)) if (value) params.set(key, value);
+  applySort(params, sort);
   return params;
 };
 
-export const listTenants = (search = "", page = 1) =>
-  request<Paged<TenantRow>>(`/admin/tenants?${paged(page, { search })}`);
-export const listUsers = (search = "", page = 1, tenantId?: string) =>
-  request<Paged<UserRow>>(`/admin/users?${paged(page, { search, tenant_id: tenantId })}`);
-export const listWorkers = (search = "", page = 1, enabled?: boolean) =>
+/** The sortable keys each directory declares, mirroring app/modules/admin/sorting.py. Kept here so a
+ *  column cannot be marked sortable in the UI without the server agreeing, which would show the
+ *  operator a control that returns a 422. */
+export const SORTABLE = {
+  customers: ["email", "plan", "earnings"],
+  tenants: ["email", "plan", "earnings", "users", "workers"],
+  users: ["email", "name", "tenant", "role", "twofa"],
+  workers: ["name", "tenant", "status", "enabled", "created"],
+  monitoring: ["name", "tenant", "calls", "status", "enabled", "last_seen"],
+} as const;
+
+export const listTenants = (search = "", page = 1, sort?: ListSort) =>
+  request<Paged<TenantRow>>(`/admin/tenants?${paged(page, { search }, sort)}`);
+export const listUsers = (search = "", page = 1, tenantId?: string, sort?: ListSort,
+                          extra?: { role?: string; twofa?: string }) =>
+  request<Paged<UserRow>>(
+    `/admin/users?${paged(page, { search, tenant_id: tenantId, ...extra }, sort)}`);
+export const listWorkers = (search = "", page = 1, enabled?: boolean, sort?: ListSort,
+                            status?: string) =>
   request<Paged<WorkerRow>>(
-    `/admin/workers?${paged(page, { search, enabled: enabled === undefined ? undefined : String(enabled) })}`);
+    `/admin/workers?${paged(page, {
+      search, status,
+      enabled: enabled === undefined ? undefined : String(enabled),
+    }, sort)}`);
 
 export type UsageTotals = {
   calls: number; input_tokens: number; output_tokens: number;
@@ -156,9 +187,14 @@ export type MonitoredWorker = {
   // Only present for a caller holding view_ai_cost, see cost_visible.
   cost_nano_usd?: number; input_tokens?: number; output_tokens?: number;
 };
-export const workerMonitoring = (days = 30, page = 1, tenantId?: string) =>
-  request<{ total: number; page: number; window_days: number; cost_visible: boolean; items: MonitoredWorker[] }>(
-    `/admin/worker-monitoring?${paged(page, { days: String(days), tenant_id: tenantId })}`);
+export const workerMonitoring = (days = 30, page = 1, tenantId?: string, sort?: ListSort,
+                                 search?: string, enabled?: boolean) =>
+  request<{ total: number; page: number; page_size?: number; window_days: number;
+            cost_visible: boolean; items: MonitoredWorker[] }>(
+    `/admin/worker-monitoring?${paged(page, {
+      days: String(days), tenant_id: tenantId, search,
+      enabled: enabled === undefined ? undefined : String(enabled),
+    }, sort)}`);
 
 /** Cents to a human string. USD because that is what Stripe is charged in
  * (qiko-core/app/integrations/clients.py:57 sends currency "usd"), and because the tenants page used
