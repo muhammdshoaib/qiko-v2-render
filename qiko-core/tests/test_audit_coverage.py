@@ -159,20 +159,16 @@ def test_every_action_is_internally_consistent():
         assert spec.durability in {registry.CRITICAL, registry.STANDARD, registry.EXTERNAL}
 
 
-def test_local_money_access_credentials_and_deletions_are_transactional():
-    """Getting the durability backwards is the main design risk: a chat-volume audit that can fail a
-    request turns an audit outage into a product outage, and an access-change audit that can silently
-    vanish is worthless."""
-    must_be_critical = {
-        registry.PAYMENT_LINK_MARKED_PAID, registry.COST_CAP_SET,
-        registry.PLATFORM_ACCESS_GRANTED, registry.PLATFORM_ACCESS_REVOKED,
-        registry.TENANT_ROLE_CHANGED, registry.TENANT_MEMBER_ADDED, registry.TENANT_MEMBER_REMOVED,
-        registry.CREDENTIAL_SET, registry.CREDENTIAL_REMOVED,
-        registry.DOCUMENT_DELETED, registry.RFP_PACK_DELETED, registry.CHAT_HISTORY_DELETED,
-        registry.CUSTOMER_SOFT_DELETED, registry.SUBJECT_ERASED,
-    }
-    for action in must_be_critical:
-        assert registry.spec_for(action).durability == CRITICAL, f"{action} must be transactional"
+def test_the_only_transactional_actions_are_the_ones_that_really_are():
+    """The inverse of the source-walking test below, kept small on purpose.
+
+    This used to assert a list of actions equalled CRITICAL, which was a test of a constant against a
+    hand-written copy of itself. It passed for a whole release while ten of those actions were written
+    on the losable path. What is worth pinning is the one class that genuinely is transactional, so a
+    later edit cannot quietly move it off that path.
+    """
+    for action in (registry.CREDENTIAL_SET, registry.CREDENTIAL_REMOVED):
+        assert registry.spec_for(action).durability == CRITICAL
 
 
 def test_actions_whose_effect_is_at_a_third_party_are_not_pretended_to_be_transactional():
@@ -727,3 +723,46 @@ def test_the_stdout_mirror_is_a_pointer_not_a_second_copy(caplog):
     # WARNING, not INFO: live runs LOG_LEVEL=WARNING, so at INFO the backstop did not exist where it
     # was needed.
     assert caplog.records[-1].levelno == logging.WARNING
+
+
+def test_every_critical_action_with_a_call_site_has_a_transactional_one():
+    """CRITICAL means "written in the caller's transaction", which is a claim about the code.
+
+    The previous version of this file asserted `spec.durability == CRITICAL`, i.e. a constant in the
+    module next door. Ten actions were declared CRITICAL and written through `record()`, the path that
+    is explicitly allowed to lose the row, and the test was green throughout. It read as coverage of a
+    property that did not hold, which is worse than no test.
+
+    This walks the source instead: if an action is written anywhere, and it is declared CRITICAL, then
+    at least one of its call sites must be transactional. Actions with no call site yet claim nothing
+    and are left alone.
+    """
+    from pathlib import Path
+
+    modules = Path(__file__).resolve().parents[1] / "app" / "modules"
+    sources = {path: path.read_text() for path in modules.rglob("*.py")}
+
+    # The transactional writers: the store adds the row to the caller's own session.
+    transactional_markers = ("credential_audit(", "audit=audit_credentials", "store.add_in(",
+                             "audit.record_in(")
+
+    offenders = []
+    for action, spec in registry.REGISTRY.items():
+        constant = next((name for name, value in vars(registry).items()
+                         if isinstance(value, str) and value == action and name.isupper()), None)
+        if constant is None:
+            continue
+        written_in = {path: text for path, text in sources.items()
+                      if f"audit_actions.{constant}" in text or f"registry.{constant}" in text}
+        if not written_in:
+            continue  # declared but not yet used: nothing is claimed
+        if spec.durability != registry.CRITICAL:
+            continue
+        if not any(any(marker in text for marker in transactional_markers)
+                   for text in written_in.values()):
+            offenders.append(action)
+
+    assert not offenders, (
+        "these actions are declared CRITICAL but every call site uses the non-transactional writer. "
+        "Either write them in the caller's transaction or declare them STANDARD:\n  " +
+        "\n  ".join(sorted(offenders)))

@@ -44,14 +44,17 @@ async def clear_history(conversation_id: str, request: Request,
     way the trail can distinguish clearing an empty test thread from destroying a year of a customer's
     support history.
     """
-    messages = await chat.history(tenant, conversation_id)
-    await chat.clear(tenant, conversation_id)
+    # The count comes from the delete itself. Reading history() to count first was wrong twice: it
+    # defaults to a 20-message window, so the number saturated at 20 and could never distinguish an
+    # empty test thread from a year of support history, and the SQL store has no LIMIT so it
+    # materialised every message body to produce a number it then capped.
+    removed = await chat.clear(tenant, conversation_id)
     await audit.record(request.app.state.audit, audit.AuditEvent(
         action=audit_actions.CHAT_HISTORY_DELETED, target_id=conversation_id, tenant_id=tenant,
         actor_type=audit.USER, actor_id=str(claims.get("sub") or ""),
         actor_label=str(claims.get("email") or ""),
         changes=audit.diff(audit_actions.CHAT_HISTORY_DELETED, {},
-                           {"messages_removed": len(messages or [])})), request=request)
+                           {"messages_removed": removed})), request=request)
     return {"cleared": True}
 
 

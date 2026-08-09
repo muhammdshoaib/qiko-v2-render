@@ -1,7 +1,7 @@
 """Knowledge HTTP API (tenant-scoped)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from app.modules.audit import registry as audit_actions
@@ -55,7 +55,6 @@ async def documents(tenant: str = Depends(authed_tenant), agent_id: str | None =
 async def delete_document(doc_id: str, request: Request,
                           claims: dict = Depends(current_claims),
                           tenant: str = Depends(authed_tenant), agent_id: str | None = None,
-                          reason: str | None = Query(default=None, max_length=1000),
                           _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_knowledge)) -> dict:
     """Delete every passage belonging to a document.
 
@@ -72,7 +71,8 @@ async def delete_document(doc_id: str, request: Request,
     await audit.record(request.app.state.audit, audit.AuditEvent(
         action=audit_actions.DOCUMENT_DELETED, target_id=doc_id, tenant_id=tenant,
         actor_type=audit.USER, actor_id=str(claims.get("sub") or ""),
-        actor_label=str(claims.get("email") or ""), reason=reason,
+        actor_label=str(claims.get("email") or ""),
+        reason=request.headers.get("x-audit-reason"),
         changes=audit.diff(audit_actions.DOCUMENT_DELETED, {},
                            {"doc_id": doc_id, "passages_removed": removed}),
         metadata={"agent_id": agent_id}), request=request)

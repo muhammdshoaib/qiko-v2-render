@@ -5203,6 +5203,11 @@ export interface components {
             /** Pack Id */
             pack_id: string;
         };
+        /** RemoveUserBody */
+        RemoveUserBody: {
+            /** Reason */
+            reason?: string | null;
+        };
         /** ReportAnalytics */
         ReportAnalytics: {
             /**
@@ -6245,9 +6250,7 @@ export interface operations {
     };
     customer_delete_api_v1_admin_customers__user_id__delete: {
         parameters: {
-            query?: {
-                reason?: string | null;
-            };
+            query?: never;
             header: {
                 /** @description Must match the qiko_csrf cookie. */
                 "X-CSRF-Token": string;
@@ -6578,9 +6581,7 @@ export interface operations {
     };
     remove_api_v1_admin_org__email__delete: {
         parameters: {
-            query?: {
-                reason?: string | null;
-            };
+            query?: never;
             header: {
                 /** @description Double-submit CSRF token; must equal the qiko_csrf cookie. */
                 "x-csrf-token": string;
@@ -10948,16 +10949,18 @@ export interface operations {
     };
     remove_user_api_v1_identity_users__user_id__delete: {
         parameters: {
-            query?: {
-                reason?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 user_id: string;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RemoveUserBody"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -11055,7 +11058,6 @@ export interface operations {
         parameters: {
             query?: {
                 agent_id?: string | null;
-                reason?: string | null;
             };
             header?: never;
             path: {
@@ -11673,9 +11675,7 @@ export interface operations {
     };
     delete_pack_api_v1_rfp_packs__pack_id__delete: {
         parameters: {
-            query?: {
-                reason?: string | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 pack_id: string;

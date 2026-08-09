@@ -92,9 +92,14 @@ export type CustomerDetail = Customer & {
 // Only the capabilities the server actually enforces today. view_ai_cost, set_cost_caps and
 // view_system_stats arrive with the endpoints they gate, so the UI never offers a permission that
 // does nothing.
-export type Capability = "view_customers" | "manage_customers" | "manage_workers" | "manage_billing" | "manage_admins" | "view_ai_cost" | "view_system_stats" | "set_cost_caps";
+export type Capability = "view_audit" | "view_customers" | "manage_customers" | "manage_workers" | "manage_billing" | "manage_admins" | "view_ai_cost" | "view_system_stats" | "set_cost_caps";
 
-export const ALL_CAPABILITIES: Capability[] = ["view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins", "view_ai_cost", "view_system_stats", "set_cost_caps"];
+/** Every capability the backend enforces. This list being short is not cosmetic: the grant form
+ *  renders checkboxes from it and posts the SELECTED set, so anything missing here cannot be granted
+ *  at all, and saving an explicit set for an existing admin silently strips it. view_audit was added
+ *  to the backend without this list, so for one release no operator could grant audit access and
+ *  editing a super_admin through this form removed theirs. */
+export const ALL_CAPABILITIES: Capability[] = ["view_audit", "view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins", "view_ai_cost", "view_system_stats", "set_cost_caps"];
 
 export type PlatformAdmin = { email: string; role: AdminRole; capabilities: Capability[] };
 export type AdminGrantAudit = {

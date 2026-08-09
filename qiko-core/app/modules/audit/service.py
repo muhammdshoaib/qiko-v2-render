@@ -72,6 +72,14 @@ REDACTED = "[redacted]"
 # An audit row must never become an exfiltration channel or a log-bloat vector.
 MAX_METADATA_BYTES = 8_192
 MAX_REASON_CHARS = 1_000
+# The width of the identity columns in audit_events. Capped HERE rather than only at each request
+# model, because this is the one place every present and future call site passes through.
+#
+# Uncapped, these were an audit-suppression vector: a 400-character email on a failed login made the
+# INSERT raise StringDataRightTruncation, record() swallowed it by design, and the caller still got a
+# clean 401. The one row an attacker cares about was the one they could switch off with whitespace.
+MAX_IDENTITY_CHARS = 320
+MAX_TENANT_CHARS = 64
 
 
 @dataclass(frozen=True)
@@ -116,6 +124,13 @@ def fingerprint_of(value: str | None) -> str | None:
 
 
 MAX_VALUE_CHARS = 2_000
+
+
+def _fit(value: str | None, limit: int = MAX_IDENTITY_CHARS) -> str | None:
+    """Truncate to the column width. Never let an oversized value become a lost row."""
+    if value is None:
+        return None
+    return str(value)[:limit] or None
 
 
 def _scrub(value: Any, depth: int = 0) -> Any:
@@ -205,14 +220,14 @@ def build_row(event: AuditEvent, *, request=None) -> dict:
         "message": _render(spec.template, event, changes),
         "occurred_at": event.occurred_at,
         "actor_type": event.actor_type,
-        "actor_id": event.actor_id,
-        "actor_label": event.actor_label,
-        "on_behalf_of": event.on_behalf_of,
+        "actor_id": _fit(event.actor_id),
+        "actor_label": _fit(event.actor_label),
+        "on_behalf_of": _fit(event.on_behalf_of, MAX_TENANT_CHARS),
         "target_type": spec.target_type,
-        "target_id": event.target_id,
-        "target_label": event.target_label,
+        "target_id": _fit(event.target_id),
+        "target_label": _fit(event.target_label),
         # The tenant the event is ABOUT, which is not always the actor's own.
-        "tenant_id": event.tenant_id or get_tenant(),
+        "tenant_id": _fit(event.tenant_id or get_tenant(), MAX_TENANT_CHARS),
         "request_id": get_request_id(),
         "source_ip": _client_ip(headers, client),
         "user_agent": (headers.get("user-agent") or "")[:256] or None,
@@ -333,6 +348,12 @@ def record_sync(store, event: AuditEvent, *, request=None) -> None:
     """
     if store is None:
         return
+    if is_critical(event.action):
+        # Same guard as record(). Without it, payment_link_marked_paid was declared CRITICAL and
+        # written on the path that is allowed to lose the row, which is the exact inversion the
+        # durability split exists to prevent.
+        logger.error("critical audit event written on the non-transactional path", extra={
+            "source": "audit", "action": event.action, "target": event.target_id})
     row = build_row(event, request=request)
     _mirror(row)
     try:
