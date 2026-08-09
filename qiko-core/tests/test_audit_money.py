@@ -97,8 +97,11 @@ def test_money_events_are_hidden_from_an_admin_without_manage_billing(client):
 
     from app.modules.identity.admin_rbac import Capability
 
+    # view_audit is what permits reading the trail at all; view_ai_cost and manage_billing are what
+    # gate the amounts inside it. This reader gets the first and neither of the others.
     client.put("/api/v1/admin/org/nobilling@invalid", cookies=cookies, headers=headers,
-               json={"role": "viewer", "capabilities": [Capability.view_customers.value]})
+               json={"role": "viewer", "capabilities": [Capability.view_customers.value,
+                                                       Capability.view_audit.value]})
     narrow = auth_cookies("platform", "viewer", email="nobilling@invalid")
     visible = client.get("/api/v1/admin/audit?days=1", cookies=narrow).json()
     assert all(not e["action"].startswith("billing.") for e in visible["items"])
