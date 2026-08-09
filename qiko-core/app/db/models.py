@@ -380,7 +380,8 @@ class AuditEventRow(Base):
 
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     # Nulled after six months while the event itself is kept, which is the cheapest answer to a
-    # minimisation challenge that does not cost an event.
+    # minimisation challenge that does not cost an event. Enforced by the audit:apply_retention cron
+    # job, not merely stated here: for one release this comment was the only thing that did it.
     source_ip: Mapped[str | None] = mapped_column(String(45), nullable=True)
     user_agent: Mapped[str | None] = mapped_column(String(256), nullable=True)
     route: Mapped[str | None] = mapped_column(String(128), nullable=True)

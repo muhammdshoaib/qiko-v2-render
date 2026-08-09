@@ -5,10 +5,15 @@ is identical whether run eagerly (dev) or on a worker (prod).
 """
 from __future__ import annotations
 
+import logging
+
 from app.core.tenancy import reset_tenant, set_tenant
+from app.modules.audit import registry as audit_actions
+from app.modules.audit import service as audit
 from app.modules.knowledge.service import KnowledgeService
 from app.tasks.queue import TaskRegistry
 
+logger = logging.getLogger(__name__)
 registry = TaskRegistry()
 
 # A process-wide knowledge service; in prod this is constructed with the DB-backed vector store.
@@ -101,3 +106,26 @@ async def generate_tender_artifacts(*, tenant: str, pack_id: str, agent_id: str 
                 await usage.flush(_usage_store(sessionmaker), events)
     finally:
         reset_tenant(tenant_token)
+
+
+async def apply_audit_retention(store) -> dict:
+    """Enforce the audit trail's retention policy.
+
+    Runs as a job rather than on request, and records its own outcome into the trail it just pruned.
+    That is deliberate: "the retention job ran, deleted N events past the cutoff and cleared M
+    addresses" is the artefact an auditor asks for when they check that a stated policy is actually
+    implemented, and a policy nobody can show running is a paragraph rather than a control.
+
+    The counts are the evidence, so a run that deletes nothing still writes a row.
+    """
+    result = await store.apply_retention()
+    logger.info("audit retention applied", extra={"source": "tasks.audit", **result})
+    await audit.record(store, audit.AuditEvent(
+        action=audit_actions.RETENTION_APPLIED, target_id="audit_events",
+        actor_type=audit.JOB, actor_id="arq:apply_audit_retention",
+        actor_label="scheduled retention",
+        changes=audit.diff(audit_actions.RETENTION_APPLIED, {}, {
+            "events_deleted": result["events_deleted"],
+            "addresses_cleared": result["addresses_cleared"]}),
+        metadata=result))
+    return result

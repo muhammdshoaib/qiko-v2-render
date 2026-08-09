@@ -143,6 +143,7 @@ ANSWER_APPROVED = "data.answer_approved"
 
 # --- privacy -----------------------------------------------------------------------------------------
 SUBJECT_ERASED = "privacy.subject_erased"
+RETENTION_APPLIED = "privacy.retention_applied"
 AUDIT_EXPORTED = "privacy.audit_exported"
 
 _SPECS: tuple[ActionSpec, ...] = (
@@ -276,6 +277,12 @@ _SPECS: tuple[ActionSpec, ...] = (
     _spec(SUBJECT_ERASED, PRIVACY, "subject", durability=CRITICAL,
           diff_fields=("rows_pseudonymised", "request_ref"),
           template="{actor} erased subject data"),
+    _spec(RETENTION_APPLIED, PRIVACY, "audit_log",
+          diff_fields=("events_deleted", "addresses_cleared"),
+          # Recorded into the trail it just pruned. An auditor checking that a stated retention policy
+          # is implemented asks for evidence of it running, and a policy nobody can show running is a
+          # paragraph rather than a control.
+          template="Retention removed {target} rows past the cutoff"),
     _spec(AUDIT_EXPORTED, PRIVACY, "audit_log", diff_fields=("row_count", "filters"),
           # Auditing reads of the audit log is a standard tender question.
           template="{actor} exported the audit log"),

@@ -82,12 +82,21 @@ FUNCTIONS = [ingest_document, send_email, generate_tender_artifacts]
 # gates each source on its own due-ness (last_scan_at + interval), so it stays correct for ANY
 # idg_sales_scan_interval_minutes. `unique=True` (arq default) means a single tick runs even with
 # multiple worker replicas, so scans never double-run.
+async def apply_audit_retention(ctx: dict) -> dict:
+    from app.db.stores import SqlAuditStore
+
+    return await jobs.apply_audit_retention(SqlAuditStore(ctx["sessionmaker"]))
+
+
 CRON_JOBS = [
     # every minute, gated by per-source due-ness
     cron(scan_due_sources, name="sales_intel:scan_due_sources", second=0, unique=True),
     # dailyAt 08:00 (idg-sales notify-deadlines parity)
     cron(send_deadline_reminders, name="sales_intel:send_deadline_reminders", hour=8, minute=0, unique=True),
     cron(purge_expired_signups, name="identity:purge_expired_signups", hour=2, minute=15, unique=True),
+    # Daily, off-peak. Nothing enforced the retention the model docstring claimed, so the trail grew
+    # personal data indefinitely while asserting that it did not.
+    cron(apply_audit_retention, name="audit:apply_retention", hour=3, minute=30, unique=True),
 ]
 
 

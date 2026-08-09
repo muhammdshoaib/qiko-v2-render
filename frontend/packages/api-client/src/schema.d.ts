@@ -106,6 +106,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/audit/erase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Erase Subject
+         * @description Pseudonymise a subject throughout the audit trail, for an erasure request.
+         *
+         *     Rows are never deleted. A gap in an audit trail is indistinguishable from tampering, and removing
+         *     rows to satisfy an erasure request destroys the completeness the table exists for. The identifying
+         *     fields are replaced with a keyed pseudonym and everything else, the timestamps, the action, the
+         *     outcome, the diffs, is left exactly as it was: the row still proves that something happened, to whom
+         *     under a stable pseudonym, and when.
+         *
+         *     The erasure event itself must not re-create the address it just removed, which is the circularity
+         *     that catches most implementations. So this records the pseudonym, the request reference and a row
+         *     count, and never the identifier. The mapping from reference to person lives in the DSAR ticket under
+         *     its own retention, which is where a regulator expects to find it.
+         *
+         *     Gated on manage_admins rather than manage_customers. This rewrites the evidence trail, which is a
+         *     higher privilege than acting on a customer, and it is the same gate that protects platform authority.
+         */
+        post: operations["erase_subject_api_v1_admin_audit_erase_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/audit/retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Audit Retention Policy
+         * @description The retention policy as the code enforces it, not as a document claims.
+         *
+         *     Surfaced so the operator UI can state it on the page and so the number an auditor is told is read
+         *     from the same constant the cron job uses. A stated policy that differs from the implemented one is
+         *     the specific thing both SOC 2 and a data protection review check for.
+         */
+        get: operations["audit_retention_policy_api_v1_admin_audit_retention_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/cost-caps": {
         parameters: {
             query?: never;
@@ -4818,6 +4876,13 @@ export interface components {
              */
             user_draft: string;
         };
+        /** EraseSubjectBody */
+        EraseSubjectBody: {
+            /** Identifier */
+            identifier: string;
+            /** Request Ref */
+            request_ref: string;
+        };
         /** EvaluateBody */
         EvaluateBody: {
             /** Agent Id */
@@ -6008,6 +6073,69 @@ export interface operations {
         };
     };
     audit_action_catalogue_api_v1_admin_audit_actions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    erase_subject_api_v1_admin_audit_erase_post: {
+        parameters: {
+            query?: never;
+            header: {
+                /** @description Must match the qiko_csrf cookie. */
+                "X-CSRF-Token": string;
+            };
+            path?: never;
+            cookie: {
+                /** @description Double-submit CSRF cookie. */
+                qiko_csrf: string;
+            };
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EraseSubjectBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    audit_retention_policy_api_v1_admin_audit_retention_get: {
         parameters: {
             query?: never;
             header?: never;

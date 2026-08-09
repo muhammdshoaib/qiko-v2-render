@@ -19,6 +19,7 @@ from app.core.deps import (
 )
 from app.modules.ai.caps import PLATFORM, UNLIMITED, CostCap
 from app.modules.audit import registry as audit_actions
+from app.modules.audit import retention as audit_retention
 from app.modules.audit import service as audit
 from app.modules.admin.metrics import Subscription, revenue_metrics
 from app.modules.health.system import (
@@ -913,3 +914,76 @@ async def audit_action_catalogue(
             "actions": [{"action": spec.action, "category": spec.category,
                          "target_type": spec.target_type}
                         for spec in sorted(visible, key=lambda s: (s.category, s.action))]}
+
+
+class EraseSubjectBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # The address to erase. In the body, never the query string: the whole point is to remove this value
+    # from durable storage, and an edge access log is durable storage we do not control.
+    identifier: str = Field(min_length=3, max_length=320)
+    # The DSAR or incident ticket this was performed under. Required, because an erasure with no
+    # reference is an erasure nobody can justify later, and the mapping from the reference back to the
+    # person is what lives in the ticket rather than here.
+    request_ref: str = Field(min_length=1, max_length=64)
+
+
+@router.post("/audit/erase", openapi_extra=_CSRF_OPENAPI)
+async def erase_subject(body: EraseSubjectBody, request: Request,
+                        claims: dict = Depends(current_claims),
+                        _tenant: str = Depends(authed_tenant),
+                        _identity=Depends(require_platform_capability(Capability.manage_admins))) -> dict:
+    """Pseudonymise a subject throughout the audit trail, for an erasure request.
+
+    Rows are never deleted. A gap in an audit trail is indistinguishable from tampering, and removing
+    rows to satisfy an erasure request destroys the completeness the table exists for. The identifying
+    fields are replaced with a keyed pseudonym and everything else, the timestamps, the action, the
+    outcome, the diffs, is left exactly as it was: the row still proves that something happened, to whom
+    under a stable pseudonym, and when.
+
+    The erasure event itself must not re-create the address it just removed, which is the circularity
+    that catches most implementations. So this records the pseudonym, the request reference and a row
+    count, and never the identifier. The mapping from reference to person lives in the DSAR ticket under
+    its own retention, which is where a regulator expects to find it.
+
+    Gated on manage_admins rather than manage_customers. This rewrites the evidence trail, which is a
+    higher privilege than acting on a customer, and it is the same gate that protects platform authority.
+    """
+    _require_csrf(request)
+    store = getattr(request.app.state, "audit", None)
+    if store is None:
+        raise HTTPException(status_code=503, detail="audit store unavailable")
+
+    pseudonym = audit_retention.audit_subject_pseudonym(body.identifier)
+    # A callback, so the store can count the affected rows and build the record INSIDE the erasure's
+    # own transaction. The erasure therefore cannot land without its record, a failed erasure cannot
+    # leave a row claiming one, and the record still carries the real count rather than omitting it.
+    #
+    # The pseudonym IS the target. Putting the address there would undo the erasure in the very row
+    # that records it.
+    def build_record(affected: int) -> dict:
+        return audit.build_row(audit.AuditEvent(
+            action=audit_actions.SUBJECT_ERASED, target_id=pseudonym, tenant_id=None,
+            actor_type=audit.PLATFORM_ADMIN, actor_id=str(claims.get("email") or ""),
+            actor_label=str(claims.get("email") or ""),
+            changes=audit.diff(audit_actions.SUBJECT_ERASED, {},
+                               {"rows_pseudonymised": affected, "request_ref": body.request_ref}),
+            metadata={"scope": ["audit_events"]}), request=request)
+
+    rows = await store.pseudonymise_subject(body.identifier, pseudonym, audit_row=build_record)
+    return {"pseudonym": pseudonym, "rows_pseudonymised": rows, "request_ref": body.request_ref}
+
+
+@router.get("/audit/retention")
+async def audit_retention_policy(_tenant: str = Depends(authed_tenant),
+                                 _identity=Depends(require_platform_capability(Capability.view_audit))) -> dict:
+    """The retention policy as the code enforces it, not as a document claims.
+
+    Surfaced so the operator UI can state it on the page and so the number an auditor is told is read
+    from the same constant the cron job uses. A stated policy that differs from the implemented one is
+    the specific thing both SOC 2 and a data protection review check for.
+    """
+    return {"event_retention_days": audit_retention.EVENT_RETENTION_DAYS,
+            "network_retention_days": audit_retention.NETWORK_RETENTION_DAYS,
+            "erasure": "pseudonymised in place; rows are never deleted for erasure",
+            "archive": "not yet implemented"}
