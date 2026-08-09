@@ -289,15 +289,18 @@ async def test_salesforce_credentials(agent_id: str, request: Request,
     if agent is None:
         raise HTTPException(status_code=404, detail="agent not found")
     _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
-    await audit_credentials.record_credential_exercised(
-        request.app.state.audit, provider="salesforce", tenant=tenant, agent_id=agent_id,
-        claims=claims, request=request)
     cfg = agent.config
     if not cfg.get("salesforce_credentials_added"):
         raise HTTPException(status_code=422, detail="no Salesforce connection configured for this worker")
     client = SalesforceClient(client_id=cfg["salesforce_client_id"],
                               client_secret=decrypt(cfg["salesforce_client_secret_encrypted"]),
                               instance_url=cfg["salesforce_instance_url"])
+    # After the credential is resolved, so the row means a stored secret was actually taken out and
+    # used. Emitted before it, this fired for any editor on a worker with no credential configured at
+    # all, which is not the signal the docstring claims.
+    await audit_credentials.record_credential_exercised(
+        request.app.state.audit, provider="salesforce", tenant=tenant, agent_id=agent_id,
+        claims=claims, request=request)
     try:
         try:
             result = await asyncio.to_thread(client.test_connection)
@@ -387,12 +390,15 @@ async def test_calendly_credentials(agent_id: str, request: Request,
     if agent is None:
         raise HTTPException(status_code=404, detail="agent not found")
     _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
-    await audit_credentials.record_credential_exercised(
-        request.app.state.audit, provider="calendly", tenant=tenant, agent_id=agent_id,
-        claims=claims, request=request)
     cfg = agent.config
     client = CalendlyClient(token=stored_credential(
         cfg, flag="calendly_credentials_added", key="calendly_token_encrypted", label="Calendly"))
+    # After the credential is resolved, so the row means a stored secret was actually taken out and
+    # used. Emitted before it, this fired for any editor on a worker with no credential configured at
+    # all, which is not the signal the docstring claims.
+    await audit_credentials.record_credential_exercised(
+        request.app.state.audit, provider="calendly", tenant=tenant, agent_id=agent_id,
+        claims=claims, request=request)
     try:
         try:
             result = await asyncio.to_thread(client.test_connection)
@@ -479,12 +485,15 @@ async def test_clickup_credentials(agent_id: str, request: Request,
     if agent is None:
         raise HTTPException(status_code=404, detail="agent not found")
     _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
-    await audit_credentials.record_credential_exercised(
-        request.app.state.audit, provider="clickup", tenant=tenant, agent_id=agent_id,
-        claims=claims, request=request)
     cfg = agent.config
     client = ClickUpClient(api_token=stored_credential(
         cfg, flag="clickup_credentials_added", key="clickup_api_token_encrypted", label="ClickUp"))
+    # After the credential is resolved, so the row means a stored secret was actually taken out and
+    # used. Emitted before it, this fired for any editor on a worker with no credential configured at
+    # all, which is not the signal the docstring claims.
+    await audit_credentials.record_credential_exercised(
+        request.app.state.audit, provider="clickup", tenant=tenant, agent_id=agent_id,
+        claims=claims, request=request)
     try:
         try:
             result = await asyncio.to_thread(client.test_connection)
@@ -574,11 +583,14 @@ async def test_slack_credentials(agent_id: str, request: Request,
     if agent is None:
         raise HTTPException(status_code=404, detail="agent not found")
     _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+    client = SlackClient(bot_token=stored_credential(
+        agent.config, flag="slack_credentials_added", key="slack_bot_token_encrypted", label="Slack"))
+    # After the credential is resolved, so the row means a stored secret was actually taken out and
+    # used. Emitted before it, this fired for any editor on a worker with no credential configured at
+    # all, which is not the signal the docstring claims.
     await audit_credentials.record_credential_exercised(
         request.app.state.audit, provider="slack", tenant=tenant, agent_id=agent_id,
         claims=claims, request=request)
-    client = SlackClient(bot_token=stored_credential(
-        agent.config, flag="slack_credentials_added", key="slack_bot_token_encrypted", label="Slack"))
     try:
         try:
             result = await asyncio.to_thread(client.test_connection)
@@ -672,14 +684,17 @@ async def test_gmail_credentials(agent_id: str, request: Request,
     if agent is None:
         raise HTTPException(status_code=404, detail="agent not found")
     _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
-    await audit_credentials.record_credential_exercised(
-        request.app.state.audit, provider="gmail", tenant=tenant, agent_id=agent_id,
-        claims=claims, request=request)
     cfg = agent.config
     client = GmailSmtpClient(
         address=cfg.get("gmail_address") or "",
         app_password=stored_credential(cfg, flag="gmail_credentials_added",
                                        key="gmail_app_password_encrypted", label="Gmail"))
+    # After the credential is resolved, so the row means a stored secret was actually taken out and
+    # used. Emitted before it, this fired for any editor on a worker with no credential configured at
+    # all, which is not the signal the docstring claims.
+    await audit_credentials.record_credential_exercised(
+        request.app.state.audit, provider="gmail", tenant=tenant, agent_id=agent_id,
+        claims=claims, request=request)
     try:
         try:
             result = await asyncio.to_thread(client.test_connection)

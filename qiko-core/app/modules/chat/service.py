@@ -44,7 +44,7 @@ class ChatStore(Protocol):
         user_text: str, assistant_text: str, recheck_worker: WorkerRecheck,
     ) -> Message: ...
     async def history(self, tenant: str, conversation_id: str, *, limit: int = HISTORY_WINDOW) -> list[Message]: ...
-    async def clear(self, tenant: str, conversation_id: str) -> None: ...
+    async def clear(self, tenant: str, conversation_id: str) -> int: ...
     async def list_for_agent(self, tenant: str, agent_id: str) -> list[ConversationSummary]: ...
 
 
@@ -97,8 +97,8 @@ class InMemoryChatStore:
         msgs = self._history.get((tenant, conversation_id), [])
         return msgs[-limit:] if limit else list(msgs)
 
-    async def clear(self, tenant: str, conversation_id: str) -> None:
-        self._history.pop((tenant, conversation_id), None)
+    async def clear(self, tenant: str, conversation_id: str) -> int:
+        return len(self._history.pop((tenant, conversation_id), []) or [])
 
     async def list_for_agent(self, tenant: str, agent_id: str) -> list[ConversationSummary]:
         prefix = f"{tenant}:"
@@ -129,8 +129,9 @@ class ChatService:
     async def history(self, tenant: str, conversation_id: str, *, limit: int = HISTORY_WINDOW) -> list[Message]:
         return await self.store.history(tenant, conversation_id, limit=limit)
 
-    async def clear(self, tenant: str, conversation_id: str) -> None:
-        await self.store.clear(tenant, conversation_id)
+    async def clear(self, tenant: str, conversation_id: str) -> int:
+        """Returns how many messages were removed, for the audit row."""
+        return await self.store.clear(tenant, conversation_id)
 
     async def list_for_agent(self, tenant: str, agent_id: str) -> list[ConversationSummary]:
         return await self.store.list_for_agent(tenant, agent_id)

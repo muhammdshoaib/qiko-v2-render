@@ -5,7 +5,7 @@ import asyncio
 import io
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Query, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -161,7 +161,6 @@ async def set_outcome(pack_id: str, body: OutcomeBody, request: Request,
 @router.delete("/{pack_id}")
 async def delete_pack(pack_id: str, request: Request,
                       claims: dict = Depends(current_claims),
-                      reason: str | None = Query(default=None, max_length=1000),
                       tenant: str = Depends(authed_tenant),
                       _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_rfp_packs),
                       reqs=Depends(get_requirements), answers=Depends(get_pack_answers),
@@ -169,10 +168,15 @@ async def delete_pack(pack_id: str, request: Request,
     pack, recheck = await _resolve_pack(request, tenant, pack_id, svc)
     await recheck()
     # Counted before the cascade, because afterwards there is nothing left to count. A tender pack is
-    # weeks of a bid team's work across four tables, and this endpoint removes all of it with no
-    # undo, so the size of what was destroyed is the substance of the record.
-    sections = await tree.sections_for_pack(tenant, pack_id) if hasattr(tree, "sections_for_pack") else []
-    counts = {"sections": len(sections or [])}
+    # weeks of a bid team's work across four tables and this endpoint removes all of it with no undo,
+    # so the size of what was destroyed is the substance of the record.
+    #
+    # An earlier version called tree.sections_for_pack behind a hasattr guard. No such method exists,
+    # so the guard was always false and every row recorded sections: 0. A fabricated zero is worse than
+    # an absent field: it reads as evidence that nothing was there.
+    sections = await tree.sections.list(tenant, pack_id)
+    questions = await tree.questions.list(tenant, pack_id)
+    counts = {"sections": len(sections), "questions": len(questions)}
     await answers.delete_for_pack(tenant, pack_id)
     await recheck()
     await reqs.delete_for_pack(tenant, pack_id)
@@ -184,7 +188,7 @@ async def delete_pack(pack_id: str, request: Request,
         action=audit_actions.RFP_PACK_DELETED, target_id=pack_id,
         target_label=getattr(pack, "title", None), tenant_id=tenant, actor_type=audit.USER,
         actor_id=str(claims.get("sub") or ""), actor_label=str(claims.get("email") or ""),
-        reason=reason,
+        reason=request.headers.get("x-audit-reason"),
         changes=audit.diff(audit_actions.RFP_PACK_DELETED, {}, counts),
         metadata={"cascaded": ["answers", "requirements", "sections", "questions", "pack"]}),
         request=request)

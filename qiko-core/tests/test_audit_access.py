@@ -42,7 +42,10 @@ def test_the_hard_delete_leaves_a_record_of_the_identity_it_destroyed(client):
     cascades the user's MFA backup codes. A leaver sample is the first thing an access review asks
     for, and the only record that the user had existed was the row being destroyed."""
     _member(client)
-    response = client.delete("/api/v1/identity/users/m1?reason=left the company", cookies=ADMIN)
+    # The reason travels in the body now, not the query string: a URL is written verbatim into edge
+    # access logs, which sit outside the audit store's retention and erasure path.
+    response = client.request("DELETE", "/api/v1/identity/users/m1", cookies=ADMIN,
+                             json={"reason": "left the company"})
     assert response.status_code == 200
     assert asyncio.run(get_user_store().get_by_id("m1")) is None, "genuinely gone"
 
@@ -55,14 +58,21 @@ def test_the_hard_delete_leaves_a_record_of_the_identity_it_destroyed(client):
     assert row["reason"] == "left the company"
 
 
-def test_the_removal_is_recorded_before_the_row_disappears(client):
-    """Ordering is the whole trick here: after store.delete the email and role are unrecoverable."""
+def test_the_removal_captures_early_and_records_late(client):
+    """Both orderings are wrong in different directions, which took a review to see.
+
+    Recording after the delete alone loses the email and role, which are unrecoverable once the row is
+    gone. Recording BEFORE the delete, which is what this file originally asserted, lets a failed
+    delete leave a row claiming a removal that never happened. The answer is to capture the identifying
+    detail first and write the row only once the delete has succeeded.
+    """
     from pathlib import Path
 
     source = (Path(__file__).resolve().parents[1] / "app" / "modules" / "identity" /
               "users_router.py").read_text()
     body = source[source.index("async def remove_user"):source.index("@router.delete(\"/users/pending")]
-    assert body.index("audit.record") < body.index("await store.delete(user_id)")
+    assert body.index("removed_email, removed_role = user.email") < body.index("await store.delete")
+    assert body.index("await store.delete") < body.index("audit.record")
 
 
 def test_the_owner_protections_still_hold_and_produce_no_row(client):

@@ -52,7 +52,7 @@ async def members(team_id: str, tenant: str = Depends(authed_tenant), svc=Depend
 
 
 async def _record_access(request, action: str, tenant: str, claims: dict, team_id: str,
-                         user_id: str, after: dict) -> None:
+                         user_id: str, after: dict, before: dict | None = None) -> None:
     """One shape for all three membership mutations.
 
     Team membership is a second, independent way to reach a tenant's data, alongside the identity
@@ -62,7 +62,7 @@ async def _record_access(request, action: str, tenant: str, claims: dict, team_i
     await audit.record(request.app.state.audit, audit.AuditEvent(
         action=action, target_id=user_id, tenant_id=tenant, actor_type=audit.USER,
         actor_id=str(claims.get("sub") or ""), actor_label=str(claims.get("email") or ""),
-        changes=audit.diff(action, {}, after),
+        changes=audit.diff(action, before or {}, after),
         metadata={"team_id": team_id, "via": "team"}), request=request)
 
 
@@ -92,9 +92,13 @@ async def update_member(team_id: str, user_id: str, body: RoleBody, request: Req
                         _r: dict = _admin, svc=Depends(get_teams)) -> dict:
     await _get_owned_team(team_id, tenant, svc)
     try:
+        # Captured first: an access review cannot tell what a member was demoted FROM otherwise, and
+        # the identity-side equivalent has always recorded it.
+        existing = (await svc.members(team_id)).get(user_id)
         members = _members(await svc.update_role(team_id, user_id, body.role))
         await _record_access(request, audit_actions.TENANT_ROLE_CHANGED, tenant, claims,
-                             team_id, user_id, {"role": body.role.value})
+                             team_id, user_id, {"role": body.role.value},
+                             before={"role": existing.value if existing else None})
         return members
     except TeamError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

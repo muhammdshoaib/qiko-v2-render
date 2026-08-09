@@ -134,7 +134,6 @@ async def accept(body: AcceptBody, claims: dict = Depends(current_claims),
 
 @router.delete("/{email}", openapi_extra=_CSRF_OPENAPI)
 async def remove(email: str, request: Request,
-                 reason: str | None = Query(default=None, max_length=1000),
                  claims: dict = Depends(current_claims),
                  _identity=Depends(require_platform_capability(Capability.manage_admins)),
                  org=Depends(get_admin_org)) -> dict:
@@ -144,7 +143,12 @@ async def remove(email: str, request: Request,
         raise HTTPException(status_code=409, detail="super-admin removal requires operator recovery process")
     try:
         # Goes through AdminOrg.revoke so the removal is audited; the previous path wrote no trail.
-        await org.revoke(_actor_email(claims), email, reason=reason)
+        # From a header, not the query string: an operator reason in a URL is written verbatim into
+        # edge access logs, which sit outside the audit store's retention window and outside its
+        # erasure path. Revoking platform access is the highest-privilege action here, so its reason is
+        # the last one that should leak sideways.
+        await org.revoke(_actor_email(claims), email,
+                         reason=(request.headers.get("x-audit-reason") or None))
     except AdminAuthzError as e:
         raise HTTPException(status_code=403, detail=str(e)) from e
     return {"removed": email}

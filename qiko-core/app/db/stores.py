@@ -947,10 +947,14 @@ class SqlChatStore:
             msgs = [Message(role=r.role, text=r.body, created_at=r.created_at) for r in rows]
             return msgs[-limit:] if limit else msgs
 
-    async def clear(self, tenant: str, conversation_id: str) -> None:
+    async def clear(self, tenant: str, conversation_id: str) -> int:
         async with self.sessionmaker() as s, s.begin():
-            await s.execute(delete(MessageRow).where(MessageRow.tenant_id == tenant,
-                                                     MessageRow.conversation_id == conversation_id))
+            result = await s.execute(delete(MessageRow).where(
+                MessageRow.tenant_id == tenant, MessageRow.conversation_id == conversation_id))
+            # Returned so the audit does not have to read the conversation to count it. history()
+            # defaults to a 20-row window and has no SQL LIMIT, so counting that way both saturated at
+            # 20 and materialised every message body to do it.
+            return result.rowcount or 0
 
     async def list_for_agent(self, tenant: str, agent_id: str) -> list[ConversationSummary]:
         async with self.sessionmaker() as s:

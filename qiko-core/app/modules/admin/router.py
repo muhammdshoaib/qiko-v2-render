@@ -256,7 +256,6 @@ async def customer_studio(user_id: str, body: StudioBody, request: Request,
 @router.delete("/customers/{user_id}", openapi_extra=_CSRF_OPENAPI)
 async def customer_delete(user_id: str, request: Request,
                           claims: dict = Depends(current_claims),
-                          reason: str | None = Query(default=None, max_length=1000),
                           _tenant: str = Depends(authed_tenant),
                           _identity=Depends(require_platform_capability(Capability.manage_customers))) -> dict:
     before = await run_in_threadpool(request.app.state.customers.details, user_id)
@@ -272,7 +271,10 @@ async def customer_delete(user_id: str, request: Request,
         await audit.record(request.app.state.audit, audit.AuditEvent(
             action=audit_actions.CUSTOMER_SOFT_DELETED, target_id=user_id, tenant_id=user_id,
             actor_type=audit.PLATFORM_ADMIN, actor_id=str(claims.get("email") or ""),
-            actor_label=str(claims.get("email") or ""), reason=reason,
+            actor_label=str(claims.get("email") or ""),
+            # A header, not the query string: an operator reason in a URL is written verbatim into
+            # edge access logs, which sit outside this store's retention and erasure path.
+            reason=request.headers.get("x-audit-reason"),
             changes=audit.diff(audit_actions.CUSTOMER_SOFT_DELETED,
                                {"state": "active"}, {"state": "deleted"})), request=request)
         return _customer_json(record)

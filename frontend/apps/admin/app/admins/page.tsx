@@ -15,6 +15,7 @@ import {
 } from "@/lib/api";
 
 const LABELS: Record<Capability, string> = {
+  view_audit: "Read the audit log",
   view_customers: "View customers",
   manage_customers: "Manage customers",
   manage_workers: "Manage workers",

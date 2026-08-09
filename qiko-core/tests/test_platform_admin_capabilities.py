@@ -261,8 +261,10 @@ def test_grants_and_revokes_are_audited_with_before_and_after(client):
     with_csrf, headers = _csrf(cookies)
     client.put(f"/api/v1/admin/org/{HELPER}", cookies=with_csrf, headers=headers,
                json={"role": "viewer", "capabilities": ["manage_workers"], "reason": "cost review"})
-    client.delete(f"/api/v1/admin/org/{HELPER}?reason=left+the+team",
-                  cookies=with_csrf, headers=headers)
+    # Revoking platform access is the highest-privilege action here, so its reason is the last one
+    # that should end up in an edge access log. It travels in a header.
+    client.delete(f"/api/v1/admin/org/{HELPER}", cookies=with_csrf,
+                  headers={**headers, "x-audit-reason": "left the team"})
 
     entries = client.get("/api/v1/admin/org/audit", cookies=cookies).json()["entries"]
     assert len(entries) >= 2

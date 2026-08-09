@@ -42,7 +42,17 @@ CATEGORIES = frozenset({AUTH, ACCESS, ADMIN, BILLING, DATA, CONFIG, PRIVACY})
 # else is written afterwards and never raises. Getting this backwards is the main design risk: a
 # payment-link audit that can silently vanish is worthless, and a chat-volume audit that can fail a
 # request turns an audit outage into a product outage.
+# Written inside the caller's transaction, so the mutation cannot commit without its row. This is a
+# claim about the CODE, not an aspiration: `record()` and `record_sync()` both log an error when a
+# CRITICAL action reaches them, and the route-coverage test asserts that every CRITICAL action has a
+# transactional call site. An earlier version declared ten actions CRITICAL that were written on the
+# weak path, which had two live consequences: the rows could be lost for exactly the events that must
+# not be losable, and every routine deletion emitted an ERROR that Sentry turned into an alert,
+# drowning the real "audit write failed" it shares a logger with.
 CRITICAL = "critical"
+# Written after the fact and never raising. Losing one is acceptable; failing the request it observes
+# is not. This is the right class for most events, and saying so is better than claiming a guarantee
+# the call site does not provide.
 STANDARD = "standard"
 # Actions whose real effect happens at a third party. Atomicity with our database is impossible by
 # construction: Stripe has already created the link when our transaction rolls back. So the honest
@@ -140,12 +150,14 @@ _SPECS: tuple[ActionSpec, ...] = (
     # a password is never a value we hold.
     _spec(LOGIN_SUCCEEDED, AUTH, "user", template="{actor} signed in"),
     _spec(LOGIN_FAILED, AUTH, "user", template="Failed sign-in for {target}"),
-    _spec(MFA_ENROLLED, AUTH, "user", durability=CRITICAL, template="{actor} enrolled two-factor authentication"),
+    _spec(MFA_ENROLLED, AUTH, "user", # Not transactional: enable_twofa commits before the row is written.
+          durability=STANDARD, template="{actor} enrolled two-factor authentication"),
     _spec(MFA_FAILED, AUTH, "user", template="Failed two-factor check for {target}"),
     _spec(BACKUP_CODES_REGENERATED, AUTH, "user", durability=CRITICAL,
           template="{actor} regenerated their backup codes"),
     _spec(PASSWORD_RESET_REQUESTED, AUTH, "user", template="Password reset requested for {target}"),
-    _spec(PASSWORD_CHANGED, AUTH, "user", durability=CRITICAL, diff_fields=("method",),
+    _spec(PASSWORD_CHANGED, AUTH, "user", # Not transactional: set_password commits before the row is written.
+          durability=STANDARD, diff_fields=("method",),
           template="Password changed for {target}"),
     _spec(SESSION_REVOKED, AUTH, "user", template="Session revoked for {target}"),
     _spec(ACCESS_DENIED, AUTH, "endpoint", template="{actor} was denied {target}"),
@@ -157,11 +169,14 @@ _SPECS: tuple[ActionSpec, ...] = (
           template="{actor} granted platform access to {target}"),
     _spec(PLATFORM_ACCESS_REVOKED, ACCESS, "platform_admin", read_capability=Capability.manage_admins,
           durability=CRITICAL, template="{actor} revoked platform access for {target}"),
-    _spec(TENANT_ROLE_CHANGED, ACCESS, "user", durability=CRITICAL, diff_fields=("role",),
+    _spec(TENANT_ROLE_CHANGED, ACCESS, "user", # Not transactional: the identity store commits on its own; making this transactional needs an injected session (leg E4).
+          durability=STANDARD, diff_fields=("role",),
           template="{actor} changed the role of {target}"),
-    _spec(TENANT_MEMBER_ADDED, ACCESS, "user", durability=CRITICAL, diff_fields=("role",),
+    _spec(TENANT_MEMBER_ADDED, ACCESS, "user", # Not transactional: team membership commits in the teams service; same restructuring as above.
+          durability=STANDARD, diff_fields=("role",),
           template="{actor} added {target} to a team"),
-    _spec(TENANT_MEMBER_REMOVED, ACCESS, "user", durability=CRITICAL,
+    _spec(TENANT_MEMBER_REMOVED, ACCESS, "user", # Not transactional: as above, and the hard-delete path commits before the row is written.
+          durability=STANDARD,
           template="{actor} removed {target} from a team"),
     _spec(INVITE_SENT, ACCESS, "email", diff_fields=("role",), template="{actor} invited {target}"),
     _spec(INVITE_ACCEPTED, ACCESS, "email", durability=CRITICAL, template="{target} accepted an invitation"),
@@ -188,16 +203,19 @@ _SPECS: tuple[ActionSpec, ...] = (
     _spec(PAYMENT_LINK_MARKED_PAID, BILLING, "payment_link", read_capability=Capability.manage_billing,
           # An operator declaring money received without money moving. If one row in this table ever
           # matters in a dispute, it is this one. Local-only, so it can and must be transactional.
-          durability=CRITICAL, diff_fields=("amount_cents", "status", "links_marked"),
+          # Not transactional: the payment-link store is the separate SYNC engine, so it cannot share a transaction with an async write.
+          durability=STANDARD, diff_fields=("amount_cents", "status", "links_marked"),
           template="{actor} marked a payment link paid"),
     _spec(STRIPE_WEBHOOK_APPLIED, BILLING, "tenant", read_capability=Capability.manage_billing,
           durability=CRITICAL, diff_fields=("plan", "status"),
           template="Stripe applied {target}"),
     _spec(COST_CAP_SET, BILLING, "cost_cap", read_capability=Capability.view_ai_cost,
-          durability=CRITICAL, diff_fields=("monthly_cap_nano_usd", "alert_threshold_pct"),
+          # Not transactional: the cap store commits on its own, and the guard cache is invalidated after.
+          durability=STANDARD, diff_fields=("monthly_cap_nano_usd", "alert_threshold_pct"),
           template="{actor} set a spend cap"),
     _spec(COST_CAP_REMOVED, BILLING, "cost_cap", read_capability=Capability.view_ai_cost,
-          durability=CRITICAL, diff_fields=("monthly_cap_nano_usd",),
+          # Not transactional: as above.
+          durability=STANDARD, diff_fields=("monthly_cap_nano_usd",),
           template="{actor} removed a spend cap"),
 
     # Credentials. The diff never carries a value: see fingerprint_of in service.py.
@@ -216,7 +234,8 @@ _SPECS: tuple[ActionSpec, ...] = (
     # Tenant and worker lifecycle.
     _spec(STUDIO_TOGGLED, ADMIN, "tenant", diff_fields=("is_studio",),
           template="{actor} changed Studio access for {target}"),
-    _spec(CUSTOMER_SOFT_DELETED, ADMIN, "tenant", durability=CRITICAL, diff_fields=("state",),
+    _spec(CUSTOMER_SOFT_DELETED, ADMIN, "tenant", # Not transactional: the customer directory is the separate SYNC engine, so no shared transaction exists.
+          durability=STANDARD, diff_fields=("state",),
           template="{actor} deleted the account {target}"),
     _spec(WORKER_CREATED, ADMIN, "worker", diff_fields=("name", "type"),
           template="{actor} created worker {target}"),
@@ -236,14 +255,18 @@ _SPECS: tuple[ActionSpec, ...] = (
     # Data. Deletions are CRITICAL: they are the events a customer disputes.
     _spec(DOCUMENT_INGESTED, DATA, "document", diff_fields=("doc_id", "chunks"),
           template="{actor} ingested {target}"),
-    _spec(DOCUMENT_DELETED, DATA, "document", durability=CRITICAL, diff_fields=("doc_id", "passages_removed"),
+    _spec(DOCUMENT_DELETED, DATA, "document", # Not transactional: the knowledge service owns its transaction; the passage count is the evidence, not the atomicity.
+          durability=STANDARD, diff_fields=("doc_id", "passages_removed"),
           template="{actor} deleted document {target}"),
-    _spec(RFP_PACK_DELETED, DATA, "rfp_pack", durability=CRITICAL,
+    _spec(RFP_PACK_DELETED, DATA, "rfp_pack", # Not transactional: cascades across four services, so there is no single transaction to join.
+          durability=STANDARD,
           diff_fields=("sections", "questions", "answers"),
           template="{actor} deleted tender pack {target}"),
-    _spec(FINANCE_FILES_DELETED, DATA, "finance_file", durability=CRITICAL, diff_fields=("file_count",),
+    _spec(FINANCE_FILES_DELETED, DATA, "finance_file", # Not transactional: the finance service commits on its own.
+          durability=STANDARD, diff_fields=("file_count",),
           template="{actor} deleted financial files"),
-    _spec(CHAT_HISTORY_DELETED, DATA, "conversation", durability=CRITICAL, diff_fields=("messages_removed",),
+    _spec(CHAT_HISTORY_DELETED, DATA, "conversation", # Not transactional: the chat store commits on its own.
+          durability=STANDARD, diff_fields=("messages_removed",),
           template="{actor} deleted a conversation"),
     _spec(ANSWER_APPROVED, DATA, "answer", diff_fields=("decision", "topic"),
           # A human decision that permanently overrides the AI for that topic. Nothing recorded who.

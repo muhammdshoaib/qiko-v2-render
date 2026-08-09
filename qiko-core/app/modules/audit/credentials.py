@@ -56,15 +56,24 @@ def credential_audit(*, action: str, provider: str, tenant: str, agent_id: str,
     actor_id, actor_label = _actor(claims)
 
     def build(previous_config: dict) -> dict:
+        had_previous = bool((previous_config or {}).get(PROVIDERS.get(provider, "")))
         previous_secret = decrypt_previous(previous_config)
         metadata = {
             "fingerprint_before": audit.fingerprint_of(previous_secret),
             "fingerprint_after": audit.fingerprint_of(secret),
         }
+        if had_previous and previous_secret is None:
+            # A stored credential we could not decrypt, which happens after an ENCRYPTION_KEY
+            # rotation. Without this marker the row is indistinguishable from "there was no previous
+            # credential", so every re-save after a key rotation reported a rotation: exactly backwards
+            # from what the field is for.
+            metadata["previous_readable"] = False
         if action == registry.CREDENTIAL_SET:
             # A real rotation versus a re-save of the same value is the difference between "the leaked
-            # key is dead" and "the leaked key is still live".
-            metadata["rotated"] = bool(secret) and secret != previous_secret
+            # key is dead" and "the leaked key is still live". Unknown when the old value cannot be
+            # read, and unknown is reported as unknown rather than as a rotation.
+            metadata["rotated"] = (None if had_previous and previous_secret is None
+                                   else bool(secret) and secret != previous_secret)
         return audit.build_row(audit.AuditEvent(
             action=action, target_id=agent_id, target_label=agent_name, tenant_id=tenant,
             actor_type=audit.USER, actor_id=actor_id, actor_label=actor_label,

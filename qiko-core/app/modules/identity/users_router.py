@@ -20,8 +20,8 @@ from __future__ import annotations
 import logging
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, Field
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import Settings, get_settings
@@ -193,10 +193,19 @@ async def update_role(user_id: str, body: RoleBody, request: Request,
     return _user_dict(updated) if updated else _user_dict(user)
 
 
+class RemoveUserBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # In the body, not the query string. Operator free text in a URL is logged verbatim by the edge,
+    # which puts a leaver reason outside this store's retention window and outside its erasure path:
+    # the same argument the stdout mirror makes for carrying no labels or reasons.
+    reason: str | None = Field(default=None, max_length=1000)
+
+
 @router.delete("/users/{user_id}")
 async def remove_user(user_id: str, request: Request,
+                      body: RemoveUserBody | None = None,
                       claims: dict = Depends(current_claims),
-                      reason: str | None = Query(default=None, max_length=1000),
                       tenant: str = Depends(authed_tenant), _r: dict = _admin,
                       store: UserStore = Depends(get_store)) -> dict:
     """Remove a member from the tenant. owner/admin only. The account owner can never be removed
@@ -214,12 +223,18 @@ async def remove_user(user_id: str, request: Request,
     user = await _get_tenant_user(user_id, tenant, store)
     if user.role is Role.owner:
         raise HTTPException(status_code=400, detail="cannot remove the owner")
-    await audit.record(request.app.state.audit, audit.AuditEvent(
-        action=audit_actions.TENANT_MEMBER_REMOVED, target_id=user_id, target_label=user.email,
-        tenant_id=tenant, actor_type=audit.USER, actor_id=str(claims.get("sub") or ""),
-        actor_label=str(claims.get("email") or ""), reason=reason,
-        metadata={"role": user.role.value, "hard_delete": True}), request=request)
+    # Capture the identifying detail first, because after the delete it is unrecoverable, but record
+    # AFTER the delete succeeds. An earlier version wrote the row first, which meant a failed delete
+    # left a row asserting a removal that had not happened. Over-reporting and under-reporting are
+    # both wrong; capturing early and recording late avoids each.
+    removed_email, removed_role = user.email, user.role.value
     await store.delete(user_id)
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.TENANT_MEMBER_REMOVED, target_id=user_id, target_label=removed_email,
+        tenant_id=tenant, actor_type=audit.USER, actor_id=str(claims.get("sub") or ""),
+        actor_label=str(claims.get("email") or ""),
+        reason=body.reason if body else None,
+        metadata={"role": removed_role, "hard_delete": True}), request=request)
     return {"removed": user_id}
 
 
