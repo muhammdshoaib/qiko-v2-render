@@ -2027,7 +2027,15 @@ export interface paths {
         get: operations["history_api_v1_chat_history__conversation_id__get"];
         put?: never;
         post?: never;
-        /** Clear History */
+        /**
+         * Clear History
+         * @description Delete every message in a conversation.
+         *
+         *     Reachable by ANY authenticated role including viewer, with no confirmation, and it destroys content
+         *     the product itself treats as the record. Recording the message count before the wipe is the only
+         *     way the trail can distinguish clearing an empty test thread from destroying a year of a customer's
+         *     support history.
+         */
         delete: operations["clear_history_api_v1_chat_history__conversation_id__delete"];
         options?: never;
         head?: never;
@@ -2541,7 +2549,19 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete Document */
+        /**
+         * Delete Document
+         * @description Delete every passage belonging to a document.
+         *
+         *     Not recoverable from within the product: the source file is not retained, so the only remedy is
+         *     for the customer to find and re-upload it. It also silently degrades retrieval for every worker
+         *     that was grounding answers in it, which is the failure the customer notices first and attributes to
+         *     the AI rather than to a deletion.
+         *
+         *     The passage COUNT is what makes the row worth having. "A document was deleted" is a fact nobody
+         *     disputes; "3,412 passages were removed from the corpus" is the one that explains why answers got
+         *     worse on a particular day.
+         */
         delete: operations["delete_document_api_v1_knowledge_documents__doc_id__delete"];
         options?: never;
         head?: never;
@@ -11002,6 +11022,7 @@ export interface operations {
         parameters: {
             query?: {
                 agent_id?: string | null;
+                reason?: string | null;
             };
             header?: never;
             path: {
@@ -11619,7 +11640,9 @@ export interface operations {
     };
     delete_pack_api_v1_rfp_packs__pack_id__delete: {
         parameters: {
-            query?: never;
+            query?: {
+                reason?: string | null;
+            };
             header?: never;
             path: {
                 pack_id: string;

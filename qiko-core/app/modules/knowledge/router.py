@@ -1,10 +1,12 @@
 """Knowledge HTTP API (tenant-scoped)."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, Query, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
-from app.core.deps import authed_tenant, get_knowledge, require_role, resolve_tenant_worker
+from app.modules.audit import registry as audit_actions
+from app.modules.audit import service as audit
+from app.core.deps import current_claims, authed_tenant, get_knowledge, require_role, resolve_tenant_worker
 from app.modules.identity.rbac import Role
 from app.modules.knowledge.evaluation import RFP_CRITERIA, evaluate_document
 from app.modules.knowledge.parsing import MAX_UPLOAD_BYTES
@@ -50,9 +52,31 @@ async def documents(tenant: str = Depends(authed_tenant), agent_id: str | None =
 
 
 @router.delete("/documents/{doc_id}")
-async def delete_document(doc_id: str, tenant: str = Depends(authed_tenant), agent_id: str | None = None,
+async def delete_document(doc_id: str, request: Request,
+                          claims: dict = Depends(current_claims),
+                          tenant: str = Depends(authed_tenant), agent_id: str | None = None,
+                          reason: str | None = Query(default=None, max_length=1000),
                           _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_knowledge)) -> dict:
-    return {"removed": await svc.delete_document(tenant, doc_id, agent_id=agent_id)}
+    """Delete every passage belonging to a document.
+
+    Not recoverable from within the product: the source file is not retained, so the only remedy is
+    for the customer to find and re-upload it. It also silently degrades retrieval for every worker
+    that was grounding answers in it, which is the failure the customer notices first and attributes to
+    the AI rather than to a deletion.
+
+    The passage COUNT is what makes the row worth having. "A document was deleted" is a fact nobody
+    disputes; "3,412 passages were removed from the corpus" is the one that explains why answers got
+    worse on a particular day.
+    """
+    removed = await svc.delete_document(tenant, doc_id, agent_id=agent_id)
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.DOCUMENT_DELETED, target_id=doc_id, tenant_id=tenant,
+        actor_type=audit.USER, actor_id=str(claims.get("sub") or ""),
+        actor_label=str(claims.get("email") or ""), reason=reason,
+        changes=audit.diff(audit_actions.DOCUMENT_DELETED, {},
+                           {"doc_id": doc_id, "passages_removed": removed}),
+        metadata={"agent_id": agent_id}), request=request)
+    return {"removed": removed}
 
 
 @router.post("/ingest-file")

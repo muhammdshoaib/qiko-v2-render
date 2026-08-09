@@ -14,7 +14,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
-from app.core.deps import authed_tenant, require_role, resolve_tenant_worker
+from app.core.deps import current_claims, authed_tenant, require_role, resolve_tenant_worker
+from app.modules.audit import registry as audit_actions
+from app.modules.audit import service as audit
 from app.modules.finance.service import MAX_UPLOAD_BYTES, FinanceError, FinanceUploadError
 from app.modules.identity.rbac import Role
 
@@ -66,6 +68,7 @@ class DeleteFilesBody(BaseModel):
 
 @router.delete("/{agent_id}/files")
 async def delete_files(agent_id: str, body: DeleteFilesBody, request: Request,
+                       claims: dict = Depends(current_claims),
                        tenant: str = Depends(authed_tenant),
                        _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_finance)) -> dict:
     recheck = await _resolve_worker(request, tenant, agent_id)
@@ -75,6 +78,14 @@ async def delete_files(agent_id: str, body: DeleteFilesBody, request: Request,
         raise HTTPException(status_code=422, detail="at least one file id is required")
     result = await svc.delete_files(tenant, agent_id, ids)
     await recheck()
+    # Financial records, deleted in bulk by an id list. The ids are recorded rather than the filenames:
+    # a filename can carry a client name, and the id is what identifies the record for a restore.
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.FINANCE_FILES_DELETED, target_id=agent_id, tenant_id=tenant,
+        actor_type=audit.USER, actor_id=str(claims.get("sub") or ""),
+        actor_label=str(claims.get("email") or ""),
+        changes=audit.diff(audit_actions.FINANCE_FILES_DELETED, {}, {"file_count": len(ids)}),
+        metadata={"file_ids": ids[:50]}), request=request)
     return result
 
 

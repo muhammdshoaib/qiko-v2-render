@@ -85,6 +85,10 @@ AUDIT_WRITERS: dict[str, int] = {
     "agents/router.py": 16,
     "identity/users_router.py": 3,
     "teams/router.py": 3,
+    "knowledge/router.py": 1,
+    "chat/router.py": 1,
+    "rfp/router.py": 1,
+    "finance/router.py": 1,
 }
 
 
@@ -108,7 +112,9 @@ def test_the_instrumented_set_matches_the_source():
         segment = route.split("/api/v1/")[1].split("/")[0]
         module = {"admin": "admin/router.py", "billing": "billing/router.py",
                   "agents": "agents/router.py", "identity": "identity/users_router.py",
-                  "teams": "teams/router.py"}[segment]
+                  "teams": "teams/router.py", "knowledge": "knowledge/router.py",
+                  "chat": "chat/router.py", "rfp": "rfp/router.py",
+                  "finance": "finance/router.py"}[segment]
         declared_by_module[module] = declared_by_module.get(module, 0) + 1
     assert declared_by_module == AUDIT_WRITERS, (
         f"the ledger and the code disagree: declared {declared_by_module}, expected {AUDIT_WRITERS}")
@@ -323,6 +329,10 @@ INSTRUMENTED: set[tuple[str, str]] = {
     ("POST", "/api/v1/agents/{agent_id}/clickup-credentials/test"),
     ("POST", "/api/v1/agents/{agent_id}/slack-credentials/test"),
     ("POST", "/api/v1/agents/{agent_id}/gmail-credentials/test"),
+    ("DELETE", "/api/v1/knowledge/documents/{doc_id}"),
+    ("DELETE", "/api/v1/chat/history/{conversation_id}"),
+    ("DELETE", "/api/v1/rfp/packs/{pack_id}"),
+    ("DELETE", "/api/v1/finance/{agent_id}/files"),
 }
 
 # Audited, but into a table that predates the unified stream. Folding these in is leg E2: until then,
@@ -381,15 +391,7 @@ AUDIT_BACKLOG: dict[tuple[str, str], str] = {
         "CRITICAL deletion: leg E2 wave 5. Destroys customer data with no record of who or why."),
     ("DELETE", "/api/v1/assignments/section/{pack_id}/{section_id}"): (
         "CRITICAL deletion: leg E2 wave 5. Destroys customer data with no record of who or why."),
-    ("DELETE", "/api/v1/chat/history/{conversation_id}"): (
-        "CRITICAL deletion: leg E2 wave 5. Destroys customer data with no record of who or why."),
-    ("DELETE", "/api/v1/finance/{agent_id}/files"): (
-        "CRITICAL deletion: leg E2 wave 5. Destroys customer data with no record of who or why."),
     ("DELETE", "/api/v1/finance/{agent_id}/history"): (
-        "CRITICAL deletion: leg E2 wave 5. Destroys customer data with no record of who or why."),
-    ("DELETE", "/api/v1/knowledge/documents/{doc_id}"): (
-        "CRITICAL deletion: leg E2 wave 5. Destroys customer data with no record of who or why."),
-    ("DELETE", "/api/v1/rfp/packs/{pack_id}"): (
         "CRITICAL deletion: leg E2 wave 5. Destroys customer data with no record of who or why."),
     ("DELETE", "/api/v1/rfp/packs/{pack_id}/questions/{question_id}"): (
         "CRITICAL deletion: leg E2 wave 5. Destroys customer data with no record of who or why."),

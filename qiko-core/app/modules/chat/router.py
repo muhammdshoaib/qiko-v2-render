@@ -4,7 +4,9 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from app.core.deps import authed_tenant, get_chat, get_file_generator, resolve_tenant_worker
+from app.modules.audit import registry as audit_actions
+from app.modules.audit import service as audit
+from app.core.deps import current_claims, authed_tenant, get_chat, get_file_generator, resolve_tenant_worker
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -32,8 +34,24 @@ async def history(conversation_id: str, tenant: str = Depends(authed_tenant), ch
 
 
 @router.delete("/history/{conversation_id}")
-async def clear_history(conversation_id: str, tenant: str = Depends(authed_tenant), chat=Depends(get_chat)) -> dict:
+async def clear_history(conversation_id: str, request: Request,
+                        claims: dict = Depends(current_claims),
+                        tenant: str = Depends(authed_tenant), chat=Depends(get_chat)) -> dict:
+    """Delete every message in a conversation.
+
+    Reachable by ANY authenticated role including viewer, with no confirmation, and it destroys content
+    the product itself treats as the record. Recording the message count before the wipe is the only
+    way the trail can distinguish clearing an empty test thread from destroying a year of a customer's
+    support history.
+    """
+    messages = await chat.history(tenant, conversation_id)
     await chat.clear(tenant, conversation_id)
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.CHAT_HISTORY_DELETED, target_id=conversation_id, tenant_id=tenant,
+        actor_type=audit.USER, actor_id=str(claims.get("sub") or ""),
+        actor_label=str(claims.get("email") or ""),
+        changes=audit.diff(audit_actions.CHAT_HISTORY_DELETED, {},
+                           {"messages_removed": len(messages or [])})), request=request)
     return {"cleared": True}
 
 
