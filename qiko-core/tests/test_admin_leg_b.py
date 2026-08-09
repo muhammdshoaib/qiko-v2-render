@@ -381,7 +381,10 @@ def test_soft_delete_does_not_copy_the_email_into_the_audit(client):
     with_csrf, headers = _csrf(cookies)
     client.post("/api/v1/admin/customers/acme/studio", cookies=with_csrf, headers=headers,
                 json={"enabled": True})
-    client.delete("/api/v1/admin/customers/acme?reason=fraud", cookies=with_csrf, headers=headers)
+    # The reason is a header now, not a query parameter: the edge writes query strings verbatim into
+    # access logs, which sit outside the audit store's retention and erasure path.
+    client.delete("/api/v1/admin/customers/acme", cookies=with_csrf,
+                  headers={**headers, "x-audit-reason": "fraud"})
 
     trail = client.get("/api/v1/admin/audit", cookies=cookies).json()["items"]
     actions = {entry["action"] for entry in trail}
