@@ -275,3 +275,62 @@ export const twofaVerify = (secret: string, code: string, password: string, curr
   request<{ enabled: boolean; reauthentication_required: boolean; backup_codes: string[] }>("/auth/2fa/verify-setup", {
     method: "POST", body: JSON.stringify({ secret, code, password, current_code: currentCode || null }),
   });
+
+/* ---------- Audit trail ----------
+ * Cursor-paginated, not offset-paginated, and with no total. A COUNT over a filtered multi-million-row
+ * table is what makes an audit page unusable, and the number is not worth a full scan: what an operator
+ * needs is the next page and whether one exists.
+ */
+export type AuditEvent = {
+  event_id: string; action: string; category: string; outcome: string;
+  message: string | null; occurred_at: string;
+  actor_type: string; actor_id: string | null; actor_label: string | null;
+  on_behalf_of: string | null;
+  target_type: string; target_id: string | null; target_label: string | null;
+  tenant_id: string | null; request_id: string | null;
+  source_ip: string | null; user_agent: string | null; route: string | null;
+  service: string; environment: string;
+  changes: Record<string, { from?: unknown; to?: unknown }>;
+  metadata: Record<string, unknown>;
+  reason: string | null;
+  /** Opaque. Carries the whole sort key, so paging cannot skip a row whose timestamp and id disagree. */
+  _cursor: string;
+};
+
+export type AuditPage = {
+  items: AuditEvent[]; next_cursor: string | null; has_more: boolean;
+  window_days: number;
+  /** How many action types this reader is not permitted to see. Stated so an operator who cannot read
+   *  spend events knows they exist rather than concluding nothing happened. */
+  hidden_actions: number;
+};
+
+export type AuditFilters = {
+  days?: number; action?: string; category?: string; outcome?: string;
+  tenant_id?: string; actor_id?: string; target_id?: string; request_id?: string;
+  search?: string; cursor?: string | null; limit?: number;
+};
+
+export const auditEvents = (filters: AuditFilters) => {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined && value !== null && value !== "") query.set(key, String(value));
+  }
+  return request<AuditPage>(`/admin/audit?${query.toString()}`);
+};
+
+export type AuditCatalogue = {
+  categories: string[];
+  actions: { action: string; category: string; target_type: string }[];
+};
+
+/** The action taxonomy, from the same registry the writer uses. A hardcoded filter list would drift
+ *  the first time an action was added. */
+export const auditCatalogue = () => request<AuditCatalogue>("/admin/audit/actions");
+
+export type AuditRetention = {
+  event_retention_days: number; network_retention_days: number;
+  erasure: string; archive: string;
+};
+
+export const auditRetention = () => request<AuditRetention>("/admin/audit/retention");

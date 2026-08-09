@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Users, BarChart3, Receipt, ShieldCheck, ShieldAlert, LogOut, Menu, X, UserCog, CreditCard, Building2, UsersRound, Bot, Activity, Coins, Server } from "lucide-react";
+import { LayoutDashboard, Users, BarChart3, Receipt, ShieldCheck, ShieldAlert, LogOut, Menu, X, UserCog, CreditCard, Building2, UsersRound, Bot, Activity, Coins, Server, ScrollText } from "lucide-react";
 import { Button, Logo, cn } from "@qiko/ui";
 import { adminMe, ApiError, logout, type Capability } from "@/lib/api";
 
@@ -26,6 +26,9 @@ const NAV: { href: string; label: string; icon: typeof Users; requires?: Capabil
   { href: "/subscriptions", label: "Subscriptions", icon: CreditCard, requires: "view_customers" },
   { href: "/invoices", label: "Invoices", icon: Receipt, requires: "manage_billing" },
   { href: "/admins", label: "Platform Admins", icon: UserCog, requires: "manage_admins" },
+  // view_audit, not view_customers: the trail carries authentication events, so a reader learns which
+  // accounts exist and when each colleague works. It is deliberately outside the viewer default set.
+  { href: "/audit", label: "Audit Log", icon: ScrollText, requires: "view_audit" },
   { href: "/analytics", label: "Analytics", icon: BarChart3, requires: "view_customers" },
   { href: "/security", label: "Security", icon: ShieldCheck },
 ];
