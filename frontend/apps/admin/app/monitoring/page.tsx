@@ -1,115 +1,121 @@
 "use client";
 
-import { useState } from "react";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { Badge, Button, Card, CardContent, Skeleton } from "@qiko/ui";
-import { AppShell } from "@/components/app-shell";
-import { formatUsd, workerMonitoring } from "@/lib/api";
+import { Suspense, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
+import { Alert, Badge, SegmentedFilter, type Column } from "@qiko/ui";
+import { DirectoryPage } from "@/components/directory-page";
+import { adminMe, formatUsd, workerMonitoring, type MonitoredWorker } from "@/lib/api";
 
-const WINDOWS = [7, 30, 90] as const;
-// Must match pagination.PAGE_SIZE on the server. The response does not report the page size, so the
-// client cannot derive the page count without knowing it.
-const PAGE_SIZE = 20;
+const WINDOWS = [
+  { value: "7", label: "7 days" },
+  { value: "30", label: "30 days" },
+  { value: "90", label: "90 days" },
+] as const;
 
-export default function MonitoringPage() {
-  const [days, setDays] = useState<number>(30);
-  const [page, setPage] = useState(1);
-  const monitoring = useQuery({
-    queryKey: ["worker-monitoring", days, page],
-    // The endpoint has always been paginated and this page never sent a page, so every worker past
-    // the twentieth was unreachable while the heading truthfully reported the full total. An operator
-    // scanning for a runaway worker would simply not have seen it.
-    queryFn: () => workerMonitoring(days, page),
-    placeholderData: keepPreviousData,
-  });
-  const pageCount = monitoring.data ? Math.max(1, Math.ceil(monitoring.data.total / PAGE_SIZE)) : 1;
-  const shown = monitoring.data?.items.length ?? 0;
-  const firstOnPage = shown === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+function MonitoringView() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const days = Number(params.get("days") ?? 30);
+  const availability = params.get("enabled") ?? "";
+
+  const me = useQuery({ queryKey: ["admin-me"], queryFn: adminMe });
+  const costVisible = me.data?.capabilities?.includes("view_ai_cost") ?? false;
+
+  const setFilter = useCallback((key: string, value: string) => {
+    const next = new URLSearchParams(params.toString());
+    if (value) next.set(key, value); else next.delete(key);
+    next.delete("page");
+    router.replace(`?${next.toString()}`, { scroll: false });
+  }, [params, router]);
+
+  const columns: Column<MonitoredWorker>[] = [
+    {
+      id: "name", header: "Worker", rowHeader: true, sortable: true,
+      cell: (row) => (
+        <div className="min-w-0">
+          <p className="truncate font-medium">{row.name}</p>
+          <p className="truncate text-xs text-muted-foreground">{row.id}</p>
+        </div>
+      ),
+    },
+    { id: "tenant", header: "Tenant", sortable: true, hideBelow: "md", cell: (row) => row.tenant_id },
+    { id: "calls", header: "Calls", sortable: true, numeric: true,
+      cell: (row) => new Intl.NumberFormat().format(row.calls) },
+    {
+      id: "last_seen", header: "Last used", sortable: true, hideBelow: "md",
+      // Derived from real model activity rather than a heartbeat, so an idle worker honestly reads as
+      // never used in this window rather than as a stale timestamp.
+      cell: (row) => row.last_seen
+        ? new Date(row.last_seen).toLocaleDateString()
+        : <span className="text-muted-foreground">Not used</span>,
+    },
+    { id: "status", header: "Status", sortable: true,
+      cell: (row) => <Badge variant="muted">{row.status}</Badge> },
+    {
+      id: "enabled", header: "Availability", sortable: true,
+      cell: (row) => (
+        <Badge variant={row.enabled ? "default" : "destructive"}>
+          {row.enabled ? "Available" : "Unavailable"}
+        </Badge>
+      ),
+    },
+    // Present only for a caller holding view_ai_cost. Omitting the column entirely rather than showing
+    // an empty one: a blank cell reads as "this worker cost nothing".
+    ...(costVisible ? [{
+      id: "cost", header: "Spend", numeric: true,
+      cell: (row: MonitoredWorker) =>
+        row.cost_nano_usd === undefined ? "-" : formatUsd(row.cost_nano_usd),
+    } as Column<MonitoredWorker>] : []),
+  ];
 
   return (
-    <AppShell title="Worker Monitoring">
-      <div className="mx-auto max-w-5xl space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>Worker Monitoring</h1>
-            <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
-              {monitoring.isLoading ? "Loading workers..."
-                : monitoring.data
-                  ? `Showing ${firstOnPage}-${(page - 1) * PAGE_SIZE + shown} of ${monitoring.data.total} workers, busiest first`
-                  : "Unavailable"}
-            </p>
+    <>
+      <DirectoryPage<MonitoredWorker>
+        title="Worker Monitoring"
+        noun="workers"
+        searchLabel="Search workers by name or id"
+        searchPlaceholder="Search by name or id..."
+        queryKey="worker-monitoring"
+        filterToken={`${days}|${availability}`}
+        onClearFilters={() => router.replace("?", { scroll: false })}
+        // Busiest first is what the endpoint returns unsorted, so the header says so rather than
+        // presenting an order the operator cannot account for.
+        defaultSort={{ sort: "calls", order: "desc" }}
+        // Filtered on the SERVER, not after the fetch. Filtering client-side would leave the total
+        // describing the unfiltered set, so the page count and the "showing N of M" line would both
+        // be wrong, which is the class of bug this whole leg started from.
+        fetchPage={(search, page, sort) => workerMonitoring(
+          days, page, undefined, sort, search || undefined,
+          availability === "" ? undefined : availability === "true")}
+        rowKey={(row) => `${row.tenant_id}-${row.id}`}
+        columns={columns}
+        filters={
+          <div className="flex flex-wrap items-end gap-4">
+            <SegmentedFilter label="Time window" value={String(days)}
+              options={WINDOWS.map((w) => ({ value: w.value, label: w.label }))}
+              onChange={(value) => setFilter("days", value)} />
+            <SegmentedFilter label="Filter by availability" value={availability}
+              options={[{ value: "", label: "All" }, { value: "true", label: "Available" },
+                        { value: "false", label: "Unavailable" }]}
+              onChange={(value) => setFilter("enabled", value)} />
           </div>
-          <div role="group" aria-label="Time window" className="flex gap-2">
-            {WINDOWS.map((option) => (
-              <Button key={option} className="min-h-11" aria-pressed={days === option}
-                variant={days === option ? "default" : "outline"}
-                onClick={() => { setDays(option); setPage(1); }}>
-                {option}d
-              </Button>
-            ))}
-          </div>
+        }
+        emptyMessage={(filtered) => filtered
+          ? "No workers match this search or filter."
+          : "No worker activity in this window."}
+      />
+      {me.data && !costVisible && (
+        <div className="mx-auto max-w-6xl px-4 pb-6">
+          <Alert tone="info">
+            Spend is hidden. Showing it needs the View AI cost capability.
+          </Alert>
         </div>
-
-        {monitoring.isError && (
-          <Card><CardContent role="alert" className="py-6 text-sm text-destructive">
-            Couldn&apos;t load worker activity.{" "}
-            <button className="underline" onClick={() => monitoring.refetch()}>Retry</button>
-          </CardContent></Card>
-        )}
-
-        <div className="space-y-3" aria-busy={monitoring.isFetching}>
-          {monitoring.isLoading && [0, 1, 2].map((index) => <Skeleton key={index} className="h-20 w-full" />)}
-          {monitoring.data?.items.length === 0 && (
-            <Card><CardContent className="py-6 text-sm text-muted-foreground">No workers yet.</CardContent></Card>
-          )}
-          {monitoring.data?.items.map((worker) => (
-            <Card key={`${worker.tenant_id}-${worker.id}`}>
-              <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
-                <div className="min-w-0">
-                  <p className="truncate font-medium">{worker.name}</p>
-                  <p className="truncate text-xs text-muted-foreground">{worker.tenant_id} - {worker.id}</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <Badge variant="muted">{worker.status}</Badge>
-                  <Badge variant={worker.enabled ? "default" : "destructive"}>
-                    {worker.enabled ? "Enabled" : "Disabled"}
-                  </Badge>
-                  <span className="text-muted-foreground">
-                    {worker.calls} {worker.calls === 1 ? "call" : "calls"}
-                  </span>
-                  <span className="text-muted-foreground">
-                    {/* Derived from real model activity rather than a heartbeat, so an idle worker
-                        honestly reads as never used in this window. */}
-                    {worker.last_seen
-                      ? `last used ${new Date(worker.last_seen).toLocaleDateString()}`
-                      : "not used in this window"}
-                  </span>
-                  {worker.cost_nano_usd !== undefined && (
-                    <span className="tabular-nums">{formatUsd(worker.cost_nano_usd)}</span>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {pageCount > 1 && (
-          <nav aria-label="Worker pagination" className="flex items-center justify-between gap-3">
-            <Button variant="outline" className="min-h-11" disabled={page <= 1 || monitoring.isFetching}
-              onClick={() => setPage((current) => Math.max(1, current - 1))}>Previous</Button>
-            <span className="text-sm text-muted-foreground">Page {page} of {pageCount}</span>
-            <Button variant="outline" className="min-h-11"
-              disabled={page >= pageCount || monitoring.isFetching}
-              onClick={() => setPage((current) => current + 1)}>Next</Button>
-          </nav>
-        )}
-
-        {monitoring.data && !monitoring.data.cost_visible && (
-          <p role="status" className="text-sm text-muted-foreground">
-            Spend is hidden: showing it needs the View AI cost capability.
-          </p>
-        )}
-      </div>
-    </AppShell>
+      )}
+    </>
   );
+}
+
+export default function MonitoringPage() {
+  return <Suspense fallback={null}><MonitoringView /></Suspense>;
 }

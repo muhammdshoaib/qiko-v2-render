@@ -1,53 +1,80 @@
 "use client";
 
-import { useState } from "react";
-import { Badge, Button } from "@qiko/ui";
+import { Suspense, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Badge, SegmentedFilter, type Column } from "@qiko/ui";
 import { DirectoryPage } from "@/components/directory-page";
 import { listWorkers, type WorkerRow } from "@/lib/api";
 
-type Filter = "all" | "enabled" | "disabled";
+const columns: Column<WorkerRow>[] = [
+  {
+    id: "name", header: "Worker", rowHeader: true, sortable: true,
+    cell: (row) => (
+      <div className="min-w-0">
+        <p className="truncate font-medium">{row.name}</p>
+        <p className="truncate text-xs text-muted-foreground">{row.id}</p>
+      </div>
+    ),
+  },
+  { id: "tenant", header: "Tenant", sortable: true, hideBelow: "md", cell: (row) => row.tenant_id },
+  { id: "status", header: "Status", sortable: true,
+    cell: (row) => <Badge variant="muted">{row.status}</Badge> },
+  {
+    id: "enabled", header: "Availability", sortable: true,
+    cell: (row) => (
+      <Badge variant={row.enabled ? "default" : "destructive"}>
+        {row.enabled ? "Available" : "Unavailable"}
+      </Badge>
+    ),
+  },
+];
 
-export default function WorkersPage() {
-  const [filter, setFilter] = useState<Filter>("all");
-  const enabled = filter === "all" ? undefined : filter === "enabled";
+function WorkersView() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const availability = params.get("enabled") ?? "";
+  const status = params.get("status") ?? "";
+
+  const setFilter = useCallback((key: string, value: string) => {
+    const next = new URLSearchParams(params.toString());
+    if (value) next.set(key, value); else next.delete(key);
+    next.delete("page");
+    router.replace(`?${next.toString()}`, { scroll: false });
+  }, [params, router]);
 
   return (
     <DirectoryPage<WorkerRow>
       title="Workers"
+      noun="workers"
       searchLabel="Search workers by name or id"
       searchPlaceholder="Search by name or id..."
       queryKey="admin-workers"
-      filterToken={filter}
-      fetchPage={(search, page) => listWorkers(search, page, enabled)}
+      filterToken={`${availability}|${status}`}
+      onClearFilters={() => router.replace("?", { scroll: false })}
+      fetchPage={(search, page, sort) => listWorkers(
+        search, page, availability === "" ? undefined : availability === "true", sort,
+        status || undefined)}
       rowKey={(row) => `${row.tenant_id}-${row.id}`}
-      onClearFilters={() => setFilter("all")}
-      emptyMessage={(filtered) => filtered ? "No workers match this search or filter." : "No workers yet."}
+      columns={columns}
       filters={
-        <div role="group" aria-label="Filter by state" className="flex gap-2">
-          {(["all", "enabled", "disabled"] as Filter[]).map((option) => (
-            <Button key={option} className="min-h-11"
-              variant={filter === option ? "default" : "outline"}
-              aria-pressed={filter === option}
-              onClick={() => setFilter(option)}>
-              {option === "all" ? "All" : option === "enabled" ? "Enabled" : "Disabled"}
-            </Button>
-          ))}
+        <div className="flex flex-wrap items-end gap-4">
+          <SegmentedFilter label="Filter by availability" value={availability}
+            options={[{ value: "", label: "All" }, { value: "true", label: "Available" },
+                      { value: "false", label: "Unavailable" }]}
+            onChange={(value) => setFilter("enabled", value)} />
+          {/* Status has existed on the server since leg B and had no control. It is the filter that
+              answers "which workers are still training", which availability cannot. */}
+          <SegmentedFilter label="Filter by status" value={status}
+            options={[{ value: "", label: "Any status" }, { value: "training", label: "Training" },
+                      { value: "ready", label: "Ready" }]}
+            onChange={(value) => setFilter("status", value)} />
         </div>
       }
-      renderRow={(row) => (
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate font-medium">{row.name}</p>
-            <p className="truncate text-xs text-muted-foreground">{row.tenant_id} - {row.id}</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <Badge variant="muted">{row.status}</Badge>
-            <Badge variant={row.enabled ? "default" : "destructive"}>
-              {row.enabled ? "Enabled" : "Disabled"}
-            </Badge>
-          </div>
-        </div>
-      )}
+      emptyMessage={(filtered) => filtered ? "No workers match this search or filter." : "No workers yet."}
     />
   );
+}
+
+export default function WorkersPage() {
+  return <Suspense fallback={null}><WorkersView /></Suspense>;
 }

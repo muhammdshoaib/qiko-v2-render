@@ -45,33 +45,39 @@ defectsTest("every paginated list actually paginates", () => {
   // checked that setPage and a page indicator existed, and it stayed green when the page was removed
   // from the query, which is exactly the bug. It also has to be in the query key, or React Query
   // serves the cached first page forever.
-  const fetchers: Record<string, RegExp> = {
-    "app/monitoring/page.tsx": /workerMonitoring\(days, page\)/,
-    "app/subscriptions/page.tsx": /listCustomers\(query, page\)/,
-    "app/customers/page.tsx": /listCustomers\(query, page\)/,
-  };
-  for (const [file, fetcher] of Object.entries(fetchers)) {
+  // Leg D moved the page into the URL and the four cross-tenant directories onto one shared shell, so
+  // the fetcher and the page control live there rather than per page. The property is unchanged: the
+  // page must reach the fetcher AND be in the query key, or React Query serves page one forever.
+  // Every page that owns its own query must send the page AND key on it. The four directories now
+  // delegate both to the shared shell, so their pages supply only a fetcher and the assertions split
+  // accordingly: asserting a query key against a file that no longer holds one would just be noise.
+  for (const file of ["app/subscriptions/page.tsx", "components/directory-page.tsx"]) {
     const source = read(file);
-    defectsAssert.match(source, fetcher, `${file} must send the page to the API`);
     defectsAssert.match(source, /queryKey: \[[^\]]*page[^\]]*\]/, `${file} must key the query on the page`);
-    defectsAssert.match(source, /setPage\(/, `${file} must let the operator change page`);
-    defectsAssert.match(source, /Page \{page\} of \{(pageCount|totalPages)\}/,
-      `${file} must show the page position`);
   }
+  defectsAssert.match(read("app/subscriptions/page.tsx"), /listCustomers\(query, page\)/);
+  defectsAssert.match(read("components/directory-page.tsx"), /fetchPage\(urlSearch, page, sort\)/);
+  // The pages that only provide a fetcher must still pass the page through it.
+  defectsAssert.match(read("app/monitoring/page.tsx"), /workerMonitoring\(\n?\s*days, page,/);
+  // And the shared shell owns the control, so it only has to be right once.
+  const shell = read("components/directory-page.tsx");
+  defectsAssert.match(shell, /<Pagination /, "the shell must render a page control");
+  defectsAssert.match(shell, /params\.get\("page"\)/, "the page must be shareable in a link");
+  // /subscriptions still has its own, until it moves onto the shell too.
+  defectsAssert.match(read("app/subscriptions/page.tsx"), /setPage\(/);
 });
 
 defectsTest("list result counts describe the view, not just a total", () => {
   // "137 total" is identical before and after a filter that returns 137 of a different set, so the
   // live region announced nothing. A range plus a total is change-detectable.
-  for (const file of ["app/monitoring/page.tsx", "app/subscriptions/page.tsx"]) {
+  for (const file of ["components/directory-page.tsx", "app/subscriptions/page.tsx"]) {
     defectsAssert.match(read(file), /Showing \$\{firstOnPage\}/, `${file} must announce a range`);
   }
 });
 
 defectsTest("lists keep their rows while the next page loads", () => {
   // Without this the query key change collapsed the whole list into skeleton bars on every click.
-  for (const file of ["components/directory-page.tsx", "app/customers/page.tsx",
-                      "app/monitoring/page.tsx", "app/subscriptions/page.tsx"]) {
+  for (const file of ["components/directory-page.tsx", "app/subscriptions/page.tsx"]) {
     defectsAssert.match(read(file), /placeholderData: keepPreviousData/, `${file} needs keepPreviousData`);
   }
 });
