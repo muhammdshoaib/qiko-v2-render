@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import secrets
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -37,6 +38,10 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine  # no
 
 from app.core.config import Environment, Settings  # noqa: E402
 from app.db.stores import SqlAdminOrgStore  # noqa: E402
+from app.modules.identity.rbac import Role
+from app.modules.identity.security import hash_password
+from app.modules.identity.store import User
+from app.db.stores import SqlUserStore
 from app.modules.identity.admin_rbac import (  # noqa: E402
     AdminRole,
     Capability,
@@ -66,6 +71,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--apply", action="store_true", help="write the change (default: dry run)")
     parser.add_argument("--confirm-email", default=None,
                         help="required on live: must repeat --email exactly")
+    parser.add_argument("--ensure-login", action="store_true",
+                        help="also create the login account if absent, with an unrecoverable password; "
+                             "the operator then uses password reset to choose their own")
     return parser
 
 
@@ -97,16 +105,38 @@ async def _run(args: argparse.Namespace, settings: Settings) -> tuple[str, dict]
 
     engine = create_async_engine(settings.database_url)
     try:
-        store = SqlAdminOrgStore(async_sessionmaker(engine, expire_on_commit=False))
+        sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
+        store = SqlAdminOrgStore(sessionmaker)
         existing = await store.get_identity(email)
+
+        # A platform_admins row grants authority; it does not create something to log in WITH. The
+        # admin panel authenticates against the users table and then checks platform authority, so
+        # granting the role to an address with no account produces an admin who cannot sign in, which
+        # reads as a broken panel rather than as missing provisioning. That is what happened when
+        # razvan@qiko.ai existed on live and not on preprod.
+        users = SqlUserStore(sessionmaker)
+        login = await users.get_by_email(email)
         plan = {
             "email": email,
             "role": role.value,
             "capabilities": resolved,
             "previous_role": existing.role.value if existing else None,
+            "login_exists": login is not None,
+            "will_create_login": bool(args.ensure_login and login is None),
         }
         if not args.apply:
             return "DRY_RUN", plan
+
+        if args.ensure_login and login is None:
+            # An unrecoverable password, matching provision_tenant.py: the platform never holds a
+            # password anyone could use, and the operator sets their own through the reset flow. A
+            # password chosen here would have to travel through a log, a chat message or a ticket to be
+            # useful, and every one of those is somewhere it should not be.
+            await users.add(User(
+                id=f"pa-{secrets.token_hex(8)}", email=email,
+                password_hash=hash_password(secrets.token_urlsafe(48)),
+                tenant=None, role=Role.viewer))
+            plan["login_created"] = True
         if existing and existing.role is role and sorted(
                 c.value for c in existing.capabilities) == resolved:
             return "NO_CHANGES", plan

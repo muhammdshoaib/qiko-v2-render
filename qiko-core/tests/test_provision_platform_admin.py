@@ -100,3 +100,60 @@ def test_unknown_capability_is_refused_with_the_known_list(db, capsys):
 def test_a_malformed_email_is_refused(db, capsys):
     assert cli.main(["--email", "not-an-email", "--role", "viewer", "--apply"]) == 2
     assert "valid address" in capsys.readouterr().err
+
+
+def test_the_plan_reports_whether_a_login_exists():
+    """A platform_admins row grants authority; it does not create something to log in WITH.
+
+    The admin panel authenticates against the users table and only then checks platform authority, so
+    granting the role to an address with no account produces an admin who cannot sign in, which reads as
+    a broken panel rather than as missing provisioning. That is exactly what happened: razvan@qiko.ai was
+    the sole super_admin on live and had no account at all on preprod, so preprod could not be validated
+    by the person who needed to validate it.
+    """
+    import inspect
+
+    from scripts import provision_platform_admin as cli
+
+    source = inspect.getsource(cli._run)
+    assert '"login_exists": login is not None' in source
+    assert '"will_create_login"' in source
+
+
+def test_a_created_login_gets_an_unrecoverable_password():
+    """The platform never holds a password anyone could use. A password chosen during provisioning has to
+    travel through a log, a chat message or a ticket to be useful, and every one of those is somewhere it
+    should not be. Same convention provision_tenant.py already follows."""
+    import inspect
+
+    from scripts import provision_platform_admin as cli
+
+    source = inspect.getsource(cli._run)
+    assert "hash_password(secrets.token_urlsafe(48))" in source
+    # No argument anywhere lets an operator supply one. Checked against the parsed argument names
+    # rather than the source text, because the help string for --ensure-login legitimately contains the
+    # word "password" while explaining that no password is set. This is the fifth time in this programme
+    # a source-text assertion has matched the prose describing the very thing it forbids.
+    flags = {action.dest for action in cli._parser()._actions}
+    assert not {flag for flag in flags if "password" in flag or "secret" in flag}, flags
+
+
+def test_creating_the_login_is_opt_in():
+    """Granting a role and creating an account are different acts, and an operator narrowing an existing
+    admin should not silently create a second identity if they mistype the address."""
+    import inspect
+
+    from scripts import provision_platform_admin as cli
+
+    assert '"--ensure-login", action="store_true"' in inspect.getsource(cli._parser)
+
+
+def test_a_dry_run_still_reports_the_login_state():
+    """The plan is what an operator reads before applying, so it has to show the thing they cannot
+    otherwise see."""
+    import inspect
+
+    from scripts import provision_platform_admin as cli
+
+    source = inspect.getsource(cli._run)
+    assert source.index('"login_exists"') < source.index("if not args.apply:")
