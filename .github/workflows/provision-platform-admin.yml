@@ -1,0 +1,136 @@
+name: Provision platform admin
+
+# Grants platform-admin authority to an address, and creates the login account if it does not exist.
+#
+# WHY A WORKFLOW. The alternative is somebody with a shell on the box running a CLI, which means holding
+# host inventory and database credentials to perform a privilege grant. Here the box already has the
+# credentials, the run is recorded, and the same procedure works on both environments.
+#
+# NO PASSWORD IS EVER SET HERE, and that is the point rather than an omission. A created account gets an
+# unrecoverable random password and the operator chooses their own through the reset flow. A password
+# chosen during provisioning has to travel through a log, a chat message or a ticket to be useful, and
+# every one of those is somewhere it should not be. It is the same convention provision_tenant.py already
+# follows.
+#
+# AFTER THIS RUNS the operator still has two things to do, because neither can be done for them:
+#   1. Forgot password on the environment's login page, to set a password.
+#   2. Enrol 2FA. The admin panel requires MFA by design, so the first login lands on /security with the
+#      setup already started. Save the backup codes.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options: [preprod, live]
+      email:
+        description: Address to grant platform-admin authority to
+        required: true
+        type: string
+      role:
+        description: Admin role
+        required: true
+        type: choice
+        options: [viewer, super_admin]
+      capabilities:
+        description: "Optional comma-separated capability names; blank uses the role default"
+        required: false
+        type: string
+      create_login:
+        description: Create the login account if it does not exist
+        required: true
+        type: boolean
+        default: true
+      confirm_email:
+        # Typed again, and the script itself also requires it on live. Granting super_admin to a
+        # mistyped address on production is the failure this guards.
+        description: Repeat the address exactly to confirm
+        required: true
+        type: string
+
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the confirmation matches
+        run: |
+          if [ "${{ inputs.confirm_email }}" != "${{ inputs.email }}" ]; then
+            echo "Confirmation does not match the address." >&2
+            exit 1
+          fi
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ inputs.environment == 'live' && secrets.LIVE_DEPLOY_ROLE_ARN || secrets.PREPROD_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Run via SSM
+        env:
+          INSTANCE_ID: ${{ inputs.environment == 'live' && secrets.LIVE_INSTANCE_ID || secrets.PREPROD_INSTANCE_ID }}
+        run: |
+          set -e
+          if [ "${{ inputs.environment }}" = "live" ]; then
+            COMPOSE="-f docker-compose.yml -f docker-compose.live.yml"
+          else
+            COMPOSE="-f docker-compose.yml -f docker-compose.preprod.yml"
+          fi
+          CAPS=""
+          if [ -n "${{ inputs.capabilities }}" ]; then
+            CAPS="--capabilities ${{ inputs.capabilities }}"
+          fi
+          LOGIN=""
+          if [ "${{ inputs.create_login }}" = "true" ]; then
+            LOGIN="--ensure-login"
+          fi
+          # A dry run first, always. Its output shows whether the login already exists and what the role
+          # change would be, so an unexpected plan is visible before anything is written.
+          cat > /tmp/provision.sh <<EOF
+          set -uo pipefail
+          cd /opt/docker/qiko/platform || exit 1
+          C="docker compose $COMPOSE"
+          echo "== plan =="
+          \$C run --rm --no-deps qiko-core python scripts/provision_platform_admin.py \\
+            --email '${{ inputs.email }}' --role '${{ inputs.role }}' $CAPS $LOGIN \\
+            --actor 'github-actions:${{ github.actor }}' \\
+            --reason 'provisioned via provision-platform-admin workflow'
+          echo "== apply =="
+          \$C run --rm --no-deps qiko-core python scripts/provision_platform_admin.py \\
+            --email '${{ inputs.email }}' --role '${{ inputs.role }}' $CAPS $LOGIN \\
+            --actor 'github-actions:${{ github.actor }}' \\
+            --reason 'provisioned via provision-platform-admin workflow' \\
+            --apply --confirm-email '${{ inputs.confirm_email }}'
+          EOF
+          jq -Rs '{commands: [.]}' < /tmp/provision.sh > /tmp/provision.json
+          CMD_ID=$(aws ssm send-command --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript \
+            --parameters file:///tmp/provision.json \
+            --timeout-seconds 600 --query "Command.CommandId" --output text)
+          echo "Command: $CMD_ID"
+          STATUS=Pending
+          for i in $(seq 1 40); do
+            STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || echo Pending)
+            echo "status=$STATUS"
+            case "$STATUS" in Success|Failed|Cancelled|TimedOut) break ;; esac
+            sleep 10
+          done
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+            --query StandardOutputContent --output text || true
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+            --query StandardErrorContent --output text || true
+          [ "$STATUS" = "Success" ] || { echo "SSM status: $STATUS" >&2; exit 1; }
+
+      - name: What the operator does next
+        run: |
+          if [ "${{ inputs.environment }}" = "live" ]; then
+            ADMIN=https://admin.qiko.ai
+          else
+            ADMIN=https://admin.preprod.qiko.ai
+          fi
+          echo "1. $ADMIN -> Forgot password, to set a password for ${{ inputs.email }}."
+          echo "2. Log in. The admin panel requires 2FA, so you will land on /security with setup started."
+          echo "3. Scan the QR, enter the code and your password, SAVE THE BACKUP CODES."
+          echo "4. You are logged out by design. Log back in with email, password and a 6-digit code."
