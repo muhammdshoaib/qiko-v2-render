@@ -734,6 +734,7 @@ class FeedbackBody(BaseModel):
 
 @router.post("/{pack_id}/feedback")
 async def submit_feedback(pack_id: str, body: FeedbackBody, request: Request,
+                          claims: dict = Depends(current_claims),
                           tenant: str = Depends(authed_tenant),
                           _role: dict = Depends(require_role(Role.editor)),
                           packs=Depends(get_rfp_packs)) -> dict:
@@ -744,11 +745,28 @@ async def submit_feedback(pack_id: str, body: FeedbackBody, request: Request,
     pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
     if body.decision not in {"Approve", "Edit", "Reject"}:
         raise HTTPException(status_code=422, detail="decision must be Approve, Edit, or Reject")
-    if body.decision in {"Approve", "Edit"} and body.comment.strip():
+    planted = bool(body.decision in {"Approve", "Edit"} and body.comment.strip())
+    if planted:
         await worker.approve(
             body.req_id, body.comment.strip(), agent_id=pack.agent_id,
             recheck_worker=recheck)
     await recheck()
+    # Every decision is recorded, including Reject, which touches no knowledge base. A review where
+    # somebody said no is as much a decision as one where they said yes, and an audit that only holds
+    # the approvals cannot show that a draft was looked at and turned down.
+    #
+    # `planted` distinguishes the two that matter operationally: an Approve with an empty comment writes
+    # nothing to the knowledge base, so it did not create ground truth however it was labelled in the UI.
+    await _record_governance(
+        request, audit_actions.ANSWER_APPROVED, tenant, claims,
+        target_id=body.req_id, pack_id=pack_id,
+        before={}, after={"decision": body.decision.lower(),
+                          # Not the text: it is customer content, already durable in the knowledge base,
+                          # and copying it here would duplicate it into a store with a different
+                          # retention and a different erasure path.
+                          "characters": len(body.comment.strip())},
+        metadata={"agent_id": pack.agent_id, "source": "tender_review",
+                  "wrote_ground_truth": planted})
     return {"req_id": body.req_id, "decision": body.decision, "saved": True}
 
 

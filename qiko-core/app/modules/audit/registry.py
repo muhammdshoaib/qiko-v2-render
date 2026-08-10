@@ -279,8 +279,12 @@ _SPECS: tuple[ActionSpec, ...] = (
     _spec(CHAT_HISTORY_DELETED, DATA, "conversation", # Not transactional: the chat store commits on its own.
           durability=STANDARD, diff_fields=("messages_removed",),
           template="{actor} deleted a conversation"),
-    _spec(ANSWER_APPROVED, DATA, "answer", diff_fields=("decision", "topic"),
-          # A human decision that permanently overrides the AI for that topic. Nothing recorded who.
+    _spec(ANSWER_APPROVED, DATA, "answer", diff_fields=("decision", "topic", "characters"),
+          # A human decision that permanently overrides the AI for that topic, and the verified_answers
+          # table it writes into carries no actor and no agent_id, so nothing anywhere could say who
+          # planted a given piece of ground truth. The approved TEXT is deliberately not in the diff:
+          # it is customer content, it is already stored durably in the knowledge base, and the question
+          # this row answers is who decided, not what they wrote.
           template="{actor} approved an answer for {target}"),
 
     # Privacy operations, including the log's own.
