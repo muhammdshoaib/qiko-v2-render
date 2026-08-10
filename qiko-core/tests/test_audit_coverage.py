@@ -82,7 +82,7 @@ def test_nothing_is_declared_twice():
 AUDIT_WRITERS: dict[str, int] = {
     "admin/router.py": 7,
     "billing/router.py": 2,
-    "agents/router.py": 16,
+    "agents/router.py": 17,
     "identity/users_router.py": 3,
     "teams/router.py": 3,
     "knowledge/router.py": 1,
@@ -108,7 +108,8 @@ def test_the_instrumented_set_matches_the_source():
         # credential and team helpers each have their own.
         writes = sum(text.count(marker) for marker in (
             "audit.record(", "audit.record_sync(", "credential_audit(",
-            "record_credential_exercised(", "_record_access(", "audit_row=build_record"))
+            "record_credential_exercised(", "_record_access(", "audit_row=build_record",
+            "audit=build_record if audited"))
         assert writes >= count, f"{relative} declares {count} audited routes but writes {writes} times"
 
     # /auth routes are split across three modules, so the first path segment is not enough on its own.
@@ -242,11 +243,17 @@ def test_a_secret_shaped_value_never_reaches_the_row(value):
 
 def test_the_diff_is_restricted_to_the_actions_allowlist():
     """The alternative is serialising an object, and a worker config is a free-form dict holding
-    encrypted credentials."""
+    encrypted credentials.
+
+    `tone` used to be the example here. It is no longer diffable: the config action's allowlist was
+    narrowed to the SCALAR settings, because copying a tenant's prose into a second store is the
+    duplication the diff-not-snapshot rule exists to prevent. The prose fields are named in metadata
+    instead. gate_threshold is the better example anyway, since its value is the actionable part.
+    """
     changed = diff(registry.WORKER_CONFIG_CHANGED,
-                   {"tone": "formal", "slack_bot_token_encrypted": "old"},
-                   {"tone": "casual", "slack_bot_token_encrypted": "new"})
-    assert changed == {"tone": {"from": "formal", "to": "casual"}}
+                   {"gate_threshold": 0.7, "tone": "formal", "slack_bot_token_encrypted": "old"},
+                   {"gate_threshold": 0.4, "tone": "casual", "slack_bot_token_encrypted": "new"})
+    assert changed == {"gate_threshold": {"from": 0.7, "to": 0.4}}
 
 
 def test_only_changed_fields_appear():
@@ -336,6 +343,7 @@ INSTRUMENTED: set[tuple[str, str]] = {
     ("POST", "/api/v1/agents/{agent_id}/clickup-credentials/test"),
     ("POST", "/api/v1/agents/{agent_id}/slack-credentials/test"),
     ("POST", "/api/v1/agents/{agent_id}/gmail-credentials/test"),
+    ("PUT", "/api/v1/agents/{agent_id}/config"),
     ("DELETE", "/api/v1/knowledge/documents/{doc_id}"),
     ("DELETE", "/api/v1/chat/history/{conversation_id}"),
     ("DELETE", "/api/v1/rfp/packs/{pack_id}"),
@@ -424,8 +432,6 @@ AUDIT_BACKLOG: dict[tuple[str, str], str] = {
         "CRITICAL secret: leg E2 wave 2. Persists or clears a third-party credential, two of them unauthenticated."),
     ("POST", "/api/v1/sales-intelligence/{agent_id}/salesforce/disconnect"): (
         "CRITICAL secret: leg E2 wave 2. Persists or clears a third-party credential, two of them unauthenticated."),
-    ("PUT", "/api/v1/agents/{agent_id}/config"): (
-        "HIGH config: leg E2. Free-form patch that can reach any config key."),
     ("PUT", "/api/v1/agents/{agent_id}/sources/persona"): (
         "HIGH config: leg E2. Free-form patch that can reach any config key."),
     ("POST", "/api/v1/rfp/packs/{pack_id}/feedback"): (
@@ -745,7 +751,8 @@ def test_every_critical_action_with_a_call_site_has_a_transactional_one():
 
     # The transactional writers: the store adds the row to the caller's own session.
     transactional_markers = ("credential_audit(", "audit=audit_credentials", "store.add_in(",
-                             "audit.record_in(", "audit_row=build_record")
+                             "audit.record_in(", "audit_row=build_record",
+                             "audit=build_record if audited")
 
     offenders = []
     for action, spec in registry.REGISTRY.items():
