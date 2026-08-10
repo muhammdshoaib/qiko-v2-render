@@ -903,6 +903,17 @@ export interface paths {
         /**
          * Update Config
          * @description Merge-patch the worker's free-form config -- backs the Train wizard's Background/Tone steps.
+         *
+         *     This is the widest write in the tenant app: one dict, merged into the config every other feature
+         *     reads from. It can change the grounding threshold that decides what gets answered versus escalated,
+         *     archive the worker, and until now it could set any credential key, bypassing the encryption, the
+         *     rotation fingerprint and the transactional audit that the dedicated endpoints provide.
+         *
+         *     Credential keys are refused rather than audited, because auditing them would record that something
+         *     happened while still letting a value bypass the encryption the field's name asserts.
+         *
+         *     Everything else is audited by KEY NAME, never by value: several of these fields are tenant free
+         *     text, so what matters is which setting moved and who moved it.
          */
         put: operations["update_config_api_v1_agents__agent_id__config_put"];
         post?: never;

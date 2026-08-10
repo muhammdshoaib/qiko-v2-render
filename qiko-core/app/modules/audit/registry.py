@@ -248,9 +248,11 @@ _SPECS: tuple[ActionSpec, ...] = (
           template="{actor} published worker {target}"),
     # The widest blast radius in the tenant app: a free-form merge patch that can change the grounding
     # threshold, archive the worker, or write any credential key. Key names only, never values.
+    # Only the SCALAR settings are diffable. The prose fields are named in metadata instead, because
+    # copying a tenant's persona or guardrails into a second store is exactly the duplication the
+    # diff-not-snapshot rule exists to prevent.
     _spec(WORKER_CONFIG_CHANGED, CONFIG, "worker", diff_fields=(
-        "archived", "expertise", "industry", "language", "tone", "gate_threshold", "retrieval_k",
-        "system_prompt_changed", "opportunity_criteria"),
+        "archived", "gate_threshold", "retrieval_k", "studio_linked", "language"),
         template="{actor} changed the configuration of worker {target}"),
 
     # Data. Deletions are CRITICAL: they are the events a customer disputes.

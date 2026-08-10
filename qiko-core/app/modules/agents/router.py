@@ -20,6 +20,7 @@ from app.core.deps import (
     stored_credential,
 )
 from app.modules.audit import credentials as audit_credentials
+from app.modules.audit import service as audit
 from app.modules.audit import registry as audit_actions
 from app.modules.agents.service import AGENT_TYPES, Agent, PlanLimitError
 from app.modules.billing.plans import get_plan
@@ -36,6 +37,44 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 _REDACTED_CONFIG_KEYS = ("vapi_api_key_encrypted", "salesforce_client_secret_encrypted",
                          "calendly_token_encrypted", "clickup_api_token_encrypted",
                          "slack_bot_token_encrypted", "gmail_app_password_encrypted")
+
+
+# Keys the free-form patch must never WRITE. The list above already stops these being read back; not
+# applying it symmetrically to writes left the generic patch able to set any of them, which defeated
+# every guarantee the dedicated credential endpoints provide:
+#
+#   - the dedicated endpoints ENCRYPT the value, so a caller writing this key directly is storing
+#     whatever they sent under a name the rest of the code will later try to decrypt;
+#   - they record a keyed fingerprint of the plaintext, which is the only thing that distinguishes a
+#     genuine rotation from a re-save during an incident;
+#   - they write their audit row inside the store's transaction, so the change cannot land unrecorded.
+#
+# So this is a refusal rather than an audited write. Auditing it would record that something happened
+# while still letting a value bypass the encryption the field's name asserts. No caller anywhere in
+# either frontend writes one of these through the generic patch; it is a path that existed rather than
+# a path anything used.
+_WRITE_ONLY_VIA_DEDICATED_ENDPOINT = frozenset(_REDACTED_CONFIG_KEYS) | {
+    # The flags the dedicated endpoints set alongside the secret. Letting a caller flip these without
+    # the secret produces a worker that claims a connection it does not have, which fails later at the
+    # third party with an error the customer cannot act on.
+    "vapi_credentials_added", "salesforce_credentials_added", "calendly_credentials_added",
+    "clickup_credentials_added", "slack_credentials_added", "gmail_credentials_added",
+}
+
+# Config keys whose change is worth recording, split by whether the VALUE is safe to keep.
+#
+# The scalars are settings, and their values are the substance: "gate_threshold 0.7 to 0.4" is what an
+# incident needs, and recording only that the threshold moved would leave the reader to go and ask.
+_AUDITED_SCALAR_KEYS = frozenset({
+    "archived", "gate_threshold", "retrieval_k", "studio_linked", "language",
+})
+# These are tenant free text, sometimes long, sometimes containing customer names. Recorded by NAME
+# only: knowing the persona was rewritten is actionable, copying it into a second store is not.
+_AUDITED_TEXT_KEYS = frozenset({
+    "expertise", "industry", "tone", "opportunity_criteria", "system_prompt", "target_audience",
+    "main_goal", "what_makes_you_unique", "prompts", "guardrails", "rules",
+})
+_AUDITED_CONFIG_KEYS = _AUDITED_SCALAR_KEYS | _AUDITED_TEXT_KEYS
 
 
 def _redact(agent: Agent) -> Agent:
@@ -93,11 +132,56 @@ class UpdateConfigBody(BaseModel):
 
 
 @router.put("/{agent_id}/config")
-async def update_config(agent_id: str, body: UpdateConfigBody, tenant: str = Depends(authed_tenant),
+async def update_config(agent_id: str, body: UpdateConfigBody, request: Request,
+                        claims: dict = Depends(current_claims),
+                        tenant: str = Depends(authed_tenant),
                         _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_agents)) -> Agent:
-    """Merge-patch the worker's free-form config -- backs the Train wizard's Background/Tone steps."""
+    """Merge-patch the worker's free-form config -- backs the Train wizard's Background/Tone steps.
+
+    This is the widest write in the tenant app: one dict, merged into the config every other feature
+    reads from. It can change the grounding threshold that decides what gets answered versus escalated,
+    archive the worker, and until now it could set any credential key, bypassing the encryption, the
+    rotation fingerprint and the transactional audit that the dedicated endpoints provide.
+
+    Credential keys are refused rather than audited, because auditing them would record that something
+    happened while still letting a value bypass the encryption the field's name asserts.
+
+    Everything else is audited by KEY NAME, never by value: several of these fields are tenant free
+    text, so what matters is which setting moved and who moved it.
+    """
+    rejected = sorted(set(body.patch) & _WRITE_ONLY_VIA_DEDICATED_ENDPOINT)
+    if rejected:
+        raise HTTPException(
+            status_code=422,
+            detail=(f"{', '.join(rejected)} cannot be set here. Use the dedicated endpoint for that "
+                    "integration, which encrypts the value and records the change."))
+
+    actor = str(claims.get("email") or "")
+    audited = sorted(set(body.patch) & _AUDITED_CONFIG_KEYS)
+
+    def build_record(previous: dict) -> dict:
+        # Built from the config snapshotted under the row lock, so "changed" means genuinely changed
+        # rather than merely submitted: a wizard step re-saved without edits should not read as a
+        # threshold change.
+        moved = [key for key in audited if previous.get(key) != body.patch.get(key)]
+        return audit.build_row(audit.AuditEvent(
+            action=audit_actions.WORKER_CONFIG_CHANGED, target_id=agent_id, tenant_id=tenant,
+            actor_type=audit.USER, actor_id=str(claims.get("sub") or ""), actor_label=actor,
+            # Scalars carry their values, because that is the actionable part. The registry's allowlist
+            # is the backstop, not the mechanism: the free-text keys are simply not put here.
+            changes={key: {"from": previous.get(key), "to": body.patch.get(key)}
+                     for key in moved if key in _AUDITED_SCALAR_KEYS},
+            metadata={"changed_keys": moved, "submitted_keys": sorted(body.patch),
+                      # Named separately so a reader can see WHICH prose was rewritten without the
+                      # prose being in the row.
+                      "rewritten_text_fields": [k for k in moved if k in _AUDITED_TEXT_KEYS]},
+        ), request=request)
+
     try:
-        return _redact(await svc.update_config(tenant, agent_id, body.patch))
+        # No audit callback when nothing auditable is in the patch: a row saying "the config changed,
+        # fields unknown" is noise that makes the real ones harder to find.
+        return _redact(await svc.update_config(
+            tenant, agent_id, body.patch, audit=build_record if audited else None))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
 
