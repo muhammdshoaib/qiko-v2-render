@@ -82,6 +82,15 @@ FUNCTIONS = [ingest_document, send_email, generate_tender_artifacts]
 # gates each source on its own due-ness (last_scan_at + interval), so it stays correct for ANY
 # idg_sales_scan_interval_minutes. `unique=True` (arq default) means a single tick runs even with
 # multiple worker replicas, so scans never double-run.
+async def export_audit_archive(ctx: dict) -> dict:
+    from app.db.stores import SqlAuditArchiveStore, SqlAuditStore
+    from app.modules.storage.backend import get_storage_backend
+
+    return await jobs.export_audit_archive(
+        SqlAuditStore(ctx["sessionmaker"]), SqlAuditArchiveStore(ctx["sessionmaker"]),
+        get_storage_backend())
+
+
 async def apply_audit_retention(ctx: dict) -> dict:
     from app.db.stores import SqlAuditStore
 
@@ -97,6 +106,9 @@ CRON_JOBS = [
     # Daily, off-peak. Nothing enforced the retention the model docstring claimed, so the trail grew
     # personal data indefinitely while asserting that it did not.
     cron(apply_audit_retention, name="audit:apply_retention", hour=3, minute=30, unique=True),
+    # Before retention, and on the previous day, so a day is archived while it is still in the hot tier.
+    # Exporting after the delete would lose exactly the rows the archive exists to keep.
+    cron(export_audit_archive, name="audit:export_archive", hour=3, minute=0, unique=True),
 ]
 
 

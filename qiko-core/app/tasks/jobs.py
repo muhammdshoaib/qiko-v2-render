@@ -5,6 +5,7 @@ is identical whether run eagerly (dev) or on a worker (prod).
 """
 from __future__ import annotations
 
+import json
 import logging
 
 from app.core.tenancy import reset_tenant, set_tenant
@@ -129,3 +130,37 @@ async def apply_audit_retention(store) -> dict:
             "addresses_cleared": result["addresses_cleared"]}),
         metadata=result))
     return result
+
+
+async def export_audit_archive(audit_store, archive_store, storage, *, day=None) -> dict:
+    """Write one day of the audit trail to write-once storage, with a chained digest.
+
+    Yesterday by default, not today: exporting a day still in progress would produce an object that is
+    incomplete the moment it is written, and a digest that legitimately changes on re-export, which
+    destroys the only property the digest has.
+
+    A day with no events is still exported. An absent object is indistinguishable from a deleted one, and
+    deleting a whole day is the easier attack than editing a row inside one; the chain is what makes a
+    missing day visible, and it only works if every day is a link.
+    """
+    from datetime import date, timedelta
+
+    from app.modules.audit.archive import build_day_export
+
+    target = day or (date.today() - timedelta(days=1))
+    previous = await archive_store.latest()
+    rows = await audit_store.rows_for_day(target)
+    export = build_day_export(rows, target, previous_digest=previous["digest"] if previous else None)
+
+    # The manifest goes in the SAME object as the rows, so a retrieval cannot get one without the other.
+    payload = (json.dumps({"manifest": export.manifest()}, sort_keys=True) + "\n").encode() + export.body
+    storage.put("audit-archive", export.key, payload, content_type="application/x-ndjson")
+    await archive_store.record(
+        day=target.isoformat(), row_count=export.row_count, digest=export.digest,
+        previous_digest=export.previous_digest, object_key=export.key)
+
+    logger.info("audit archive exported", extra={
+        "source": "tasks.audit", "day": target.isoformat(), "rows": export.row_count,
+        "digest": export.digest, "key": export.key})
+    return {"day": target.isoformat(), "row_count": export.row_count, "digest": export.digest,
+            "object_key": export.key}
