@@ -177,7 +177,11 @@ _SPECS: tuple[ActionSpec, ...] = (
           durability=CRITICAL, diff_fields=("role", "capabilities"),
           template="{actor} granted platform access to {target}"),
     _spec(PLATFORM_ACCESS_REVOKED, ACCESS, "platform_admin", read_capability=Capability.manage_admins,
-          durability=CRITICAL, template="{actor} revoked platform access for {target}"),
+          # Declared, unlike the first version of this spec: without diff_fields the allowlist dropped
+          # everything and the row recorded that access was revoked without recording what was revoked.
+          # For a revoke that is the whole content, since the row it describes no longer exists.
+          durability=CRITICAL, diff_fields=("role", "capabilities"),
+          template="{actor} revoked platform access for {target}"),
     _spec(TENANT_ROLE_CHANGED, ACCESS, "user", # Not transactional: the identity store commits on its own; making this transactional needs an injected session (leg E4).
           durability=STANDARD, diff_fields=("role",),
           template="{actor} changed the role of {target}"),

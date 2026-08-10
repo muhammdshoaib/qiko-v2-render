@@ -64,7 +64,6 @@ export default function TenantsPage() {
       title={active?.email ?? ""}
       subtitle={active?.tenant_id}
       tenantId={active?.tenant_id}
-      note="Worker availability changes are recorded separately and are not shown here."
       onClose={() => setActive(null)}
     />
     </>

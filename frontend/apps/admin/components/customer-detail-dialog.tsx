@@ -173,13 +173,11 @@ export function CustomerDetailDialog({ customerId, capabilities, opener, onClose
               </dialog>
             )}
 
-            {/* Narrowed to this tenant. The section below it covers worker availability, which still
-                lives in the older agent_state_audit table and is not in this stream, so the note names
-                that gap rather than letting an empty panel read as "nothing happened". */}
-            <RecentActivity
-              scope={{ tenantId: customerId! }}
-              note="Worker availability changes are listed separately below."
-            />
+            {/* Narrowed to this tenant. The note this used to carry is gone: worker availability
+                changes are now written into the unified stream inside the same transaction as the
+                change itself, so the panel is complete and does not need to disclaim a gap. The
+                section below remains as the availability-specific view, with its own shape. */}
+            <RecentActivity scope={{ tenantId: customerId! }} />
 
             <section aria-labelledby="audit-heading">
               <h3 id="audit-heading" className="mb-3 font-semibold">Worker availability history</h3>
