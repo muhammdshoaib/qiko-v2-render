@@ -413,6 +413,24 @@ class AuditEventRow(Base):
     )
 
 
+class AuditArchiveDigest(Base):
+    """One row per exported day: the digest, the row count, and the link to the previous day.
+
+    Kept in the database as well as in the write-once object, deliberately. The copy in write-once storage
+    is the one that matters for tamper evidence, because an attacker with database access can rewrite this
+    one. This copy exists so the next run can chain onto it without a network round trip, and so an
+    operator can see what has been exported without listing a bucket.
+    """
+
+    __tablename__ = "audit_archive_digests"
+    day: Mapped[str] = mapped_column(String(10), primary_key=True)
+    row_count: Mapped[int] = mapped_column(default=0)
+    digest: Mapped[str] = mapped_column(String(64))
+    previous_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    object_key: Mapped[str] = mapped_column(String(255))
+    exported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class PlatformAdminAudit(Base):
     """Append-only record of every platform-admin grant or revoke.
 

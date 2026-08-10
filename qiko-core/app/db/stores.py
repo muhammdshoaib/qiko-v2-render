@@ -39,6 +39,7 @@ from app.db.models import PasswordResetOtp as PasswordResetOtpRow
 from app.db.models import PendingSignup as PendingSignupRow
 from app.db.models import PendingTeamInvite as PendingTeamInviteRow
 from app.db.models import PlatformAdmin as PlatformAdminRow
+from app.db.models import AuditArchiveDigest as AuditArchiveDigestRow
 from app.db.models import AuditEventRow
 from app.db.models import AiCostCap as AiCostCapRow
 from app.db.models import AiUsageEvent as AiUsageEventRow
@@ -2458,6 +2459,18 @@ class SqlAuditStore:
             return [_audit_json(row) for row in rows]
 
 
+    async def rows_for_day(self, day) -> list[dict]:
+        """Every row whose event time falls in one UTC day, for the archive export."""
+        from app.modules.audit.archive import day_bounds
+
+        start, end = day_bounds(day)
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(AuditEventRow)
+                .where(AuditEventRow.occurred_at >= start, AuditEventRow.occurred_at < end)
+                .order_by(AuditEventRow.occurred_at, AuditEventRow.event_id))).scalars().all()
+            return [_audit_json(row) for row in rows]
+
     async def apply_retention(self, now=None) -> dict:
         """Delete expired events and null expired network identifiers.
 
@@ -2537,6 +2550,39 @@ class SqlAuditStore:
                         subject_pseudonym=pseudonym,
                         pseudonymised_at=datetime.now(timezone.utc)))
             return result.rowcount or 0
+
+
+@dataclass
+class SqlAuditArchiveStore:
+    """The per-day digest ledger. Small, and read once per run."""
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def latest(self) -> dict | None:
+        async with self.sessionmaker() as s:
+            row = (await s.execute(
+                select(AuditArchiveDigestRow)
+                .order_by(AuditArchiveDigestRow.day.desc()).limit(1))).scalar_one_or_none()
+            return None if row is None else {
+                "day": row.day, "digest": row.digest, "row_count": row.row_count,
+                "object_key": row.object_key}
+
+    async def record(self, *, day: str, row_count: int, digest: str, previous_digest: str | None,
+                     object_key: str) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            existing = await s.get(AuditArchiveDigestRow, day)
+            if existing is None:
+                s.add(AuditArchiveDigestRow(
+                    day=day, row_count=row_count, digest=digest, previous_digest=previous_digest,
+                    object_key=object_key))
+                return
+            # Re-running a day overwrites rather than duplicating. A re-export of an unchanged day
+            # produces an identical digest, so a CHANGED one on re-export is itself the tamper signal.
+            existing.row_count = row_count
+            existing.digest = digest
+            existing.previous_digest = previous_digest
+            existing.object_key = object_key
+            existing.exported_at = datetime.now(timezone.utc)
 
 
 def _worker_availability_row(*, tenant: str, agent_id: str, name: str | None,

@@ -403,6 +403,13 @@ class InMemoryAuditStore:
         self.rows.append({**row, "_row_id": self._next_id})
         self._next_id += 1
 
+    async def rows_for_day(self, day) -> list[dict]:
+        from app.modules.audit.archive import day_bounds
+
+        start, end = day_bounds(day)
+        return [{k: v for k, v in row.items() if k != "_row_id"}
+                for row in self.rows if start <= row["occurred_at"] < end]
+
     async def apply_retention(self, now=None) -> dict:
         from app.modules.audit.retention import cutoffs
 
