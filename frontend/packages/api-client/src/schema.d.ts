@@ -3408,7 +3408,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Lock Question */
+        /**
+         * Lock Question
+         * @description Lock an answer: a person saying "this is what we are submitting".
+         */
         post: operations["lock_question_api_v1_rfp_packs__pack_id__questions__question_id__lock_post"];
         delete?: never;
         options?: never;
@@ -3425,7 +3428,14 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Unlock Question */
+        /**
+         * Unlock Question
+         * @description Reopen a locked answer, which reverses a sign-off.
+         *
+         *     Recorded as its own action rather than a lock with locked=false, because reversing an approval after
+         *     review is the move a bid team would be asked about afterwards, and it should be findable without
+         *     reading the diff of every lock event.
+         */
         post: operations["unlock_question_api_v1_rfp_packs__pack_id__questions__question_id__unlock_post"];
         delete?: never;
         options?: never;
@@ -3545,7 +3555,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Lock All In Section */
+        /**
+         * Lock All In Section
+         * @description Bulk sign-off: one click locking every answer in a section.
+         */
         post: operations["lock_all_in_section_api_v1_rfp_packs__pack_id__sections__section_id__lock_all_post"];
         delete?: never;
         options?: never;
@@ -3599,7 +3612,13 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
-        /** Set Stage */
+        /**
+         * Set Stage
+         * @description Move the pack through its stages. "final" is the submission point.
+         *
+         *     Audited because reaching "final" is the roll-up of every section lock: it is the moment the pack
+         *     stopped being a draft, and the guard below is what stops it happening without review sign-off.
+         */
         put: operations["set_stage_api_v1_rfp_packs__pack_id__stage_put"];
         post?: never;
         delete?: never;
