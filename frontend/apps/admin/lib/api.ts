@@ -82,9 +82,12 @@ const applySort = (params: URLSearchParams, sort?: ListSort) => {
 };
 
 export type Customer = { user_id: string; email: string; plan: string; earnings_cents: number };
-export const listCustomers = (search = "", page = 1, sort?: ListSort) => {
+export const listCustomers = (search = "", page = 1, sort?: ListSort, plan?: string) => {
   const params = new URLSearchParams({ page: String(page) });
   if (search) params.set("search", search);
+  // The endpoint has always accepted plan and no page sent it, so "who is still on free" could only be
+  // answered by paging through everything.
+  if (plan) params.set("plan", plan);
   applySort(params, sort);
   return request<{ total: number; page: number; page_size?: number; items: Customer[] }>(
     `/admin/customers?${params}`);
@@ -150,6 +153,9 @@ const paged = (page: number, extra: Record<string, string | undefined> = {}, sor
  *  operator a control that returns a 422. */
 export const SORTABLE = {
   customers: ["email", "plan", "earnings"],
+  // The same endpoint, so the same allowlist. Listed separately because the test resolves the key from
+  // the page's directory name.
+  subscriptions: ["email", "plan", "earnings"],
   tenants: ["email", "plan", "earnings", "users", "workers"],
   users: ["email", "name", "tenant", "role", "twofa"],
   workers: ["name", "tenant", "status", "enabled", "created"],
