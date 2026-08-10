@@ -87,8 +87,9 @@ AUDIT_WRITERS: dict[str, int] = {
     "teams/router.py": 3,
     "knowledge/router.py": 1,
     "chat/router.py": 1,
-    "rfp/router.py": 6,
+    "rfp/router.py": 7,
     "finance/router.py": 1,
+    "agentcore/batch_router.py": 1,
     # One route each, though login writes three different events (success, bad password, bad 2FA).
     "identity/router.py": 1,
     "identity/onboarding_router.py": 1,
@@ -114,6 +115,9 @@ def test_the_instrumented_set_matches_the_source():
 
     # /auth routes are split across three modules, so the first path segment is not enough on its own.
     EXPLICIT = {
+        # /agents/feedback is served by agentcore/batch_router.py, not agents/router.py, so the first
+        # path segment is misleading here in the same way it is for /auth.
+        "/api/v1/agents/feedback": "agentcore/batch_router.py",
         "/api/v1/auth/login": "identity/router.py",
         "/api/v1/auth/reset-password": "identity/onboarding_router.py",
         "/api/v1/auth/2fa/verify-setup": "identity/twofa_router.py",
@@ -349,6 +353,8 @@ INSTRUMENTED: set[tuple[str, str]] = {
     ("POST", "/api/v1/rfp/packs/{pack_id}/sections/{section_id}/lock-all"),
     ("PUT", "/api/v1/rfp/packs/{pack_id}/stage"),
     ("PUT", "/api/v1/rfp/packs/{pack_id}/outcome"),
+    ("POST", "/api/v1/agents/feedback"),
+    ("POST", "/api/v1/rfp/packs/{pack_id}/feedback"),
     ("DELETE", "/api/v1/knowledge/documents/{doc_id}"),
     ("DELETE", "/api/v1/chat/history/{conversation_id}"),
     ("DELETE", "/api/v1/rfp/packs/{pack_id}"),
@@ -439,8 +445,6 @@ AUDIT_BACKLOG: dict[tuple[str, str], str] = {
         "CRITICAL secret: leg E2 wave 2. Persists or clears a third-party credential, two of them unauthenticated."),
     ("PUT", "/api/v1/agents/{agent_id}/sources/persona"): (
         "HIGH config: leg E2. Free-form patch that can reach any config key."),
-    ("POST", "/api/v1/rfp/packs/{pack_id}/feedback"): (
-        "HIGH governance: leg E2. Human sign-off on a bid."),
     ("PATCH", "/api/v1/sales-intelligence/{agent_id}/ingest-filters"): (
         "MEDIUM: already recorded in sales_intel_activity_logs; folding into the central trail is leg E2."),
     ("POST", "/api/v1/sales-intelligence/{agent_id}/opportunities"): (
@@ -482,8 +486,6 @@ AUDIT_BACKLOG: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/agents/batch-answer"): (
         "MEDIUM: leg E2. State change with an identifiable actor, not yet instrumented."),
     ("POST", "/api/v1/agents/batch-export"): (
-        "MEDIUM: leg E2. State change with an identifiable actor, not yet instrumented."),
-    ("POST", "/api/v1/agents/feedback"): (
         "MEDIUM: leg E2. State change with an identifiable actor, not yet instrumented."),
     ("PUT", "/api/v1/agents/{agent_id}/calendly-event-type"): (
         "MEDIUM: leg E2. State change with an identifiable actor, not yet instrumented."),

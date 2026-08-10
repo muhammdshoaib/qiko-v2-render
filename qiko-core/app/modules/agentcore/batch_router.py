@@ -10,7 +10,9 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, field_validator
 
-from app.core.deps import WorkerRecheck, authed_tenant, require_role, resolve_tenant_worker
+from app.modules.audit import registry as audit_actions
+from app.modules.audit import service as audit
+from app.core.deps import current_claims, WorkerRecheck, authed_tenant, require_role, resolve_tenant_worker
 from app.modules.chat.files import build_xlsx
 from app.modules.identity.rbac import Role
 
@@ -81,7 +83,9 @@ async def batch_answer(body: BatchAskBody, request: Request, tenant: str = Depen
 
 
 @router.post("/feedback")
-async def feedback(body: FeedbackBody, request: Request, tenant: str = Depends(authed_tenant),
+async def feedback(body: FeedbackBody, request: Request,
+                   claims: dict = Depends(current_claims),
+                   tenant: str = Depends(authed_tenant),
                    _role: dict = Depends(require_role(Role.editor))) -> dict:
     """Human approves or edits an answer -> it becomes verified ground truth for that topic, so
     future answers are grounded in it instead of re-guessing (the same review->flywheel loop the
@@ -96,6 +100,22 @@ async def feedback(body: FeedbackBody, request: Request, tenant: str = Depends(a
         body.requirement_id, body.approved_text, topic=body.topic,
         agent_id=body.agent_id, recheck_worker=recheck)
     await recheck()
+    # verified_answers has a created_at and nothing else: no actor, no agent_id. So this row is the only
+    # place that can answer "who decided this is what we say about this topic", which is the question
+    # asked when a worker starts giving an answer nobody recognises.
+    #
+    # The approved text is NOT recorded. It is customer content, it is already durable in the knowledge
+    # base, and copying it here would duplicate it into a store with a different retention and a
+    # different erasure path. The character count is kept instead, because "approved 40 characters" and
+    # "approved 4,000" are different acts.
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.ANSWER_APPROVED, target_id=body.requirement_id,
+        target_label=body.topic or None, tenant_id=tenant, actor_type=audit.USER,
+        actor_id=str(claims.get("sub") or ""), actor_label=str(claims.get("email") or ""),
+        changes=audit.diff(audit_actions.ANSWER_APPROVED, {}, {
+            "decision": "approved", "topic": body.topic or None,
+            "characters": len(body.approved_text or "")}),
+        metadata={"agent_id": body.agent_id, "source": "batch_review"}), request=request)
     return {"verified": True}
 
 
