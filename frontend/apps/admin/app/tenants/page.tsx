@@ -1,7 +1,9 @@
 "use client";
 
-import { Badge, type Column } from "@qiko/ui";
+import { useState } from "react";
+import { Badge, Button, type Column } from "@qiko/ui";
 import { DirectoryPage } from "@/components/directory-page";
+import { RowActivityDialog } from "@/components/row-activity-dialog";
 import { formatMoney, listTenants, type TenantRow } from "@/lib/api";
 
 // Sortable keys mirror CUSTOMER_SORTS/TENANT_SORTS in app/modules/admin/sorting.py. A column marked
@@ -34,7 +36,9 @@ const columns: Column<TenantRow>[] = [
 ];
 
 export default function TenantsPage() {
+  const [active, setActive] = useState<TenantRow | null>(null);
   return (
+    <>
     <DirectoryPage<TenantRow>
       title="Tenants"
       noun="tenants"
@@ -47,7 +51,22 @@ export default function TenantsPage() {
       fetchPage={(search, page, sort) => listTenants(search, page, sort)}
       rowKey={(row) => row.tenant_id}
       columns={columns}
+      actions={(row) => (
+        <Button variant="outline" className="min-h-11" onClick={() => setActive(row)}
+          aria-label={`Recent activity for ${row.email}`}>
+          Activity
+        </Button>
+      )}
       emptyMessage={(filtered) => filtered ? "No tenants match this search." : "No tenants yet."}
     />
+    <RowActivityDialog
+      open={Boolean(active)}
+      title={active?.email ?? ""}
+      subtitle={active?.tenant_id}
+      tenantId={active?.tenant_id}
+      note="Worker availability changes are recorded separately and are not shown here."
+      onClose={() => setActive(null)}
+    />
+    </>
   );
 }
