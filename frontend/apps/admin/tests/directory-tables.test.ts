@@ -22,6 +22,9 @@ const DIR_PAGES = {
   users: dirRead(dirFind(`${dirAdmin}app/users/page.tsx`), "utf8"),
   workers: dirRead(dirFind(`${dirAdmin}app/workers/page.tsx`), "utf8"),
   monitoring: dirRead(dirFind(`${dirAdmin}app/monitoring/page.tsx`), "utf8"),
+  // /subscriptions is the customer directory narrowed by plan, so it shares the allowlist. It was the
+  // last list still carrying its own copy of the debounce, pagination and error affordances.
+  subscriptions: dirRead(dirFind(`${dirAdmin}app/subscriptions/page.tsx`), "utf8"),
 };
 
 dirTest("every directory renders the shared table, not a card stack", () => {

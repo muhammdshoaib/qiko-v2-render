@@ -48,38 +48,36 @@ defectsTest("every paginated list actually paginates", () => {
   // Leg D moved the page into the URL and the four cross-tenant directories onto one shared shell, so
   // the fetcher and the page control live there rather than per page. The property is unchanged: the
   // page must reach the fetcher AND be in the query key, or React Query serves page one forever.
-  // Every page that owns its own query must send the page AND key on it. The four directories now
-  // delegate both to the shared shell, so their pages supply only a fetcher and the assertions split
-  // accordingly: asserting a query key against a file that no longer holds one would just be noise.
-  for (const file of ["app/subscriptions/page.tsx", "components/directory-page.tsx"]) {
-    const source = read(file);
-    defectsAssert.match(source, /queryKey: \[[^\]]*page[^\]]*\]/, `${file} must key the query on the page`);
-  }
-  defectsAssert.match(read("app/subscriptions/page.tsx"), /listCustomers\(query, page\)/);
-  defectsAssert.match(read("components/directory-page.tsx"), /fetchPage\(urlSearch, page, sort\)/);
-  // The pages that only provide a fetcher must still pass the page through it.
-  defectsAssert.match(read("app/monitoring/page.tsx"), /workerMonitoring\(\n?\s*days, page,/);
-  // And the shared shell owns the control, so it only has to be right once.
+  // All six lists now delegate the query to the shared shell, so the property is asserted once there
+  // and each page only has to pass the page through its fetcher. This assertion has been rewritten
+  // twice as the lists moved; what has never changed is what it checks, which is that the page reaches
+  // the API and is part of the cache key.
   const shell = read("components/directory-page.tsx");
+  defectsAssert.match(shell, /queryKey: \[[^\]]*page[^\]]*\]/, "the shell must key the query on the page");
+  defectsAssert.match(shell, /fetchPage\(urlSearch, page, sort\)/);
+  defectsAssert.match(read("app/monitoring/page.tsx"), /workerMonitoring\(\n?\s*days, page,/);
+  defectsAssert.match(read("app/subscriptions/page.tsx"), /listCustomers\(search, page, sort/);
   defectsAssert.match(shell, /<Pagination /, "the shell must render a page control");
   defectsAssert.match(shell, /params\.get\("page"\)/, "the page must be shareable in a link");
-  // /subscriptions still has its own, until it moves onto the shell too.
-  defectsAssert.match(read("app/subscriptions/page.tsx"), /setPage\(/);
+  // No page keeps its own page state any more. A stray setPage would mean a list drifted back off the
+  // shell, which is how five near-identical implementations happened the first time.
+  for (const file of ["app/subscriptions/page.tsx", "app/monitoring/page.tsx",
+                      "app/customers/page.tsx", "app/tenants/page.tsx", "app/users/page.tsx",
+                      "app/workers/page.tsx"]) {
+    defectsAssert.doesNotMatch(read(file), /setPage\(/, `${file} must not own page state`);
+  }
 });
 
 defectsTest("list result counts describe the view, not just a total", () => {
   // "137 total" is identical before and after a filter that returns 137 of a different set, so the
   // live region announced nothing. A range plus a total is change-detectable.
-  for (const file of ["components/directory-page.tsx", "app/subscriptions/page.tsx"]) {
-    defectsAssert.match(read(file), /Showing \$\{firstOnPage\}/, `${file} must announce a range`);
-  }
+  // Announced once, in the shell every list uses.
+  defectsAssert.match(read("components/directory-page.tsx"), /Showing \$\{firstOnPage\}/);
 });
 
 defectsTest("lists keep their rows while the next page loads", () => {
   // Without this the query key change collapsed the whole list into skeleton bars on every click.
-  for (const file of ["components/directory-page.tsx", "app/subscriptions/page.tsx"]) {
-    defectsAssert.match(read(file), /placeholderData: keepPreviousData/, `${file} needs keepPreviousData`);
-  }
+  defectsAssert.match(read("components/directory-page.tsx"), /placeholderData: keepPreviousData/);
 });
 
 defectsTest("money is formatted once, in the currency Stripe is actually charged in", () => {
