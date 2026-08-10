@@ -1,9 +1,10 @@
 "use client";
 
-import { Suspense, useCallback } from "react";
+import { Suspense, useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Badge, SegmentedFilter, type Column } from "@qiko/ui";
+import { Badge, Button, SegmentedFilter, type Column } from "@qiko/ui";
 import { DirectoryPage } from "@/components/directory-page";
+import { RowActivityDialog } from "@/components/row-activity-dialog";
 import { listWorkers, type WorkerRow } from "@/lib/api";
 
 const columns: Column<WorkerRow>[] = [
@@ -32,6 +33,7 @@ const columns: Column<WorkerRow>[] = [
 function WorkersView() {
   const router = useRouter();
   const params = useSearchParams();
+  const [active, setActive] = useState<WorkerRow | null>(null);
   const availability = params.get("enabled") ?? "";
   const status = params.get("status") ?? "";
 
@@ -43,6 +45,7 @@ function WorkersView() {
   }, [params, router]);
 
   return (
+    <>
     <DirectoryPage<WorkerRow>
       title="Workers"
       noun="workers"
@@ -70,8 +73,23 @@ function WorkersView() {
             onChange={(value) => setFilter("status", value)} />
         </div>
       }
+      actions={(row) => (
+        <Button variant="outline" className="min-h-11" onClick={() => setActive(row)}
+          aria-label={`Recent activity for ${row.name}`}>
+          Activity
+        </Button>
+      )}
       emptyMessage={(filtered) => filtered ? "No workers match this search or filter." : "No workers yet."}
     />
+    <RowActivityDialog
+      open={Boolean(active)}
+      title={active?.name ?? ""}
+      subtitle={active ? `${active.tenant_id} / ${active.id}` : undefined}
+      targetId={active?.id}
+      note="Availability changes are recorded separately and are not shown here."
+      onClose={() => setActive(null)}
+    />
+    </>
   );
 }
 

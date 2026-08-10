@@ -1,9 +1,10 @@
 "use client";
 
-import { Suspense, useCallback } from "react";
+import { Suspense, useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Badge, SegmentedFilter, type Column } from "@qiko/ui";
+import { Badge, Button, SegmentedFilter, type Column } from "@qiko/ui";
 import { DirectoryPage } from "@/components/directory-page";
+import { RowActivityDialog } from "@/components/row-activity-dialog";
 import { listUsers, type UserRow } from "@/lib/api";
 
 const columns: Column<UserRow>[] = [
@@ -55,6 +56,7 @@ const ROLES = [
 function UsersView() {
   const router = useRouter();
   const params = useSearchParams();
+  const [active, setActive] = useState<UserRow | null>(null);
   const role = params.get("role") ?? "";
   const twofa = params.get("twofa") ?? "";
 
@@ -66,6 +68,7 @@ function UsersView() {
   }, [params, router]);
 
   return (
+    <>
     <DirectoryPage<UserRow>
       title="Users"
       noun="users"
@@ -91,8 +94,24 @@ function UsersView() {
             onChange={(value) => setFilter("twofa", value)} />
         </div>
       }
+      actions={(row) => (
+        <Button variant="outline" className="min-h-11" onClick={() => setActive(row)}
+          aria-label={`Recent activity for ${row.email}`}>
+          Activity
+        </Button>
+      )}
       emptyMessage={(filtered) => filtered ? "No users match this search or filter." : "No users yet."}
     />
+    {/* Narrowed to the user id, not the tenant: the question a row raises is about that person. Their
+        role changes, sign-in failures and MFA events all carry it as the target. */}
+    <RowActivityDialog
+      open={Boolean(active)}
+      title={active?.name || active?.email || ""}
+      subtitle={active?.email}
+      targetId={active?.id}
+      onClose={() => setActive(null)}
+    />
+    </>
   );
 }
 

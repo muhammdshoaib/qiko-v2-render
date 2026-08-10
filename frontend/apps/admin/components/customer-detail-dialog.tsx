@@ -11,6 +11,7 @@ import {
   type Capability,
   type AdminWorker,
 } from "@/lib/api";
+import { RecentActivity } from "@/components/recent-activity";
 
 export function CustomerDetailDialog({ customerId, capabilities, opener, onClose }: {
   customerId: string | null;
@@ -172,8 +173,16 @@ export function CustomerDetailDialog({ customerId, capabilities, opener, onClose
               </dialog>
             )}
 
+            {/* Narrowed to this tenant. The section below it covers worker availability, which still
+                lives in the older agent_state_audit table and is not in this stream, so the note names
+                that gap rather than letting an empty panel read as "nothing happened". */}
+            <RecentActivity
+              scope={{ tenantId: customerId! }}
+              note="Worker availability changes are listed separately below."
+            />
+
             <section aria-labelledby="audit-heading">
-              <h3 id="audit-heading" className="mb-3 font-semibold">Worker audit history</h3>
+              <h3 id="audit-heading" className="mb-3 font-semibold">Worker availability history</h3>
               <div className="space-y-2">
                 {detail.data.worker_state_audit.map((entry) => {
                   const worker = detail.data.workers.find((candidate) => candidate.id === entry.agent_id);
