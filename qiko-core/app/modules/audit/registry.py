@@ -140,6 +140,14 @@ RFP_PACK_DELETED = "data.rfp_pack_deleted"
 FINANCE_FILES_DELETED = "data.finance_files_deleted"
 CHAT_HISTORY_DELETED = "data.chat_history_deleted"
 ANSWER_APPROVED = "data.answer_approved"
+# Tender governance. These are the closest thing this platform has to a signature on a document, which
+# is why they are their own actions rather than generic content edits: locking an answer is a person
+# saying "this is what we are submitting", and it is what the finalise gate rolls up.
+ANSWER_LOCKED = "data.answer_locked"
+ANSWER_UNLOCKED = "data.answer_unlocked"
+SECTION_LOCKED = "data.section_locked"
+PACK_STAGE_CHANGED = "data.pack_stage_changed"
+PACK_OUTCOME_RECORDED = "data.pack_outcome_recorded"
 
 # --- privacy -----------------------------------------------------------------------------------------
 SUBJECT_ERASED = "privacy.subject_erased"
@@ -276,6 +284,23 @@ _SPECS: tuple[ActionSpec, ...] = (
           template="{actor} approved an answer for {target}"),
 
     # Privacy operations, including the log's own.
+    _spec(ANSWER_LOCKED, DATA, "answer", diff_fields=("locked",),
+          template="{actor} locked an answer in {target}"),
+    _spec(ANSWER_UNLOCKED, DATA, "answer", diff_fields=("locked",),
+          # More sensitive than the lock. Reversing a sign-off after review is the move that needs to be
+          # visible, and it is the one a bid team would be asked about afterwards.
+          template="{actor} reopened a locked answer in {target}"),
+    _spec(SECTION_LOCKED, DATA, "section", diff_fields=("questions_locked",),
+          # Bulk approval: one click signing off a whole section. The count is the substance.
+          template="{actor} locked every answer in a section of {target}"),
+    _spec(PACK_STAGE_CHANGED, DATA, "rfp_pack", diff_fields=("stage",),
+          # "final" is gated on every section being locked, so this row is the roll-up of all of them:
+          # the moment the pack became a submission.
+          template="{actor} moved tender pack {target} to a new stage"),
+    _spec(PACK_OUTCOME_RECORDED, DATA, "rfp_pack", diff_fields=("outcome", "reason", "value"),
+          # Feeds the win/loss statistics a bid team reports on, so its integrity is commercial rather
+          # than merely operational.
+          template="{actor} recorded the outcome of tender pack {target}"),
     _spec(SUBJECT_ERASED, PRIVACY, "subject", durability=CRITICAL,
           diff_fields=("rows_pseudonymised", "request_ref"),
           template="{actor} erased subject data"),

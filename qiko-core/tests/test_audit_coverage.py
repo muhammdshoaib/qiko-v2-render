@@ -87,7 +87,7 @@ AUDIT_WRITERS: dict[str, int] = {
     "teams/router.py": 3,
     "knowledge/router.py": 1,
     "chat/router.py": 1,
-    "rfp/router.py": 1,
+    "rfp/router.py": 6,
     "finance/router.py": 1,
     # One route each, though login writes three different events (success, bad password, bad 2FA).
     "identity/router.py": 1,
@@ -109,7 +109,7 @@ def test_the_instrumented_set_matches_the_source():
         writes = sum(text.count(marker) for marker in (
             "audit.record(", "audit.record_sync(", "credential_audit(",
             "record_credential_exercised(", "_record_access(", "audit_row=build_record",
-            "audit=build_record if audited"))
+            "audit=build_record if audited", "_record_governance("))
         assert writes >= count, f"{relative} declares {count} audited routes but writes {writes} times"
 
     # /auth routes are split across three modules, so the first path segment is not enough on its own.
@@ -344,6 +344,11 @@ INSTRUMENTED: set[tuple[str, str]] = {
     ("POST", "/api/v1/agents/{agent_id}/slack-credentials/test"),
     ("POST", "/api/v1/agents/{agent_id}/gmail-credentials/test"),
     ("PUT", "/api/v1/agents/{agent_id}/config"),
+    ("POST", "/api/v1/rfp/packs/{pack_id}/questions/{question_id}/lock"),
+    ("POST", "/api/v1/rfp/packs/{pack_id}/questions/{question_id}/unlock"),
+    ("POST", "/api/v1/rfp/packs/{pack_id}/sections/{section_id}/lock-all"),
+    ("PUT", "/api/v1/rfp/packs/{pack_id}/stage"),
+    ("PUT", "/api/v1/rfp/packs/{pack_id}/outcome"),
     ("DELETE", "/api/v1/knowledge/documents/{doc_id}"),
     ("DELETE", "/api/v1/chat/history/{conversation_id}"),
     ("DELETE", "/api/v1/rfp/packs/{pack_id}"),
@@ -435,14 +440,6 @@ AUDIT_BACKLOG: dict[tuple[str, str], str] = {
     ("PUT", "/api/v1/agents/{agent_id}/sources/persona"): (
         "HIGH config: leg E2. Free-form patch that can reach any config key."),
     ("POST", "/api/v1/rfp/packs/{pack_id}/feedback"): (
-        "HIGH governance: leg E2. Human sign-off on a bid."),
-    ("PUT", "/api/v1/rfp/packs/{pack_id}/outcome"): (
-        "HIGH governance: leg E2. Human sign-off on a bid."),
-    ("POST", "/api/v1/rfp/packs/{pack_id}/questions/{question_id}/lock"): (
-        "HIGH governance: leg E2. Human sign-off on a bid."),
-    ("POST", "/api/v1/rfp/packs/{pack_id}/sections/{section_id}/lock-all"): (
-        "HIGH governance: leg E2. Human sign-off on a bid."),
-    ("PUT", "/api/v1/rfp/packs/{pack_id}/stage"): (
         "HIGH governance: leg E2. Human sign-off on a bid."),
     ("PATCH", "/api/v1/sales-intelligence/{agent_id}/ingest-filters"): (
         "MEDIUM: already recorded in sales_intel_activity_logs; folding into the central trail is leg E2."),
@@ -575,8 +572,6 @@ AUDIT_BACKLOG: dict[tuple[str, str], str] = {
     ("PATCH", "/api/v1/rfp/packs/{pack_id}/questions/{question_id}"): (
         "MEDIUM: leg E2. State change with an identifiable actor, not yet instrumented."),
     ("POST", "/api/v1/rfp/packs/{pack_id}/questions/{question_id}/generate"): (
-        "MEDIUM: leg E2. State change with an identifiable actor, not yet instrumented."),
-    ("POST", "/api/v1/rfp/packs/{pack_id}/questions/{question_id}/unlock"): (
         "MEDIUM: leg E2. State change with an identifiable actor, not yet instrumented."),
     ("POST", "/api/v1/rfp/packs/{pack_id}/score"): (
         "MEDIUM: leg E2. State change with an identifiable actor, not yet instrumented."),

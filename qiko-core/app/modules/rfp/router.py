@@ -111,17 +111,36 @@ class StageBody(BaseModel):
 
 @router.put("/{pack_id}/stage")
 async def set_stage(pack_id: str, body: StageBody, request: Request,
+                    claims: dict = Depends(current_claims),
                     tenant: str = Depends(authed_tenant),
                     _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_rfp_packs),
                     tree=Depends(get_pack_tree)) -> RfpPack:
-    _pack, recheck = await _resolve_pack(request, tenant, pack_id, svc)
+    """Move the pack through its stages. "final" is the submission point.
+
+    Audited because reaching "final" is the roll-up of every section lock: it is the moment the pack
+    stopped being a draft, and the guard below is what stops it happening without review sign-off.
+    """
+    pack, recheck = await _resolve_pack(request, tenant, pack_id, svc)
     # A pack can only be finalised once every section is locked (lock roll-up governance) -- guard
     # here so the generic stage transition can't skip review sign-off.
     if body.stage == "final" and not await tree.all_sections_locked(tenant, pack_id):
         raise HTTPException(status_code=409, detail="cannot finalise: every section must be locked first")
     try:
         await recheck()
-        return await svc.set_stage(tenant, pack_id, body.stage)
+        # Captured before the mutation for the same reason as the locks above.
+        previous = getattr(pack, "stage", None)
+        updated = await svc.set_stage(tenant, pack_id, body.stage)
+        if previous != body.stage:
+            await _record_governance(
+                request, audit_actions.PACK_STAGE_CHANGED, tenant, claims,
+                target_id=pack_id, pack_id=pack_id,
+                before={"stage": previous}, after={"stage": body.stage},
+                # Recorded on the row itself: months later, "was review actually complete when this was
+                # finalised" is answerable from the audit rather than from the pack's current state,
+                # which by then has moved on.
+                metadata={"title": getattr(pack, "title", None),
+                          "finalised": body.stage == "final"})
+        return updated
     except RfpPackNotFound as e:
         raise HTTPException(status_code=404, detail="RFP pack not found") from e
     except ValueError as e:
@@ -136,11 +155,14 @@ class OutcomeBody(BaseModel):
 
 @router.put("/{pack_id}/outcome")
 async def set_outcome(pack_id: str, body: OutcomeBody, request: Request,
+                      claims: dict = Depends(current_claims),
                       tenant: str = Depends(authed_tenant),
                       _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_rfp_packs),
                       notifier=Depends(get_teams_notifier)) -> RfpPack:
     """Win/Loss Analysis: record what happened to a submitted tender. Feeds /rfp/packs/stats."""
     persisted, recheck = await _resolve_pack(request, tenant, pack_id, svc)
+    # Read off the live row before the mutation, or it reports the value just written.
+    previous_outcome = getattr(persisted, "outcome", None)
     try:
         pack = await svc.set_outcome_for_enabled_agent(
             tenant, pack_id, persisted.agent_id, outcome=body.outcome,
@@ -149,6 +171,14 @@ async def set_outcome(pack_id: str, body: OutcomeBody, request: Request,
         raise HTTPException(status_code=404, detail="RFP pack not found") from e
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
+    # Feeds /rfp/packs/stats, so its integrity is commercial rather than merely operational: a win rate
+    # nobody can attribute is a number a bid team reports and cannot defend.
+    await _record_governance(
+        request, audit_actions.PACK_OUTCOME_RECORDED, tenant, claims,
+        target_id=pack_id, pack_id=pack_id,
+        before={"outcome": previous_outcome},
+        after={"outcome": body.outcome, "reason": body.reason or None, "value": body.value},
+        metadata={"title": getattr(pack, "title", None)})
     if body.outcome == "won":
         await notifier.notify(tenant, f"\U0001f389 Tender won: **{pack.title}**"
                               + (f" (${body.value:,.0f})" if body.value else ""))
@@ -1011,44 +1041,104 @@ async def save_draft(pack_id: str, question_id: str, body: DraftBody, request: R
         raise HTTPException(status_code=404, detail="question not found") from e
 
 
+async def _record_governance(request, action: str, tenant: str, claims: dict, *,
+                             target_id: str, pack_id: str, before: dict, after: dict,
+                             metadata: dict | None = None) -> None:
+    """Record a tender governance event.
+
+    One shape for all five, because they are the same kind of fact: a named person made a decision about
+    what this bid says. Nothing recorded any of them, so a pack could be locked, reopened, finalised and
+    marked won with no trace of who decided any of it. For a document a customer submits to a public
+    body, that is the gap that matters most in this module.
+    """
+    await audit.record(request.app.state.audit, audit.AuditEvent(
+        action=action, target_id=target_id, target_label=pack_id, tenant_id=tenant,
+        actor_type=audit.USER, actor_id=str(claims.get("sub") or ""),
+        actor_label=str(claims.get("email") or ""),
+        changes=audit.diff(action, before, after),
+        metadata={"pack_id": pack_id, **(metadata or {})}), request=request)
+
+
 @router.post("/{pack_id}/questions/{question_id}/lock")
 async def lock_question(pack_id: str, question_id: str, request: Request,
+                        claims: dict = Depends(current_claims),
                         tenant: str = Depends(authed_tenant),
                         _role: dict = Depends(require_role(Role.editor)),
                         packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)):
+    """Lock an answer: a person saying "this is what we are submitting"."""
     _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     try:
-        await tree.get_question_for_pack(tenant, pack_id, question_id)
+        existing = await tree.get_question_for_pack(tenant, pack_id, question_id)
+        # The BOOLEAN, not the object. The in-memory store returns live rows, so reading
+        # existing.locked after the mutation reads the value the mutation just wrote, and every lock
+        # would have looked like a re-lock. This is the same shape of mistake the credential audit hit,
+        # and it fails the same way: silently, with the row simply absent.
+        was_locked = bool(getattr(existing, "locked", False))
         await recheck()
-        return await tree.lock_question(tenant, question_id, locked=True)
+        locked = await tree.lock_question(tenant, question_id, locked=True)
+        # Only when it actually changed: re-locking an already locked answer is not a second sign-off,
+        # and a stream of them would bury the real ones.
+        if not was_locked:
+            await _record_governance(
+                request, audit_actions.ANSWER_LOCKED, tenant, claims,
+                target_id=question_id, pack_id=pack_id,
+                before={"locked": False}, after={"locked": True})
+        return locked
     except PackQuestionNotFound as e:
         raise HTTPException(status_code=404, detail="question not found") from e
 
 
 @router.post("/{pack_id}/questions/{question_id}/unlock")
 async def unlock_question(pack_id: str, question_id: str, request: Request,
+                          claims: dict = Depends(current_claims),
                           tenant: str = Depends(authed_tenant),
                           _role: dict = Depends(require_role(Role.editor)),
                           packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)):
+    """Reopen a locked answer, which reverses a sign-off.
+
+    Recorded as its own action rather than a lock with locked=false, because reversing an approval after
+    review is the move a bid team would be asked about afterwards, and it should be findable without
+    reading the diff of every lock event.
+    """
     _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     try:
-        await tree.get_question_for_pack(tenant, pack_id, question_id)
+        existing = await tree.get_question_for_pack(tenant, pack_id, question_id)
+        # See lock_question: the boolean has to be captured before the mutation.
+        was_locked = bool(getattr(existing, "locked", False))
         await recheck()
-        return await tree.lock_question(tenant, question_id, locked=False)
+        unlocked = await tree.lock_question(tenant, question_id, locked=False)
+        if was_locked:
+            await _record_governance(
+                request, audit_actions.ANSWER_UNLOCKED, tenant, claims,
+                target_id=question_id, pack_id=pack_id,
+                before={"locked": True}, after={"locked": False})
+        return unlocked
     except PackQuestionNotFound as e:
         raise HTTPException(status_code=404, detail="question not found") from e
 
 
 @router.post("/{pack_id}/sections/{section_id}/lock-all")
 async def lock_all_in_section(pack_id: str, section_id: str, request: Request,
+                              claims: dict = Depends(current_claims),
                               tenant: str = Depends(authed_tenant),
                               _role: dict = Depends(require_role(Role.editor)),
                               packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)) -> PackSection:
+    """Bulk sign-off: one click locking every answer in a section."""
     _pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
     try:
         await tree.get_section_for_pack(tenant, pack_id, section_id)
         await recheck()
-        return await tree.lock_all_in_section(tenant, section_id)
+        # Counted before, because afterwards every one is locked and the number would always equal the
+        # section size. How many answers this click signed off is the substance of a bulk approval.
+        unlocked_before = len([q for q in await tree.questions.list_for_section(tenant, section_id)
+                               if not getattr(q, "locked", False)])
+        section = await tree.lock_all_in_section(tenant, section_id)
+        if unlocked_before:
+            await _record_governance(
+                request, audit_actions.SECTION_LOCKED, tenant, claims,
+                target_id=section_id, pack_id=pack_id,
+                before={}, after={"questions_locked": unlocked_before})
+        return section
     except PackSectionNotFound as e:
         raise HTTPException(status_code=404, detail="section not found") from e
 
