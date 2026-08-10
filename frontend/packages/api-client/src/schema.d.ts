@@ -132,6 +132,16 @@ export interface paths {
          *
          *     Gated on manage_admins rather than manage_customers. This rewrites the evidence trail, which is a
          *     higher privilege than acting on a customer, and it is the same gate that protects platform authority.
+         *
+         *     QUEUED RATHER THAN PERFORMED HERE. Erasure is the only operation that UPDATEs audit_events, so doing
+         *     it in the request meant this process had to hold a connection able to rewrite history, while every
+         *     other write path used one that could not. That made the append-only boundary one handler away from
+         *     meaning nothing. The work now runs on the worker, which is the only place the privileged connection
+         *     exists.
+         *
+         *     The cost is that this returns "accepted" instead of a row count. For a request that takes days to
+         *     fulfil, seconds of asynchrony is not a real loss, and the count still lands in the trail under the
+         *     same request reference.
          */
         post: operations["erase_subject_api_v1_admin_audit_erase_post"];
         delete?: never;
