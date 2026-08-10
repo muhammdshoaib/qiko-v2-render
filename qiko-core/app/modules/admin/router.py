@@ -950,7 +950,10 @@ async def erase_subject(body: EraseSubjectBody, request: Request,
     higher privilege than acting on a customer, and it is the same gate that protects platform authority.
     """
     _require_csrf(request)
-    store = getattr(request.app.state, "audit", None)
+    # The maintenance store, because this is the only handler that UPDATEs audit_events and migration
+    # 0039 takes that grant away from the application role. Falls back to the ordinary store when the
+    # boundary is not in force, which is what lets the two ship independently.
+    store = getattr(request.app.state, "audit_maint", None) or getattr(request.app.state, "audit", None)
     if store is None:
         raise HTTPException(status_code=503, detail="audit store unavailable")
 

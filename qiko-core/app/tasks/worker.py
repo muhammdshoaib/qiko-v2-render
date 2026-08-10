@@ -86,15 +86,18 @@ async def export_audit_archive(ctx: dict) -> dict:
     from app.db.stores import SqlAuditArchiveStore, SqlAuditStore
     from app.modules.storage.backend import get_storage_backend
 
+    # The digest ledger is written by this job, so it uses the maintenance connection too.
+    sm = ctx.get("audit_sessionmaker") or ctx["sessionmaker"]
     return await jobs.export_audit_archive(
-        SqlAuditStore(ctx["sessionmaker"]), SqlAuditArchiveStore(ctx["sessionmaker"]),
-        get_storage_backend())
+        SqlAuditStore(ctx["sessionmaker"]), SqlAuditArchiveStore(sm), get_storage_backend())
 
 
 async def apply_audit_retention(ctx: dict) -> dict:
     from app.db.stores import SqlAuditStore
 
-    return await jobs.apply_audit_retention(SqlAuditStore(ctx["sessionmaker"]))
+    # Retention deletes and updates audit_events, which the application role must not be able to do.
+    return await jobs.apply_audit_retention(
+        SqlAuditStore(ctx.get("audit_sessionmaker") or ctx["sessionmaker"]))
 
 
 CRON_JOBS = [
@@ -113,17 +116,33 @@ CRON_JOBS = [
 
 
 async def on_startup(ctx) -> None:  # pragma: no cover - worker runtime
+    from app.core.config import get_settings
     from app.core.db import build_engine, build_sessionmaker
 
     engine = build_engine()
     ctx["engine"] = engine
     ctx["sessionmaker"] = build_sessionmaker(engine)
 
+    # A separate engine for the audit maintenance role, when one is configured. Retention and erasure
+    # need UPDATE and DELETE on audit_events, which migration 0039 takes away from the application role,
+    # so those two jobs use this connection and nothing else does.
+    #
+    # Falls back to the ordinary sessionmaker when unset, so the migration and this wiring can ship in
+    # either order without a window where retention silently stops.
+    maint_url = get_settings().audit_maint_database_url
+    if maint_url:
+        maint_engine = build_engine(maint_url)
+        ctx["audit_maint_engine"] = maint_engine
+        ctx["audit_sessionmaker"] = build_sessionmaker(maint_engine)
+    else:
+        ctx["audit_sessionmaker"] = ctx["sessionmaker"]
+
 
 async def on_shutdown(ctx) -> None:  # pragma: no cover - worker runtime
-    engine = ctx.get("engine")
-    if engine is not None:
-        await engine.dispose()
+    for key in ("engine", "audit_maint_engine"):
+        engine = ctx.get(key)
+        if engine is not None:
+            await engine.dispose()
 
 
 class WorkerSettings:

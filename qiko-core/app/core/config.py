@@ -38,6 +38,15 @@ class Settings(BaseSettings):
 
     # Data
     database_url: str = "postgresql+asyncpg://qiko:" + "change-me-locally" + "@db:5432/qiko"
+    # A second connection for the audit maintenance role, WORKER-ONLY. Once migration 0039 has revoked
+    # UPDATE and DELETE on audit_events from the application role, retention and erasure can only run
+    # through this one. Empty means the boundary is not in force yet and the jobs use the ordinary URL,
+    # which is what makes the two changes independently deployable.
+    #
+    # Deliberately never read by the API process: the point of the split is that a request handler
+    # cannot reach a connection able to rewrite history, and a setting the API never loads cannot be
+    # reached by accident.
+    audit_maint_database_url: str = ""
     redis_url: str = "redis://redis:6379/0"
     task_backend: str = "eager"  # eager (dev/tests) | arq (prod worker tier)
     use_db_stores: bool = False  # True -> live app uses the Postgres-backed stores
