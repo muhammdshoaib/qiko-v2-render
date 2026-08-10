@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta, timezone
 
+from fastapi.responses import JSONResponse
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
@@ -948,33 +949,35 @@ async def erase_subject(body: EraseSubjectBody, request: Request,
 
     Gated on manage_admins rather than manage_customers. This rewrites the evidence trail, which is a
     higher privilege than acting on a customer, and it is the same gate that protects platform authority.
+
+    QUEUED RATHER THAN PERFORMED HERE. Erasure is the only operation that UPDATEs audit_events, so doing
+    it in the request meant this process had to hold a connection able to rewrite history, while every
+    other write path used one that could not. That made the append-only boundary one handler away from
+    meaning nothing. The work now runs on the worker, which is the only place the privileged connection
+    exists.
+
+    The cost is that this returns "accepted" instead of a row count. For a request that takes days to
+    fulfil, seconds of asynchrony is not a real loss, and the count still lands in the trail under the
+    same request reference.
     """
     _require_csrf(request)
-    # The maintenance store, because this is the only handler that UPDATEs audit_events and migration
-    # 0039 takes that grant away from the application role. Falls back to the ordinary store when the
-    # boundary is not in force, which is what lets the two ship independently.
-    store = getattr(request.app.state, "audit_maint", None) or getattr(request.app.state, "audit", None)
-    if store is None:
-        raise HTTPException(status_code=503, detail="audit store unavailable")
+    queue = getattr(request.app.state, "task_queue", None)
+    if queue is None:
+        raise HTTPException(status_code=503, detail="task queue unavailable")
 
+    # The pseudonym is returned immediately because it needs no database at all: it is an HMAC of the
+    # address. So the operator gets the value they will need to find the rows afterwards, even though the
+    # work itself has not run yet.
     pseudonym = audit_retention.audit_subject_pseudonym(body.identifier)
-    # A callback, so the store can count the affected rows and build the record INSIDE the erasure's
-    # own transaction. The erasure therefore cannot land without its record, a failed erasure cannot
-    # leave a row claiming one, and the record still carries the real count rather than omitting it.
-    #
-    # The pseudonym IS the target. Putting the address there would undo the erasure in the very row
-    # that records it.
-    def build_record(affected: int) -> dict:
-        return audit.build_row(audit.AuditEvent(
-            action=audit_actions.SUBJECT_ERASED, target_id=pseudonym, tenant_id=None,
-            actor_type=audit.PLATFORM_ADMIN, actor_id=str(claims.get("email") or ""),
-            actor_label=str(claims.get("email") or ""),
-            changes=audit.diff(audit_actions.SUBJECT_ERASED, {},
-                               {"rows_pseudonymised": affected, "request_ref": body.request_ref}),
-            metadata={"scope": ["audit_events"]}), request=request)
+    await queue.enqueue(
+        "erase_audit_subject", identifier=body.identifier, pseudonym=pseudonym,
+        request_ref=body.request_ref, actor_email=str(claims.get("email") or ""))
 
-    rows = await store.pseudonymise_subject(body.identifier, pseudonym, audit_row=build_record)
-    return {"pseudonym": pseudonym, "rows_pseudonymised": rows, "request_ref": body.request_ref}
+    # 202, not 200: accepted rather than done. The row count is not knowable here and inventing one would
+    # be worse than omitting it. It appears in the trail, findable by this request reference.
+    return JSONResponse(status_code=202, content={
+        "pseudonym": pseudonym, "request_ref": body.request_ref, "status": "queued",
+        "where_to_check": f"/audit?q={body.request_ref}"})
 
 
 @router.get("/audit/retention")

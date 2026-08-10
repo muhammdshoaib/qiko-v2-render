@@ -112,15 +112,22 @@ def test_the_policy_endpoint_reads_the_same_constants_the_job_uses(client):
 # --- erasure --------------------------------------------------------------------------------------
 
 def test_erasure_pseudonymises_and_never_deletes(client):
-    """A gap in an audit trail is indistinguishable from tampering."""
+    """A gap in an audit trail is indistinguishable from tampering.
+
+    The endpoint now QUEUES the work rather than performing it, so the assertions below run after the
+    eager task backend has executed the job inline. On a worker the same job runs with the maintenance
+    connection, which is the only one that can UPDATE audit_events once the boundary is in force.
+    """
     cookies, headers = _admin(client)
     _plant(client, email="erase.me@acme.invalid")
     _plant(client, email="keep.me@acme.invalid")
 
     response = client.post("/api/v1/admin/audit/erase", cookies=cookies, headers=headers,
                            json={"identifier": "erase.me@acme.invalid", "request_ref": "DSAR-2026-14"})
-    assert response.status_code == 200
-    assert response.json()["rows_pseudonymised"] == 1
+    # 202: accepted rather than done. The row count is not knowable at enqueue time and inventing one
+    # would be worse than omitting it.
+    assert response.status_code == 202
+    assert response.json()["status"] == "queued"
 
     rows = client.app.state.audit.rows
     assert len(rows) >= 2, "no row was removed"
@@ -231,6 +238,78 @@ def test_erasure_covers_every_field_that_can_hold_the_identifier(client):
     assert subject not in str(row)
 
 
+def test_the_response_carries_what_the_operator_needs_before_the_job_runs(client):
+    """The pseudonym needs no database at all: it is an HMAC of the address. So it can be returned
+    immediately, which is what lets an operator find the rows afterwards even though the work has not
+    happened yet. Returning nothing but a job id would have made the asynchrony the operator's problem."""
+    cookies, headers = _admin(client)
+    body = client.post("/api/v1/admin/audit/erase", cookies=cookies, headers=headers,
+                       json={"identifier": "later@acme.invalid",
+                             "request_ref": "DSAR-9"}).json()
+    assert body["pseudonym"] == audit_subject_pseudonym("later@acme.invalid")
+    assert body["request_ref"] == "DSAR-9"
+    assert "DSAR-9" in body["where_to_check"]
+
+
+def test_the_api_process_holds_no_connection_that_can_rewrite_history():
+    """The reason for moving this to the worker. Erasure was the only handler that needed UPDATE on
+    audit_events, and keeping it here meant the API had a connection able to rewrite history while every
+    other write path used one that could not. That made the append-only boundary one handler away from
+    meaning nothing."""
+    import inspect
+
+    from app import main
+
+    source = inspect.getsource(main)
+    assert "app.state.audit_maint" not in source
+    admin_router = inspect.getsource(__import__(
+        "app.modules.admin.router", fromlist=["router"]))
+    assert "audit_maint" not in admin_router
+    # And the handler enqueues rather than writing.
+    assert 'queue.enqueue(\n        "erase_audit_subject"' in admin_router
+
+
+def test_a_retried_job_does_not_claim_a_second_erasure(client):
+    """A failed job is retried, and idempotency is what stops a retry producing a second row asserting a
+    second erasure of rows that were already pseudonymised."""
+    from app.tasks.jobs import erase_audit_subject
+
+    _plant(client, email="twice@acme.invalid")
+    store = client.app.state.audit
+    first = asyncio.run(erase_audit_subject(
+        identifier="twice@acme.invalid", pseudonym="p1", request_ref="DSAR-4",
+        actor_email=ADMIN, store=store))
+    second = asyncio.run(erase_audit_subject(
+        identifier="twice@acme.invalid", pseudonym="p1", request_ref="DSAR-4",
+        actor_email=ADMIN, store=store))
+    assert first == 1
+    assert second == 0, "nothing left to erase"
+    counts = [r["changes"]["rows_pseudonymised"]["to"] for r in store.rows
+              if r["action"] == registry.SUBJECT_ERASED]
+    assert counts == [1, 0], "the second row records that it found nothing, not a second erasure"
+
+
+def test_the_job_log_carries_the_reference_but_not_the_address(client, caplog):
+    """The job argument has to carry the address to do the work, and the log is the one place it would
+    outlive the erasure."""
+    import logging
+
+    from app.tasks.jobs import erase_audit_subject
+
+    _plant(client, email="logged@acme.invalid")
+    with caplog.at_level(logging.INFO):
+        asyncio.run(erase_audit_subject(
+            identifier="logged@acme.invalid", pseudonym="p2", request_ref="DSAR-5",
+            actor_email=ADMIN, store=client.app.state.audit))
+
+    # Against the record's ATTRIBUTES, not caplog.text: `extra` fields never appear in the formatted
+    # message, so a text assertion here checks the format string rather than what is logged.
+    record = next(r for r in caplog.records if r.message == "audit subject erased")
+    assert getattr(record, "request_ref") == "DSAR-5"
+    assert getattr(record, "pseudonym") == "p2"
+    assert "logged@acme.invalid" not in str(record.__dict__)
+
+
 def test_the_erasure_and_its_record_share_a_transaction():
     """The first version wrote the record afterwards, and the behavioural coverage test caught it: an
     erasure that lands without its own record is the one case a regulator asks about directly.
@@ -259,6 +338,6 @@ def test_the_erasure_record_carries_the_real_count(client):
 
     response = client.post("/api/v1/admin/audit/erase", cookies=cookies, headers=headers,
                            json={"identifier": "many@acme.invalid", "request_ref": "DSAR-3"})
-    assert response.json()["rows_pseudonymised"] == 3
+    assert response.status_code == 202
     event = next(r for r in client.app.state.audit.rows if r["action"] == registry.SUBJECT_ERASED)
     assert event["changes"]["rows_pseudonymised"]["to"] == 3
