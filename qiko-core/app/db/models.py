@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, String, Text, true
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -348,7 +348,13 @@ class AuditEventRow(Base):
     """
 
     __tablename__ = "audit_events"
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    # BigInteger, with an Integer variant for SQLite. SQLite only auto-increments a column declared
+    # exactly INTEGER PRIMARY KEY, so a plain BigInteger key is NOT NULL with no default there and every
+    # insert fails. Tests run on SQLite and production on Postgres, and this table had been in main for
+    # several releases with no test ever inserting into it through the SQL store: every audit test used
+    # the in-memory one, so the failure was invisible until a store-level test exercised the real path.
+    id: Mapped[int] = mapped_column(BigInteger().with_variant(Integer, "sqlite"),
+                                    primary_key=True, autoincrement=True)
     # Stable across environments and exports, so a row can be referenced or de-duplicated without
     # relying on an autoincrement that differs per database.
     event_id: Mapped[str] = mapped_column(String(36), unique=True, index=True)

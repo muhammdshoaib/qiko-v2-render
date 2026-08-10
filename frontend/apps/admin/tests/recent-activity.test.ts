@@ -33,14 +33,16 @@ raTest("the window is wide, because a quiet account is the point", () => {
   raAssert.match(backend, /days: int = Query\(default=7, ge=1, le=400\)/);
 });
 
-raTest("the panel names the coverage gap it has", () => {
-  // Worker availability changes still live in the older agent_state_audit table and are not in this
-  // stream. A reader seeing an empty panel must not conclude nothing happened.
+raTest("the panel can name a coverage gap, and currently has none to name", () => {
+  // It shipped with a note saying worker availability changes were not in this stream. They are now:
+  // the store writes the unified row inside the same transaction as the change. So the note is gone
+  // from every call site, and what is pinned here is the MECHANISM rather than the message, because a
+  // panel that keeps disclaiming a gap it no longer has teaches operators to distrust it.
   raAssert.match(panel, /note\?: string/);
-  raAssert.match(customerDialog, /note="Worker availability changes are listed separately below\."/);
-  // Shown even when the list is populated: the gap does not disappear because something else was
-  // recorded.
+  // Shown even when the list is populated, for whenever there is a gap again: it does not disappear
+  // because something else was recorded.
   raAssert.match(panel, /\{note && activity\.isSuccess &&/);
+  raAssert.doesNotMatch(customerDialog, /note=/, "no gap left to disclaim");
 });
 
 raTest("the legacy section is labelled for what it actually contains", () => {

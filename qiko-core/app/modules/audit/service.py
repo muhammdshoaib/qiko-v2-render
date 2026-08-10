@@ -178,6 +178,17 @@ def diff(spec_action: str, before: dict | None, after: dict | None) -> dict:
     allowed = set(spec_for(spec_action).diff_fields)
     before = before or {}
     after = after or {}
+    if not allowed and (before or after):
+        # An action given data to diff while declaring no fields records nothing, and the allowlist
+        # doing its job looks identical to the allowlist being empty. PLATFORM_ACCESS_REVOKED shipped
+        # that way: the row said access had been revoked without saying what was revoked, which for a
+        # revoke is the entire content since the row it describes no longer exists.
+        #
+        # Logged rather than raised: this is a wiring mistake, and failing the request would turn a
+        # missing field into a failed mutation. The test suite is what turns it into a failure.
+        logger.error("audit action was given a diff it cannot keep", extra={
+            "source": "audit", "action": spec_action,
+            "fields": sorted(set(before) | set(after))})
     changed: dict[str, Any] = {}
     for key in allowed:
         old, new = before.get(key), after.get(key)

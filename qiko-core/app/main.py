@@ -429,6 +429,10 @@ def create_app() -> FastAPI:
     app.state.ga4 = GA4Client() if settings.ga4_property_id and settings.ga4_access_token else StubGA4Gateway()
     app.state.payment_links = PaymentLinkService(gateway=stripe_gateway, email=get_email_sender())
     app.state.admin_org = AdminOrg()
+    # The unified audit row for a grant or revoke. Attached to the STORE rather than the wrapper,
+    # because that is where the record is written, and after construction because admin_org is built
+    # further down this function than the audit store is.
+    app.state.admin_org.store.audit_store = app.state.audit
     app.state.otp_store = OtpStore()
     app.state.pending_invites = PendingInviteStore()
     app.state.pending_signups = InMemoryPendingSignupStore()

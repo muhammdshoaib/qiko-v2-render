@@ -86,7 +86,6 @@ function WorkersView() {
       title={active?.name ?? ""}
       subtitle={active ? `${active.tenant_id} / ${active.id}` : undefined}
       targetId={active?.id}
-      note="Availability changes are recorded separately and are not shown here."
       onClose={() => setActive(null)}
     />
     </>

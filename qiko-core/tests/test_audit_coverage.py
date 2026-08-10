@@ -80,7 +80,11 @@ def test_nothing_is_declared_twice():
 # credential routes stayed listed as backlog for a whole release after they were instrumented, and
 # nothing noticed. A ledger that can be wrong in the safe direction is still wrong.
 AUDIT_WRITERS: dict[str, int] = {
-    "admin/router.py": 7,
+    # 8 with the worker availability toggle, which is written in the agent store's transaction.
+    "admin/router.py": 8,
+    # These three are written inside the STORE transaction rather than by a router call, which is the
+    # property that made them worth folding in rather than re-instrumenting at the call site.
+    "identity/admin_org_router.py": 2,
     "billing/router.py": 2,
     "agents/router.py": 17,
     "identity/users_router.py": 3,
@@ -103,14 +107,23 @@ def test_the_instrumented_set_matches_the_source():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1] / "app" / "modules"
+    # Three routes are audited inside the STORE's transaction rather than by a call in their router,
+    # which is the property that made folding them in better than re-instrumenting at the call site.
+    # For those, the writer to look at is stores.py.
+    WRITTEN_IN_STORE = {"identity/admin_org_router.py", "admin/router.py"}
+    stores = (Path(__file__).resolve().parents[1] / "app" / "db" / "stores.py").read_text()
     for relative, count in AUDIT_WRITERS.items():
         text = (root / relative).read_text()
+        if relative in WRITTEN_IN_STORE:
+            text += stores
         # Counted across every writer name, because billing uses the synchronous path and the
         # credential and team helpers each have their own.
         writes = sum(text.count(marker) for marker in (
             "audit.record(", "audit.record_sync(", "credential_audit(",
             "record_credential_exercised(", "_record_access(", "audit_row=build_record",
-            "audit=build_record if audited", "_record_governance("))
+            "audit=build_record if audited", "_record_governance(",
+            # The store-side writers, for the routes audited inside a transaction.
+            "_platform_access_row(", "_worker_availability_row("))
         assert writes >= count, f"{relative} declares {count} audited routes but writes {writes} times"
 
     # /auth routes are split across three modules, so the first path segment is not enough on its own.
@@ -118,6 +131,7 @@ def test_the_instrumented_set_matches_the_source():
         # /agents/feedback is served by agentcore/batch_router.py, not agents/router.py, so the first
         # path segment is misleading here in the same way it is for /auth.
         "/api/v1/agents/feedback": "agentcore/batch_router.py",
+        "/api/v1/admin/org/{email}": "identity/admin_org_router.py",
         "/api/v1/auth/login": "identity/router.py",
         "/api/v1/auth/reset-password": "identity/onboarding_router.py",
         "/api/v1/auth/2fa/verify-setup": "identity/twofa_router.py",
@@ -355,6 +369,9 @@ INSTRUMENTED: set[tuple[str, str]] = {
     ("PUT", "/api/v1/rfp/packs/{pack_id}/outcome"),
     ("POST", "/api/v1/agents/feedback"),
     ("POST", "/api/v1/rfp/packs/{pack_id}/feedback"),
+    ("PATCH", "/api/v1/admin/customers/{customer_id}/workers/{agent_id}/enabled"),
+    ("PUT", "/api/v1/admin/org/{email}"),
+    ("DELETE", "/api/v1/admin/org/{email}"),
     ("DELETE", "/api/v1/knowledge/documents/{doc_id}"),
     ("DELETE", "/api/v1/chat/history/{conversation_id}"),
     ("DELETE", "/api/v1/rfp/packs/{pack_id}"),
@@ -369,12 +386,6 @@ INSTRUMENTED: set[tuple[str, str]] = {
 # claiming them as "instrumented" would assert a single stream that does not exist. Each is genuinely
 # recorded, so they are neither a gap nor yet the thing this change is building.
 LEGACY_AUDITED: dict[tuple[str, str], str] = {
-    ("PATCH", "/api/v1/admin/customers/{customer_id}/workers/{agent_id}/enabled"):
-        "agent_state_audit, written inside the row-locked transaction; migrate in leg E2",
-    ("PUT", "/api/v1/admin/org/{email}"):
-        "platform_admin_audit, written in the same transaction as the grant; migrate in leg E2",
-    ("DELETE", "/api/v1/admin/org/{email}"):
-        "platform_admin_audit, written in the same transaction as the revoke; migrate in leg E2",
     ("POST", "/api/v1/consent"):
         "consent_records, which is legal evidence with its own append-only guarantees and must not move",
     ("POST", "/api/v1/consent/anonymous"):
@@ -771,3 +782,35 @@ def test_every_critical_action_with_a_call_site_has_a_transactional_one():
         "these actions are declared CRITICAL but every call site uses the non-transactional writer. "
         "Either write them in the caller's transaction or declare them STANDARD:\n  " +
         "\n  ".join(sorted(offenders)))
+
+
+def test_no_action_is_given_a_diff_it_cannot_keep(caplog):
+    """An action written with changes while declaring no diff_fields silently records nothing.
+
+    PLATFORM_ACCESS_REVOKED shipped that way: the row said access had been revoked without saying what
+    was revoked, which for a revoke is the entire content since the row it describes no longer exists.
+    The allowlist doing its job looks identical to the allowlist being empty.
+
+    Checked inside diff() rather than by walking call sites. A first version searched the source for
+    `diff(audit_actions.X` and missed this exact case, because the store passes the action through a
+    variable, so the literal never appears. A runtime check catches it however the call is spelled.
+    """
+    import logging
+
+    from app.modules.audit.service import diff as audit_diff
+
+    fieldless = [a for a, spec in registry.REGISTRY.items() if not spec.diff_fields]
+    assert fieldless, "this test is meaningless if every action declares fields"
+
+    with caplog.at_level(logging.ERROR):
+        audit_diff(fieldless[0], {"something": 1}, {"something": 2})
+    assert "cannot keep" in caplog.text
+
+    # And the real actions used with a diff must not trip it.
+    caplog.clear()
+    with caplog.at_level(logging.ERROR):
+        audit_diff(registry.PLATFORM_ACCESS_REVOKED,
+                   {"role": "viewer", "capabilities": ["view_customers"]},
+                   {"role": None, "capabilities": None})
+        audit_diff(registry.WORKER_ENABLED_CHANGED, {"enabled": True}, {"enabled": False})
+    assert "cannot keep" not in caplog.text

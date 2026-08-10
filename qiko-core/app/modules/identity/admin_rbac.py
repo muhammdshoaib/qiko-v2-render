@@ -171,6 +171,9 @@ def _now() -> datetime:
 
 @dataclass
 class InMemoryAdminOrgStore:
+    # Where the unified audit row goes when there is no transaction. Wired in main.py so dev and tests
+    # see the rows production writes.
+    audit_store: object | None = None
     _admins: dict[str, AdminRole] = field(default_factory=dict)
     _capabilities: dict[str, frozenset[Capability]] = field(default_factory=dict)
     _audit: list[AdminGrantAudit] = field(default_factory=list)
@@ -233,6 +236,18 @@ class InMemoryAdminOrgStore:
     def _record(self, email: str, actor: str, previous_role: AdminRole | None,
                 role: AdminRole | None, previous_caps: frozenset[Capability] | None,
                 caps: frozenset[Capability] | None, reason: str | None) -> None:
+        # The unified stream too, mirroring the SQL store's same-transaction write. Wired in main.py.
+        if self.audit_store is not None:
+            from app.db.stores import _platform_access_row
+
+            self.audit_store.add_in(None, _platform_access_row(
+                email=email, actor_email=actor,
+                previous_role=previous_role.value if previous_role else None,
+                role=role.value if role else None,
+                previous_capabilities=(sorted(c.value for c in previous_caps)
+                                       if previous_caps is not None else None),
+                capabilities=sorted(c.value for c in caps) if caps is not None else None,
+                reason=(reason or "").strip() or None))
         self._audit.append(AdminGrantAudit(
             id=len(self._audit) + 1, email=email, changed_by_email=actor,
             previous_role=previous_role.value if previous_role else None,

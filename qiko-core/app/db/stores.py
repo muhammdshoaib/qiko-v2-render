@@ -436,6 +436,18 @@ class SqlAgentStore:
                 tenant_id=tenant, agent_id=agent_id, changed_by_email=changed_by_email,
                 previous_enabled=previous, enabled=enabled,
                 reason=(reason or "").strip() or None))
+            # Also into the unified stream, in the SAME transaction, so the row-locked guarantee this
+            # method already had extends to it: an availability change cannot land without either record.
+            #
+            # Both are written rather than one. agent_state_audit is still read by the customer detail
+            # view and its shape (previous_enabled, enabled) is what that UI renders, so removing it
+            # would be a UI change bundled into a data change. What matters for "one stream" is that the
+            # unified trail is complete, not that the old table is gone; retiring it is a follow-up once
+            # nothing reads it.
+            s.add(AuditEventRow(**_worker_availability_row(
+                tenant=tenant, agent_id=agent_id, name=row.name,
+                changed_by_email=changed_by_email, previous=previous, enabled=enabled,
+                reason=(reason or "").strip() or None)))
             return self._to_domain(row)
 
     async def list_state_audit(self, tenant: str, *, limit: int = 50) -> list[AgentStateAudit]:
@@ -1037,6 +1049,12 @@ class SqlAdminOrgStore:
                 row.capabilities = stored
             unchanged = previous_role == role.value and previous_caps == stored
             if not unchanged:
+                # Same transaction as the grant, matching what this method already guaranteed for the
+                # legacy row. See set_enabled for why both are written.
+                s.add(AuditEventRow(**_platform_access_row(
+                    email=key, actor_email=changed_by_email, previous_role=previous_role,
+                    role=role.value, previous_capabilities=previous_caps, capabilities=stored,
+                    reason=(reason or "").strip() or None)))
                 s.add(PlatformAdminAuditRow(
                     email=key, changed_by_email=changed_by_email,
                     previous_role=previous_role, role=role.value,
@@ -1053,10 +1071,18 @@ class SqlAdminOrgStore:
             )).scalar_one_or_none()
             if row is None:
                 return
+            previous_caps = list(row.capabilities) if row.capabilities is not None else None
+            # Same transaction as the delete, so a revoked admin cannot vanish without a record of who
+            # revoked them. Read off the row BEFORE the delete: afterwards the role and capability set
+            # are unrecoverable, which is the same ordering the tenant hard delete had to get right.
+            s.add(AuditEventRow(**_platform_access_row(
+                email=key, actor_email=changed_by_email, previous_role=row.role, role=None,
+                previous_capabilities=previous_caps, capabilities=None,
+                reason=(reason or "").strip() or None)))
             s.add(PlatformAdminAuditRow(
                 email=key, changed_by_email=changed_by_email,
                 previous_role=row.role, role=None,
-                previous_capabilities=list(row.capabilities) if row.capabilities is not None else None,
+                previous_capabilities=previous_caps,
                 capabilities=None, reason=(reason or "").strip() or None))
             await s.delete(row)
 
@@ -2511,6 +2537,49 @@ class SqlAuditStore:
                         subject_pseudonym=pseudonym,
                         pseudonymised_at=datetime.now(timezone.utc)))
             return result.rowcount or 0
+
+
+def _worker_availability_row(*, tenant: str, agent_id: str, name: str | None,
+                             changed_by_email: str, previous: bool, enabled: bool,
+                             reason: str | None) -> dict:
+    """Build the unified row for a worker availability change.
+
+    Here rather than at the call site because the store is where the transaction is, and the whole point
+    of folding these in was that the row shares that transaction. The actor is a platform admin: this
+    path is only reachable from the admin console.
+    """
+    from app.modules.audit import registry as audit_actions
+    from app.modules.audit import service as audit_service
+
+    return audit_service.build_row(audit_service.AuditEvent(
+        action=audit_actions.WORKER_ENABLED_CHANGED, target_id=agent_id, target_label=name,
+        tenant_id=tenant, actor_type=audit_service.PLATFORM_ADMIN, actor_id=changed_by_email,
+        actor_label=changed_by_email, reason=reason,
+        changes=audit_service.diff(audit_actions.WORKER_ENABLED_CHANGED,
+                                   {"enabled": previous}, {"enabled": enabled})))
+
+
+def _platform_access_row(*, email: str, actor_email: str, previous_role: str | None, role: str | None,
+                         previous_capabilities: list | None, capabilities: list | None,
+                         reason: str | None) -> dict:
+    """Build the unified row for a platform-access grant or revoke.
+
+    The capability SETS are the substance, not just the role: the whole reason platform admins have
+    capabilities is that "super_admin or nothing" was too blunt, so a row recording only the role would
+    hide the change that actually happened most of the time.
+    """
+    from app.modules.audit import registry as audit_actions
+    from app.modules.audit import service as audit_service
+
+    revoked = role is None
+    action = (audit_actions.PLATFORM_ACCESS_REVOKED if revoked
+              else audit_actions.PLATFORM_ACCESS_GRANTED)
+    return audit_service.build_row(audit_service.AuditEvent(
+        action=action, target_id=email, target_label=email, actor_type=audit_service.PLATFORM_ADMIN,
+        actor_id=actor_email, actor_label=actor_email, reason=reason,
+        changes=audit_service.diff(action,
+                                   {"role": previous_role, "capabilities": previous_capabilities},
+                                   {"role": role, "capabilities": capabilities})))
 
 
 def _audit_json(row: AuditEventRow) -> dict:

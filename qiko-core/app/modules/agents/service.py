@@ -155,6 +155,16 @@ class InMemoryAgentStore:
             changed_by_email=changed_by_email, previous_enabled=previous,
             enabled=enabled, reason=(reason or "").strip() or None,
             created_at=datetime.now(timezone.utc)))
+        # And into the unified stream, mirroring what the SQL store writes inside its transaction. Both
+        # here for the same reason as there: without it, "one stream" would be true in production and
+        # false in every test.
+        if self.audit_store is not None:
+            from app.db.stores import _worker_availability_row
+
+            self.audit_store.add_in(None, _worker_availability_row(
+                tenant=tenant, agent_id=agent_id, name=agent.name,
+                changed_by_email=changed_by_email, previous=previous, enabled=enabled,
+                reason=(reason or "").strip() or None))
         return agent
 
     async def list_state_audit(self, tenant: str, *, limit: int = 50) -> list[AgentStateAudit]:
