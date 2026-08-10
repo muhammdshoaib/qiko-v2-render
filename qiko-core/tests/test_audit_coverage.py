@@ -122,6 +122,9 @@ def test_the_instrumented_set_matches_the_source():
             "audit.record(", "audit.record_sync(", "credential_audit(",
             "record_credential_exercised(", "_record_access(", "audit_row=build_record",
             "audit=build_record if audited", "_record_governance(",
+            # Erasure is enqueued rather than written in the handler, so the marker is the enqueue: the
+            # row itself is written by the worker inside the maintenance transaction.
+            '"erase_audit_subject"',
             # The store-side writers, for the routes audited inside a transaction.
             "_platform_access_row(", "_worker_availability_row("))
         assert writes >= count, f"{relative} declares {count} audited routes but writes {writes} times"

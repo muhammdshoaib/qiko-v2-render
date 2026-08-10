@@ -177,19 +177,9 @@ async def lifespan(app: FastAPI):
         app.state.ai_usage = SqlUsageStore(sm)  # AI spend survives a redeploy
         app.state.cost_caps = SqlCostCapStore(sm)
         app.state.audit = SqlAuditStore(sm)  # sync half attached with the directory below
-        # Erasure UPDATEs audit_events, which migration 0039 takes away from the application role. The
-        # one endpoint that legally must be able to do it gets its own store on the maintenance
-        # connection; everything else keeps the store that cannot.
-        #
-        # The trade, stated rather than hidden: this process does then hold a connection able to rewrite
-        # history. What the boundary still buys is that all 49 instrumented write paths go through
-        # app.state.audit, so rewriting history is reachable from exactly one manage_admins-gated
-        # handler instead of from anywhere in the API. Moving erasure onto the worker queue is strictly
-        # stronger and is the follow-up: it changes the endpoint from returning a row count to returning
-        # a job, which is a contract change worth doing on its own rather than smuggled in here.
-        app.state.audit_maint = (
-            SqlAuditStore(build_sessionmaker(build_engine(get_settings().audit_maint_database_url)))
-            if get_settings().audit_maint_database_url else app.state.audit)
+        # No privileged audit connection in this process, deliberately. Erasure was the only handler
+        # that needed one, and it now runs on the worker. So nothing reachable from a request can UPDATE
+        # or DELETE an audit row, which is what makes the append-only boundary worth the word.
         app.state.cost_guard = CostGuard(caps=app.state.cost_caps, usage=app.state.ai_usage)
         app.state.notifications = NotificationService(store=SqlNotificationStore(sm))
         app.state.cost_guard.notifications = app.state.notifications
@@ -397,9 +387,6 @@ def create_app() -> FastAPI:
     app.state.ai_usage = InMemoryUsageStore()
     app.state.cost_caps = InMemoryCostCapStore()
     app.state.audit = InMemoryAuditStore()
-    # One store in dev and tests: there is no privilege boundary to model without Postgres roles, and a
-    # second in-memory store would make the erase tests pass against rows the endpoint never wrote.
-    app.state.audit_maint = app.state.audit
     # The in-memory agent store writes same-transaction audit rows here, mirroring what the SQL
     # store does inside its own transaction.
     app.state.agents.store.audit_store = app.state.audit
@@ -462,6 +449,11 @@ def create_app() -> FastAPI:
     app.state.file_generator = FileGenerator(
         S3Storage(bucket=settings.s3_bucket) if settings.s3_bucket else InMemoryStorage())
     app.state.task_queue = build_task_queue(task_registry)
+    # The store the EAGER task backend uses for the erasure job, which is dev and tests only: with the arq
+    # backend the job runs on the worker with its own maintenance connection and this is never read.
+    from app.tasks import jobs as task_jobs
+
+    task_jobs._audit_store = app.state.audit
 
     # Every request is tenant-scoped.
     app.include_router(health_router)

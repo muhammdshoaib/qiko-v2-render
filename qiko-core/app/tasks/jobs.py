@@ -20,6 +20,14 @@ registry = TaskRegistry()
 # A process-wide knowledge service; in prod this is constructed with the DB-backed vector store.
 _knowledge = KnowledgeService()
 
+# The audit store the eager task backend uses, wired in main.py. Same shape as _knowledge above.
+#
+# Only the EAGER backend reaches this: on a worker the ctx wrapper passes its own store, built on the
+# maintenance connection. So in production the API never holds a store that can UPDATE audit_events, and
+# in dev and tests, where the eager backend runs the job inline, the in-memory store has no privilege
+# boundary to violate.
+_audit_store: object | None = None
+
 
 @registry.register("ingest_document")
 async def ingest_document(*, tenant: str, doc_id: str, text: str, knowledge: KnowledgeService | None = None) -> int:
@@ -164,3 +172,45 @@ async def export_audit_archive(audit_store, archive_store, storage, *, day=None)
         "digest": export.digest, "key": export.key})
     return {"day": target.isoformat(), "row_count": export.row_count, "digest": export.digest,
             "object_key": export.key}
+
+
+@registry.register("erase_audit_subject")
+async def erase_audit_subject(*, identifier: str, pseudonym: str, request_ref: str,
+                              actor_email: str, store=None) -> int:
+    """Pseudonymise a subject throughout the audit trail.
+
+    ON THE WORKER, not in the request, and that is the whole point. Erasure is the only operation that
+    UPDATEs audit_events, so leaving it in the API meant the API process had to hold a connection able to
+    rewrite history. Every other write path went through a store that could not, which made the boundary
+    "one handler away from useless". Here the privileged connection exists only in the worker, where no
+    request can reach it.
+
+    The cost is that the endpoint returns "accepted" instead of a row count. For a request that takes days
+    to fulfil, seconds of asynchrony is not a real loss, and the count still appears in the trail.
+
+    Idempotent: a re-run pseudonymises whatever is left, which is zero after a successful first run. That
+    matters because a failed job is retried, and a retry must not produce a second row claiming a second
+    erasure.
+    """
+    audit_store = store or _audit_store
+    if audit_store is None:
+        raise ValueError("erase_audit_subject requires an audit store")
+
+    def build_record(affected: int) -> dict:
+        # Built inside the store's transaction, so the erasure cannot land without its record and a
+        # failed erasure cannot leave a row claiming one. The pseudonym IS the target: putting the
+        # address there would undo the erasure in the very row that records it.
+        return audit.build_row(audit.AuditEvent(
+            action=audit_actions.SUBJECT_ERASED, target_id=pseudonym, tenant_id=None,
+            actor_type=audit.PLATFORM_ADMIN, actor_id=actor_email, actor_label=actor_email,
+            changes=audit.diff(audit_actions.SUBJECT_ERASED, {},
+                               {"rows_pseudonymised": affected, "request_ref": request_ref}),
+            metadata={"scope": ["audit_events"], "executed_by": "worker"}))
+
+    rows = await audit_store.pseudonymise_subject(identifier, pseudonym, audit_row=build_record)
+    # Logged at INFO with the reference but NOT the identifier: the job argument had to carry the address
+    # to do the work, and the log is the one place it would outlive the erasure.
+    logger.info("audit subject erased", extra={
+        "source": "tasks.audit", "request_ref": request_ref, "rows": rows,
+        "pseudonym": pseudonym})
+    return rows

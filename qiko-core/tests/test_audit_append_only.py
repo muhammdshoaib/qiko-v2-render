@@ -85,32 +85,44 @@ def test_an_unset_maintenance_url_falls_back_so_the_two_can_ship_apart():
     assert 'ctx["audit_sessionmaker"] = ctx["sessionmaker"]' in worker
 
 
-def test_only_the_erase_endpoint_reaches_the_privileged_store():
-    """Erasure is a legal obligation, so it has to work under the boundary, and it is the one handler
-    that UPDATEs audit_events.
+def test_no_request_handler_can_reach_a_privileged_audit_store():
+    """Stronger than the property this replaced.
 
-    The trade is stated in main.py rather than hidden: the API process does hold a connection able to
-    rewrite history. What the boundary buys is that every instrumented write path goes through
-    app.state.audit, so rewriting history is reachable from exactly one manage_admins-gated handler
-    instead of from anywhere. This test is what keeps that "exactly one" true.
+    The first version of the boundary kept erasure in the API on its own maintenance connection, and this
+    test pinned "exactly one handler holds it". That was honest but weak: a connection able to rewrite
+    history existed in the process that serves requests, so the boundary was one careless import away
+    from meaning nothing.
+
+    Erasure now runs on the worker. No handler holds such a connection, because the API process no longer
+    builds one at all, which is what makes "the application cannot alter historic rows" true rather than
+    nearly true.
     """
-    modules = Path(__file__).resolve().parents[1] / "app" / "modules"
-    # Matched on the attribute NAME, not on `state.audit_maint`: it is reached through getattr, so the
-    # dotted form never appears. The first version of this test searched for the dotted form, found
-    # nothing, and would have stayed green however many handlers took the privileged store.
-    users = sorted(path.relative_to(modules).as_posix() for path in modules.rglob("*.py")
-                   if "audit_maint" in path.read_text())
-    assert users == ["admin/router.py"], f"only the admin router may use the maintenance store: {users}"
-
-    admin = (modules / "admin" / "router.py").read_text()
-    handlers = [block.split("(")[0] for block in admin.split("async def ")[1:]
-                if "audit_maint" in block]
-    assert handlers == ["erase_subject"], f"unexpected handlers hold the privileged store: {handlers}"
+    app_dir = Path(__file__).resolve().parents[1] / "app"
+    holders = sorted(path.relative_to(app_dir).as_posix() for path in app_dir.rglob("*.py")
+                     if "audit_maint" in path.read_text())
+    # Only the worker builds it, and only config names it.
+    assert holders == ["core/config.py", "tasks/worker.py"], holders
 
 
-def test_the_api_never_reads_the_maintenance_url_outside_that_one_wiring():
+def test_the_erase_handler_enqueues_rather_than_writing():
+    """The mechanism that makes the above true."""
+    admin = (Path(__file__).resolve().parents[1] / "app" / "modules" / "admin" / "router.py").read_text()
+    handler = admin[admin.index("async def erase_subject"):admin.index("async def audit_retention_policy")]
+    assert '"erase_audit_subject"' in handler
+    assert "pseudonymise_subject" not in handler, "the handler must not perform the update itself"
+    # 202, because the row count is not knowable here and inventing one would be worse than omitting it.
+    assert "status_code=202" in handler
+
+
+def test_the_worker_job_uses_the_maintenance_connection():
+    worker = (Path(__file__).resolve().parents[1] / "app" / "tasks" / "worker.py").read_text()
+    handler = worker[worker.index("async def erase_audit_subject"):]
+    assert 'ctx.get("audit_sessionmaker")' in handler.split("FUNCTIONS")[0]
+
+
+def test_the_api_never_reads_the_maintenance_url_outside_the_worker_wiring():
     """A setting the API does not load cannot be reached by accident."""
     app_dir = Path(__file__).resolve().parents[1] / "app"
     readers = sorted(path.relative_to(app_dir).as_posix() for path in app_dir.rglob("*.py")
                      if "audit_maint_database_url" in path.read_text())
-    assert readers == ["core/config.py", "main.py", "tasks/worker.py"], readers
+    assert readers == ["core/config.py", "tasks/worker.py"], readers
