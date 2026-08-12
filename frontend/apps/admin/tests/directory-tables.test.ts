@@ -146,3 +146,24 @@ dirTest("each table declares a default sort matching the endpoint's own order", 
   dirAssert.match(DIR_PAGES.customers, /defaultSort=\{\{ sort: "earnings", order: "desc" \}\}/);
   dirAssert.match(DIR_PAGES.monitoring, /defaultSort=\{\{ sort: "calls", order: "desc" \}\}/);
 });
+
+dirTest("the empty state cannot render before the list has been asked for", () => {
+  // Found by opening the page rather than by reading it. React reported a hydration mismatch on
+  // /customers: the server rendered "No customers yet." and the client rendered skeletons.
+  //
+  // The cause is a React Query v5 detail with a real consequence. The rows query is gated on the
+  // capability check with `enabled: me.isSuccess`, and a DISABLED query reports isLoading FALSE, because
+  // it is not loading, it has not started. So `rows.isLoading ? skeletons : table` fell through to the
+  // table, which fell through to its empty state, and the page asserted there were no customers before
+  // it had asked. On a slow connection a real operator saw "No customers yet" and then the list.
+  //
+  // An empty state that lies is worse than a spinner. This is the third shape of that same mistake in
+  // this console, after the filtered-versus-genuinely-empty message and the blank spend column.
+  dirAssert.match(dirShell, /const awaitingFirstAnswer = !me\.isSuccess \|\| rows\.isLoading/);
+  // Both the announcement and the body have to use it, or one of them still lies.
+  dirAssert.match(dirShell, /\{awaitingFirstAnswer \? `Loading \$\{noun\}\.\.\.`/);
+  dirAssert.match(dirShell, /\{awaitingFirstAnswer\s*\n?\s*\? <div className="space-y-2">/);
+  // And nothing may go back to keying the body on isLoading alone.
+  const body = dirShell.slice(dirShell.indexOf("const awaitingFirstAnswer"));
+  dirAssert.doesNotMatch(body, /\{rows\.isLoading\s*$/m, "the raw flag must not gate the body again");
+});

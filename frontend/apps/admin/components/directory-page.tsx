@@ -93,11 +93,24 @@ function Directory<T>({
   const rows = useQuery({
     queryKey: [queryKey, urlSearch, page, filterToken, sortKey, order],
     queryFn: () => fetchPage(urlSearch, page, sort),
+    // Gated on the capability check, which is what creates the trap below: a DISABLED query reports
+    // isLoading false in React Query v5, because it is not loading, it simply has not started.
     enabled: me.isSuccess,
     // Without this, the query key change on every page, sort or filter click made isLoading true again
     // and the whole list collapsed into skeleton bars.
     placeholderData: keepPreviousData,
   });
+
+  // "Nothing has arrived yet" is not the same as "isLoading". Until the capability check resolves the
+  // rows query has not started, so isLoading is false and rows.data is undefined, and rendering the
+  // empty state on that combination makes the page assert there are no customers before it has asked.
+  // A slow connection showed "No customers yet" and then the list, and the server-rendered HTML said it
+  // outright, which is how this was found: React reported the hydration mismatch between the server's
+  // empty state and the client's skeletons.
+  //
+  // An empty state that lies is worse than a spinner, and this is the third time in this console the
+  // same mistake has appeared in a different shape.
+  const awaitingFirstAnswer = !me.isSuccess || rows.isLoading || (rows.isPending && !rows.data);
 
   const total = rows.data?.total ?? 0;
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -114,7 +127,7 @@ function Directory<T>({
             {/* A range rather than a bare total: "137 total" is identical before and after a filter
                 that returns the same count of a different set, so a live region announces nothing. */}
             <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
-              {me.isLoading || rows.isLoading ? `Loading ${noun}...`
+              {awaitingFirstAnswer ? `Loading ${noun}...`
                 : rows.data ? `Showing ${firstOnPage}-${(page - 1) * PAGE_SIZE + shown} of ${total} ${noun}`
                   : "Unavailable"}
             </p>
@@ -142,7 +155,7 @@ function Directory<T>({
           </Alert>
         )}
 
-        {rows.isLoading
+        {awaitingFirstAnswer
           ? <div className="space-y-2">{[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
           : (
             <DataTable
