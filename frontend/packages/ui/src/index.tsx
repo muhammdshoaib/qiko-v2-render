@@ -131,3 +131,4 @@ export {
   type Segment,
 } from "./controls";
 export { DataTable, type Column, type DataTableProps, type SortOrder } from "./data-table";
+export { TrendChart, BarList, type SeriesPoint } from "./charts";
