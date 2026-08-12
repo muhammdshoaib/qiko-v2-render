@@ -8,9 +8,11 @@ import {
   Alert, Card, CardContent, DataTable, Input, Pagination, Skeleton, type Column, type SortOrder,
 } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
-import { adminMe, type ListSort } from "@/lib/api";
+import { DIRECTORY_PAGE_SIZE, adminMe, type ListSort } from "@/lib/api";
 
-const PAGE_SIZE = 20;
+// No local copy of the server's page size. The endpoints report the size they applied, so the count and
+// the range come from the response rather than from an assumption that can drift out of agreement.
+
 
 type Props<T> = {
   title: string;
@@ -20,7 +22,7 @@ type Props<T> = {
   /** Plural noun for the rows, used in the pagination announcement. */
   noun: string;
   fetchPage: (search: string, page: number, sort?: ListSort) =>
-    Promise<{ total: number; page: number; items: T[] }>;
+    Promise<{ total: number; page: number; page_size?: number; items: T[] }>;
   columns: Column<T>[];
   rowKey: (row: T) => string;
   /** Card body for narrow viewports. Falls back to the columns when absent. */
@@ -113,9 +115,12 @@ function Directory<T>({
   const awaitingFirstAnswer = !me.isSuccess || rows.isLoading || (rows.isPending && !rows.data);
 
   const total = rows.data?.total ?? 0;
-  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // What the SERVER used, not what the client hoped for. A clamped or defaulted size on the server would
+  // otherwise make every range and page count wrong, and wrong quietly.
+  const pageSize = rows.data?.page_size || DIRECTORY_PAGE_SIZE;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const shown = rows.data?.items.length ?? 0;
-  const firstOnPage = shown === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const firstOnPage = shown === 0 ? 0 : (page - 1) * pageSize + 1;
   const narrowed = Boolean(urlSearch) || filterToken !== "";
 
   return (
@@ -128,7 +133,7 @@ function Directory<T>({
                 that returns the same count of a different set, so a live region announces nothing. */}
             <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
               {awaitingFirstAnswer ? `Loading ${noun}...`
-                : rows.data ? `Showing ${firstOnPage}-${(page - 1) * PAGE_SIZE + shown} of ${total} ${noun}`
+                : rows.data ? `Showing ${firstOnPage}-${(page - 1) * pageSize + shown} of ${total} ${noun}`
                   : "Unavailable"}
             </p>
           </div>

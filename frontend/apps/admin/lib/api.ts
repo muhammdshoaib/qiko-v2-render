@@ -75,6 +75,15 @@ export const forgotPassword = (email: string) =>
  *  each directory actually offers. */
 export type ListSort = { sort: string; order: "asc" | "desc" };
 
+/** How many rows a directory page shows.
+ *
+ *  Sent to the server rather than assumed: the endpoints accept page_size and return the value they
+ *  actually applied, so the client can stop keeping a copy of the server's default in sync by hand. The
+ *  previous constant carried a comment saying it MUST match pagination.PAGE_SIZE, which is the kind of
+ *  agreement that holds until the day it does not and then silently miscounts every page.
+ */
+export const DIRECTORY_PAGE_SIZE = 10;
+
 const applySort = (params: URLSearchParams, sort?: ListSort) => {
   if (!sort) return;
   params.set("sort", sort.sort);
@@ -83,7 +92,7 @@ const applySort = (params: URLSearchParams, sort?: ListSort) => {
 
 export type Customer = { user_id: string; email: string; plan: string; earnings_cents: number };
 export const listCustomers = (search = "", page = 1, sort?: ListSort, plan?: string) => {
-  const params = new URLSearchParams({ page: String(page) });
+  const params = new URLSearchParams({ page: String(page), page_size: String(DIRECTORY_PAGE_SIZE) });
   if (search) params.set("search", search);
   // The endpoint has always accepted plan and no page sent it, so "who is still on free" could only be
   // answered by paging through everything.
@@ -139,10 +148,10 @@ export type UserRow = {
 };
 export type WorkerRow = AdminWorker & { tenant_id: string };
 
-type Paged<T> = { total: number; page: number; items: T[] };
+type Paged<T> = { total: number; page: number; page_size?: number; items: T[] };
 
 const paged = (page: number, extra: Record<string, string | undefined> = {}, sort?: ListSort) => {
-  const params = new URLSearchParams({ page: String(page) });
+  const params = new URLSearchParams({ page: String(page), page_size: String(DIRECTORY_PAGE_SIZE) });
   for (const [key, value] of Object.entries(extra)) if (value) params.set(key, value);
   applySort(params, sort);
   return params;
