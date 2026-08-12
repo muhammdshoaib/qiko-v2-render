@@ -1602,7 +1602,17 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Invoices */
+        /**
+         * Invoices
+         * @description Synced Stripe invoices, paginated and sortable like every other admin directory.
+         *
+         *     It returned a bare list. With one customer that is fine; with a year of monthly invoices across a
+         *     hundred accounts it is a page that loads everything and offers no way to find anything, and the
+         *     console had no other list left that behaved that way.
+         *
+         *     The shape now matches the directories exactly: total, page, page_size, items. The admin table reads
+         *     page_size back rather than assuming it, so a clamp here cannot desynchronise the ranges there.
+         */
         get: operations["invoices_api_v1_billing_invoices_get"];
         put?: never;
         post?: never;
@@ -9078,6 +9088,12 @@ export interface operations {
         parameters: {
             query?: {
                 customer_id?: string | null;
+                search?: string | null;
+                status?: string | null;
+                sort?: string | null;
+                order?: string;
+                page?: number;
+                page_size?: number;
             };
             header?: never;
             path?: never;
@@ -9093,7 +9109,7 @@ export interface operations {
                 content: {
                     "application/json": {
                         [key: string]: unknown;
-                    }[];
+                    };
                 };
             };
             /** @description Validation Error */

@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Query
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import get_settings
@@ -24,6 +24,8 @@ from app.modules.billing.webhook import verify_stripe_signature
 from app.modules.audit import registry as audit_actions
 from app.modules.audit import service as audit
 from app.modules.identity import csrf
+from app.modules.admin.pagination import MAX_PAGE_SIZE, PAGE_SIZE, paginate
+from app.modules.admin.sorting import INVOICE_SORTS, apply_sort
 from app.modules.identity.admin_rbac import Capability
 from app.modules.identity.rbac import Role
 
@@ -255,6 +257,32 @@ async def team_billing_plan(team_id: str, tenant: str = Depends(authed_tenant),
 
 
 @router.get("/invoices")
-def invoices(_tenant: str = Depends(authed_tenant), _identity=Depends(require_platform_capability(Capability.manage_billing)),
-             handler=Depends(get_stripe_webhook), customer_id: str | None = None) -> list[dict]:
-    return [asdict(i) for i in handler.invoices.list(customer_id)]
+def invoices(_tenant: str = Depends(authed_tenant),
+             _identity=Depends(require_platform_capability(Capability.manage_billing)),
+             handler=Depends(get_stripe_webhook), customer_id: str | None = None,
+             search: str | None = Query(default=None, max_length=200),
+             status: str | None = Query(default=None, max_length=40),
+             sort: str | None = Query(default=None, max_length=40),
+             order: str = Query(default="asc", pattern="^(asc|desc)$"),
+             page: int = Query(default=1, ge=1),
+             page_size: int = Query(default=PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE)) -> dict:
+    """Synced Stripe invoices, paginated and sortable like every other admin directory.
+
+    It returned a bare list. With one customer that is fine; with a year of monthly invoices across a
+    hundred accounts it is a page that loads everything and offers no way to find anything, and the
+    console had no other list left that behaved that way.
+
+    The shape now matches the directories exactly: total, page, page_size, items. The admin table reads
+    page_size back rather than assuming it, so a clamp here cannot desynchronise the ranges there.
+    """
+    rows = [asdict(i) for i in handler.invoices.list(customer_id)]
+    if search:
+        needle = search.strip().lower()
+        rows = [r for r in rows
+                if needle in r["stripe_invoice_id"].lower() or needle in r["customer_id"].lower()]
+    if status:
+        rows = [r for r in rows if r["status"] == status]
+    rows = apply_sort(rows, INVOICE_SORTS, sort, order)
+    result = paginate(rows, page=page, page_size=page_size)
+    return {"total": result["total"], "page": result["page"], "page_size": page_size,
+            "items": result["items"]}

@@ -1,97 +1,181 @@
 "use client";
 
-import { useState } from "react";
+/**
+ * Invoices and payment links.
+ *
+ * The last page in the console still rendering lists as stacks of cards: no column headers, nothing
+ * sortable, no pagination, and a narrower page than everything around it. Consistency here is not
+ * cosmetics. An operator who has learned that every list in this console has sortable headers and a
+ * shareable URL loses that everywhere the moment one page does not, because they stop trusting the
+ * pattern rather than noting the exception.
+ *
+ * The invoices list is the directory shell, so it inherits search, sort, pagination and URL state for
+ * free. Payment links are NOT: they are looked up per email rather than browsed, so they get the table
+ * without the directory chrome around them.
+ */
+import { Suspense, useCallback, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Badge, Button, Card, CardContent, Input, Skeleton } from "@qiko/ui";
-import { AppShell } from "@/components/app-shell";
-import { adminMe, createPaymentLink, formatMoney, listInvoices, listPaymentLinks, type Invoice } from "@/lib/api";
+import {
+  Alert, Badge, Button, Card, CardContent, DataTable, Input, SegmentedFilter, Skeleton, type Column,
+} from "@qiko/ui";
+import { DirectoryPage } from "@/components/directory-page";
+import {
+  adminMe, createPaymentLink, formatMoney, listInvoices, listPaymentLinks,
+  type Invoice, type PaymentLink,
+} from "@/lib/api";
 
-export default function InvoicesPage() {
-  const invoices = useQuery({ queryKey: ["invoices"], queryFn: listInvoices });
-  const me = useQuery({ queryKey: ["admin-me"], queryFn: adminMe });
+const invoiceColumns: Column<Invoice>[] = [
+  {
+    id: "invoice", header: "Invoice", rowHeader: true, sortable: true,
+    cell: (row) => <span className="truncate font-medium">{row.stripe_invoice_id}</span>,
+  },
+  { id: "customer", header: "Customer", sortable: true, hideBelow: "md",
+    cell: (row) => <span className="truncate">{row.customer_id}</span> },
+  {
+    id: "status", header: "Status", sortable: true,
+    cell: (row) => (
+      <Badge variant={row.status === "paid" ? "success" : "muted"}>{row.status}</Badge>
+    ),
+  },
+  { id: "amount", header: "Amount", sortable: true, numeric: true,
+    cell: (row) => formatMoney(row.amount_cents) },
+];
+
+const linkColumns: Column<PaymentLink>[] = [
+  {
+    id: "customer_email", header: "Customer", rowHeader: true,
+    cell: (row) => <span className="truncate">{row.customer_email}</span>,
+  },
+  { id: "amount_cents", header: "Amount", numeric: true,
+    cell: (row) => formatMoney(row.amount_cents) },
+  { id: "status", header: "Status",
+    cell: (row) => <Badge variant={row.status === "paid" ? "success" : "muted"}>{row.status}</Badge> },
+];
+
+/** The lookup panel, above the directory. Kept as its own component so the directory below it stays a
+ *  plain use of the shared shell rather than a special case. */
+function PaymentLinks({ canManageBilling }: { canManageBilling: boolean }) {
   const [email, setEmail] = useState("");
   const [amount, setAmount] = useState("");
-  const links = useQuery({ queryKey: ["payment-links", email], queryFn: () => listPaymentLinks(email), enabled: email.includes("@") });
+  const links = useQuery({
+    queryKey: ["payment-links", email],
+    queryFn: () => listPaymentLinks(email),
+    enabled: email.includes("@"),
+  });
   const createLink = useMutation({
     mutationFn: () => createPaymentLink(email, Math.round(Number(amount) * 100)),
     onSuccess: () => { setAmount(""); return links.refetch(); },
   });
-  // Capability, not role. A viewer granted manage_billing was shown "only a super-admin can do this"
-  // while the server would have accepted the write, which reads as a broken permission system.
-  const canManageBilling = me.data?.capabilities?.includes("manage_billing") ?? false;
 
   return (
-    <AppShell title="Invoices">
-      <div className="mx-auto max-w-4xl space-y-6">
-        <h1 className="text-2xl font-bold tracking-tight" style={{ fontFamily: "var(--font-display)" }}>Invoices & Payment Links</h1>
-        <Card>
-          <CardContent className="space-y-3 py-5">
-            <h2 className="font-semibold">Payment links</h2>
-            {!canManageBilling && (
-              <p role="status" className="text-sm text-muted-foreground">
-                Read-only access. Creating a payment link needs the Manage billing capability.
-              </p>
-            )}
-            {canManageBilling && (
-              <div className="grid gap-3 sm:grid-cols-[1fr_10rem_auto]">
-                <Input type="email" aria-label="Customer email" placeholder="Customer email"
-                  value={email} onChange={(event) => setEmail(event.target.value)} />
-                <Input type="number" min="0.5" step="0.01" aria-label="Amount" placeholder="Amount"
-                  value={amount} onChange={(event) => setAmount(event.target.value)} />
-                <Button disabled={!email.includes("@") || Number(amount) <= 0 || createLink.isPending}
-                  onClick={() => createLink.mutate()}>
-                  {createLink.isPending ? "Creating..." : "Create link"}
-                </Button>
-              </div>
-            )}
-            {createLink.isError && (
-              <p role="alert" className="text-sm text-destructive">Payment link creation failed.</p>
-            )}
-            {/* Success was previously silent: the list refetched and nothing said the link was made. */}
-            {createLink.isSuccess && (
-              <p role="status" className="text-sm text-success">Payment link created.</p>
-            )}
-            {/* The links query had no error branch at all, so a failed lookup looked like "no links". */}
-            {links.isError && (
-              <p role="alert" className="text-sm text-destructive">
-                Couldn&apos;t load payment links.{" "}
-                <button className="underline" onClick={() => links.refetch()}>Retry</button>
-              </p>
-            )}
-            {links.isSuccess && links.data.length === 0 && (
-              <p className="text-sm text-muted-foreground">No payment links for this email.</p>
-            )}
-            {links.data?.map((link) => (
-              <div key={link.session_id}
-                className="flex flex-col gap-1 rounded border p-3 sm:flex-row sm:items-center sm:justify-between">
-                <span className="text-sm">
-                  {link.customer_email} &middot; {formatMoney(link.amount_cents)} &middot; {link.status}
-                </span>
-                <a className="text-sm underline" href={link.url} target="_blank" rel="noreferrer">Open link</a>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-        {invoices.isError && <Card><CardContent role="alert" className="py-6 text-sm text-destructive">Invoices unavailable. <button className="underline" onClick={() => invoices.refetch()}>Retry</button></CardContent></Card>}
-        <div className="space-y-2">
-          {invoices.isLoading && [0, 1].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
-          {invoices.data?.map((inv: Invoice) => (
-            <Card key={inv.stripe_invoice_id}>
-              <CardContent className="flex items-center justify-between py-4">
-                <div>
-                  <p className="font-medium">{inv.stripe_invoice_id}</p>
-                  <p className="text-xs text-muted-foreground">{inv.customer_id}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <Badge variant={inv.status === "paid" ? "success" : "muted"}>{inv.status}</Badge>
-                  <span className="text-sm font-semibold tabular-nums">{formatMoney(inv.amount_cents)}</span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-          {invoices.data?.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">No invoices yet.</p>}
+    <Card>
+      <CardContent className="space-y-3 pt-6">
+        <div>
+          <h2 className="font-semibold">Payment links</h2>
+          <p className="text-xs text-muted-foreground">Looked up by customer email.</p>
         </div>
-      </div>
-    </AppShell>
+
+        {/* Capability, not role. A viewer granted manage_billing was shown "only a super-admin can do
+            this" while the server would have accepted the write, which reads as a broken permission
+            system rather than as a permission they lack. */}
+        {!canManageBilling && (
+          <p role="status" className="text-sm text-muted-foreground">
+            Read-only access. Creating a payment link needs the Manage billing capability.
+          </p>
+        )}
+
+        <div className="grid gap-3 sm:grid-cols-[1fr_10rem_auto]">
+          <Input type="email" aria-label="Customer email" placeholder="Customer email"
+            value={email} onChange={(event) => setEmail(event.target.value)} />
+          {canManageBilling && (
+            <>
+              <Input type="number" min="0.5" step="0.01" aria-label="Amount" placeholder="Amount"
+                value={amount} onChange={(event) => setAmount(event.target.value)} />
+              <Button disabled={!email.includes("@") || Number(amount) <= 0 || createLink.isPending}
+                onClick={() => createLink.mutate()}>
+                {createLink.isPending ? "Creating..." : "Create link"}
+              </Button>
+            </>
+          )}
+        </div>
+
+        {createLink.isError && <Alert tone="error">Payment link creation failed.</Alert>}
+        {/* Success was silent before: the list refetched and nothing said the link had been made. */}
+        {createLink.isSuccess && (
+          <p role="status" className="text-sm text-success">Payment link created.</p>
+        )}
+        {links.isError && (
+          <Alert tone="error">
+            Couldn&apos;t load payment links.{" "}
+            <button className="underline" onClick={() => links.refetch()}>Retry</button>
+          </Alert>
+        )}
+
+        {/* Only once a lookup has actually run. Rendering the table's empty state before an email is
+            entered would say "no payment links" about a customer nobody has named. */}
+        {links.isSuccess && (
+          <DataTable
+            caption="Payment links for this customer"
+            columns={linkColumns}
+            rows={links.data}
+            rowKey={(row) => row.session_id}
+            actions={(row) => (
+              <a className="text-sm underline" href={row.url} target="_blank" rel="noreferrer">
+                Open link
+              </a>
+            )}
+            empty={<p className="py-4 text-sm text-muted-foreground">No payment links for this email.</p>}
+          />
+        )}
+        {links.isLoading && email.includes("@") && <Skeleton className="h-12 w-full" />}
+      </CardContent>
+    </Card>
   );
+}
+
+function InvoicesView() {
+  const router = useRouter();
+  const params = useSearchParams();
+  const status = params.get("status") ?? "";
+  const me = useQuery({ queryKey: ["admin-me"], queryFn: adminMe });
+  const canManageBilling = me.data?.capabilities?.includes("manage_billing") ?? false;
+
+  const setStatus = useCallback((value: string) => {
+    const next = new URLSearchParams(params.toString());
+    if (value) next.set("status", value); else next.delete("status");
+    next.delete("page");
+    router.replace(`?${next.toString()}`, { scroll: false });
+  }, [params, router]);
+
+  return (
+    <DirectoryPage<Invoice>
+      title="Invoices"
+      noun="invoices"
+      searchLabel="Search invoices by id or customer"
+      searchPlaceholder="Search by invoice or customer id..."
+      queryKey="invoices"
+      filterToken={status}
+      onClearFilters={() => router.replace("?", { scroll: false })}
+      fetchPage={(search, page, sort) => listInvoices(search, page, sort, status || undefined)}
+      rowKey={(row) => row.stripe_invoice_id}
+      columns={invoiceColumns}
+      filters={
+        <div className="space-y-5">
+          <PaymentLinks canManageBilling={canManageBilling} />
+          <SegmentedFilter label="Filter by status" value={status}
+            options={[{ value: "", label: "All" }, { value: "paid", label: "Paid" },
+                      { value: "open", label: "Open" }, { value: "void", label: "Void" }]}
+            onChange={setStatus} />
+        </div>
+      }
+      emptyMessage={(filtered) => filtered
+        ? "No invoices match this search or status."
+        : "No invoices synced yet."}
+    />
+  );
+}
+
+export default function InvoicesPage() {
+  return <Suspense fallback={null}><InvoicesView /></Suspense>;
 }

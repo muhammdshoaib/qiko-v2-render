@@ -162,6 +162,7 @@ const paged = (page: number, extra: Record<string, string | undefined> = {}, sor
  *  operator a control that returns a 422. */
 export const SORTABLE = {
   customers: ["email", "plan", "earnings"],
+  invoices: ["invoice", "customer", "status", "amount"],
   // The same endpoint, so the same allowlist. Listed separately because the test resolves the key from
   // the page's directory name.
   subscriptions: ["email", "plan", "earnings"],
@@ -308,7 +309,10 @@ export type Analytics = {
 export const analytics = () => request<Analytics>("/admin/analytics");
 
 export type Invoice = { stripe_invoice_id: string; customer_id: string; amount_cents: number; status: string };
-export const listInvoices = () => request<Invoice[]>("/billing/invoices");
+/** Paginated and sortable like every other directory. It used to return a bare array, which is fine for
+ *  one customer and unusable after a year of monthly invoices across a hundred accounts. */
+export const listInvoices = (search = "", page = 1, sort?: ListSort, status?: string) =>
+  request<Paged<Invoice>>(`/billing/invoices?${paged(page, { search, status }, sort)}`);
 export type PaymentLink = { session_id: string; customer_email: string; amount_cents: number; url: string; status: string };
 export const listPaymentLinks = (email: string) => request<PaymentLink[]>(`/billing/payment-links?email=${encodeURIComponent(email)}`);
 export const createPaymentLink = (customerEmail: string, amountCents: number) =>
