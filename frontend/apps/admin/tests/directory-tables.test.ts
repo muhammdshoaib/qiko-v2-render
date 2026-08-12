@@ -108,7 +108,7 @@ dirTest("filters narrow on the server, not after the fetch", () => {
 dirTest("the heading announces a range, not a bare total", () => {
   // "137 total" is identical before and after a filter that returns the same count of a different set,
   // so a live region announces nothing.
-  dirAssert.match(dirShell, /Showing \$\{firstOnPage\}-\$\{\(page - 1\) \* PAGE_SIZE \+ shown\} of \$\{total\}/);
+  dirAssert.match(dirShell, /Showing \$\{firstOnPage\}-\$\{\(page - 1\) \* pageSize \+ shown\} of \$\{total\}/);
   dirAssert.match(dirShell, /aria-live="polite"/);
 });
 
@@ -166,4 +166,27 @@ dirTest("the empty state cannot render before the list has been asked for", () =
   // And nothing may go back to keying the body on isLoading alone.
   const body = dirShell.slice(dirShell.indexOf("const awaitingFirstAnswer"));
   dirAssert.doesNotMatch(body, /\{rows\.isLoading\s*$/m, "the raw flag must not gate the body again");
+});
+
+dirTest("the page size is sent to the server, not assumed", () => {
+  // The old constant carried a comment saying it MUST match pagination.PAGE_SIZE on the server. That is
+  // an agreement between two files in two languages with nothing enforcing it: the day the server default
+  // changes, every range and page count in the console is silently wrong, and wrong in a way that looks
+  // plausible. "Showing 1-20 of 137" over pages of ten is not an error anyone reports, it is just a
+  // console nobody quite trusts.
+  dirAssert.match(dirApi, /export const DIRECTORY_PAGE_SIZE = 10;/);
+  dirAssert.match(dirApi, /page_size: String\(DIRECTORY_PAGE_SIZE\)/);
+  // Both paths: the shared helper and the customers endpoint, which builds its own params.
+  const sent = [...dirApi.matchAll(/page_size: String\(DIRECTORY_PAGE_SIZE\)/g)].length;
+  dirAssert.ok(sent >= 2, `page_size is sent from ${sent} places, expected the helper and customers`);
+});
+
+dirTest("the range and page count come from what the server applied", () => {
+  // The server clamps page_size to its own maximum and falls back on a nonsensical value. If it applies
+  // something other than what was asked for, arithmetic based on the request is wrong.
+  dirAssert.match(dirShell, /const pageSize = rows\.data\?\.page_size \|\| DIRECTORY_PAGE_SIZE;/);
+  dirAssert.match(dirShell, /Math\.ceil\(total \/ pageSize\)/);
+  dirAssert.match(dirShell, /\(page - 1\) \* pageSize \+ 1/);
+  // No local mirror of the server's default may come back.
+  dirAssert.doesNotMatch(dirShell, /const PAGE_SIZE = \d+/, "no second source of truth for the size");
 });
