@@ -179,7 +179,11 @@ def test_team_plan_and_invoices(client):
     team = client.post("/api/v1/teams", json={"owner_id": "o"}, cookies=C).json()
     assert client.get(f"/api/v1/billing/team/{team['team_id']}/plan", cookies=C).json()["plan"] == "free"
     assert client.get("/api/v1/billing/invoices", cookies=C).status_code == 403
-    assert client.get("/api/v1/billing/invoices", cookies=_admin_cookies(client)).json() == []
+    # The shape is the directory shape now: total, page, page_size, items. It returned a bare array,
+    # which is fine for one customer and unusable after a year of monthly invoices across a hundred
+    # accounts, and it was the last list in the console that behaved that way.
+    body = client.get("/api/v1/billing/invoices", cookies=_admin_cookies(client)).json()
+    assert body == {"total": 0, "page": 1, "page_size": 20, "items": []}
 
 
 def test_team_plan_blocks_cross_tenant_access(client):
@@ -189,3 +193,59 @@ def test_team_plan_blocks_cross_tenant_access(client):
     other = auth_cookies("billglobex", "owner")
     r = client.get(f"/api/v1/billing/team/{team['team_id']}/plan", cookies=other)
     assert r.status_code == 404
+
+
+def _seed_invoices(client, count: int = 25) -> None:
+    from app.modules.billing.webhook import Invoice
+
+    for index in range(count):
+        client.app.state.stripe_webhook.invoices.upsert(Invoice(
+            stripe_invoice_id=f"in_{index:03d}", customer_id=f"cus_{index % 4}",
+            amount_cents=(index + 1) * 500,
+            status="paid" if index % 3 else "open"))
+
+
+def test_invoices_paginate_like_every_other_directory(client):
+    """A page that loads every invoice and offers no way to find one is not a list, it is a dump."""
+    _seed_invoices(client)
+    admin = _admin_cookies(client)
+
+    first = client.get("/api/v1/billing/invoices?page_size=10", cookies=admin).json()
+    assert first["total"] == 25 and first["page_size"] == 10 and len(first["items"]) == 10
+
+    last = client.get("/api/v1/billing/invoices?page_size=10&page=3", cookies=admin).json()
+    assert len(last["items"]) == 5, "the short final page is where an off-by-one shows up"
+
+
+def test_invoices_sort_only_by_keys_the_allowlist_names(client):
+    """Shared with the admin directories deliberately: a second sorting implementation is a second place
+    for the "unknown key falls back silently" bug the allowlist exists to prevent."""
+    _seed_invoices(client, 5)
+    admin = _admin_cookies(client)
+
+    by_amount = client.get("/api/v1/billing/invoices?sort=amount&order=desc", cookies=admin).json()
+    assert [i["amount_cents"] for i in by_amount["items"]] == [2500, 2000, 1500, 1000, 500]
+
+    # An unknown key is refused rather than quietly ignored, or the operator believes a sort happened.
+    assert client.get("/api/v1/billing/invoices?sort=customer_secret",
+                      cookies=admin).status_code == 422
+
+
+def test_invoices_can_be_searched_and_filtered(client):
+    _seed_invoices(client)
+    admin = _admin_cookies(client)
+
+    assert client.get("/api/v1/billing/invoices?search=in_007",
+                      cookies=admin).json()["total"] == 1
+    # Search covers the customer too, because "which invoices does this account have" is the question
+    # actually being asked when somebody types into that box.
+    assert client.get("/api/v1/billing/invoices?search=cus_1", cookies=admin).json()["total"] > 1
+    open_only = client.get("/api/v1/billing/invoices?status=open", cookies=admin).json()
+    assert open_only["total"] > 0
+    assert all(i["status"] == "open" for i in open_only["items"])
+
+
+def test_the_invoice_list_still_needs_manage_billing(client):
+    """Pagination must not have widened who can read it."""
+    _seed_invoices(client, 2)
+    assert client.get("/api/v1/billing/invoices", cookies=C).status_code == 403

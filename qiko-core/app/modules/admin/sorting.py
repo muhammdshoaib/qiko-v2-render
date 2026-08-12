@@ -57,6 +57,15 @@ USER_SORTS: SortSpec = {
     "twofa": lambda row: bool(row["twofa_enabled"]),
 }
 
+# Billing lives in its own router but shares this module, because a second sorting implementation is a
+# second place for the "unknown key falls back silently" bug the allowlist exists to prevent.
+INVOICE_SORTS: SortSpec = {
+    "invoice": lambda row: _text(row["stripe_invoice_id"]),
+    "customer": lambda row: _text(row["customer_id"]),
+    "status": lambda row: _text(row["status"]),
+    "amount": lambda row: row["amount_cents"],
+}
+
 WORKER_SORTS: SortSpec = {
     "name": lambda row: _text(row["name"]),
     "tenant": lambda row: _text(row["tenant_id"]),

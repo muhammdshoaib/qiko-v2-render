@@ -25,6 +25,8 @@ const DIR_PAGES = {
   // /subscriptions is the customer directory narrowed by plan, so it shares the allowlist. It was the
   // last list still carrying its own copy of the debounce, pagination and error affordances.
   subscriptions: dirRead(dirFind(`${dirAdmin}app/subscriptions/page.tsx`), "utf8"),
+  // The last page still rendering lists as stacks of cards, with its own width and no pagination.
+  invoices: dirRead(dirFind(`${dirAdmin}app/invoices/page.tsx`), "utf8"),
 };
 
 dirTest("every directory renders the shared table, not a card stack", () => {
@@ -189,4 +191,25 @@ dirTest("the range and page count come from what the server applied", () => {
   dirAssert.match(dirShell, /\(page - 1\) \* pageSize \+ 1/);
   // No local mirror of the server's default may come back.
   dirAssert.doesNotMatch(dirShell, /const PAGE_SIZE = \d+/, "no second source of truth for the size");
+});
+
+dirTest("payment links are a table but not a directory", () => {
+  // They are looked up per email rather than browsed, so they get the table without search, sort and
+  // pagination wrapped around them. Consistency means the same components, not the same chrome
+  // regardless of whether it makes sense.
+  dirAssert.match(DIR_PAGES.invoices, /<DataTable\s*\n?\s*caption="Payment links/);
+  dirAssert.match(DIR_PAGES.invoices, /enabled: email\.includes\("@"\)/);
+  // And the table only appears once a lookup has run: its empty state before an email is entered would
+  // say "no payment links" about a customer nobody has named.
+  dirAssert.match(DIR_PAGES.invoices, /\{links\.isSuccess && \(/);
+});
+
+dirTest("no list in the console renders as a stack of cards any more", () => {
+  // Consistency here is not cosmetics. An operator who has learned that every list has sortable headers
+  // and a shareable URL loses that everywhere the moment one page does not, because they stop trusting
+  // the pattern rather than noting the exception.
+  for (const [name, source] of Object.entries(DIR_PAGES)) {
+    dirAssert.doesNotMatch(source, /\.map\(\([a-z]+\) => \(\s*\n?\s*<Card/,
+      `${name} still renders rows as cards`);
+  }
 });
