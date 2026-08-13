@@ -42,8 +42,11 @@ from app.integrations.clients import (
     WhatsAppClient,
 )
 from app.modules.billing.payment_links import PaymentLinkService
+from app.modules.channels.digest_scheduler import DigestScheduler
 from app.modules.channels.sessions import ChannelSessionStore
+from app.modules.channels.slack_events import SlackEventHandler
 from app.modules.channels.slack_oauth import InstallationStore, SlackOAuth, WorkspaceLinkStore
+from app.modules.channels.slack_store import InMemorySlackChannelStore
 from app.modules.channels.teams_integration import TeamsNotifier
 from app.modules.chat.files import FileGenerator
 from app.modules.storage.backend import InMemoryStorage, S3Storage
@@ -148,6 +151,7 @@ async def lifespan(app: FastAPI):
             SqlRequirementStore,
             SqlRfpPackStore,
             SqlSalesforceConnectionStore,
+            SqlSlackChannelStore,
             SqlTeamsIntegrationStore,
             SqlTeamStore,
             SqlAuditStore,
@@ -216,6 +220,9 @@ async def lifespan(app: FastAPI):
         app.state.pending_invites = SqlPendingInviteStore(sm)
         app.state.pending_signups = SqlPendingSignupStore(sm)
         app.state.consent = ConsentService(store=SqlConsentStore(sm))
+        app.state.slack_messages = SqlSlackChannelStore(sm)
+        if getattr(app.state, "slack_digest_scheduler", None):
+            app.state.slack_digest_scheduler.message_store = app.state.slack_messages
         set_user_store(SqlUserStore(sm))  # users/sessions/2FA persist to Postgres
 
         # Billing state + the admin Customers console are reached through SYNCHRONOUS route
@@ -443,12 +450,22 @@ def create_app() -> FastAPI:
     app.state.channel_sessions = ChannelSessionStore()
     app.state.slack_oauth = SlackOAuth(InstallationStore())
     app.state.slack_links = WorkspaceLinkStore()
+    app.state.slack_messages = InMemorySlackChannelStore()
     # S3 when configured, the dev dict otherwise. The guard in assert_secrets_set means a non-dev
     # environment cannot start without a bucket, so this cannot silently degrade in production.
     settings = get_settings()
     app.state.file_generator = FileGenerator(
         S3Storage(bucket=settings.s3_bucket) if settings.s3_bucket else InMemoryStorage())
     app.state.task_queue = build_task_queue(task_registry)
+    app.state.slack_digest_scheduler = DigestScheduler(
+        message_store=app.state.slack_messages,
+        task_queue=app.state.task_queue,
+    )
+    app.state.slack_events = SlackEventHandler(
+        installation_store=app.state.slack_oauth.store,
+        scheduler=app.state.slack_digest_scheduler,
+        signing_secret=settings.slack_signing_secret,
+    )
     # The store the EAGER task backend uses for the erasure job, which is dev and tests only: with the arq
     # backend the job runs on the worker with its own maintenance connection and this is never read.
     from app.tasks import jobs as task_jobs

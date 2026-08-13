@@ -37,6 +37,36 @@ async def _external_call(recheck, function, *args):
         await recheck()
 
 
+def _get_slack_events(request: Request):
+    return request.app.state.slack_events
+
+
+@router.post("/slack/webhook")
+async def slack_webhook(request: Request,
+                        x_slack_signature: str = Header(default=""),
+                        x_slack_request_timestamp: str = Header(default=""),
+                        handler=Depends(_get_slack_events)) -> dict:
+    """Slack Events API callback. Public, signature-verified, no tenant cookie.
+
+    Processes `url_verification`, `message`, and `app_mention` events. Messages from
+    public channels are stored in the per-tenant buffer for the digest worker.
+    """
+    body = await request.body()
+    s = get_settings()
+    if s.slack_signing_secret:
+        if not handler.verify(x_slack_request_timestamp, body, x_slack_signature):
+            raise HTTPException(status_code=403, detail="invalid Slack signature")
+    elif not s.debug:
+        raise HTTPException(status_code=403, detail="Slack signing secret not configured")
+
+    try:
+        payload = json.loads(body or b"{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="invalid JSON") from exc
+
+    return await handler.handle(payload)
+
+
 @router.get("/whatsapp/webhook")
 def whatsapp_verify(
     hub_mode: str = Query(default="", alias="hub.mode"),

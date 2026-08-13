@@ -214,3 +214,38 @@ async def erase_audit_subject(*, identifier: str, pseudonym: str, request_ref: s
         "source": "tasks.audit", "request_ref": request_ref, "rows": rows,
         "pseudonym": pseudonym})
     return rows
+
+
+def _slack_worker_from_state():
+    """Build a DigestWorker from the live FastAPI app state (Eager/dev path)."""
+    from app.main import app
+    from app.modules.channels.digest_scheduler import DigestWorker
+
+    return DigestWorker(
+        message_store=app.state.slack_messages,
+        installation_store=app.state.slack_oauth.store,
+    )
+
+
+def _slack_worker_from_sessionmaker(sessionmaker, installation_store=None):
+    """Build a DigestWorker for the arq worker tier."""
+    from app.db.stores import SqlSlackChannelStore
+    from app.modules.ai.gateway import get_provider
+    from app.modules.channels.digest_scheduler import DigestWorker
+
+    return DigestWorker(
+        message_store=SqlSlackChannelStore(sessionmaker),
+        installation_store=installation_store,
+        provider=get_provider(),
+    )
+
+
+@registry.register("generate_slack_digest")
+async def generate_slack_digest(*, tenant: str, team_id: str, channel_id: str,
+                                sessionmaker=None, installation_store=None) -> dict:
+    """Background job: generate and post a Slack heads-up digest after inactivity."""
+    if sessionmaker is None:
+        worker = _slack_worker_from_state()
+    else:
+        worker = _slack_worker_from_sessionmaker(sessionmaker, installation_store)
+    return await worker.run(tenant=tenant, team_id=team_id, channel_id=channel_id)

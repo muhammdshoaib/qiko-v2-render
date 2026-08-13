@@ -737,6 +737,27 @@ class FinanceChatMessage(Base):
     __table_args__ = (Index("ix_finance_chat_agent_created", "tenant_id", "agent_id", "created_at"),)
 
 
+class SlackChannelMessage(Base):
+    """One captured Slack message for the AI heads-up assistant (app.modules.channels.slack_events)."""
+    __tablename__ = "slack_channel_messages"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    team_id: Mapped[str] = mapped_column(String(32), index=True)
+    channel_id: Mapped[str] = mapped_column(String(32), index=True)
+    channel_type: Mapped[str] = mapped_column(String(16), default="channel")
+    thread_ts: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    user_id: Mapped[str] = mapped_column(String(32))
+    text: Mapped[str] = mapped_column(Text)
+    ts: Mapped[str] = mapped_column(String(32))
+    flagged: Mapped[bool] = mapped_column(Boolean, default=False)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    __table_args__ = (
+        Index("ix_slack_msg_tenant_channel", "tenant_id", "channel_id"),
+        Index("ix_slack_msg_team_ts", "team_id", "channel_id", "ts"),
+    )
+
+
 class PasswordResetOtp(Base):
     """One outstanding password-reset code per email (app.modules.identity.onboarding).
 

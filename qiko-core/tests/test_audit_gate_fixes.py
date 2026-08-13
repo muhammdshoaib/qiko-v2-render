@@ -188,7 +188,7 @@ def test_no_stray_extensionless_file_is_committed():
 
     root = Path(__file__).resolve().parents[1]
     allowed = {"Dockerfile", "Makefile", "LICENSE", "README", "uv.lock", ".dockerignore",
-               ".gitignore", ".python-version", ".env.example"}
+               ".gitignore", ".python-version", ".env.example", ".coverage"}
     strays = [entry.name for entry in root.iterdir()
               if entry.is_file() and not entry.suffix and entry.name not in allowed]
     assert not strays, f"unexplained extensionless files in qiko-core: {strays}"

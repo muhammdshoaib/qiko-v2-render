@@ -30,6 +30,10 @@ async def generate_tender_artifacts(ctx, **kwargs):  # pragma: no cover - invoke
     return await jobs.generate_tender_artifacts(sessionmaker=ctx["sessionmaker"], **kwargs)
 
 
+async def generate_slack_digest(ctx, **kwargs):  # pragma: no cover - invoked by the arq runtime
+    return await jobs.generate_slack_digest(sessionmaker=ctx["sessionmaker"], **kwargs)
+
+
 def _build_sales_runtime(sessionmaker):
     """Build a Postgres-backed OpportunityService for a worker sweep, mirroring the DB-store wiring
     in app.main's lifespan so scheduled scans read/write the same source of truth as the API."""
@@ -84,7 +88,8 @@ async def erase_audit_subject(ctx: dict, **kwargs) -> int:  # pragma: no cover -
         store=SqlAuditStore(ctx.get("audit_sessionmaker") or ctx["sessionmaker"]), **kwargs)
 
 
-FUNCTIONS = [ingest_document, send_email, generate_tender_artifacts, erase_audit_subject]
+FUNCTIONS = [ingest_document, send_email, generate_tender_artifacts, erase_audit_subject,
+             generate_slack_digest]
 
 # arq cron is calendar-based (no native "every N minutes" interval). Rather than encode the
 # configured cadence into a minute-set at startup, the scan cron ticks once a minute and the sweep

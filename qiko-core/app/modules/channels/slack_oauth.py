@@ -52,6 +52,17 @@ class InstallationStore:
                tenant: str | None = None) -> None:
         self._installs.pop(_install_key(tenant, team_id, enterprise_id), None)
 
+    def fetch_by_team_id(self, team_id: str) -> SlackInstallation | None:
+        """Resolve a Slack workspace to its Qiko tenant/worker by team_id.
+
+        The Events API does not carry the Qiko tenant, so we reverse-lookup from the
+        workspace id. Multi-tenant deployments should back this with a SQL index.
+        """
+        for inst in self._installs.values():
+            if inst and inst.team_id == team_id:
+                return replace(inst, bot_token=decrypt(inst.bot_token))
+        return None
+
 
 @dataclass
 class WorkspaceLinkStore:

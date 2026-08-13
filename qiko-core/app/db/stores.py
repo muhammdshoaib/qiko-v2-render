@@ -46,6 +46,8 @@ from app.db.models import AiUsageEvent as AiUsageEventRow
 from app.db.models import PlatformAdminAudit as PlatformAdminAuditRow
 from app.db.models import PolicyRelease as PolicyReleaseRow
 from app.db.models import RfpPack as RfpPackRow
+from app.db.models import SlackChannelMessage as SlackChannelMessageRow
+from app.modules.channels.slack_store import SlackMessage
 from app.db.models import SalesIntelActivityLog as SalesIntelActivityLogRow
 from app.db.models import SalesIntelIngestionSource as SalesIntelIngestionSourceRow
 from app.db.models import SalesIntelOpportunity as SalesIntelOpportunityRow
@@ -2655,6 +2657,78 @@ def _platform_access_row(*, email: str, actor_email: str, previous_role: str | N
         changes=audit_service.diff(action,
                                    {"role": previous_role, "capabilities": previous_capabilities},
                                    {"role": role, "capabilities": capabilities})))
+
+
+@dataclass
+class SqlSlackChannelStore:
+    """Postgres-backed buffer of captured Slack messages for the heads-up assistant.
+
+    Tenant-scoped and time-ordered. The digest worker clears a channel window once it
+    has summarised it.
+    """
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    def _to_domain(self, r: SlackChannelMessageRow) -> SlackMessage:
+        return SlackMessage(
+            tenant=r.tenant_id,
+            team_id=r.team_id,
+            channel_id=r.channel_id,
+            channel_type=r.channel_type,
+            thread_ts=r.thread_ts,
+            user_id=r.user_id,
+            text=r.text,
+            ts=r.ts,
+            flagged=r.flagged,
+            tags=list(r.tags or []),
+        )
+
+    @staticmethod
+    def _row(message: SlackMessage) -> SlackChannelMessageRow:
+        return SlackChannelMessageRow(
+            tenant_id=message.tenant,
+            team_id=message.team_id,
+            channel_id=message.channel_id,
+            channel_type=message.channel_type,
+            thread_ts=message.thread_ts,
+            user_id=message.user_id,
+            text=message.text,
+            ts=message.ts,
+            flagged=message.flagged,
+            tags=message.tags,
+        )
+
+    async def add(self, message: SlackMessage) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(self._row(message))
+
+    async def list_since(self, tenant: str, channel_id: str, since: datetime) -> list[SlackMessage]:
+        async with self.sessionmaker() as s:
+            stmt = select(SlackChannelMessageRow).where(
+                SlackChannelMessageRow.tenant_id == tenant,
+                SlackChannelMessageRow.channel_id == channel_id,
+                SlackChannelMessageRow.created_at >= since,
+            ).order_by(SlackChannelMessageRow.created_at)
+            rows = (await s.execute(stmt)).scalars().all()
+            return [self._to_domain(r) for r in rows]
+
+    async def clear_channel(self, tenant: str, channel_id: str) -> int:
+        async with self.sessionmaker() as s, s.begin():
+            stmt = delete(SlackChannelMessageRow).where(
+                SlackChannelMessageRow.tenant_id == tenant,
+                SlackChannelMessageRow.channel_id == channel_id,
+            )
+            result = await s.execute(stmt)
+            return result.rowcount or 0
+
+
+async def _clear_old_messages(store: SqlSlackChannelStore, *, older_than: timedelta) -> int:
+    """Housekeeping: remove messages outside the digest window so the table does not grow forever."""
+    cutoff = datetime.now(timezone.utc) - older_than
+    async with store.sessionmaker() as s, s.begin():
+        stmt = delete(SlackChannelMessageRow).where(SlackChannelMessageRow.created_at < cutoff)
+        result = await s.execute(stmt)
+        return result.rowcount or 0
 
 
 def _audit_json(row: AuditEventRow) -> dict:

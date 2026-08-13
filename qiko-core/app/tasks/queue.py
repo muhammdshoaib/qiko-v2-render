@@ -40,8 +40,14 @@ class EagerTaskQueue:
 
     registry: TaskRegistry
 
-    async def enqueue(self, name: str, **kwargs: Any) -> Any:
+    async def enqueue(self, name: str, *, defer_by: Any = None, defer_until: Any = None,
+                      **kwargs: Any) -> Any:
+        # Eager ignores deferral and runs immediately; callers that need real delay use arq.
         return await self.registry.get(name)(**kwargs)
+
+
+class ArqEnqueueError(Exception):
+    pass
 
 
 def get_task_queue(registry: TaskRegistry):
@@ -68,6 +74,12 @@ class ArqTaskQueue:  # pragma: no cover - requires Redis + arq worker
             self._pool = await create_pool(RedisSettings.from_dsn(self.redis_url))
         return self._pool
 
-    async def enqueue(self, name: str, **kwargs: Any) -> Any:
+    async def enqueue(self, name: str, *, defer_by: Any = None, defer_until: Any = None,
+                      **kwargs: Any) -> Any:
         pool = await self._get_pool()
-        return await pool.enqueue_job(name, **kwargs)
+        arq_kwargs: dict[str, Any] = {}
+        if defer_by is not None:
+            arq_kwargs["_defer_by"] = defer_by
+        if defer_until is not None:
+            arq_kwargs["_defer_until"] = defer_until
+        return await pool.enqueue_job(name, **arq_kwargs, **kwargs)

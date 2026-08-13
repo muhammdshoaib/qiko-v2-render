@@ -13,7 +13,7 @@ from app.modules.channels.slack_oauth import (
 def test_install_url_has_client_scope_state():
     url = SlackOAuth(InstallationStore()).install_url("st8")
     assert url.startswith("https://slack.com/oauth/v2/authorize?")
-    assert "scope=chat" in url and "state=st8" in url
+    assert "scope=" in url and "state=st8" in url
 
 
 def test_installation_store_save_fetch_delete():

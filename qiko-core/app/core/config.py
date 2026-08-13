@@ -81,8 +81,10 @@ class Settings(BaseSettings):
     whatsapp_app_secret: str = ""   # HMAC secret for inbound webhook signature verification
     slack_client_id: str = ""
     slack_client_secret: str = ""
+    slack_signing_secret: str = ""
     slack_redirect_uri: str = ""
-    slack_scopes: str = "chat:write,channels:read,im:history,commands"
+    slack_scopes: str = "channels:history,groups:history,chat:write,channels:read,app_mentions:read,commands,im:history"
+    slack_digest_interval_minutes: int = 60
     signal_engine_url: str = ""
     signal_engine_api_key: str = ""
     ga4_property_id: str = ""
