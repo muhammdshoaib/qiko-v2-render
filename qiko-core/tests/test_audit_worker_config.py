@@ -71,6 +71,37 @@ def test_a_legitimate_wizard_save_still_works(client):
     assert stored.config["expertise"] == "Tender writing"
 
 
+def test_behavior_config_accepts_canonical_entries_and_rejects_unbounded_values(client):
+    _worker(client)
+    valid = [{"id": "rule-1", "title": "Escalation", "content": "Escalate refund requests."}]
+    response = client.put("/api/v1/agents/w1/config", cookies=C, json={"patch": {"rules": valid}})
+    assert response.status_code == 200
+
+    alias = [{"id": "rule-legacy", "title": "Privacy", "content": None,
+              "description": "Never expose personal data."}]
+    response = client.put("/api/v1/agents/w1/config", cookies=C,
+                          json={"patch": {"rules": alias}})
+    assert response.status_code == 200
+    canonical = [{"id": "rule-legacy", "title": "Privacy",
+                  "content": "Never expose personal data."}]
+
+    invalid = [
+        [{"id": f"rule-{i}", "title": "Rule", "content": "Content"} for i in range(51)],
+        [{"id": "rule-2", "title": "x" * 256, "content": "Content"}],
+        [{"id": "rule-3", "title": "Rule", "content": "x" * 4001}],
+        [{"id": "rule-4", "title": "", "content": ""}],
+        [{"id": "rule-5", "title": "x" + " " * 255, "content": "Content"}],
+        [{"id": "rule-6", "title": "Rule", "content": "Content", "extra": "x" * 50_000}],
+    ]
+    for entries in invalid:
+        response = client.put("/api/v1/agents/w1/config", cookies=C,
+                              json={"patch": {"rules": entries}})
+        assert response.status_code == 422
+
+    stored = asyncio.run(client.app.state.agents.get("cfgco", "w1"))
+    assert stored.config["rules"] == canonical
+
+
 def test_a_scalar_setting_records_its_values(client):
     """"gate_threshold 0.7 to 0.4" is what an incident needs. Recording only that the threshold moved
     leaves the reader to go and ask."""

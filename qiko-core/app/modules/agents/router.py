@@ -25,6 +25,7 @@ from app.modules.audit import registry as audit_actions
 from app.modules.agents.service import AGENT_TYPES, Agent, PlanLimitError
 from app.modules.billing.plans import get_plan
 from app.modules.identity.rbac import Role
+from app.modules.workers.behavior import BEHAVIOR_CONFIG_KEYS, canonicalize_behavior_entries
 
 router = APIRouter(prefix="/agents", tags=["agents"])
 
@@ -75,6 +76,16 @@ _AUDITED_TEXT_KEYS = frozenset({
     "main_goal", "what_makes_you_unique", "prompts", "guardrails", "rules",
 })
 _AUDITED_CONFIG_KEYS = _AUDITED_SCALAR_KEYS | _AUDITED_TEXT_KEYS
+
+
+def _validate_behavior_patch(patch: dict) -> dict:
+    sanitized = dict(patch)
+    for key in sorted(BEHAVIOR_CONFIG_KEYS & patch.keys()):
+        try:
+            sanitized[key] = canonicalize_behavior_entries(patch[key], strict=True)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=f"invalid {key} configuration") from exc
+    return sanitized
 
 
 def _redact(agent: Agent) -> Agent:
@@ -155,23 +166,24 @@ async def update_config(agent_id: str, body: UpdateConfigBody, request: Request,
             status_code=422,
             detail=(f"{', '.join(rejected)} cannot be set here. Use the dedicated endpoint for that "
                     "integration, which encrypts the value and records the change."))
+    patch = _validate_behavior_patch(body.patch)
 
     actor = str(claims.get("email") or "")
-    audited = sorted(set(body.patch) & _AUDITED_CONFIG_KEYS)
+    audited = sorted(set(patch) & _AUDITED_CONFIG_KEYS)
 
     def build_record(previous: dict) -> dict:
         # Built from the config snapshotted under the row lock, so "changed" means genuinely changed
         # rather than merely submitted: a wizard step re-saved without edits should not read as a
         # threshold change.
-        moved = [key for key in audited if previous.get(key) != body.patch.get(key)]
+        moved = [key for key in audited if previous.get(key) != patch.get(key)]
         return audit.build_row(audit.AuditEvent(
             action=audit_actions.WORKER_CONFIG_CHANGED, target_id=agent_id, tenant_id=tenant,
             actor_type=audit.USER, actor_id=str(claims.get("sub") or ""), actor_label=actor,
             # Scalars carry their values, because that is the actionable part. The registry's allowlist
             # is the backstop, not the mechanism: the free-text keys are simply not put here.
-            changes={key: {"from": previous.get(key), "to": body.patch.get(key)}
+            changes={key: {"from": previous.get(key), "to": patch.get(key)}
                      for key in moved if key in _AUDITED_SCALAR_KEYS},
-            metadata={"changed_keys": moved, "submitted_keys": sorted(body.patch),
+            metadata={"changed_keys": moved, "submitted_keys": sorted(patch),
                       # Named separately so a reader can see WHICH prose was rewritten without the
                       # prose being in the row.
                       "rewritten_text_fields": [k for k in moved if k in _AUDITED_TEXT_KEYS]},
@@ -181,7 +193,7 @@ async def update_config(agent_id: str, body: UpdateConfigBody, request: Request,
         # No audit callback when nothing auditable is in the patch: a row saying "the config changed,
         # fields unknown" is noise that makes the real ones harder to find.
         return _redact(await svc.update_config(
-            tenant, agent_id, body.patch, audit=build_record if audited else None))
+            tenant, agent_id, patch, audit=build_record if audited else None))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
 

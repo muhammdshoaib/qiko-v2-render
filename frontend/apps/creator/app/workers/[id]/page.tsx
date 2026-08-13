@@ -28,6 +28,11 @@ import {
   testSlackConnection, testTeamsWebhook,
   updateAgentConfig, updateCalendlyEventType, type Agent, type Doc,
 } from "@/lib/api";
+import {
+  BEHAVIOR_MAX_CONTENT, BEHAVIOR_MAX_ENTRIES, BEHAVIOR_MAX_TITLE, normalizeBehaviorEntries,
+  removeBehaviorEntry, serializeBehaviorEntries, upsertBehaviorEntry, validateBehaviorEntry,
+  type BehaviorEntry,
+} from "@/lib/behavior-config";
 import { workerTypeLabel } from "@/lib/stringUtils";
 
 type Tab = "Overview" | "Chat" | "Train" | "CRM" | "Connections" | "Settings";
@@ -893,9 +898,9 @@ function ToneStep({ id, worker, onSaved }: { id: string; worker?: Agent; onSaved
   );
 }
 
-// Behavior sub-tab: Prompts / Guardrails / Rules. Each category is a string[] on the agent config,
-// merge-patched via updateAgentConfig (config.prompts / config.guardrails / config.rules). This is
-// persistence + UI only: it does not change how the backend generates answers.
+// Behavior sub-tab: Prompts / Guardrails / Rules. Each category is a structured entry array on the
+// agent config, merge-patched via updateAgentConfig (config.prompts / config.guardrails / config.rules).
+// The saved entries shape how the backend generates answers.
 const BEHAVIOR_CATEGORIES = [
   {
     key: "prompts", label: "Prompts", empty: "No prompts yet",
@@ -914,31 +919,122 @@ const BEHAVIOR_CATEGORIES = [
   },
 ] as const;
 type BehaviorKey = (typeof BEHAVIOR_CATEGORIES)[number]["key"];
+type BehaviorMutation =
+  | { type: "upsert"; key: BehaviorKey; entry: BehaviorEntry }
+  | { type: "remove"; key: BehaviorKey; entryId: string };
 
 function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onSaved: () => void }) {
   const cfg = worker?.config ?? {};
-  const seed = (k: BehaviorKey): string[] => {
-    const v = cfg[k];
-    return Array.isArray(v) ? (v as unknown[]).map((x) => String(x)) : [];
-  };
-  const [items, setItems] = useState<Record<BehaviorKey, string[]>>({
+  const seed = (k: BehaviorKey): BehaviorEntry[] => normalizeBehaviorEntries(cfg[k]);
+  const [items, setItems] = useState<Record<BehaviorKey, BehaviorEntry[]>>({
     prompts: seed("prompts"), guardrails: seed("guardrails"), rules: seed("rules"),
   });
+  const [draftIds, setDraftIds] = useState<Record<BehaviorKey, Set<string>>>(() => ({
+    prompts: new Set<string>(), guardrails: new Set<string>(), rules: new Set<string>(),
+  }));
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState<BehaviorKey | null>("prompts");
   const save = useMutation({
-    mutationFn: (patch: Record<string, unknown>) => updateAgentConfig(id, patch),
-    onSuccess: onSaved,
+    mutationFn: async (operation: BehaviorMutation) => {
+      const latestWorker = (await listAgents()).find((agent) => agent.id === id);
+      if (!latestWorker) throw new Error("Worker unavailable.");
+      const latestEntries = normalizeBehaviorEntries(latestWorker.config[operation.key]);
+      const nextEntries = operation.type === "upsert"
+        ? upsertBehaviorEntry(latestEntries, operation.entry)
+        : removeBehaviorEntry(latestEntries, operation.entryId);
+      return updateAgentConfig(id, { [operation.key]: serializeBehaviorEntries(nextEntries) });
+    },
+    onSuccess: (updatedWorker, operation) => {
+      const savedEntryId = operation.type === "upsert" ? operation.entry.id : null;
+      setItems((current) => {
+        const unsavedDrafts = current[operation.key].filter((entry) =>
+          draftIds[operation.key].has(entry.id) && entry.id !== savedEntryId);
+        return {
+          ...current,
+          [operation.key]: [
+            ...normalizeBehaviorEntries(updatedWorker.config[operation.key]),
+            ...unsavedDrafts,
+          ],
+        };
+      });
+      if (savedEntryId) {
+        setDraftIds((current) => {
+          const remaining = new Set(current[operation.key]);
+          remaining.delete(savedEntryId);
+          return { ...current, [operation.key]: remaining };
+        });
+      }
+      setValidationErrors((current) => Object.fromEntries(
+        Object.entries(current).filter(([key]) => !key.startsWith(`${operation.key}:`)),
+      ));
+      onSaved();
+    },
   });
 
-  // Persist a category: store its cleaned (trimmed, non-empty) array under its config key.
-  const persist = (key: BehaviorKey, next: string[]) => save.mutate({ [key]: next.map((s) => s.trim()).filter(Boolean) });
-  const setCat = (key: BehaviorKey, next: string[]) => setItems((prev) => ({ ...prev, [key]: next }));
-  const addItem = (key: BehaviorKey) => { setCat(key, [...items[key], ""]); setOpen(key); };
-  const editItem = (key: BehaviorKey, i: number, value: string) => setCat(key, items[key].map((v, j) => (j === i ? value : v)));
-  const removeItem = (key: BehaviorKey, i: number) => {
-    const next = items[key].filter((_, j) => j !== i);
-    setCat(key, next); persist(key, next);
+  // Persist one behavior entry at a time after validating and trimming its fields.
+  const errorKey = (key: BehaviorKey, entryId: string) => `${key}:${entryId}`;
+  const clearValidationError = (key: BehaviorKey, entryId: string) => {
+    setValidationErrors((current) => {
+      const target = errorKey(key, entryId);
+      if (!(target in current)) return current;
+      const next = { ...current };
+      delete next[target];
+      return next;
+    });
+  };
+  const setCat = (key: BehaviorKey, next: BehaviorEntry[]) => setItems((prev) => ({ ...prev, [key]: next }));
+  const addItem = (key: BehaviorKey) => {
+    if (save.isPending || items[key].length >= BEHAVIOR_MAX_ENTRIES) return;
+    const next = normalizeBehaviorEntries([...items[key], { title: "", content: "" }]);
+    const added = next[next.length - 1];
+    setCat(key, next);
+    setDraftIds((current) => {
+      const nextDraftIds = new Set(current[key]);
+      nextDraftIds.add(added.id);
+      return { ...current, [key]: nextDraftIds };
+    });
+    setOpen(key);
+    setSearch("");
+  };
+  const editItem = (key: BehaviorKey, entryId: string, field: "title" | "content", value: string) => {
+    setItems((current) => ({
+      ...current,
+      [key]: current[key].map((entry) => entry.id === entryId ? { ...entry, [field]: value } : entry),
+    }));
+    clearValidationError(key, entryId);
+  };
+  const saveItem = (key: BehaviorKey, entryId: string) => {
+    if (save.isPending) return;
+    const entry = items[key].find((item) => item.id === entryId);
+    if (!entry) return;
+    const cleanedEntry = { ...entry, title: entry.title.trim(), content: entry.content.trim() };
+    const validationError = validateBehaviorEntry(cleanedEntry);
+    if (validationError) {
+      setValidationErrors((current) => ({ ...current, [errorKey(key, entryId)]: validationError }));
+      return;
+    }
+    clearValidationError(key, entryId);
+    setCat(key, upsertBehaviorEntry(items[key], cleanedEntry));
+    save.mutate({ type: "upsert", key, entry: cleanedEntry });
+  };
+  const removeItem = (key: BehaviorKey, entryId: string) => {
+    if (save.isPending) return;
+    const entry = items[key].find((item) => item.id === entryId);
+    if (!entry) return;
+    if (draftIds[key].has(entryId)) {
+      setCat(key, removeBehaviorEntry(items[key], entryId));
+      setDraftIds((current) => {
+        const nextDraftIds = new Set(current[key]);
+        nextDraftIds.delete(entryId);
+        return { ...current, [key]: nextDraftIds };
+      });
+      clearValidationError(key, entryId);
+      return;
+    }
+    const label = entry.title.trim();
+    if (!window.confirm(label ? `Delete "${label}"?` : "Delete this behavior entry?")) return;
+    save.mutate({ type: "remove", key, entryId });
   };
 
   const q = search.trim().toLowerCase();
@@ -961,7 +1057,9 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
       <div className="space-y-3">
         {BEHAVIOR_CATEGORIES.map((c) => {
           const all = items[c.key];
-          const visible = q ? all.map((v, i) => [v, i] as const).filter(([v]) => v.toLowerCase().includes(q)) : all.map((v, i) => [v, i] as const);
+          const visible = q
+            ? all.filter((entry) => `${entry.title} ${entry.content}`.toLowerCase().includes(q))
+            : all;
           const isOpen = open === c.key;
           return (
             <Card key={c.key} className="overflow-hidden">
@@ -973,9 +1071,10 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
                   <span title={c.help} aria-label={c.help} className="cursor-help text-slate-500 hover:text-slate-300">
                     <HelpCircle className="size-3.5" />
                   </span>
-                  <Badge variant="muted">{all.filter((s) => s.trim()).length}</Badge>
+                  <Badge variant="muted">{all.length}</Badge>
                 </button>
-                <Button variant="outline" size="sm" className="h-8 shrink-0" onClick={() => addItem(c.key)} disabled={save.isPending}>
+                <Button variant="outline" size="sm" className="h-8 shrink-0" onClick={() => addItem(c.key)}
+                  disabled={save.isPending || all.length >= BEHAVIOR_MAX_ENTRIES}>
                   <Plus className="size-4" /> Add
                 </Button>
               </div>
@@ -987,18 +1086,41 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
                   {all.length > 0 && visible.length === 0 && (
                     <p className="py-2 text-sm text-muted-foreground">No matches.</p>
                   )}
-                  {visible.map(([value, i]) => (
-                    <div key={i} className="flex items-start gap-2">
-                      <Textarea value={value} placeholder={c.placeholder}
-                        onChange={(e) => editItem(c.key, i, e.target.value)}
-                        onBlur={() => persist(c.key, items[c.key])}
-                        className="min-h-16" />
-                      <Button variant="ghost" size="icon" aria-label="Delete item" className="shrink-0"
-                        disabled={save.isPending} onClick={() => removeItem(c.key, i)}>
-                        <Trash2 className="size-4 text-muted-foreground" />
-                      </Button>
-                    </div>
-                  ))}
+                  {visible.map((entry) => {
+                    const validationMessage = validationErrors[errorKey(c.key, entry.id)];
+                    const validationField = validationMessage?.startsWith("Title") ? "title" : validationMessage ? "content" : null;
+                    const validationMessageId = `${c.key}-${entry.id}-validation`;
+                    return (
+                      <div key={entry.id} className="space-y-2 rounded-lg border border-white/[0.06] bg-white/[0.015] p-3">
+                        <div className="flex items-start gap-2">
+                          <Input value={entry.title} placeholder="Title" aria-label={`${c.label} title`} required
+                            maxLength={BEHAVIOR_MAX_TITLE} disabled={save.isPending}
+                            aria-invalid={validationField === "title"}
+                            aria-describedby={validationField === "title" ? validationMessageId : undefined}
+                            onChange={(e) => editItem(c.key, entry.id, "title", e.target.value)} />
+                          <Button type="button" variant="ghost" size="icon" aria-label={`Delete ${entry.title || "item"}`} className="shrink-0"
+                            disabled={save.isPending} onClick={() => removeItem(c.key, entry.id)}>
+                            <Trash2 className="size-4 text-muted-foreground" />
+                          </Button>
+                        </div>
+                        <Textarea value={entry.content} placeholder={c.placeholder} aria-label={`${c.label} content`} required
+                          maxLength={BEHAVIOR_MAX_CONTENT} disabled={save.isPending}
+                          aria-invalid={validationField === "content"}
+                          aria-describedby={validationField === "content" ? validationMessageId : undefined}
+                          onChange={(e) => editItem(c.key, entry.id, "content", e.target.value)}
+                          className="min-h-16" />
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          {validationMessage
+                            ? <p id={validationMessageId} className="text-xs text-red-500">{validationMessage}</p>
+                            : <span />}
+                          <Button type="button" size="sm" className="h-8" disabled={save.isPending}
+                            onClick={() => saveItem(c.key, entry.id)}>
+                            {save.isPending ? "Saving..." : "Save"}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </Card>

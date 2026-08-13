@@ -29,10 +29,12 @@ async def test_build_tenant_worker_applies_the_specific_agents_own_config():
     request = _fake_request(store)
 
     worker = await build_tenant_worker(request, "acme", agent_id="presales1")
-    assert worker.config.system_prompt == "You are a pre-sales writer."
+    assert worker.config.system_prompt is not None
+    assert worker.config.system_prompt.startswith("You are a pre-sales writer.")
+    assert "ONLY the supplied evidence" in worker.config.system_prompt
     assert worker.config.gate_threshold == 0.6
     assert worker.config.retrieval_k == 8
-    assert worker.agent.generator.system_prompt == "You are a pre-sales writer."
+    assert worker.agent.generator.system_prompt == worker.config.system_prompt
     assert worker.agent.threshold == 0.6
 
 
@@ -46,8 +48,9 @@ async def test_two_agents_in_the_same_tenant_get_independent_configs():
 
     w1 = await build_tenant_worker(request, "acme", agent_id="a1")
     w2 = await build_tenant_worker(request, "acme", agent_id="a2")
-    assert w1.config.system_prompt == "You answer tender requirements."
-    assert w2.config.system_prompt == "You write pre-sales content."
+    assert w1.config.system_prompt is not None and w2.config.system_prompt is not None
+    assert w1.config.system_prompt.startswith("You answer tender requirements.")
+    assert w2.config.system_prompt.startswith("You write pre-sales content.")
     assert w1.config.system_prompt != w2.config.system_prompt
 
 
@@ -73,14 +76,17 @@ async def test_worker_without_prompt_synthesizes_persona_from_train_config():
     assert "bid-response writer" not in sp  # not the generic default identity
 
 
-async def test_explicit_system_prompt_wins_over_synthesis():
+async def test_explicit_system_prompt_remains_base_and_keeps_grounding():
     store = InMemoryAgentStore()
     await store.add(Agent(id="x", tenant="acme", name="X", config={
         "system_prompt": "You are X.", "expertise": "ignored when explicit prompt set",
     }))
     request = _fake_request(store)
     worker = await build_tenant_worker(request, "acme", agent_id="x")
-    assert worker.config.system_prompt == "You are X."
+    prompt = worker.config.system_prompt
+    assert prompt is not None and prompt.startswith("You are X.")
+    assert "ignored when explicit prompt set" not in prompt
+    assert "ONLY the supplied evidence" in prompt
 
 
 async def test_persona_worker_still_enforces_json_output_contract():
@@ -93,3 +99,45 @@ async def test_persona_worker_still_enforces_json_output_contract():
     persona = Generator(provider=object(), system_prompt="You are Ava, a support agent.")
     assert persona.system.startswith("You are Ava, a support agent.")
     assert _OUTPUT_CONTRACT in persona.system  # contract always enforced
+
+
+async def test_explicit_system_prompt_remains_base_for_behavior_instructions():
+    store = InMemoryAgentStore()
+    await store.add(Agent(id="behavior1", tenant="acme", name="Support Bot", config={
+        "system_prompt": "You are Acme's support specialist.",
+        "prompts": [
+            {"id": "prompt-greeting", "title": "Greeting", "content": "Greet customers by name."},
+        ],
+        "rules": ["Confirm the requested outcome before answering."],
+        "guardrails": [
+            {"id": "guardrail-pii", "title": "Personal data", "content": "Never expose personal data."},
+        ],
+    }))
+    request = _fake_request(store)
+
+    worker = await build_tenant_worker(request, "acme", agent_id="behavior1")
+    sp = worker.config.system_prompt
+
+    assert sp is not None and sp.startswith("You are Acme's support specialist.")
+    assert "Greeting" in sp and "Greet customers by name." in sp
+    assert "Confirm the requested outcome before answering." in sp
+    assert "Personal data" in sp and "Never expose personal data." in sp
+    assert worker.agent.generator.system_prompt == sp
+    assert "prompt-greeting" not in sp and "guardrail-pii" not in sp
+
+
+async def test_empty_behavior_arrays_keep_explicit_system_prompt_grounded():
+    store = InMemoryAgentStore()
+    await store.add(Agent(id="behavior2", tenant="acme", name="Support Bot", config={
+        "system_prompt": "You are Acme's support specialist.",
+        "prompts": [],
+        "rules": [],
+        "guardrails": [],
+    }))
+    request = _fake_request(store)
+
+    worker = await build_tenant_worker(request, "acme", agent_id="behavior2")
+    prompt = worker.config.system_prompt
+
+    assert prompt is not None and prompt.startswith("You are Acme's support specialist.")
+    assert "ONLY the supplied evidence" in prompt

@@ -292,7 +292,13 @@ async def assemble_worker(*, sessionmaker, agents, knowledge, tenant: str, agent
     if "retrieval_k" in cfg:
         kwargs["retrieval_k"] = cfg["retrieval_k"]
     if cfg.get("system_prompt"):
-        kwargs["system_prompt"] = cfg["system_prompt"]
+        from app.modules.workers.persona import GROUNDING_INSTRUCTION, synthesize_behavior
+
+        system_prompt = cfg["system_prompt"]
+        behavior = synthesize_behavior(cfg)
+        if behavior:
+            system_prompt = f"{system_prompt}\n\n{behavior}"
+        kwargs["system_prompt"] = f"{system_prompt}\n\n{GROUNDING_INSTRUCTION}"
     else:
         # No explicit prompt: synthesize a per-worker persona from the Train wizard's config so this
         # worker answers in its OWN voice instead of the generic bid-writer default (QIK-315).
