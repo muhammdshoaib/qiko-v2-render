@@ -837,22 +837,22 @@ function BackgroundStep({ id, worker, onSaved }: { id: string; worker?: Agent; o
       <div><p className="font-medium">Who is your AI?</p></div>
       <div className="space-y-1.5">
         <Label htmlFor="bg-expertise">Your Expertise</Label>
-        <Input id="bg-expertise" placeholder="e.g., RFP and Proposal Response Specialist for security services"
+        <Input id="bg-expertise" placeholder="e.g., RFP and proposal response specialist"
           value={expertise} onChange={(e) => setExpertise(e.target.value)} />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="bg-audience">Target Audience</Label>
-        <Input id="bg-audience" placeholder="e.g., IDG bid, pre-sales, proposal, operations, and management team"
+        <Input id="bg-audience" placeholder="e.g., pre-sales, proposal, operations, and management team"
           value={audience} onChange={(e) => setAudience(e.target.value)} />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="bg-goal">Main Goal</Label>
-        <Input id="bg-goal" placeholder="e.g., Help IDG review RFP documents, extract required sections and answer them"
+        <Input id="bg-goal" placeholder="e.g., Review RFP documents, extract required sections and answer them"
           value={goal} onChange={(e) => setGoal(e.target.value)} />
       </div>
       <div className="space-y-1.5">
         <Label htmlFor="bg-unique">What makes you unique?</Label>
-        <Textarea id="bg-unique" placeholder="e.g., Specialised in complex security tenders, compliance requirements..."
+        <Textarea id="bg-unique" placeholder="e.g., Specialised in complex tenders and compliance requirements..."
           value={unique} onChange={(e) => setUnique(e.target.value)} />
       </div>
       {save.isSuccess && <p className="text-xs text-emerald-600">Background saved.</p>}
