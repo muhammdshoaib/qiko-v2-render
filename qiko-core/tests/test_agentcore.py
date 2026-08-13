@@ -182,6 +182,16 @@ async def test_runtime_confidence_falls_back_to_grounding_without_selfreport():
     assert result.confidence == round(result.critique.grounding, 3)
 
 
+def test_default_system_prompt_is_neutral_and_warns_without_knowledge():
+    """The default identity must not be client-specific and must tell the model to admit when no
+    knowledge base has been uploaded, so an empty-context question cannot be answered with IDG
+    or any other client's details."""
+    gen = Generator(provider=StubProvider())
+    assert "IDG" not in gen.system
+    assert "bid-response writer" not in gen.system.lower()
+    assert "no knowledge base" in gen.system.lower()
+
+
 # --- critic ---
 def test_grounding_full():
     c = critic.grounding_score("IDG holds ISO 9001 certification valid through 2027.", ISO_EVIDENCE)

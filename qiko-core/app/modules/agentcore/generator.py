@@ -30,8 +30,10 @@ from app.modules.agentcore.models import Requirement
 # (WorkerConfig.system_prompt, synthesized from the Train wizard's config) replaces ONLY this part,
 # so e.g. a customer-support worker no longer answers in the generic bid-writer voice -- QIK-315.
 _IDENTITY_DEFAULT = (
-    "You are a bid-response writer. Answer the requirement using ONLY the supplied evidence. "
-    "Do not invent facts, dates, names, or figures. If the evidence is insufficient, say so."
+    "You are a helpful AI assistant. Answer using ONLY the supplied evidence. "
+    "Do not invent facts, dates, names, or figures. "
+    "If the context contains no relevant evidence, clearly state that no knowledge base has been "
+    "uploaded and you cannot answer yet."
 )
 
 # The OUTPUT CONTRACT (JSON shape + no-scaffolding). This is ALWAYS enforced, for every worker,
@@ -44,17 +46,17 @@ _OUTPUT_CONTRACT = (
     'The "answer" value is the final response text only: clean, professional prose in short '
     "paragraphs, with light structure at most. It must NOT contain any meta scaffolding: no "
     "'## Answer' heading, no '## Available Evidence' section, no 'Based on the evidence provided' "
-    "preamble, no leading markdown title (no '# ...' or '## ...' first line), and no 'GSS Response:' "
-    "or 'IDG Response:' style labels. Write it as the words you would send to the recipient. "
+    "preamble, no leading markdown title (no '# ...' or '## ...' first line), and no "
+    "'Company Response:' or 'Client Response:' style labels. Write it as the words you would send to the recipient. "
     '"confidence" is your own read of how well the evidence lets you answer. '
     '"gaps" is a short note of what the evidence did not let you support, or "" if none.'
 )
 
-# Default prompt = identity + " " + contract. The identity is unchanged (still the bid-response
-# writer). The contract wording was generalised from bid-specific ("bid response"/"buyer") to
-# worker-neutral ("response"/"recipient") so it reads correctly for persona workers too; the JSON
-# keys, object-only shape, and no-scaffolding rules are unchanged, so structured parsing/gating for
-# the default (bid/RFP) workers is functionally identical.
+# Default prompt = identity + " " + contract. The identity is now worker-neutral rather than
+# bid-specific, and the contract wording is also worker-neutral ("response"/"recipient"), so it
+# reads correctly for persona workers too; the JSON keys, object-only shape, and no-scaffolding
+# rules are unchanged, so structured parsing/gating for the default (bid/RFP) workers is
+# functionally identical.
 SYSTEM = f"{_IDENTITY_DEFAULT} {_OUTPUT_CONTRACT}"
 
 # Seed the assistant turn with an opening brace so a prefill-capable provider is forced to return a
@@ -72,7 +74,7 @@ _FENCE = re.compile(r"```(?:json)?\s*(.*?)\s*```", re.DOTALL)
 # ever remove a leading wrapper and never touch genuine body content.
 # A leading markdown heading line, e.g. "# Detailed Security Arrangements" or "## Answer".
 _LEADING_HEADING = re.compile(r"^\s*#{1,6}[ \t]+[^\n]*(?:\n+|$)")
-# A leading "GSS Response:" / "IDG Response:" / bare "Response:" label, optionally bold-wrapped.
+# A leading "Company Response:" / "Client Response:" / bare "Response:" label, optionally bold-wrapped.
 _RESPONSE_LABEL = re.compile(r"^\s*\*{0,2}\s*(?:[A-Za-z0-9]{1,16}\s+)?Response\s*:\s*\*{0,2}\s*", re.IGNORECASE)
 # A leading "Based on the evidence provided," / "Based on the provided evidence:" preamble.
 _EVIDENCE_PREAMBLE = re.compile(
@@ -82,7 +84,7 @@ _CLEAN_PATTERNS = (_LEADING_HEADING, _RESPONSE_LABEL, _EVIDENCE_PREAMBLE)
 
 def _clean_answer(text: str) -> str:
     """Strip leading meta-scaffolding the model may still add despite the prompt: a leading markdown
-    heading / title, an "## Answer" wrapper, a "GSS Response:"-style label, and a "Based on the
+    heading / title, an "## Answer" wrapper, a "Company Response:"-style label, and a "Based on the
     (provided) evidence" preamble. Applies repeatedly so stacked wrappers (e.g. a title followed by
     "## Answer" followed by the preamble) all come off, while genuine body content is preserved."""
     cleaned = (text or "").strip()
