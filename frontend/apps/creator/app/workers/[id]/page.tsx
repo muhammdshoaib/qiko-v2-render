@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -1255,6 +1255,11 @@ function SettingsTab({ id, worker, onWorkerChange }: { id: string; worker?: Agen
     mutationFn: () => updateAgentConfig(id, { studio_linked: !studioLinked }),
     onSuccess: onWorkerChange,
   });
+  const router = useRouter();
+  const archive = useMutation({
+    mutationFn: () => updateAgentConfig(id, { archived: true }),
+    onSuccess: () => { onWorkerChange(); router.push("/workers"); },
+  });
 
   return (
     <div className="space-y-6">
@@ -1344,6 +1349,25 @@ function SettingsTab({ id, worker, onWorkerChange }: { id: string; worker?: Agen
             {save.isPending ? "Saving…" : "Save Changes"}
           </Button>
         </div>
+      </CardContent></Card>
+
+      <Card className="rounded-2xl border-red-500/20"><CardContent className="space-y-4 pt-6">
+        <div>
+          <p className="text-sm font-semibold text-white">Danger Zone</p>
+          <p className="text-xs text-muted-foreground">Archiving hides the worker from the dashboard. It is not permanently deleted and can be restored later.</p>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-sm text-slate-300">Remove this worker from the dashboard</span>
+          <Button
+            variant="outline"
+            disabled={archive.isPending}
+            onClick={() => { if (window.confirm("Archive this worker? It will be hidden from the workers list.")) archive.mutate(); }}
+            className="border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-300"
+          >
+            {archive.isPending ? "Archiving…" : "Archive worker"}
+          </Button>
+        </div>
+        {archive.isError && <p className="text-xs text-red-500">Couldn&apos;t archive the worker. Please try again.</p>}
       </CardContent></Card>
     </div>
   );
