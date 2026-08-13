@@ -176,7 +176,7 @@ export function ConsentSettingsButton({ variant = "inline", className = "" }: {
       <button
         type="button"
         onClick={openPreferences}
-        className="fixed bottom-4 left-4 z-[90] inline-flex min-h-11 items-center gap-2 rounded-full border border-slate-600 bg-[#0b101b] px-3 text-xs font-medium text-slate-200 shadow-lg transition-colors hover:border-cyan-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 sm:px-4"
+        className="fixed bottom-4 right-4 z-[90] inline-flex min-h-11 items-center gap-2 rounded-full border border-slate-600 bg-[#0b101b] px-3 text-xs font-medium text-slate-200 shadow-lg transition-colors hover:border-cyan-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 sm:px-4"
         aria-label="Open cookie settings"
       >
         <Settings2 aria-hidden className="size-4" />
