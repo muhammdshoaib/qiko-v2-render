@@ -767,6 +767,9 @@ class SlackChannelMessage(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     team_id: Mapped[str] = mapped_column(String(32), index=True)
+    # Part of the installation key, kept so the digest worker resolves the same workspace the
+    # event arrived for. "-" is the non-enterprise sentinel, matching slack_installations.
+    enterprise_id: Mapped[str] = mapped_column(String(32), default="-")
     channel_id: Mapped[str] = mapped_column(String(32), index=True)
     channel_type: Mapped[str] = mapped_column(String(16), default="channel")
     thread_ts: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -775,10 +778,13 @@ class SlackChannelMessage(Base):
     ts: Mapped[str] = mapped_column(String(32))
     flagged: Mapped[bool] = mapped_column(Boolean, default=False)
     tags: Mapped[list] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     __table_args__ = (
         Index("ix_slack_msg_tenant_channel", "tenant_id", "channel_id"),
         Index("ix_slack_msg_team_ts", "team_id", "channel_id", "ts"),
+        # The retention sweep scans by age across every tenant. Declared here rather than via
+        # index=True on the column so the name matches migration 0040 exactly.
+        Index("ix_slack_msg_created", "created_at"),
     )
 
 

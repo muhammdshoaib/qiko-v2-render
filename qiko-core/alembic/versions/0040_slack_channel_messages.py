@@ -45,6 +45,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
         sa.Column("tenant_id", sa.String(64), index=True, nullable=False),
         sa.Column("team_id", sa.String(32), index=True, nullable=False),
+        sa.Column("enterprise_id", sa.String(32), server_default="-", nullable=False),
         sa.Column("channel_id", sa.String(32), index=True, nullable=False),
         sa.Column("channel_type", sa.String(16), server_default="channel", nullable=False),
         sa.Column("thread_ts", sa.String(32), nullable=True),

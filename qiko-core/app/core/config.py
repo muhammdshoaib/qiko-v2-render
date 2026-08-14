@@ -87,7 +87,9 @@ class Settings(BaseSettings):
     # (private channels) and im:history (DMs) are deliberately NOT requested -- the handler drops
     # anything that is not a public channel, so asking for them would grant standing read access to
     # conversations the feature never looks at and widen the blast radius if the token leaked.
-    slack_scopes: str = "channels:history,channels:read,app_mentions:read,chat:write,commands"
+    # `commands` is NOT requested: no slash-command handler exists in qiko-core, so it would be a
+    # scope granted for a surface that does not ship.
+    slack_scopes: str = "channels:history,channels:read,app_mentions:read,chat:write"
     # Capture is opt-in, like channels_inbound_enabled: setting a signing secret alone must not
     # start persisting a customer's Slack conversations.
     slack_capture_enabled: bool = False

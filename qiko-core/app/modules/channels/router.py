@@ -64,9 +64,8 @@ async def slack_webhook(request: Request,
     """
     body = await request.body()
     s = get_settings()
-    if not s.slack_capture_enabled:
-        raise HTTPException(status_code=501, detail="Slack message capture is not enabled")
-
+    # Signature FIRST, kill switch second. The other order let an unauthenticated caller tell
+    # capture-enabled (403) from capture-disabled (501) and so probe the configuration.
     if s.slack_signing_secret:
         if not handler.verify(x_slack_request_timestamp, body, x_slack_signature):
             logger.warning("slack webhook rejected: signature invalid, stale or missing",
@@ -76,6 +75,9 @@ async def slack_webhook(request: Request,
         logger.error("slack webhook rejected: SLACK_SIGNING_SECRET is not configured",
                      extra={"source": "channels.slack"})
         raise HTTPException(status_code=403, detail="forbidden")
+
+    if not s.slack_capture_enabled:
+        raise HTTPException(status_code=501, detail="Slack message capture is not enabled")
 
     try:
         payload = json.loads(body or b"{}")
@@ -212,7 +214,8 @@ async def slack_send(body: SlackSend, request: Request,
         worker_id = links.resolve(tenant, body.team_id, body.slack_user_id)
         if worker_id is None:
             raise HTTPException(status_code=404, detail="Slack worker link not found")
-        installation = oauth.store.fetch(body.team_id, tenant=tenant)
+        # Synchronous store (app/db/sync_stores.py) called from an async handler.
+        installation = await asyncio.to_thread(oauth.store.fetch, body.team_id, None, tenant)
         if installation is None or installation.worker_id != worker_id:
             raise HTTPException(status_code=404, detail="Slack installation not found")
         token, channel = installation.bot_token, body.channel

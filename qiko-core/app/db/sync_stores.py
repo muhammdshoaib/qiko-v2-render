@@ -322,6 +322,11 @@ class SqlSlackInstallationStore:
             installed_by=row.installed_by, tenant=row.tenant_id, worker_id=row.worker_id)
 
     def save(self, inst: SlackInstallation) -> None:
+        # A tenantless installation is refused rather than stored under tenant_id="". Such a row
+        # cannot be attributed to anyone, is excluded from fetch_by_workspace anyway, and its only
+        # effect would be to hold a live bot token that no tenant owns.
+        if not inst.tenant:
+            raise ValueError("a Slack installation must belong to a tenant")
         with self.sessionmaker() as s, s.begin():
             key = (inst.team_id, inst.enterprise_id or "-", inst.tenant or "")
             row = s.get(SlackInstallationRow, key)

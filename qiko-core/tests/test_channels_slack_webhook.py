@@ -99,7 +99,8 @@ def test_message_is_stored_and_a_digest_is_scheduled(client):
     assert len(client.app.state.enqueued) == 1
     name, defer_by, kwargs = client.app.state.enqueued[0]
     assert name == "generate_slack_digest"
-    assert kwargs == {"tenant": "tenant-1", "team_id": "T123", "channel_id": "C456"}
+    assert kwargs == {"tenant": "tenant-1", "team_id": "T123", "channel_id": "C456",
+                      "enterprise_id": None}
     assert defer_by is not None
 
 
@@ -146,6 +147,38 @@ def test_capture_is_disabled_by_default(monkeypatch):
     disabled = TestClient(create_app())
     resp = _post(disabled, _payload(_message_event()))
     assert resp.status_code == 501
+
+
+def test_the_kill_switch_is_not_a_configuration_oracle(monkeypatch):
+    """An unsigned caller must not be able to tell capture-disabled (501) from enabled (403)."""
+    monkeypatch.setattr(get_settings(), "slack_signing_secret", SECRET)
+    monkeypatch.setattr(get_settings(), "slack_capture_enabled", False)
+    disabled = TestClient(create_app())
+    resp = _post(disabled, _payload(_message_event()), signature="v0=deadbeef")
+    assert resp.status_code == 403
+
+
+def test_the_enterprise_id_is_captured_for_the_worker(client):
+    """It is half the installation key, so the worker cannot resolve the token without it."""
+    body = json.dumps({
+        "team_id": "T123", "enterprise_id": "E9", "api_app_id": "A123",
+        "event": _message_event(), "type": "event_callback", "event_id": "Ev-ent",
+        "event_time": 1503435956,
+    }).encode()
+    # The install is non-enterprise, so an enterprise-scoped event must not resolve to it.
+    assert _post(client, body).json() == {"ok": True, "dropped": True}
+
+    client.app.state.slack_oauth.store.save(SlackInstallation(
+        team_id="T123", bot_token="xoxb-grid", bot_user_id="U999", enterprise_id="E9",
+        tenant="tenant-1", worker_id="worker-1"))
+    body2 = json.dumps({
+        "team_id": "T123", "enterprise_id": "E9", "api_app_id": "A123",
+        "event": _message_event(), "type": "event_callback", "event_id": "Ev-ent-2",
+        "event_time": 1503435956,
+    }).encode()
+    assert _post(client, body2).json() == {"ok": True}
+    assert _stored(client)[0].enterprise_id == "E9"
+    assert client.app.state.enqueued[-1][2]["enterprise_id"] == "E9"
 
 
 def test_a_duplicate_event_id_is_processed_once(client):

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
@@ -33,6 +34,9 @@ MAX_SUMMARY_CHARS = 800
 VALID_URGENCY = {"low", "medium", "high"}
 VALID_TONE = {"calm", "tense", "at-risk"}
 OWNER_PATTERN = re.compile(r"^[A-Z0-9._-]{1,32}$")
+# Slack's broadcast keywords. They match OWNER_PATTERN and are inert only because we never send
+# link_names, so they are refused here too rather than relying on that staying true.
+BROADCAST_OWNERS = {"CHANNEL", "HERE", "EVERYONE", "GROUP"}
 
 TRANSCRIPT_FENCE = "===SLACK_TRANSCRIPT==="
 
@@ -93,7 +97,12 @@ def _ts_to_time(ts: str) -> str:
 
 
 def _sanitize_for_prompt(text: str) -> str:
-    """Neutralise the fence and collapse whitespace so a message cannot escape the transcript."""
+    """Neutralise the fence and collapse whitespace so a message cannot escape the transcript.
+
+    NFKC-normalised first: without it a fullwidth lookalike (U+FF1D for "=") passes the literal
+    replace untouched while a model may still read it as a terminator.
+    """
+    text = unicodedata.normalize("NFKC", text)
     text = text.replace(TRANSCRIPT_FENCE, "[fence]")
     text = text.replace("===", "==")
     return re.sub(r"\s+", " ", text).strip()
@@ -104,7 +113,10 @@ def build_transcript(messages: list[SlackMessage]) -> str:
     lines: list[str] = []
     for m in messages:
         tags = " ".join(f"#{t}" for t in m.tags if t.isalnum())
-        line = f"[{_ts_to_time(m.ts)}] {m.user_id}: {_sanitize_for_prompt(m.text)}"
+        # user_id is sanitized too. It is Slack-generated today, so this is symmetry rather than a
+        # live hole, but every value interpolated into the transcript should go through one door.
+        line = (f"[{_ts_to_time(m.ts)}] {_sanitize_for_prompt(m.user_id)}: "
+                f"{_sanitize_for_prompt(m.text)}")
         if tags:
             line = f"{line} {tags}"
         lines.append(line)
@@ -139,13 +151,16 @@ def _clean_json(text: str) -> str:
 def _clean_text(value: object, limit: int) -> str:
     """One LLM-provided string, made safe to put in a Slack message.
 
-    Slack control syntax is stripped rather than escaped: there is no legitimate reason for a
-    summary to contain a mention, a broadcast or a link, so removing the angle brackets removes
-    the whole class instead of relying on getting the escaping exactly right.
+    `<` and `>` are removed rather than escaped, because they only ever open Slack control syntax
+    here (`<!channel>`, `<@U123>`, `<url|text>`) and a summary has no legitimate use for them, so
+    deleting them removes the whole class rather than depending on escaping being exactly right.
+
+    `&` IS escaped rather than deleted (Slack's documented `&amp;`), because it appears in ordinary
+    prose: replacing it with a word silently rewrote "R&D" as "RandD".
     """
     if not isinstance(value, str):
         return ""
-    text = value.replace("<", "").replace(">", "").replace("&", "and")
+    text = value.replace("<", "").replace(">", "").replace("&", "&amp;")
     text = re.sub(r"\s+", " ", text).strip()
     return text[:limit]
 
@@ -162,8 +177,10 @@ def _clean_items(value: object) -> list[dict]:
             continue
         item: dict = {"text": text}
         owner = raw.get("owner")
-        if isinstance(owner, str) and OWNER_PATTERN.match(owner.strip().lstrip("@")):
-            item["owner"] = owner.strip().lstrip("@")
+        if isinstance(owner, str):
+            candidate = owner.strip().lstrip("@")
+            if OWNER_PATTERN.match(candidate) and candidate.upper() not in BROADCAST_OWNERS:
+                item["owner"] = candidate
         urgency = raw.get("urgency")
         if isinstance(urgency, str) and urgency.lower() in VALID_URGENCY:
             item["urgency"] = urgency.lower()

@@ -6,6 +6,7 @@ digest scheduler later reads the buffer and posts a summary back to the channel.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
@@ -66,7 +67,11 @@ class SlackEventHandler:
         if event_type not in {"message", "app_mention"}:
             return {"ok": True}
 
-        installation = self.installation_store.fetch_by_workspace(team_id, enterprise_id)
+        # The production installation store is synchronous (see app/db/sync_stores.py), so the
+        # lookup goes to a thread: a blocking DB round trip here would stall the event loop on
+        # every inbound Slack event.
+        installation = await asyncio.to_thread(
+            self.installation_store.fetch_by_workspace, team_id, enterprise_id)
         if installation is None:
             # Not an error the caller can fix, and not something to be silent about: it is also
             # what an ambiguous or unowned installation looks like (see fetch_by_workspace).
@@ -75,14 +80,15 @@ class SlackEventHandler:
                                   "event_id": event_id})
             return {"ok": True, "dropped": True}
 
-        await self._handle_event(event, event_type, installation, team_id)
+        await self._handle_event(event, event_type, installation, team_id, enterprise_id)
         return {"ok": True}
 
     def verify(self, timestamp: str, body: bytes, signature: str) -> bool:
         return verify_slack_signature(self.signing_secret, timestamp, body, signature)
 
     async def _handle_event(self, event: dict, event_type: str,
-                            installation: SlackInstallation, team_id: str) -> None:
+                            installation: SlackInstallation, team_id: str,
+                            enterprise_id: str | None) -> None:
         text = (event.get("text") or "").strip()
         if event_type == "app_mention":
             # An app_mention carries no channel_type, so it is set explicitly rather than being
@@ -117,6 +123,7 @@ class SlackEventHandler:
             ts=ts,
             flagged=flagged,
             tags=tags,
+            enterprise_id=enterprise_id,
         ))
 
     @staticmethod

@@ -35,9 +35,15 @@ from app.modules.channels.slack_store import (
 
 logger = logging.getLogger(__name__)
 
-# How far back a digest may read, independent of the inactivity window. Bounds the query and the
-# amount of personal data that can end up in one prompt.
-MAX_LOOKBACK = timedelta(hours=24)
+# How much history one digest reads, as a FLOOR rather than a ceiling.
+#
+# It has to be at least the inactivity window, and in practice more: the whole point is that the
+# channel went quiet, so by the time the job runs, every message it needs to summarise is already
+# older than the window. Reading only the last `window` would find nothing and digest nothing.
+#
+# What actually bounds consumption is DEFAULT_MESSAGE_LIMIT (rows) and MAX_TRANSCRIPT_CHARS
+# (prompt size), not this value, so widening it cannot cause unbounded spend.
+LOOKBACK_FLOOR = timedelta(hours=24)
 
 
 class TaskQueue(Protocol):
@@ -60,6 +66,9 @@ class DigestScheduler:
             tenant=message.tenant,
             team_id=message.team_id,
             channel_id=message.channel_id,
+            # Part of the installation key, so the worker resolves the same workspace the event
+            # arrived for rather than only the non-enterprise one.
+            enterprise_id=message.enterprise_id,
             defer_by=_window(),
         )
 
@@ -75,10 +84,12 @@ class DigestWorker:
     cost_guard: object | None = None
     usage_store: object | None = None
 
-    async def run(self, *, tenant: str, team_id: str, channel_id: str) -> dict:
+    async def run(self, *, tenant: str, team_id: str, channel_id: str,
+                  enterprise_id: str | None = None) -> dict:
         """Generate and post a digest if the channel has been quiet long enough."""
         window = _window()
-        since = datetime.now(timezone.utc) - max(window, MAX_LOOKBACK)
+        # A floor, not a cap: see LOOKBACK_FLOOR. The row limit below is the real bound.
+        since = datetime.now(timezone.utc) - max(window, LOOKBACK_FLOOR)
         messages = await self.message_store.list_recent(
             tenant, team_id, channel_id, since, limit=DEFAULT_MESSAGE_LIMIT)
 
@@ -91,11 +102,19 @@ class DigestWorker:
             return {"ok": True, "messages_count": 0}
 
         # Resolve the destination BEFORE spending on the model (see the module docstring).
-        slack = self.slack_client or self._resolve_slack_client(team_id)
+        installation, slack = await self._resolve_destination(team_id, enterprise_id)
         if slack is None:
             logger.warning("slack digest has no usable installation; not generating",
                            extra={"source": "channels.digest", "team_id": team_id})
             return {"ok": False, "error": "no Slack installation for team"}
+
+        # The job arguments come off a queue. The buffer read is already tenant-scoped, so a
+        # mismatched pair reads nothing, but posting with a token belonging to a different tenant
+        # than the one whose messages we just read is the one thing that must never happen.
+        if installation is not None and installation.tenant != tenant:
+            logger.error("slack digest tenant mismatch; refusing to post",
+                         extra={"source": "channels.digest", "team_id": team_id})
+            return {"ok": False, "error": "installation tenant mismatch"}
 
         # A tenant that has reached its AI spend cap does not get an unmetered background job.
         if self.cost_guard is not None:
@@ -142,15 +161,24 @@ class DigestWorker:
         finally:
             reset_tenant(token)
 
-    def _resolve_slack_client(self, team_id: str) -> SlackClient | None:
+    async def _resolve_destination(self, team_id: str, enterprise_id: str | None):
+        """The installation this digest may be posted with, and a client for it.
+
+        Returns (None, None) when it cannot be resolved, so the caller returns before spending
+        anything on the model. An explicitly injected client (tests) skips the lookup.
+        """
+        if self.slack_client is not None:
+            return None, self.slack_client
         if self.installation_store is None:
             logger.error("slack digest worker has no installation store wired",
                          extra={"source": "channels.digest"})
-            return None
-        installation = self.installation_store.fetch_by_workspace(team_id)
+            return None, None
+        # Synchronous store, so the lookup goes to a thread.
+        installation = await asyncio.to_thread(
+            self.installation_store.fetch_by_workspace, team_id, enterprise_id)
         if installation is None or not installation.bot_token:
-            return None
-        return SlackClient(bot_token=installation.bot_token)
+            return None, None
+        return installation, SlackClient(bot_token=installation.bot_token)
 
 
 def _window() -> timedelta:

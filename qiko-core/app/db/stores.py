@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import and_, delete, func, or_, select, text, update
+from sqlalchemy import Float, and_, cast, delete, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.crypto import decrypt, encrypt
@@ -2681,6 +2681,7 @@ class SqlSlackChannelStore:
             ts=r.ts,
             flagged=r.flagged,
             tags=list(r.tags or []),
+            enterprise_id=None if r.enterprise_id == "-" else r.enterprise_id,
         )
 
     @staticmethod
@@ -2688,6 +2689,7 @@ class SqlSlackChannelStore:
         return SlackChannelMessageRow(
             tenant_id=message.tenant,
             team_id=message.team_id,
+            enterprise_id=message.enterprise_id or "-",
             channel_id=message.channel_id,
             channel_type=message.channel_type,
             thread_ts=message.thread_ts,
@@ -2709,14 +2711,20 @@ class SqlSlackChannelStore:
         LIMIT and team_id are both load-bearing: without the limit a busy channel builds an
         unbounded prompt (and an unbounded result set); without team_id two workspaces sharing a
         channel id would be read as one conversation.
+
+        Windowed and ordered on the Slack `ts`, NOT on created_at, so this agrees with the
+        in-memory store. The two disagreeing would mean the implementation under test and the
+        implementation deployed select different messages, which is the sort of divergence that
+        makes a green suite meaningless.
         """
         async with self.sessionmaker() as s:
             stmt = select(SlackChannelMessageRow).where(
                 SlackChannelMessageRow.tenant_id == tenant,
                 SlackChannelMessageRow.team_id == team_id,
                 SlackChannelMessageRow.channel_id == channel_id,
-                SlackChannelMessageRow.created_at >= since,
-            ).order_by(SlackChannelMessageRow.created_at.desc()).limit(limit)
+                # ts is "seconds.microseconds"; compare numerically, not as a string.
+                cast(SlackChannelMessageRow.ts, Float) >= since.timestamp(),
+            ).order_by(cast(SlackChannelMessageRow.ts, Float).desc()).limit(limit)
             rows = (await s.execute(stmt)).scalars().all()
             return [self._to_domain(r) for r in reversed(rows)]
 

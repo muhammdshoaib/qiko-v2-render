@@ -141,7 +141,9 @@ class SlackOAuth:
         installation.tenant = pending.tenant
         installation.worker_id = pending.worker_id
         installation.installed_by = pending.actor_user_id or installation.installed_by
-        self.store.save(installation)
+        # The production store is synchronous (app/db/sync_stores.py), so the write goes to a
+        # thread rather than blocking this coroutine's event loop.
+        await asyncio.to_thread(self.store.save, installation)
         return installation
 
     def exchange_code(self, code: str, save: bool = True) -> SlackInstallation:

@@ -28,6 +28,10 @@ class SlackMessage:
     ts: str
     flagged: bool = False
     tags: list[str] = field(default_factory=list)
+    # Carried so the digest worker can resolve the SAME installation the event arrived for.
+    # Without it an enterprise-grid workspace is unresolvable on the worker side, because the
+    # installation is keyed on (team_id, enterprise_id).
+    enterprise_id: str | None = None
 
 
 class SlackChannelStore(Protocol):
