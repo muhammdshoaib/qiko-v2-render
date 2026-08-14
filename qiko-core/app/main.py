@@ -234,6 +234,7 @@ async def lifespan(app: FastAPI):
             SqlCustomerDirectory,
             SqlInvoiceStore,
             SqlPaymentLinkStore,
+            SqlSlackInstallationStore,
             SqlSubscriptionStore,
         )
 
@@ -250,6 +251,11 @@ async def lifespan(app: FastAPI):
             gateway=app.state.payment_links.gateway, email=app.state.payment_links.email,
             store=SqlPaymentLinkStore(sync_sm))
         app.state.customers = SqlCustomerDirectory(sync_sm)
+        # Slack installations survive a redeploy AND are visible to the arq worker process, which
+        # is the only way the digest job can resolve a bot token to post with.
+        app.state.slack_oauth.store = SqlSlackInstallationStore(sync_sm)
+        if getattr(app.state, "slack_events", None):
+            app.state.slack_events.installation_store = app.state.slack_oauth.store
         # The billing endpoints are synchronous, so the audit store needs the same sync engine.
         app.state.audit.sync_sessionmaker = sync_sm
     try:

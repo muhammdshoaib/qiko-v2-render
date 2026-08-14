@@ -47,7 +47,7 @@ from app.db.models import PlatformAdminAudit as PlatformAdminAuditRow
 from app.db.models import PolicyRelease as PolicyReleaseRow
 from app.db.models import RfpPack as RfpPackRow
 from app.db.models import SlackChannelMessage as SlackChannelMessageRow
-from app.modules.channels.slack_store import SlackMessage
+from app.modules.channels.slack_store import DEFAULT_MESSAGE_LIMIT, SlackMessage
 from app.db.models import SalesIntelActivityLog as SalesIntelActivityLogRow
 from app.db.models import SalesIntelIngestionSource as SalesIntelIngestionSourceRow
 from app.db.models import SalesIntelOpportunity as SalesIntelOpportunityRow
@@ -2702,33 +2702,47 @@ class SqlSlackChannelStore:
         async with self.sessionmaker() as s, s.begin():
             s.add(self._row(message))
 
-    async def list_since(self, tenant: str, channel_id: str, since: datetime) -> list[SlackMessage]:
+    async def list_recent(self, tenant: str, team_id: str, channel_id: str, since: datetime,
+                          limit: int = DEFAULT_MESSAGE_LIMIT) -> list[SlackMessage]:
+        """The newest `limit` messages in the window, returned oldest-first.
+
+        LIMIT and team_id are both load-bearing: without the limit a busy channel builds an
+        unbounded prompt (and an unbounded result set); without team_id two workspaces sharing a
+        channel id would be read as one conversation.
+        """
         async with self.sessionmaker() as s:
             stmt = select(SlackChannelMessageRow).where(
                 SlackChannelMessageRow.tenant_id == tenant,
+                SlackChannelMessageRow.team_id == team_id,
                 SlackChannelMessageRow.channel_id == channel_id,
                 SlackChannelMessageRow.created_at >= since,
-            ).order_by(SlackChannelMessageRow.created_at)
+            ).order_by(SlackChannelMessageRow.created_at.desc()).limit(limit)
             rows = (await s.execute(stmt)).scalars().all()
-            return [self._to_domain(r) for r in rows]
+            return [self._to_domain(r) for r in reversed(rows)]
 
-    async def clear_channel(self, tenant: str, channel_id: str) -> int:
+    async def clear_channel(self, tenant: str, team_id: str, channel_id: str) -> int:
         async with self.sessionmaker() as s, s.begin():
             stmt = delete(SlackChannelMessageRow).where(
                 SlackChannelMessageRow.tenant_id == tenant,
+                SlackChannelMessageRow.team_id == team_id,
                 SlackChannelMessageRow.channel_id == channel_id,
             )
             result = await s.execute(stmt)
             return result.rowcount or 0
 
+    async def purge_older_than(self, older_than: timedelta) -> int:
+        """Retention: drop captured Slack text past the window, whether or not it was digested.
 
-async def _clear_old_messages(store: SqlSlackChannelStore, *, older_than: timedelta) -> int:
-    """Housekeeping: remove messages outside the digest window so the table does not grow forever."""
-    cutoff = datetime.now(timezone.utc) - older_than
-    async with store.sessionmaker() as s, s.begin():
-        stmt = delete(SlackChannelMessageRow).where(SlackChannelMessageRow.created_at < cutoff)
-        result = await s.execute(stmt)
-        return result.rowcount or 0
+        Called from the daily arq cron. Without it the table keeps third-party personal data
+        indefinitely for any channel whose digest never posts, which the model docstring would
+        then be claiming was bounded when it was not.
+        """
+        cutoff = datetime.now(timezone.utc) - older_than
+        async with self.sessionmaker() as s, s.begin():
+            stmt = delete(SlackChannelMessageRow).where(
+                SlackChannelMessageRow.created_at < cutoff)
+            result = await s.execute(stmt)
+            return result.rowcount or 0
 
 
 def _audit_json(row: AuditEventRow) -> dict:

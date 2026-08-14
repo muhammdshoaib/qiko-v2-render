@@ -52,16 +52,35 @@ class InstallationStore:
                tenant: str | None = None) -> None:
         self._installs.pop(_install_key(tenant, team_id, enterprise_id), None)
 
-    def fetch_by_team_id(self, team_id: str) -> SlackInstallation | None:
-        """Resolve a Slack workspace to its Qiko tenant/worker by team_id.
+    def fetch_by_workspace(self, team_id: str,
+                           enterprise_id: str | None = None) -> SlackInstallation | None:
+        """Resolve an INSTALLED Slack workspace to its Qiko tenant/worker.
 
-        The Events API does not carry the Qiko tenant, so we reverse-lookup from the
-        workspace id. Multi-tenant deployments should back this with a SQL index.
+        The Events API payload does not carry the Qiko tenant, so it has to be reverse-looked-up
+        from the workspace. Two properties make that safe, and both were absent from the first
+        version of this method:
+
+        AMBIGUITY IS REFUSED. The key is (team_id, enterprise_id), and if more than one Qiko
+        tenant has installed the app into the same workspace, this returns None rather than the
+        first match the dict happens to yield. Returning a match would decide, by iteration
+        order, which tenant's database a third party's messages are written into -- a
+        cross-tenant write with no way to notice it happened.
+
+        AN UNOWNED INSTALLATION IS NOT A TENANT. `exchange_code(save=True)` can persist an
+        installation with tenant=None (it is used by the standalone token exchange), and treating
+        that as a tenant meant writing rows under an empty tenant_id, where two unrelated
+        workspaces sharing a channel id would be merged into one digest. Those installations are
+        skipped here instead.
+
+        Multi-tenant deployments should back this with a SQL index on (team_id, enterprise_id).
         """
-        for inst in self._installs.values():
-            if inst and inst.team_id == team_id:
-                return replace(inst, bot_token=decrypt(inst.bot_token))
-        return None
+        matches = [inst for inst in self._installs.values()
+                   if inst and inst.team_id == team_id
+                   and (inst.enterprise_id or None) == (enterprise_id or None)
+                   and inst.tenant]
+        if len(matches) != 1:
+            return None
+        return replace(matches[0], bot_token=decrypt(matches[0].bot_token))
 
 
 @dataclass

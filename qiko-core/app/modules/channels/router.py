@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
@@ -26,6 +27,8 @@ from app.modules.channels.webhooks import verify_hmac_signature
 from app.modules.channels.whatsapp import verify_webhook
 from app.modules.identity.rbac import Role
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/channels", tags=["channels"])
 _editor = Depends(require_role(Role.editor))
 
@@ -48,16 +51,31 @@ async def slack_webhook(request: Request,
                         handler=Depends(_get_slack_events)) -> dict:
     """Slack Events API callback. Public, signature-verified, no tenant cookie.
 
-    Processes `url_verification`, `message`, and `app_mention` events. Messages from
-    public channels are stored in the per-tenant buffer for the digest worker.
+    Processes `url_verification`, `message` and `app_mention`. Messages from public channels are
+    stored in the per-tenant buffer for the digest worker.
+
+    Capture is behind SLACK_CAPTURE_ENABLED and returns 501 by default, the same shape as the
+    WhatsApp inbound webhook: persisting a customer's Slack conversations is not something a
+    deploy should start doing merely because a signing secret happens to be set.
+
+    The 403 body is deliberately generic. The reason (bad signature vs unconfigured secret) is a
+    fact about server configuration and belongs in the log, not in a reply to an unauthenticated
+    caller.
     """
     body = await request.body()
     s = get_settings()
+    if not s.slack_capture_enabled:
+        raise HTTPException(status_code=501, detail="Slack message capture is not enabled")
+
     if s.slack_signing_secret:
         if not handler.verify(x_slack_request_timestamp, body, x_slack_signature):
-            raise HTTPException(status_code=403, detail="invalid Slack signature")
-    elif not s.debug:
-        raise HTTPException(status_code=403, detail="Slack signing secret not configured")
+            logger.warning("slack webhook rejected: signature invalid, stale or missing",
+                           extra={"source": "channels.slack"})
+            raise HTTPException(status_code=403, detail="forbidden")
+    elif not s.debug:  # fail closed outside dev: refuse unverifiable webhooks
+        logger.error("slack webhook rejected: SLACK_SIGNING_SECRET is not configured",
+                     extra={"source": "channels.slack"})
+        raise HTTPException(status_code=403, detail="forbidden")
 
     try:
         payload = json.loads(body or b"{}")

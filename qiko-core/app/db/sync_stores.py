@@ -25,9 +25,12 @@ from app.db.models import BillingInvoice as InvoiceRow
 from app.db.models import BillingPaymentLink as PaymentLinkRow
 from app.db.models import BillingStripeCustomer as StripeCustomerRow
 from app.db.models import BillingSubscription as SubscriptionRow
+from app.db.models import SlackInstallation as SlackInstallationRow
 from app.db.models import Tenant as TenantRow
 from app.db.models import User as UserRow
+from app.core.crypto import decrypt, encrypt
 from app.modules.admin.customers import CustomerRecord
+from app.modules.channels.slack_oauth import SlackInstallation
 from app.modules.admin.pagination import PAGE_SIZE, paginate
 from app.modules.admin.sorting import CUSTOMER_SORTS, apply_sort
 from app.modules.billing.payment_links import PaymentLinkLog
@@ -292,3 +295,77 @@ class SqlCustomerDirectory:
         # now excluded from list/details). Mirrors the in-memory CustomerDirectory behaviour.
         rec.email = f"deleted+{user_id}@anonymized.invalid"
         return rec
+
+
+@dataclass
+class SqlSlackInstallationStore:
+    """Durable Slack OAuth installations behind the same interface as the in-memory
+    InstallationStore -- previously in-memory only, so every OAuth-installed workspace was lost
+    on restart and the arq worker (a different process from the API that ran the callback) could
+    never resolve a bot token at all, which made the digest undeliverable in production.
+
+    Synchronous for the same reason as the billing stores above: the existing call sites
+    (`SlackOAuth.complete_install`, `/channels/slack/send`) are synchronous, so this stays a
+    drop-in and no route or service signature changes.
+
+    The bot token is Fernet-encrypted at rest and decrypted only on the way out, exactly as the
+    in-memory store does.
+    """
+    sessionmaker: sessionmaker[Session]
+
+    @staticmethod
+    def _to_domain(row: SlackInstallationRow) -> SlackInstallation:
+        return SlackInstallation(
+            team_id=row.team_id, bot_token=decrypt(row.bot_token_encrypted),
+            bot_user_id=row.bot_user_id,
+            enterprise_id=None if row.enterprise_id == "-" else row.enterprise_id,
+            installed_by=row.installed_by, tenant=row.tenant_id, worker_id=row.worker_id)
+
+    def save(self, inst: SlackInstallation) -> None:
+        with self.sessionmaker() as s, s.begin():
+            key = (inst.team_id, inst.enterprise_id or "-", inst.tenant or "")
+            row = s.get(SlackInstallationRow, key)
+            ciphertext = encrypt(inst.bot_token)
+            if row is None:
+                s.add(SlackInstallationRow(
+                    team_id=inst.team_id, enterprise_id=inst.enterprise_id or "-",
+                    tenant_id=inst.tenant or "", bot_token_encrypted=ciphertext,
+                    bot_user_id=inst.bot_user_id, worker_id=inst.worker_id,
+                    installed_by=inst.installed_by))
+            else:
+                row.bot_token_encrypted = ciphertext
+                row.bot_user_id = inst.bot_user_id
+                row.worker_id = inst.worker_id
+                row.installed_by = inst.installed_by
+
+    def fetch(self, team_id: str, enterprise_id: str | None = None,
+              tenant: str | None = None) -> SlackInstallation | None:
+        with self.sessionmaker() as s:
+            row = s.get(SlackInstallationRow, (team_id, enterprise_id or "-", tenant or ""))
+            return self._to_domain(row) if row is not None else None
+
+    def delete(self, team_id: str, enterprise_id: str | None = None,
+               tenant: str | None = None) -> None:
+        with self.sessionmaker() as s, s.begin():
+            row = s.get(SlackInstallationRow, (team_id, enterprise_id or "-", tenant or ""))
+            if row is not None:
+                s.delete(row)
+
+    def fetch_by_workspace(self, team_id: str,
+                           enterprise_id: str | None = None) -> SlackInstallation | None:
+        """Reverse lookup for the Events API, which knows the workspace but not the Qiko tenant.
+
+        Returns None when the workspace maps to zero or to MORE THAN ONE tenant. A workspace
+        installed by two tenants has no single correct answer, and answering anyway would write a
+        third party's Slack messages into whichever tenant the query happened to return first.
+        Installations with no tenant are excluded for the same reason.
+        """
+        with self.sessionmaker() as s:
+            rows = s.execute(
+                select(SlackInstallationRow).where(
+                    SlackInstallationRow.team_id == team_id,
+                    SlackInstallationRow.enterprise_id == (enterprise_id or "-"),
+                    SlackInstallationRow.tenant_id != "",
+                ).limit(2)
+            ).scalars().all()
+            return self._to_domain(rows[0]) if len(rows) == 1 else None

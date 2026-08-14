@@ -737,6 +737,30 @@ class FinanceChatMessage(Base):
     __table_args__ = (Index("ix_finance_chat_agent_created", "tenant_id", "agent_id", "created_at"),)
 
 
+class SlackInstallation(Base):
+    """One OAuth-installed Slack workspace (app.modules.channels.slack_oauth).
+
+    Durable because the digest job runs on the arq worker tier, in a different process from the
+    API that completed the OAuth flow: an in-memory installation store means the worker can never
+    resolve a bot token, so the digest can never be posted. The bot token is stored already
+    Fernet-encrypted by the service layer and is never written in plaintext.
+
+    Keyed on (team_id, enterprise_id, tenant_id) so one workspace may legitimately be installed by
+    more than one tenant, while the reverse lookup used by the Events API can detect that case and
+    refuse to guess which tenant an inbound message belongs to.
+    """
+    __tablename__ = "slack_installations"
+    team_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    enterprise_id: Mapped[str] = mapped_column(String(32), primary_key=True, default="-")
+    tenant_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    bot_token_encrypted: Mapped[str] = mapped_column(String(1024))
+    bot_user_id: Mapped[str] = mapped_column(String(32))
+    worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    installed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    __table_args__ = (Index("ix_slack_installations_workspace", "team_id", "enterprise_id"),)
+
+
 class SlackChannelMessage(Base):
     """One captured Slack message for the AI heads-up assistant (app.modules.channels.slack_events)."""
     __tablename__ = "slack_channel_messages"
@@ -751,7 +775,7 @@ class SlackChannelMessage(Base):
     ts: Mapped[str] = mapped_column(String(32))
     flagged: Mapped[bool] = mapped_column(Boolean, default=False)
     tags: Mapped[list] = mapped_column(JSON, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
     __table_args__ = (
         Index("ix_slack_msg_tenant_channel", "tenant_id", "channel_id"),
         Index("ix_slack_msg_team_ts", "team_id", "channel_id", "ts"),

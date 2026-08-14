@@ -6,6 +6,7 @@ digest scheduler later reads the buffer and posts a summary back to the channel.
 """
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 
@@ -14,10 +15,15 @@ from app.modules.channels.slack_oauth import InstallationStore, SlackInstallatio
 from app.modules.channels.slack_store import SlackMessage
 from app.modules.channels.webhooks import IdempotencyGuard, verify_slack_signature
 
+logger = logging.getLogger(__name__)
 
 # Hashtags the assistant explicitly watches for.
 TAG_PATTERN = re.compile(r"#([a-zA-Z0-9_-]+)")
 WATCHED_TAGS = {"action", "feature", "important", "decision", "question", "blocker"}
+
+# One Slack message is capped at 40k characters, and the digest window holds many of them.
+# Truncating on the way IN bounds both the row and every prompt built from it (LLM10).
+MAX_MESSAGE_CHARS = 4_000
 
 
 @dataclass
@@ -34,77 +40,84 @@ class SlackEventHandler:
 
         Returns a small dict for the HTTP response body.
         """
-        event_type = payload.get("type")
-        if event_type == "url_verification":
+        if payload.get("type") == "url_verification":
             return {"challenge": payload.get("challenge", "")}
 
-        # Event callbacks carry the payload nested under "event".
         event = payload.get("event", {})
         event_id = payload.get("event_id", "")
 
-        if self.idempotency.is_duplicate(event_id):
+        # A payload with no event id cannot be deduped. Seeding the guard with "" would make the
+        # FIRST such payload win and silently drop every later one, which is the opposite of the
+        # intended behaviour, so an id-less event is processed and recorded instead.
+        if not event_id:
+            logger.warning("slack event without event_id; cannot dedupe",
+                           extra={"source": "channels.slack"})
+        elif self.idempotency.is_duplicate(event_id):
             return {"ok": True, "duplicate": True}
 
-        if event.get("type") == "message":
-            await self._handle_message(event)
+        # The workspace comes from the TOP-LEVEL payload, which identifies the installation the
+        # event was delivered for. event.team is the message AUTHOR's workspace, which differs in
+        # a Slack Connect channel and would attribute the message to the wrong tenant.
+        team_id = payload.get("team_id", "")
+        enterprise_id = (payload.get("enterprise_id")
+                         or (payload.get("enterprise") or {}).get("id") or None)
 
-        if event.get("type") == "app_mention":
-            await self._handle_mention(event)
+        event_type = event.get("type")
+        if event_type not in {"message", "app_mention"}:
+            return {"ok": True}
 
+        installation = self.installation_store.fetch_by_workspace(team_id, enterprise_id)
+        if installation is None:
+            # Not an error the caller can fix, and not something to be silent about: it is also
+            # what an ambiguous or unowned installation looks like (see fetch_by_workspace).
+            logger.warning("slack event for an unresolvable workspace; dropped",
+                           extra={"source": "channels.slack", "team_id": team_id,
+                                  "event_id": event_id})
+            return {"ok": True, "dropped": True}
+
+        await self._handle_event(event, event_type, installation, team_id)
         return {"ok": True}
 
     def verify(self, timestamp: str, body: bytes, signature: str) -> bool:
         return verify_slack_signature(self.signing_secret, timestamp, body, signature)
 
-    async def _handle_message(self, event: dict) -> None:
-        # Ignore bot messages, edits, deletions, DMs, and anything that is not a plain
-        # message in a public channel. We explicitly do NOT store "message_changed".
-        if event.get("bot_id") or event.get("subtype") or event.get("channel_type") != "channel":
-            return
+    async def _handle_event(self, event: dict, event_type: str,
+                            installation: SlackInstallation, team_id: str) -> None:
+        text = (event.get("text") or "").strip()
+        if event_type == "app_mention":
+            # An app_mention carries no channel_type, so it is set explicitly rather than being
+            # filtered out below. The bot mention itself is stripped from the stored text.
+            text = re.sub(r"<@[A-Z0-9]+>", "", text).strip()
+            channel_type = "channel"
+        else:
+            # Ignore bot messages, edits, deletions, DMs, and anything that is not a plain
+            # message in a public channel. "message_changed" is deliberately NOT stored.
+            if event.get("bot_id") or event.get("subtype") or event.get("channel_type") != "channel":
+                return
+            channel_type = "channel"
 
         channel = event.get("channel", "")
-        text = (event.get("text") or "").strip()
         user = event.get("user", "")
         ts = event.get("ts", "")
         if not (channel and text and user and ts):
             return
 
-        team_id = event.get("team", "")
-        installation = self._resolve_installation(team_id)
-        if installation is None:
-            return
-
         tags = self._extract_tags(text)
-        flagged = (
-            event.get("type") == "app_mention"
-            or bool(tags)
-            or self._is_mention(text, installation.bot_user_id)
-        )
+        flagged = (event_type == "app_mention" or bool(tags)
+                   or self._is_mention(text, installation.bot_user_id))
 
         await self.scheduler.on_new_message(SlackMessage(
             tenant=installation.tenant or "",
             team_id=team_id,
             channel_id=channel,
-            channel_type="channel",
+            channel_type=channel_type,
             thread_ts=event.get("thread_ts"),
             user_id=user,
-            text=text,
+            text=text[:MAX_MESSAGE_CHARS],
             ts=ts,
             flagged=flagged,
             tags=tags,
         ))
-
-    async def _handle_mention(self, event: dict) -> None:
-        # A mention in a channel is treated the same as a message, but we force the
-        # flagged bit so it is captured in the next digest.
-        text = (event.get("text") or "").strip()
-        # Strip the bot mention and re-handle as a message.
-        text = re.sub(r"<@[A-Z0-9]+>", "", text).strip()
-        event["text"] = text
-        await self._handle_message(event)
-
-    def _resolve_installation(self, team_id: str) -> SlackInstallation | None:
-        return self.installation_store.fetch_by_team_id(team_id)
 
     @staticmethod
     def _extract_tags(text: str) -> list[str]:

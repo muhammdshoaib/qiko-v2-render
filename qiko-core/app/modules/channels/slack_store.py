@@ -1,9 +1,19 @@
-"""Shared models and in-memory store for the Slack heads-up assistant."""
+"""Shared models and in-memory store for the Slack heads-up assistant.
+
+Every read and every delete is keyed on (tenant, team_id, channel_id), never on
+(tenant, channel_id). A channel id is only unique WITHIN a workspace, so dropping team_id
+would merge two workspaces that happen to share one into a single digest, and post it with
+whichever workspace's bot token was resolved first.
+"""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
+
+# The digest only ever needs the tail of a conversation. Capping the read bounds both the
+# prompt handed to the model and the memory held while building it (LLM10 / API4).
+DEFAULT_MESSAGE_LIMIT = 200
 
 
 @dataclass
@@ -25,9 +35,10 @@ class SlackChannelStore(Protocol):
 
     async def add(self, message: SlackMessage) -> None: ...
 
-    async def list_since(self, tenant: str, channel_id: str, since: datetime) -> list[SlackMessage]: ...
+    async def list_recent(self, tenant: str, team_id: str, channel_id: str, since: datetime,
+                          limit: int = DEFAULT_MESSAGE_LIMIT) -> list[SlackMessage]: ...
 
-    async def clear_channel(self, tenant: str, channel_id: str) -> int: ...
+    async def clear_channel(self, tenant: str, team_id: str, channel_id: str) -> int: ...
 
 
 @dataclass
@@ -39,20 +50,25 @@ class InMemorySlackChannelStore:
     async def add(self, message: SlackMessage) -> None:
         self._messages.append(message)
 
-    async def list_since(self, tenant: str, channel_id: str, since: datetime) -> list[SlackMessage]:
-        return [
-            m for m in self._messages
-            if m.tenant == tenant and m.channel_id == channel_id
-            and self._ts_to_dt(m.ts) >= since
-        ]
+    async def list_recent(self, tenant: str, team_id: str, channel_id: str, since: datetime,
+                          limit: int = DEFAULT_MESSAGE_LIMIT) -> list[SlackMessage]:
+        matching = [m for m in self._messages
+                    if self._same_channel(m, tenant, team_id, channel_id)
+                    and self._ts_to_dt(m.ts) >= since]
+        matching.sort(key=lambda m: self._ts_to_dt(m.ts))
+        # Newest `limit` messages, returned oldest-first so the transcript reads in order.
+        return matching[-limit:]
 
-    async def clear_channel(self, tenant: str, channel_id: str) -> int:
+    async def clear_channel(self, tenant: str, team_id: str, channel_id: str) -> int:
         before = len(self._messages)
-        self._messages = [
-            m for m in self._messages
-            if not (m.tenant == tenant and m.channel_id == channel_id)
-        ]
+        self._messages = [m for m in self._messages
+                          if not self._same_channel(m, tenant, team_id, channel_id)]
         return before - len(self._messages)
+
+    @staticmethod
+    def _same_channel(message: SlackMessage, tenant: str, team_id: str, channel_id: str) -> bool:
+        return (message.tenant == tenant and message.team_id == team_id
+                and message.channel_id == channel_id)
 
     @staticmethod
     def _ts_to_dt(ts: str) -> datetime:

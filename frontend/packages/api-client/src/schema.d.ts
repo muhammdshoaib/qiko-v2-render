@@ -1996,8 +1996,16 @@ export interface paths {
          * Slack Webhook
          * @description Slack Events API callback. Public, signature-verified, no tenant cookie.
          *
-         *     Processes `url_verification`, `message`, and `app_mention` events. Messages from
-         *     public channels are stored in the per-tenant buffer for the digest worker.
+         *     Processes `url_verification`, `message` and `app_mention`. Messages from public channels are
+         *     stored in the per-tenant buffer for the digest worker.
+         *
+         *     Capture is behind SLACK_CAPTURE_ENABLED and returns 501 by default, the same shape as the
+         *     WhatsApp inbound webhook: persisting a customer's Slack conversations is not something a
+         *     deploy should start doing merely because a signing secret happens to be set.
+         *
+         *     The 403 body is deliberately generic. The reason (bad signature vs unconfigured secret) is a
+         *     fact about server configuration and belongs in the log, not in a reply to an unauthenticated
+         *     caller.
          */
         post: operations["slack_webhook_api_v1_channels_slack_webhook_post"];
         delete?: never;
