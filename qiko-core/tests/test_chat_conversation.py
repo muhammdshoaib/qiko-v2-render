@@ -50,8 +50,7 @@ async def test_ask_with_a_never_created_conversation_id_still_attributes_the_rea
     """Regression: chat.ask() used to call self.post() -> store.append() -> store.ensure()
     with NO agent_id, so a caller that mints its own client-side conversation id and calls
     /chat/ask directly (the dashboard's own test-chat does exactly this) got it silently
-    recorded under a generic "public" agent -- meaning it could never be found by anything
-    that looks a worker's own conversations up by its real agent id (the CRM pipeline)."""
+    recorded under a generic "public" agent instead of remaining scoped to the real worker."""
     chat = ChatService()
     worker = build_worker(WorkerConfig(name="Pre Sales Writer Worker", tenant="acme"), provider=_Provider())
     await chat.ask(worker, "client-minted-conv-id", "hello", agent_id="agent-real-id")

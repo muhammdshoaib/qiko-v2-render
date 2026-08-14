@@ -197,6 +197,33 @@ def test_crm_pipeline_round_trip_via_api(client):
     assert update.status_code == 200 and update.json()["status"] == "done"
 
 
+def test_crm_only_materializes_public_chat_conversations(client):
+    cookies = auth_cookies(tenant="acme")
+    agent_id = _create_agent(client, cookies, "CRM chat origin")
+    assert client.post(f"/api/v1/agents/{agent_id}/ready", cookies=cookies).status_code == 200
+
+    internal_chat = client.post("/api/v1/chat/ask", cookies=cookies, json={
+        "conversation_id": "worker-test-conversation", "agent_id": agent_id, "question": "Internal test",
+    })
+    assert internal_chat.status_code == 200
+    after_internal = client.get(f"/api/v1/crm/{agent_id}", cookies=cookies)
+    assert after_internal.status_code == 200
+
+    public_chat = client.post("/api/v1/public/chat", json={
+        "tenant": "acme", "worker_id": agent_id, "question": "Public chat",
+    })
+    assert public_chat.status_code == 200
+    forged_marker = client.post("/api/v1/public/chat", json={
+        "tenant": "acme", "worker_id": agent_id, "user_email": "public", "question": "Public marker",
+    })
+    assert forged_marker.status_code == 200
+    after_public = client.get(f"/api/v1/crm/{agent_id}", cookies=cookies)
+    assert after_public.status_code == 200
+
+    assert after_internal.json()["total"] == 0
+    assert after_public.json()["total"] == 2
+
+
 def test_crm_contact_detail_404_for_missing_contact(client):
     cookies = auth_cookies(tenant="acme")
     resp = client.get("/api/v1/crm/contacts/missing", cookies=cookies)

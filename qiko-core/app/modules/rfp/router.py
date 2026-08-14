@@ -479,7 +479,7 @@ async def tender_chat(pack_id: str, body: AskBody, request: Request,
     # USE_DB_STORES this is Postgres-backed rather than in-memory.
     cid = _tender_conversation_id(pack_id)
     await chat.store.append_exchange_for_enabled_agent(
-        tenant, cid, user_id="public", agent_id=pack.agent_id,
+        tenant, cid, user_id="public", agent_id=pack.agent_id, crm_eligible=False,
         user_text=body.question, assistant_text=response.text, recheck_worker=recheck)
     await recheck()
     return {"question": body.question, "answer": response.text, "sources": source_labels(passages)}

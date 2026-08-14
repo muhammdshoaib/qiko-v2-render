@@ -150,6 +150,8 @@ class CrmService:
         yet -- so the pipeline always reflects real chat activity without a separate ingestion
         step. Never overwrites a contact a human has already edited."""
         for convo in await self.chat.list_for_agent(tenant, agent_id):
+            if not convo.crm_eligible:
+                continue
             existing = await self.contacts.get_by_conversation(tenant, agent_id, convo.id)
             if existing:
                 continue

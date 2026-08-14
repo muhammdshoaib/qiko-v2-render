@@ -887,11 +887,15 @@ class SqlChatStore:
     """Postgres-backed chat history (Conversation/Message tables), tenant-scoped."""
     sessionmaker: async_sessionmaker[AsyncSession]
 
-    async def ensure(self, tenant: str, conversation_id: str, *, user_id: str = "", agent_id: str = "") -> None:
+    async def ensure(
+        self, tenant: str, conversation_id: str, *, user_id: str = "", agent_id: str = "",
+        crm_eligible: bool = False,
+    ) -> None:
         async with self.sessionmaker() as s, s.begin():
             if await s.get(ConversationRow, conversation_id) is None:
-                s.add(ConversationRow(id=conversation_id, tenant_id=tenant,
-                                      user_id=user_id or "public", agent_id=agent_id or "public"))
+                s.add(ConversationRow(
+                    id=conversation_id, tenant_id=tenant, user_id=user_id or "public",
+                    agent_id=agent_id or "public", crm_eligible=crm_eligible))
 
     async def _lock_enabled_agent(self, session: AsyncSession, tenant: str, agent_id: str) -> None:
         agent = (await session.execute(
@@ -904,7 +908,7 @@ class SqlChatStore:
 
     async def _ensure_conversation_scope(
         self, session: AsyncSession, tenant: str, conversation_id: str, *,
-        user_id: str, agent_id: str,
+        user_id: str, agent_id: str, crm_eligible: bool,
     ) -> None:
         row = (await session.execute(
             select(ConversationRow).where(
@@ -913,19 +917,20 @@ class SqlChatStore:
         )).scalar_one_or_none()
         if row is None:
             session.add(ConversationRow(
-                id=conversation_id, tenant_id=tenant,
-                user_id=user_id or "public", agent_id=agent_id))
+                id=conversation_id, tenant_id=tenant, user_id=user_id or "public",
+                agent_id=agent_id, crm_eligible=crm_eligible))
         elif row.tenant_id != tenant or row.agent_id != agent_id:
             raise ConversationScopeError
 
     async def ensure_for_enabled_agent(
         self, tenant: str, conversation_id: str, *, user_id: str, agent_id: str,
-        recheck_worker,
+        crm_eligible: bool = False, recheck_worker,
     ) -> None:
         async with self.sessionmaker() as session, session.begin():
             await self._lock_enabled_agent(session, tenant, agent_id)
             await self._ensure_conversation_scope(
-                session, tenant, conversation_id, user_id=user_id, agent_id=agent_id)
+                session, tenant, conversation_id, user_id=user_id, agent_id=agent_id,
+                crm_eligible=crm_eligible)
 
     async def append(self, tenant: str, conversation_id: str, role: str, text: str) -> Message:
         await self.ensure(tenant, conversation_id)
@@ -935,12 +940,13 @@ class SqlChatStore:
 
     async def append_exchange_for_enabled_agent(
         self, tenant: str, conversation_id: str, *, user_id: str, agent_id: str,
-        user_text: str, assistant_text: str, recheck_worker,
+        crm_eligible: bool = False, user_text: str, assistant_text: str, recheck_worker,
     ) -> Message:
         async with self.sessionmaker() as session, session.begin():
             await self._lock_enabled_agent(session, tenant, agent_id)
             await self._ensure_conversation_scope(
-                session, tenant, conversation_id, user_id=user_id, agent_id=agent_id)
+                session, tenant, conversation_id, user_id=user_id, agent_id=agent_id,
+                crm_eligible=crm_eligible)
             session.add_all([
                 MessageRow(
                     conversation_id=conversation_id, tenant_id=tenant,
@@ -975,8 +981,10 @@ class SqlChatStore:
                 select(ConversationRow).where(ConversationRow.tenant_id == tenant,
                                               ConversationRow.agent_id == agent_id)
                 .order_by(ConversationRow.created_at))).scalars().all()
-            return [ConversationSummary(id=r.id, user_id=r.user_id, agent_id=r.agent_id, created_at=r.created_at)
-                   for r in rows]
+            return [ConversationSummary(
+                id=r.id, user_id=r.user_id, agent_id=r.agent_id,
+                crm_eligible=r.crm_eligible, created_at=r.created_at)
+                for r in rows]
 
 
 @dataclass

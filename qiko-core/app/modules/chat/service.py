@@ -29,19 +29,24 @@ class ConversationSummary:
     id: str
     user_id: str
     agent_id: str
+    crm_eligible: bool = False
     created_at: object = None
 
 
 class ChatStore(Protocol):
-    async def ensure(self, tenant: str, conversation_id: str, *, user_id: str = "", agent_id: str = "") -> None: ...
+    async def ensure(
+        self, tenant: str, conversation_id: str, *, user_id: str = "", agent_id: str = "",
+        crm_eligible: bool = False,
+    ) -> None: ...
     async def ensure_for_enabled_agent(
         self, tenant: str, conversation_id: str, *, user_id: str, agent_id: str,
-        recheck_worker: WorkerRecheck,
+        crm_eligible: bool = False, recheck_worker: WorkerRecheck,
     ) -> None: ...
     async def append(self, tenant: str, conversation_id: str, role: str, text: str) -> Message: ...
     async def append_exchange_for_enabled_agent(
         self, tenant: str, conversation_id: str, *, user_id: str, agent_id: str,
-        user_text: str, assistant_text: str, recheck_worker: WorkerRecheck,
+        crm_eligible: bool = False, user_text: str, assistant_text: str,
+        recheck_worker: WorkerRecheck,
     ) -> Message: ...
     async def history(self, tenant: str, conversation_id: str, *, limit: int = HISTORY_WINDOW) -> list[Message]: ...
     async def clear(self, tenant: str, conversation_id: str) -> int: ...
@@ -53,15 +58,21 @@ class InMemoryChatStore:
     _history: dict[tuple[str, str], list[Message]] = field(default_factory=dict)
     _conversations: dict[str, ConversationSummary] = field(default_factory=dict)
 
-    async def ensure(self, tenant: str, conversation_id: str, *, user_id: str = "", agent_id: str = "") -> None:
+    async def ensure(
+        self, tenant: str, conversation_id: str, *, user_id: str = "", agent_id: str = "",
+        crm_eligible: bool = False,
+    ) -> None:
         self._history.setdefault((tenant, conversation_id), [])
-        self._conversations.setdefault(f"{tenant}:{conversation_id}",
-                                       ConversationSummary(id=conversation_id, user_id=user_id or "public",
-                                                          agent_id=agent_id or "public"))
+        self._conversations.setdefault(
+            f"{tenant}:{conversation_id}",
+            ConversationSummary(
+                id=conversation_id, user_id=user_id or "public",
+                agent_id=agent_id or "public", crm_eligible=crm_eligible),
+        )
 
     async def ensure_for_enabled_agent(
         self, tenant: str, conversation_id: str, *, user_id: str, agent_id: str,
-        recheck_worker: WorkerRecheck,
+        crm_eligible: bool = False, recheck_worker: WorkerRecheck,
     ) -> None:
         await recheck_worker()
         key = f"{tenant}:{conversation_id}"
@@ -71,7 +82,8 @@ class InMemoryChatStore:
         if current is None:
             self._history.setdefault((tenant, conversation_id), [])
             self._conversations[key] = ConversationSummary(
-                id=conversation_id, user_id=user_id or "public", agent_id=agent_id)
+                id=conversation_id, user_id=user_id or "public",
+                agent_id=agent_id, crm_eligible=crm_eligible)
 
     async def append(self, tenant: str, conversation_id: str, role: str, text: str) -> Message:
         msg = Message(role=role, text=text)
@@ -80,11 +92,12 @@ class InMemoryChatStore:
 
     async def append_exchange_for_enabled_agent(
         self, tenant: str, conversation_id: str, *, user_id: str, agent_id: str,
-        user_text: str, assistant_text: str, recheck_worker: WorkerRecheck,
+        crm_eligible: bool = False, user_text: str, assistant_text: str,
+        recheck_worker: WorkerRecheck,
     ) -> Message:
         await self.ensure_for_enabled_agent(
             tenant, conversation_id, user_id=user_id, agent_id=agent_id,
-            recheck_worker=recheck_worker)
+            crm_eligible=crm_eligible, recheck_worker=recheck_worker)
         await recheck_worker()
         messages = self._history.setdefault((tenant, conversation_id), [])
         messages.extend([
@@ -119,10 +132,11 @@ class ChatService:
         """Deterministic private conversation id for a (tenant, user, agent) triple."""
         cid = hashlib.sha1(f"{tenant}:{user_id}:{agent_id}".encode()).hexdigest()[:16]
         if recheck_worker is None:
-            await self.store.ensure(tenant, cid, user_id=user_id, agent_id=agent_id)
+            await self.store.ensure(
+                tenant, cid, user_id=user_id, agent_id=agent_id, crm_eligible=True)
         else:
             await self.store.ensure_for_enabled_agent(
-                tenant, cid, user_id=user_id, agent_id=agent_id,
+                tenant, cid, user_id=user_id, agent_id=agent_id, crm_eligible=True,
                 recheck_worker=recheck_worker)
         return cid
 
@@ -149,9 +163,8 @@ class ChatService:
         that distinction matters) is used to explicitly create the conversation up front if it
         doesn't exist yet, so a caller that never calls /chat/conversations first (e.g. the
         dashboard's own test-chat, which mints its own client-side conversation id) still gets
-        it attributed to the right agent -- otherwise it silently defaults to a generic "public"
-        agent and nothing that looks this worker's conversations up by id (the CRM pipeline)
-        would ever find it."""
+        scoped to the right agent. A conversation created here is not CRM-eligible. An existing
+        public or explicitly created conversation keeps its original eligibility."""
         tenant = worker.config.tenant
         result = await worker.answer(
             conversation_id, question, topic=topic,
@@ -160,9 +173,11 @@ class ChatService:
         if agent_id and recheck_worker is not None:
             return await self.store.append_exchange_for_enabled_agent(
                 tenant, conversation_id, user_id="public", agent_id=agent_id,
-                user_text=question, assistant_text=result.answer,
+                crm_eligible=False, user_text=question, assistant_text=result.answer,
                 recheck_worker=recheck_worker)
         if agent_id:
-            await self.store.ensure(tenant, conversation_id, agent_id=agent_id)
+            await self.store.ensure(
+                tenant, conversation_id, user_id="public", agent_id=agent_id,
+                crm_eligible=False)
         await self.post(tenant, conversation_id, "user", question)
         return await self.post(tenant, conversation_id, "assistant", result.answer)

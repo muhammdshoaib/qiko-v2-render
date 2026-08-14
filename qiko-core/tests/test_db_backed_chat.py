@@ -45,7 +45,7 @@ async def test_guarded_exchange_is_atomic_and_conversation_is_agent_scoped(tmp_p
         return None
 
     await store.append_exchange_for_enabled_agent(
-        "acme", "shared", user_id="u1", agent_id="a1",
+        "acme", "shared", user_id="u1", agent_id="a1", crm_eligible=True,
         user_text="question", assistant_text="answer", recheck_worker=available)
     history = await store.history("acme", "shared")
     assert [(message.role, message.text) for message in history] == [
@@ -55,4 +55,11 @@ async def test_guarded_exchange_is_atomic_and_conversation_is_agent_scoped(tmp_p
         await store.ensure_for_enabled_agent(
             "acme", "shared", user_id="u1", agent_id="a2",
             recheck_worker=available)
+
+    await store.append_exchange_for_enabled_agent(
+        "acme", "internal", user_id="public", agent_id="a1", crm_eligible=False,
+        user_text="test", assistant_text="answer", recheck_worker=available)
+    conversations = {conversation.id: conversation for conversation in await store.list_for_agent("acme", "a1")}
+    assert conversations["shared"].crm_eligible is True
+    assert conversations["internal"].crm_eligible is False
     await engine.dispose()
