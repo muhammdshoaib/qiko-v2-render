@@ -93,7 +93,12 @@ async def login(payload: LoginRequest, response: Response, request: Request,
                 metadata={"reason": "missing" if not provided else "invalid"}), request=request)
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or missing 2FA code")
     sid = secrets.token_urlsafe(16)
-    await store.set_sid(user.id, sid)
+    if not await store.set_sid_if_password_hash(user.id, user.password_hash, sid):
+        await audit.record(request.app.state.audit, audit.AuditEvent(
+            action=audit_actions.LOGIN_FAILED, target_id=email, target_label=email,
+            tenant_id=user.tenant, actor_type=audit.ANONYMOUS, outcome=audit.FAILURE,
+            metadata={"reason": "credentials_changed"}), request=request)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid credentials")
     _issue(response, user, sid, mfa=user.twofa_enabled)
     await audit.record(request.app.state.audit, audit.AuditEvent(
         action=audit_actions.LOGIN_SUCCEEDED, target_id=user.id, target_label=email,
@@ -116,10 +121,12 @@ async def refresh(request: Request, response: Response, store: UserStore = Depen
     except tokens.TokenError as e:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(e)) from e
     user = await store.get_by_id(claims["sub"])
-    if not user or user.current_sid != claims.get("sid"):
+    presented_sid = str(claims.get("sid") or "")
+    if not user or user.current_sid != presented_sid:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session revoked")
     sid = secrets.token_urlsafe(16)  # rotate
-    await store.set_sid(user.id, sid)
+    if not await store.rotate_sid(user.id, presented_sid, sid):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Session revoked")
     _issue(response, user, sid, mfa=bool(claims.get("mfa")))
     return {"user": _public_user(user)}
 

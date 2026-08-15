@@ -180,6 +180,20 @@ class SqlUserStore:
             if row:
                 row.current_sid = sid
 
+    async def set_sid_if_password_hash(self, user_id: str, expected_password_hash: str, sid: str) -> bool:
+        async with self.sessionmaker() as session, session.begin():
+            result = await session.execute(update(UserRow).where(
+                UserRow.id == user_id, UserRow.password_hash == expected_password_hash
+            ).values(current_sid=sid))
+            return result.rowcount == 1
+
+    async def rotate_sid(self, user_id: str, expected_sid: str, new_sid: str) -> bool:
+        async with self.sessionmaker() as session, session.begin():
+            result = await session.execute(update(UserRow).where(
+                UserRow.id == user_id, UserRow.current_sid == expected_sid
+            ).values(current_sid=new_sid))
+            return result.rowcount == 1
+
     async def enable_twofa(self, user_id: str, secret: str,
                            backup_code_hashes: dict[str, str] | None = None) -> None:
         async with self.sessionmaker() as s, s.begin():
@@ -211,6 +225,13 @@ class SqlUserStore:
             row = await s.get(UserRow, user_id)
             if row:
                 row.password_hash = password_hash
+
+    async def set_password_and_revoke_sessions(self, user_id: str, password_hash: str) -> bool:
+        async with self.sessionmaker() as session, session.begin():
+            result = await session.execute(update(UserRow).where(
+                UserRow.id == user_id
+            ).values(password_hash=password_hash, current_sid=None))
+            return result.rowcount == 1
 
     async def set_name(self, user_id: str, name: str | None) -> None:
         async with self.sessionmaker() as s, s.begin():

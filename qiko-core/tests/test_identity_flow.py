@@ -60,6 +60,19 @@ def test_login_wrong_password(client):
     assert _login(client, password="nope").status_code == 401
 
 
+def test_login_does_not_issue_session_if_password_changes_before_sid_write(client, store, monkeypatch):
+    async def reset_won(user_id: str, expected_password_hash: str, sid: str) -> bool:
+        user = store._by_id[user_id]
+        user.password_hash = hash_password("changed-by-reset")
+        user.current_sid = None
+        return False
+
+    monkeypatch.setattr(store, "set_sid_if_password_hash", reset_won, raising=False)
+    response = _login(client)
+    assert response.status_code == 401
+    assert "qiko_access" not in client.cookies
+
+
 def test_me_requires_auth(client):
     assert client.get("/api/v1/auth/me").status_code == 401
 
@@ -71,6 +84,19 @@ def test_refresh_requires_csrf_then_rotates(client):
     # with CSRF header from the cookie -> 200
     token = client.cookies["qiko_csrf"]
     assert client.post("/api/v1/auth/refresh", headers={"x-csrf-token": token}).status_code == 200
+
+
+def test_refresh_does_not_issue_session_if_reset_revokes_sid_before_rotation(client, store, monkeypatch):
+    assert _login(client).status_code == 200
+
+    async def reset_won(user_id: str, expected_sid: str, new_sid: str) -> bool:
+        store._by_id[user_id].current_sid = None
+        return False
+
+    monkeypatch.setattr(store, "rotate_sid", reset_won, raising=False)
+    token = client.cookies["qiko_csrf"]
+    response = client.post("/api/v1/auth/refresh", headers={"x-csrf-token": token})
+    assert response.status_code == 401
 
 
 def test_logout_clears_session(client):

@@ -70,15 +70,10 @@ export async function forgotPasswordAvatar(email: string) {
 }
 
 export async function resetPasswordAvatar(body: { email: string; otp: string; password: string }) {
-  await req("/auth/reset-password", {
+  return req<{ reset: boolean }>("/auth/reset-password", {
     method: "POST",
     body: JSON.stringify({ email: body.email, otp: body.otp, new_password: body.password }),
   });
-  const r = await req<{ user: Record<string, unknown> }>("/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ email: body.email, password: body.password }),
-  });
-  return { data: { token: "cookie", user: r.user } };
 }
 
 export async function getSubscriptionPlans(): Promise<SubscriptionPlan[]> {

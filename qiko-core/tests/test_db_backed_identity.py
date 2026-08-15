@@ -44,8 +44,11 @@ async def test_sql_user_store_full_lifecycle(tmp_path):
     await store.add(User(id="u1", email="Owner@invalid", password_hash=hash_password("pw"),
                          tenant="acme", role=Role.owner))
     assert (await store.get_by_email("owner@invalid")).id == "u1"
-    await store.set_sid("u1", "sid-1")
-    assert (await store.get_by_id("u1")).current_sid == "sid-1"
+    original_hash = (await store.get_by_id("u1")).password_hash
+    assert await store.set_sid_if_password_hash("u1", original_hash, "sid-1") is True
+    assert await store.set_sid_if_password_hash("u1", "wrong-hash", "sid-attacker") is False
+    assert await store.rotate_sid("u1", "sid-1", "sid-2") is True
+    assert await store.rotate_sid("u1", "sid-1", "sid-stale") is False
     await store.enable_twofa("u1", "SECRET123")
     u = await store.get_by_id("u1")
     assert u.twofa_enabled is True and u.totp_secret == "SECRET123"
@@ -53,8 +56,10 @@ async def test_sql_user_store_full_lifecycle(tmp_path):
     async with store.sessionmaker() as session:
         row = await session.get(UserRow, "u1")
     assert row.totp_secret.startswith("enc:") and "SECRET123" not in row.totp_secret
-    await store.set_password("u1", "new-hash")
-    assert (await store.get_by_id("u1")).password_hash == "new-hash"
+    assert await store.set_password_and_revoke_sessions("u1", "new-hash") is True
+    updated = await store.get_by_id("u1")
+    assert updated.password_hash == "new-hash" and updated.current_sid is None
+    assert await store.set_sid_if_password_hash("u1", original_hash, "sid-late") is False
 
 
 async def test_shared_claims_rejects_revoked_db_session(tmp_path, monkeypatch):

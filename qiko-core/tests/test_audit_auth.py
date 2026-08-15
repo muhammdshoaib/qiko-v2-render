@@ -104,11 +104,21 @@ def test_a_password_reset_is_recorded_including_against_an_unknown_address(clien
     """The endpoint deliberately returns success either way, so only this row distinguishes a typo
     from reconnaissance."""
     _user()
+    login = client.post("/api/v1/auth/login", json={
+        "email": "pilot@acme.invalid", "password": "correct-horse-battery"})
+    assert login.status_code == 200
+    user = asyncio.run(get_user_store().get_by_email("pilot@acme.invalid"))
+    assert user is not None
+    assert user.current_sid is not None
+
     otp = client.app.state.otp_store
     code = asyncio.run(otp.issue("pilot@acme.invalid"))
     response = client.post("/api/v1/auth/reset-password", json={
         "email": "pilot@acme.invalid", "otp": code, "new_password": "a-brand-new-password"})
     assert response.status_code == 200
+    user = asyncio.run(get_user_store().get_by_email("pilot@acme.invalid"))
+    assert user is not None
+    assert user.current_sid is None
 
     row = _events(client, registry.PASSWORD_CHANGED)[0]
     assert row["changes"]["method"]["to"] == "reset_token"

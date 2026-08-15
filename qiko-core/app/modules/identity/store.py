@@ -2,6 +2,7 @@
 data-migration work (SCRUM-7). The rest of the module depends only on the UserStore protocol."""
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from typing import Protocol
 
@@ -53,10 +54,13 @@ class UserStore(Protocol):
     # ENCRYPTION_KEY rotation) fail the whole endpoint for everyone.
     async def list_all(self) -> list[UserDirectoryEntry]: ...
     async def set_sid(self, user_id: str, sid: str | None) -> None: ...
+    async def set_sid_if_password_hash(self, user_id: str, expected_password_hash: str, sid: str) -> bool: ...
+    async def rotate_sid(self, user_id: str, expected_sid: str, new_sid: str) -> bool: ...
     async def enable_twofa(self, user_id: str, secret: str,
                            backup_code_hashes: dict[str, str] | None = None) -> None: ...
     async def consume_backup_code(self, user_id: str, code: str) -> bool: ...
     async def set_password(self, user_id: str, password_hash: str) -> None: ...
+    async def set_password_and_revoke_sessions(self, user_id: str, password_hash: str) -> bool: ...
     async def set_name(self, user_id: str, name: str | None) -> None: ...
     async def set_role(self, user_id: str, role: Role) -> None: ...
     async def delete(self, user_id: str) -> None: ...
@@ -66,6 +70,7 @@ class UserStore(Protocol):
 class InMemoryUserStore:
     _by_id: dict[str, User] = field(default_factory=dict)
     _backup_codes: dict[str, dict[str, str]] = field(default_factory=dict)
+    _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def seed(self, user: User) -> User:
         """Synchronous bootstrap insert (dev seeding / tests). Runtime writes use async add()."""
@@ -94,6 +99,22 @@ class InMemoryUserStore:
         if user:
             user.current_sid = sid
 
+    async def set_sid_if_password_hash(self, user_id: str, expected_password_hash: str, sid: str) -> bool:
+        async with self._lock:
+            user = self._by_id.get(user_id)
+            if user is None or user.password_hash != expected_password_hash:
+                return False
+            user.current_sid = sid
+            return True
+
+    async def rotate_sid(self, user_id: str, expected_sid: str, new_sid: str) -> bool:
+        async with self._lock:
+            user = self._by_id.get(user_id)
+            if user is None or user.current_sid != expected_sid:
+                return False
+            user.current_sid = new_sid
+            return True
+
     async def enable_twofa(self, user_id: str, secret: str,
                            backup_code_hashes: dict[str, str] | None = None) -> None:
         user = self._by_id.get(user_id)
@@ -114,6 +135,15 @@ class InMemoryUserStore:
         user = self._by_id.get(user_id)
         if user:
             user.password_hash = password_hash
+
+    async def set_password_and_revoke_sessions(self, user_id: str, password_hash: str) -> bool:
+        async with self._lock:
+            user = self._by_id.get(user_id)
+            if user is None:
+                return False
+            user.password_hash = password_hash
+            user.current_sid = None
+            return True
 
     async def set_name(self, user_id: str, name: str | None) -> None:
         user = self._by_id.get(user_id)

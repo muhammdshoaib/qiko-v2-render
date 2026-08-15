@@ -328,12 +328,12 @@ async def reset_password(body: ResetBody, request: Request, otp=Depends(get_otp_
             metadata={"reason": "invalid_or_expired_code"}), request=request)
         raise HTTPException(status_code=400, detail="invalid or expired code")
     user = await store.get_by_email(body.email)
-    if user:
-        await store.set_password(user.id, hash_password(body.new_password))
+    password_changed = bool(user and await store.set_password_and_revoke_sessions(
+        user.id, hash_password(body.new_password)))
     await audit.record(request.app.state.audit, audit.AuditEvent(
         action=audit_actions.PASSWORD_CHANGED, target_id=user.id if user else body.email,
         target_label=body.email, tenant_id=user.tenant if user else None,
-        actor_type=audit.ANONYMOUS, outcome=audit.SUCCESS if user else audit.FAILURE,
+        actor_type=audit.ANONYMOUS, outcome=audit.SUCCESS if password_changed else audit.FAILURE,
         changes=audit.diff(audit_actions.PASSWORD_CHANGED, {}, {"method": "reset_token"}),
         # Recorded because the endpoint deliberately does not tell the caller: a reset against an
         # address with no account is either a typo or reconnaissance, and only this row distinguishes

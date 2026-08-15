@@ -10,9 +10,6 @@ import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp
 import { Loader2, Eye, EyeOff, ArrowLeft, AlertCircle, Check } from "lucide-react";
 import { toast } from "sonner";
 import { resetPasswordAvatar } from "@/lib/avatarApi";
-import { useAuth } from "@/_core/hooks/useAuth";
-import { useAppDispatch } from "@/store/hooks";
-import { setAuth, type UserInfo } from "@/store/slices/authSlice";
 import { arePasswordRequirementsMet, getPasswordRequirements } from "@/lib/passwordRequirements";
 import {
   clearPasswordResetEmail,
@@ -22,9 +19,7 @@ import {
 
 export default function ResetPassword() {
   const router = useRouter();
-  const dispatch = useAppDispatch();
   const [, pathParams] = useRoute("/reset-password/:otp");
-  const { isAuthenticated, loading } = useAuth();
   const pathOtp = pathParams?.otp ?? "";
   const queryParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const queryOtp = queryParams?.get("otp") ?? queryParams?.get("token") ?? "";
@@ -56,7 +51,7 @@ export default function ResetPassword() {
     setEmailResolved(true);
   }, [queryEmail, router]);
 
-  if (loading || !emailResolved || !email) {
+  if (!emailResolved || !email) {
     return (
       <div className="min-h-screen bg-[#050810] flex items-center justify-center">
         <div className="text-slate-400">Loading...</div>
@@ -88,37 +83,15 @@ export default function ResetPassword() {
     setIsLoading(true);
 
     try {
-      const result = await resetPasswordAvatar({
+      await resetPasswordAvatar({
         email,
         otp,
         password,
       });
-
-      const token = result.data?.token;
-      const user = result.data?.user;
-      if (token) {
-        const userInfo: UserInfo | null = user
-          ? ({
-              ...user,
-              id: user.id != null ? String(user.id) : undefined,
-              name: user.user_name,
-            } as UserInfo)
-          : null;
-
-        // If user is already logged in, keep them logged in with the new token.
-        // `setAuth` persists to localStorage (`qiko_session_token` + `qiko_user_info`).
-        if (isAuthenticated) {
-          dispatch(setAuth({ token, userInfo }));
-        }
-      }
       const storage = getPasswordResetSessionStorage(window);
       clearPasswordResetEmail(storage);
       setSuccess(true);
-      toast.success(
-        isAuthenticated
-          ? "Password reset successfully."
-          : "Password reset successfully. You can now sign in with your new password.",
-      );
+      toast.success("Password reset successfully. You can now sign in with your new password.");
     } catch (error: any) {
       console.error("Reset password error:", error);
       const errorMsg = error.message || "Failed to reset password. Please try again.";
@@ -161,22 +134,16 @@ export default function ResetPassword() {
           <CardContent>
             {success ? (
               <div className="space-y-4">
-                {isAuthenticated ? (<div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
-                    <p className="text-green-400 text-sm text-center">
-                      Your password has been reset.
-                    </p>
-                  </div>): (
-                  <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
-                    <p className="text-green-400 text-sm text-center">
-                      Your password has been reset. You can now sign in with your new password.
-                    </p>
-                  </div>
-                )}
-                { !isAuthenticated && <Link href="/login">
+                <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
+                  <p className="text-green-400 text-sm text-center">
+                    Your password has been reset. You can now sign in with your new password.
+                  </p>
+                </div>
+                <Link href="/login">
                   <Button className="w-full bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white border-0">
                     Sign in
                   </Button>
-                </Link>}
+                </Link>
               </div>
             ) : (
               <form onSubmit={handleSubmit} className="space-y-4 w-full">
@@ -291,7 +258,7 @@ export default function ResetPassword() {
               </form>
             )}
 
-            {!success && !isAuthenticated && (
+            {!success && (
               <div className="mt-6 text-center">
                 <p className="text-slate-400 text-sm">
                   Remember your password?{" "}
