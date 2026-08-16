@@ -214,8 +214,10 @@ async def slack_send(body: SlackSend, request: Request,
         worker_id = links.resolve(tenant, body.team_id, body.slack_user_id)
         if worker_id is None:
             raise HTTPException(status_code=404, detail="Slack worker link not found")
-        # Synchronous store (app/db/sync_stores.py) called from an async handler.
-        installation = await asyncio.to_thread(oauth.store.fetch, body.team_id, None, tenant)
+        # Synchronous store (app/db/sync_stores.py) called from an async handler. `tenant` is
+        # passed BY KEYWORD: fetch's second positional parameter is enterprise_id, so a positional
+        # call here would silently look up the wrong installation.
+        installation = await asyncio.to_thread(oauth.store.fetch, body.team_id, tenant=tenant)
         if installation is None or installation.worker_id != worker_id:
             raise HTTPException(status_code=404, detail="Slack installation not found")
         token, channel = installation.bot_token, body.channel

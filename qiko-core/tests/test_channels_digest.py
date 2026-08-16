@@ -22,7 +22,7 @@ from app.modules.channels.digest import (
 )
 from app.modules.channels.digest_scheduler import DigestWorker
 from app.modules.channels.slack_oauth import SlackInstallation
-from app.modules.channels.slack_store import InMemorySlackChannelStore, SlackMessage
+from app.modules.channels.slack_store import InMemorySlackChannelStore, SlackMessage, slack_ts
 
 
 def _msg(text: str, ts: str, *, tenant: str = "t1", team: str = "T1", channel: str = "C1",
@@ -37,7 +37,9 @@ def _reply(text: str) -> Mock:
 
 
 def _ts(delta: timedelta) -> str:
-    return str((datetime.now(timezone.utc) + delta).timestamp())
+    # Slack's real fixed-width format, not str(float): the stores compare ts lexicographically,
+    # which only equals numeric order while the width is constant.
+    return slack_ts(datetime.now(timezone.utc) + delta)
 
 
 # --- prompt construction (LLM01) -------------------------------------------------------------

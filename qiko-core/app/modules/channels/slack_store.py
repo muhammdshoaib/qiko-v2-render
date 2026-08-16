@@ -8,12 +8,22 @@ whichever workspace's bot token was resolved first.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Protocol
 
 # The digest only ever needs the tail of a conversation. Capping the read bounds both the
 # prompt handed to the model and the memory held while building it (LLM10 / API4).
 DEFAULT_MESSAGE_LIMIT = 200
+
+
+def slack_ts(moment: datetime) -> str:
+    """Render a datetime in Slack's `ts` format: ten digits, a dot, six digits.
+
+    Fixed width is the point. It makes lexicographic order equal numeric order, so the SQL store
+    can range-scan and sort on the indexed `ts` column directly instead of casting it, and the two
+    store implementations select exactly the same messages.
+    """
+    return f"{moment.timestamp():017.6f}"
 
 
 @dataclass
@@ -56,10 +66,12 @@ class InMemorySlackChannelStore:
 
     async def list_recent(self, tenant: str, team_id: str, channel_id: str, since: datetime,
                           limit: int = DEFAULT_MESSAGE_LIMIT) -> list[SlackMessage]:
+        # Compared and sorted exactly as the SQL store does, so the implementation the tests drive
+        # and the one that ships cannot select different messages.
+        cutoff = slack_ts(since)
         matching = [m for m in self._messages
-                    if self._same_channel(m, tenant, team_id, channel_id)
-                    and self._ts_to_dt(m.ts) >= since]
-        matching.sort(key=lambda m: self._ts_to_dt(m.ts))
+                    if self._same_channel(m, tenant, team_id, channel_id) and m.ts >= cutoff]
+        matching.sort(key=lambda m: m.ts)
         # Newest `limit` messages, returned oldest-first so the transcript reads in order.
         return matching[-limit:]
 
@@ -73,10 +85,3 @@ class InMemorySlackChannelStore:
     def _same_channel(message: SlackMessage, tenant: str, team_id: str, channel_id: str) -> bool:
         return (message.tenant == tenant and message.team_id == team_id
                 and message.channel_id == channel_id)
-
-    @staticmethod
-    def _ts_to_dt(ts: str) -> datetime:
-        try:
-            return datetime.fromtimestamp(float(ts), tz=timezone.utc)
-        except ValueError:
-            return datetime.min.replace(tzinfo=timezone.utc)

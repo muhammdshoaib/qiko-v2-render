@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import Float, and_, cast, delete, func, or_, select, text, update
+from sqlalchemy import and_, delete, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.crypto import decrypt, encrypt
@@ -47,7 +47,11 @@ from app.db.models import PlatformAdminAudit as PlatformAdminAuditRow
 from app.db.models import PolicyRelease as PolicyReleaseRow
 from app.db.models import RfpPack as RfpPackRow
 from app.db.models import SlackChannelMessage as SlackChannelMessageRow
-from app.modules.channels.slack_store import DEFAULT_MESSAGE_LIMIT, SlackMessage
+from app.modules.channels.slack_store import (
+    DEFAULT_MESSAGE_LIMIT,
+    SlackMessage,
+    slack_ts as _slack_ts,
+)
 from app.db.models import SalesIntelActivityLog as SalesIntelActivityLogRow
 from app.db.models import SalesIntelIngestionSource as SalesIntelIngestionSourceRow
 from app.db.models import SalesIntelOpportunity as SalesIntelOpportunityRow
@@ -2716,15 +2720,20 @@ class SqlSlackChannelStore:
         in-memory store. The two disagreeing would mean the implementation under test and the
         implementation deployed select different messages, which is the sort of divergence that
         makes a green suite meaningless.
+
+        Compared as a STRING rather than cast to a float. Slack's ts is fixed width -- ten digits,
+        a dot, six digits -- so lexicographic order is numeric order, and it stays that way until
+        the epoch needs an eleventh digit (year 2286). The equivalent cast() would be correct too,
+        but a function on the column makes ix_slack_msg_team_ts unusable for the range and the
+        sort, which is the difference between an index scan and reading the table.
         """
         async with self.sessionmaker() as s:
             stmt = select(SlackChannelMessageRow).where(
                 SlackChannelMessageRow.tenant_id == tenant,
                 SlackChannelMessageRow.team_id == team_id,
                 SlackChannelMessageRow.channel_id == channel_id,
-                # ts is "seconds.microseconds"; compare numerically, not as a string.
-                cast(SlackChannelMessageRow.ts, Float) >= since.timestamp(),
-            ).order_by(cast(SlackChannelMessageRow.ts, Float).desc()).limit(limit)
+                SlackChannelMessageRow.ts >= _slack_ts(since),
+            ).order_by(SlackChannelMessageRow.ts.desc()).limit(limit)
             rows = (await s.execute(stmt)).scalars().all()
             return [self._to_domain(r) for r in reversed(rows)]
 

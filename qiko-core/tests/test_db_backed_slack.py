@@ -16,7 +16,7 @@ from app.db.base import Base
 from app.db.stores import SqlSlackChannelStore
 from app.db.sync_stores import SqlSlackInstallationStore
 from app.modules.channels.slack_oauth import SlackInstallation
-from app.modules.channels.slack_store import SlackMessage
+from app.modules.channels.slack_store import SlackMessage, slack_ts
 
 
 def _msg(*, tenant="t1", team="T1", channel="C1", text="hello", ts=None,
@@ -24,7 +24,7 @@ def _msg(*, tenant="t1", team="T1", channel="C1", text="hello", ts=None,
     return SlackMessage(
         tenant=tenant, team_id=team, channel_id=channel, channel_type="channel", thread_ts=None,
         user_id="U1", text=text,
-        ts=ts if ts is not None else str(datetime.now(timezone.utc).timestamp()),
+        ts=ts if ts is not None else slack_ts(datetime.now(timezone.utc)),
         enterprise_id=enterprise)
 
 
@@ -41,11 +41,28 @@ def _installs(path) -> SqlSlackInstallationStore:
     return SqlSlackInstallationStore(sessionmaker(engine, expire_on_commit=False))
 
 
+# --- the ts format both stores depend on ------------------------------------------------------
+
+def test_the_slack_ts_format_is_fixed_width_so_string_order_is_numeric_order():
+    """Both stores range-scan and sort `ts` as a STRING. That is only correct while the width is
+    constant, so this pins the property the rest of the file relies on. Note `str(float)` does NOT
+    have it: it renders 1767225600.07 for a value the DB must compare as 1767225600.070000."""
+    import random
+
+    assert slack_ts(datetime(2026, 1, 1, tzinfo=timezone.utc)) == "1767225600.000000"
+    assert len(slack_ts(datetime.now(timezone.utc))) == 17
+
+    moments = sorted(datetime.fromtimestamp(random.uniform(1.4e9, 1.8e9), tz=timezone.utc)
+                     for _ in range(500))
+    rendered = [slack_ts(m) for m in moments]
+    assert rendered == sorted(rendered), "lexicographic order must match chronological order"
+
+
 # --- the message buffer ----------------------------------------------------------------------
 
 async def test_a_round_trip_preserves_the_message(tmp_path):
     store = await _messages(tmp_path / "m.db")
-    await store.add(_msg(text="fix pricing", ts="1700000000.1"))
+    await store.add(_msg(text="fix pricing", ts="1700000000.100000"))
     [stored] = await store.list_recent("t1", "T1", "C1", datetime(2020, 1, 1, tzinfo=timezone.utc))
     assert (stored.tenant, stored.team_id, stored.channel_id) == ("t1", "T1", "C1")
     assert stored.text == "fix pricing"
@@ -54,7 +71,7 @@ async def test_a_round_trip_preserves_the_message(tmp_path):
 
 async def test_another_tenant_cannot_read_or_clear_the_channel(tmp_path):
     store = await _messages(tmp_path / "m.db")
-    await store.add(_msg(tenant="t1", ts="1700000000.1"))
+    await store.add(_msg(tenant="t1", ts="1700000000.100000"))
     since = datetime(2020, 1, 1, tzinfo=timezone.utc)
 
     assert await store.list_recent("t2", "T1", "C1", since) == []
@@ -65,8 +82,8 @@ async def test_another_tenant_cannot_read_or_clear_the_channel(tmp_path):
 async def test_a_second_workspace_sharing_a_channel_id_is_not_read_or_cleared(tmp_path):
     """A channel id is unique only WITHIN a workspace, so team_id has to be in every predicate."""
     store = await _messages(tmp_path / "m.db")
-    await store.add(_msg(team="T1", text="ours", ts="1700000000.1"))
-    await store.add(_msg(team="T2", text="theirs", ts="1700000000.2"))
+    await store.add(_msg(team="T1", text="ours", ts="1700000000.100000"))
+    await store.add(_msg(team="T2", text="theirs", ts="1700000000.200000"))
     since = datetime(2020, 1, 1, tzinfo=timezone.utc)
 
     ours = await store.list_recent("t1", "T1", "C1", since)
@@ -80,9 +97,9 @@ async def test_a_second_workspace_sharing_a_channel_id_is_not_read_or_cleared(tm
 async def test_the_window_and_the_limit_both_bound_the_read(tmp_path):
     store = await _messages(tmp_path / "m.db")
     now = datetime.now(timezone.utc)
-    await store.add(_msg(text="ancient", ts=str((now - timedelta(days=3)).timestamp())))
+    await store.add(_msg(text="ancient", ts=slack_ts(now - timedelta(days=3))))
     for i in range(10):
-        await store.add(_msg(text=f"recent-{i}", ts=str((now - timedelta(minutes=10 - i)).timestamp())))
+        await store.add(_msg(text=f"recent-{i}", ts=slack_ts(now - timedelta(minutes=10 - i))))
 
     windowed = await store.list_recent("t1", "T1", "C1", now - timedelta(hours=1))
     assert "ancient" not in [m.text for m in windowed]
