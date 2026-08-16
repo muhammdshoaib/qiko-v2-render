@@ -292,14 +292,26 @@ def create_app() -> FastAPI:
         key. For a `missing` error that `input` is the WHOLE enclosing object, not just the offending
         field -- so omitting one required field would return every other field, including plaintext
         passwords on /auth/login, /auth/signup, /auth/reset-password and the integration secrets on
-        the *-credentials endpoints. We keep loc/type/msg so clients still know what failed.
+        the *-credentials endpoints. We keep loc/type/msg and non-sensitive numeric length bounds so
+        clients still know what failed.
         """
-        return JSONResponse(status_code=422, content={"detail": [
-            {"loc": [str(part) for part in err.get("loc", ())],
-             "type": err.get("type", ""),
-             "msg": err.get("msg", "")}
-            for err in error.errors()
-        ]})
+        details = []
+        for err in error.errors():
+            detail = {
+                "loc": [str(part) for part in err.get("loc", ())],
+                "type": err.get("type", ""),
+                "msg": err.get("msg", ""),
+            }
+            context = err.get("ctx") or {}
+            safe_context = {
+                key: context[key]
+                for key in ("min_length", "max_length")
+                if isinstance(context.get(key), int)
+            }
+            if safe_context:
+                detail["ctx"] = safe_context
+            details.append(detail)
+        return JSONResponse(status_code=422, content={"detail": details})
 
     @app.exception_handler(WorkerUnavailable)
     async def worker_unavailable_handler(

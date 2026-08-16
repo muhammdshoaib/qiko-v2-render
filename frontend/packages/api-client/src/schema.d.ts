@@ -5118,6 +5118,27 @@ export interface components {
             /** Notes */
             notes?: string | null;
         };
+        /** OnboardingWorkerBody */
+        OnboardingWorkerBody: {
+            /** About */
+            about: string;
+            /** Expertise */
+            expertise: string;
+            /** Industry */
+            industry: string;
+            /** Knowledge */
+            knowledge: string;
+            /** Location */
+            location: string;
+            /** Main Goal */
+            main_goal: string;
+            /** Name */
+            name: string;
+            /** Title */
+            title: string;
+            /** Tone */
+            tone: string;
+        };
         /** OpportunityContactBody */
         OpportunityContactBody: {
             /** Email */
@@ -5571,6 +5592,7 @@ export interface components {
             invite_token?: string | null;
             /** Name */
             name?: string | null;
+            onboarding_worker?: components["schemas"]["OnboardingWorkerBody"] | null;
             /** Password */
             password: string;
             /**
@@ -5865,6 +5887,17 @@ export interface components {
              * @constant
              */
             terms_release_id: "terms-2026-07-24";
+        };
+        /** VerifySignupResponse */
+        VerifySignupResponse: {
+            /** Email */
+            email: string;
+            /** Team Id */
+            team_id: string | null;
+            /** User Id */
+            user_id: string;
+            /** Worker Id */
+            worker_id?: string | null;
         };
         /** WebsiteBody */
         WebsiteBody: {
@@ -9033,9 +9066,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["VerifySignupResponse"];
                 };
             };
             /** @description Validation Error */

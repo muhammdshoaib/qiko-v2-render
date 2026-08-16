@@ -3,15 +3,17 @@ from __future__ import annotations
 
 import logging
 import uuid
+from dataclasses import replace
 from typing import Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 
 from app.core.config import Settings, get_settings
-from app.core.deps import get_otp_store, get_pending_invites, get_teams
+from app.core.deps import get_agents, get_knowledge, get_otp_store, get_pending_invites, get_teams
+from app.modules.agents.service import Agent, build_worker_created_audit_row
 from app.modules.email.sender import EmailSender, get_email_sender
 from app.modules.email.templates import password_reset_code_email, welcome_email
 from app.modules.consent.models import (
@@ -23,8 +25,15 @@ from app.modules.consent.models import (
 from app.modules.consent.service import ConsentService
 from app.modules.identity.pending_signup import (
     SIGNUP_VERIFICATION_TTL_SECONDS,
+    PendingSignup,
     PendingSignupStore,
+    WorkerIndustry,
+    WorkerLongText,
+    WorkerName,
+    WorkerShortText,
+    WorkerTone,
     make_pending_signup,
+    parse_persisted_onboarding_worker,
 )
 from app.modules.identity.rbac import Role
 from app.modules.identity.router import get_store
@@ -39,6 +48,20 @@ router = APIRouter(prefix="/auth", tags=["identity"])
 logger = logging.getLogger(__name__)
 
 
+class OnboardingWorkerBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: WorkerName
+    title: WorkerShortText
+    location: WorkerShortText
+    about: WorkerLongText
+    tone: WorkerTone
+    industry: WorkerIndustry
+    expertise: WorkerLongText
+    main_goal: WorkerLongText
+    knowledge: WorkerLongText
+
+
 class SignupBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -51,10 +74,29 @@ class SignupBody(BaseModel):
     # created nameless even though users.name exists and Settings renders a display name.
     name: str | None = Field(default=None, max_length=255)
     invite_token: str | None = None
+    onboarding_worker: OnboardingWorkerBody | None = None
     accept_policies: Literal[True]
     terms_release_id: Literal["terms-2026-07-24"]
     privacy_release_id: Literal["privacy-2026-07-24"]
     cookies_release_id: Literal["cookies-2026-07-24"]
+
+
+def _canonical_onboarding_worker(worker: OnboardingWorkerBody) -> dict:
+    return {
+        "id": uuid.uuid4().hex[:12],
+        "name": worker.name,
+        "config": {
+            "full_name": worker.name,
+            "title": worker.title,
+            "location": worker.location,
+            "about": worker.about,
+            "tone": worker.tone,
+            "industry": worker.industry,
+            "expertise": worker.expertise,
+            "main_goal": worker.main_goal,
+        },
+        "knowledge": worker.knowledge,
+    }
 
 
 def get_pending_signups(request: Request) -> PendingSignupStore:
@@ -75,6 +117,8 @@ async def signup(
     settings: Settings = Depends(get_settings),
 ) -> dict:
     email = body.email.strip().lower()
+    if body.invite_token is not None and body.onboarding_worker is not None:
+        raise HTTPException(status_code=400, detail="invited signup cannot create an onboarding worker")
     if await store.get_by_email(email) is not None:
         raise HTTPException(status_code=409, detail="an account with that email already exists")
 
@@ -109,6 +153,11 @@ async def signup(
         privacy_release_id=body.privacy_release_id,
         cookies_release_id=body.cookies_release_id,
         name=(body.name or "").strip() or None,
+        onboarding_worker=(
+            _canonical_onboarding_worker(body.onboarding_worker)
+            if body.onboarding_worker is not None
+            else None
+        ),
         invite_version=invite_version,
     )
     created = await pending_signups.put(candidate)
@@ -165,17 +214,76 @@ class VerifySignupBody(BaseModel):
     cookies_release_id: Literal[COOKIES_RELEASE_ID]
 
 
-@router.post("/verify-email")
+class VerifySignupResponse(BaseModel):
+    user_id: str
+    email: str
+    team_id: str | None
+    worker_id: str | None = None
+
+
+def _verification_response(
+    candidate: PendingSignup,
+    email: str,
+    team_id: str | None,
+) -> VerifySignupResponse:
+    worker_id = (
+        candidate.onboarding_worker["id"]
+        if candidate.onboarding_worker is not None
+        else None
+    )
+    return VerifySignupResponse(
+        user_id=candidate.user_id,
+        email=email,
+        team_id=team_id,
+        worker_id=worker_id,
+    )
+
+
+async def _create_onboarding_worker(candidate: PendingSignup, agents, knowledge) -> None:
+    worker = parse_persisted_onboarding_worker(candidate.onboarding_worker)
+    if worker is None:
+        return
+    agent = Agent(
+        id=worker["id"],
+        tenant=candidate.tenant,
+        name=worker["name"],
+        atype="worker",
+        status="training",
+        config=dict(worker["config"]),
+        enabled=True,
+    )
+    await agents.store.add(agent, audit=build_worker_created_audit_row(
+        tenant=candidate.tenant,
+        worker_id=agent.id,
+        worker_type=agent.atype,
+        status=agent.status,
+        source="onboarding",
+    ))
+    await knowledge.ingest(
+        candidate.tenant,
+        worker["id"],
+        worker["knowledge"],
+        agent_id=worker["id"],
+    )
+
+
+@router.post(
+    "/verify-email",
+    response_model=VerifySignupResponse,
+    response_model_exclude_none=True,
+)
 async def verify_signup(
     body: VerifySignupBody,
     store: UserStore = Depends(get_store),
+    agents=Depends(get_agents),
+    knowledge=Depends(get_knowledge),
     teams=Depends(get_teams),
     pending_invites: PendingInviteStore = Depends(get_pending_invites),
     pending_signups: PendingSignupStore = Depends(get_pending_signups),
     consent: ConsentService = Depends(get_signup_consent),
     email_sender: EmailSender = Depends(get_email_sender),
     settings: Settings = Depends(get_settings),
-) -> dict:
+) -> VerifySignupResponse:
     email = body.email.strip().lower()
     finalize_signup = getattr(pending_signups, "finalize_signup", None)
     if finalize_signup is not None:
@@ -192,11 +300,18 @@ async def verify_signup(
                 await run_in_threadpool(email_sender.send, to=email, subject=subject, body=text_body, html=html_body)
             except Exception:
                 logger.warning("transactional_email_failed", extra={"flow": "signup_welcome"})
-        return {"user_id": candidate.user_id, "email": email, "team_id": candidate.completed_team_id}
+        return _verification_response(candidate, email, candidate.completed_team_id)
 
     candidate = await pending_signups.consume(email, body.code)
     if candidate is None:
         raise HTTPException(status_code=400, detail="invalid or expired verification code")
+    try:
+        candidate = replace(
+            candidate,
+            onboarding_worker=parse_persisted_onboarding_worker(candidate.onboarding_worker),
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail="invalid or expired verification code") from exc
     if await store.get_by_email(email) is not None:
         raise HTTPException(status_code=409, detail="an account with that email already exists")
 
@@ -230,6 +345,7 @@ async def verify_signup(
         role=candidate.role,
         name=candidate.name,
     ))
+    await _create_onboarding_worker(candidate, agents, knowledge)
     if candidate.invite_version is not None:
         await pending_invites.remove(candidate.tenant, email)
     await pending_signups.delete(email)
@@ -250,7 +366,7 @@ async def verify_signup(
         # Verification already succeeded and its code is consumed. Do not report a retryable failure
         # after creating the account, because a retry cannot reuse the one-time code.
         logger.warning("transactional_email_failed", extra={"flow": "welcome", "tenant": candidate.tenant})
-    return {"user_id": candidate.user_id, "email": email, "team_id": team_id}
+    return _verification_response(candidate, email, team_id)
 
 
 class ForgotBody(BaseModel):

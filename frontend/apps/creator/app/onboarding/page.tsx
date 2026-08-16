@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import { arePasswordRequirementsMet, getPasswordRequirements } from "@/lib/passwordRequirements";
+import { buildOnboardingWorkerDraft } from "@/lib/onboarding-worker";
 import {
   ArrowRight,
   ArrowLeft,
@@ -42,7 +43,7 @@ import {
   Search,
   Activity,
 } from "lucide-react";
-import { addAvatarKnowledge, createAvatar, createSignalWorker, signupAvatar, getSubscriptionPlans, type SubscriptionPlan } from "@/lib/avatarApi";
+import { addAvatarKnowledge, createAvatar, createSignalWorker, saveAvatarProfile, signupAvatar, getSubscriptionPlans, type SubscriptionPlan } from "@/lib/avatarApi";
 import { COOKIES_RELEASE_ID, PRIVACY_RELEASE_ID, TERMS_RELEASE_ID } from "@/lib/consent/consent-record";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useAppSelector } from "@/store/hooks";
@@ -426,44 +427,6 @@ export default function Onboarding() {
     }
   };
 
-  function buildKnowledgePayload(agentUniqueId: string) {
-    const w = wizardData;
-    const name = w.fullName || "My AI Assistant";
-    const title = w.professionalTitle || "";
-    const headline = w.headline || "";
-    const bio = [w.professionalBackground, w.credentials, w.achievements].filter(Boolean).join("\n\n") || headline;
-    return {
-      agent_unique_id: agentUniqueId,
-      user_name: name,
-      full_name: name,
-      headline: title,
-      knowledge: headline,
-      personality: w.tone || "friendly",
-      skills: w?.categories && w?.categories.length > 0 ? w?.categories : [title],
-      about_yourself: bio || `I am a ${title}. I help clients with ${headline}.`,
-      strength: headline,
-      short_bio: headline || `I specialize in ${title}.`,
-      location: w?.location || " ",
-      expertise: w?.categories?.length ? w?.categories.join(", ") : " ",
-      industry: w?.industry || " ",
-      main_goal: " ",
-      target_audience: " ",
-      what_makes_you_unique: " ",
-      more_info: JSON.stringify({
-          additionalGuidance: w?.additionalGuidance,
-          professionalBackground: w?.professionalBackground,
-          credentials: w?.credentials,
-          achievements: w?.achievements,
-          commonMistakes: w?.commonMistakes,
-          frameworks: w?.frameworks,
-          stakeholderBalance: w?.stakeholderBalance,
-          boundaries: w?.boundaries,
-          commonTasks: w?.commonTasks,
-          exampleQA: w?.exampleQA      
-      })
-    };
-  }
-
   async function runCreateAvatarAndKnowledge(plan: SubscriptionType, redirectToDashboardForCheckout = false) {
 
     setIsSubmitting(true);
@@ -493,13 +456,15 @@ export default function Onboarding() {
         return;
       }
 
-      const name = wizardData.fullName || wizardData.professionalTitle || "My AI Assistant";
+      const draft = buildOnboardingWorkerDraft(wizardData);
+      const name = draft.signup.name || draft.signup.title || "My AI Assistant";
       const avatarRes = await createAvatar({ agent_name: name });
       const agentId = avatarRes?.data?.agent_unique_id;
 
       if (!agentId) throw new Error("Avatar created but no agent id returned");
+      await saveAvatarProfile(agentId, draft.config);
       try {
-        await addAvatarKnowledge(buildKnowledgePayload(agentId));
+        await addAvatarKnowledge(agentId, draft.signup.knowledge);
         toast.success("Worker knowledge added successfully.");
       } catch (knowledgeError) {
         const msg = knowledgeError instanceof Error ? knowledgeError.message : "Knowledge save failed";
@@ -552,10 +517,12 @@ export default function Onboarding() {
     setIsSubmitting(true);
     try {
       setAccountFieldErrors({});
+      const draft = buildOnboardingWorkerDraft(wizardData);
       await signupAvatar({
         user_name: account.fullName,
         email: account.email,
         password: account.password,
+        onboarding_worker: wizardData.industry === "ai_visibility" ? undefined : draft.signup,
         terms_release_id: TERMS_RELEASE_ID,
         privacy_release_id: PRIVACY_RELEASE_ID,
         cookies_release_id: COOKIES_RELEASE_ID,

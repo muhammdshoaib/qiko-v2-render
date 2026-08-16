@@ -113,7 +113,7 @@ export async function syncAuthenticatedConsent(body: Record<string, unknown>): P
 export const recordAnonymousConsent = (body: Record<string, unknown>) =>
   request<{ recorded: boolean }>("/consent/anonymous", { method: "POST", body: JSON.stringify(body) });
 export const verifySignupEmail = (body: Record<string, unknown>) =>
-  request<{ user_id: string; email: string }>("/auth/verify-email", {
+  request<{ user_id: string; email: string; team_id: string | null; worker_id?: string }>("/auth/verify-email", {
     method: "POST", body: JSON.stringify(body),
   });
 

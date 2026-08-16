@@ -1,4 +1,6 @@
 "use client";
+import type { OnboardingWorkerConfig, OnboardingWorkerSignup } from "./onboarding-worker";
+
 // Compatibility shim: exposes the qiko-frontend avatarApi surface, backed by the V2 /api/v1 FastAPI.
 const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000/api/v1";
 
@@ -36,12 +38,21 @@ export async function createAvatar(body: { agent_name: string }) {
   return { data: { agent_unique_id: a.id, ...a } };
 }
 
-export async function addAvatarKnowledge(payload: Record<string, unknown>) {
-  const docId = String(payload.agent_unique_id || `onboard-${Date.now()}`);
-  const text = [payload.full_name, payload.headline, payload.about_yourself, payload.short_bio,
-                payload.expertise, payload.strength]
-    .filter(Boolean).join("\n\n") || JSON.stringify(payload);
-  return req("/knowledge/ingest", { method: "POST", body: JSON.stringify({ doc_id: docId, text }) });
+export async function saveAvatarProfile(agentId: string, config: OnboardingWorkerConfig) {
+  return req(`/agents/${agentId}/config`, {
+    method: "PUT",
+    body: JSON.stringify({ patch: config }),
+  });
+}
+
+export async function addAvatarKnowledge(agentId: string, text: string) {
+  const normalizedAgentId = agentId.trim();
+  if (!normalizedAgentId) throw new Error("Agent id is required to save worker knowledge");
+
+  return req("/knowledge/ingest", {
+    method: "POST",
+    body: JSON.stringify({ doc_id: normalizedAgentId, text, agent_id: normalizedAgentId }),
+  });
 }
 
 export async function loginAvatar(body: { email: string; password: string; totp?: string }) {
@@ -56,12 +67,31 @@ export async function loginAvatar(body: { email: string; password: string; totp?
   return { data: { token: "cookie", user: r.user } };
 }
 
-export async function signupAvatar(body: { user_name: string; email: string; password: string; invite_token?: string; terms_release_id: string; privacy_release_id: string; cookies_release_id: string }) {
+export async function signupAvatar(body: {
+  user_name: string;
+  email: string;
+  password: string;
+  invite_token?: string;
+  onboarding_worker?: OnboardingWorkerSignup;
+  terms_release_id: string;
+  privacy_release_id: string;
+  cookies_release_id: string;
+}) {
   return req("/auth/signup", {
     method: "POST",
     // `name` is forwarded: it used to be accepted here as user_name and silently dropped, so every
     // account was created with no display name.
-    body: JSON.stringify({ email: body.email, password: body.password, name: body.user_name, invite_token: body.invite_token, accept_policies: true, terms_release_id: body.terms_release_id, privacy_release_id: body.privacy_release_id, cookies_release_id: body.cookies_release_id }),
+    body: JSON.stringify({
+      email: body.email,
+      password: body.password,
+      name: body.user_name,
+      invite_token: body.invite_token,
+      onboarding_worker: body.onboarding_worker,
+      accept_policies: true,
+      terms_release_id: body.terms_release_id,
+      privacy_release_id: body.privacy_release_id,
+      cookies_release_id: body.cookies_release_id,
+    }),
   });
 }
 
