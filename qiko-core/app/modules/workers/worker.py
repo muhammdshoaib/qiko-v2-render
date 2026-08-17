@@ -107,10 +107,15 @@ class Worker:
             agent_id=agent_id, recheck_worker=recheck_worker)
 
 
-def build_worker(config: WorkerConfig, *, provider=None, embeddings=None) -> Worker:
+def build_worker(config: WorkerConfig, *, provider=None, embeddings=None,
+                 knowledge: KnowledgeService | None = None,
+                 cost_guard: object | None = None) -> Worker:
     """Assemble a Worker from config over the shared engines. Provider/embeddings are injectable
-    (defaults come from the ai gateway); the gate threshold and retrieval depth come from config."""
+    (defaults come from the ai gateway); the gate threshold and retrieval depth come from config.
+    A pre-built knowledge service can be passed in so the worker shares the same vector store as
+    the rest of the app (e.g. the intelligence chat endpoint)."""
     generator = Generator(provider=provider) if provider is not None else Generator()
-    knowledge = KnowledgeService(embeddings=embeddings) if embeddings is not None else KnowledgeService()
+    knowledge_service = knowledge if knowledge is not None else (
+        KnowledgeService(embeddings=embeddings) if embeddings is not None else KnowledgeService())
     agent = AgentCore(generator=generator, threshold=config.gate_threshold)
-    return Worker(config=config, knowledge=knowledge, agent=agent)
+    return Worker(config=config, knowledge=knowledge_service, agent=agent, cost_guard=cost_guard)
