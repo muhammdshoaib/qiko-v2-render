@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field, field_validator
@@ -26,6 +27,8 @@ from app.modules.channels.webhooks import verify_hmac_signature
 from app.modules.channels.whatsapp import verify_webhook
 from app.modules.identity.rbac import Role
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/channels", tags=["channels"])
 _editor = Depends(require_role(Role.editor))
 
@@ -35,6 +38,53 @@ async def _external_call(recheck, function, *args):
         return await asyncio.to_thread(function, *args)
     finally:
         await recheck()
+
+
+def _get_slack_events(request: Request):
+    return request.app.state.slack_events
+
+
+@router.post("/slack/webhook")
+async def slack_webhook(request: Request,
+                        x_slack_signature: str = Header(default=""),
+                        x_slack_request_timestamp: str = Header(default=""),
+                        handler=Depends(_get_slack_events)) -> dict:
+    """Slack Events API callback. Public, signature-verified, no tenant cookie.
+
+    Processes `url_verification`, `message` and `app_mention`. Messages from public channels are
+    stored in the per-tenant buffer for the digest worker.
+
+    Capture is behind SLACK_CAPTURE_ENABLED and returns 501 by default, the same shape as the
+    WhatsApp inbound webhook: persisting a customer's Slack conversations is not something a
+    deploy should start doing merely because a signing secret happens to be set.
+
+    The 403 body is deliberately generic. The reason (bad signature vs unconfigured secret) is a
+    fact about server configuration and belongs in the log, not in a reply to an unauthenticated
+    caller.
+    """
+    body = await request.body()
+    s = get_settings()
+    # Signature FIRST, kill switch second. The other order let an unauthenticated caller tell
+    # capture-enabled (403) from capture-disabled (501) and so probe the configuration.
+    if s.slack_signing_secret:
+        if not handler.verify(x_slack_request_timestamp, body, x_slack_signature):
+            logger.warning("slack webhook rejected: signature invalid, stale or missing",
+                           extra={"source": "channels.slack"})
+            raise HTTPException(status_code=403, detail="forbidden")
+    elif not s.debug:  # fail closed outside dev: refuse unverifiable webhooks
+        logger.error("slack webhook rejected: SLACK_SIGNING_SECRET is not configured",
+                     extra={"source": "channels.slack"})
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    if not s.slack_capture_enabled:
+        raise HTTPException(status_code=501, detail="Slack message capture is not enabled")
+
+    try:
+        payload = json.loads(body or b"{}")
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="invalid JSON") from exc
+
+    return await handler.handle(payload)
 
 
 @router.get("/whatsapp/webhook")
@@ -164,7 +214,10 @@ async def slack_send(body: SlackSend, request: Request,
         worker_id = links.resolve(tenant, body.team_id, body.slack_user_id)
         if worker_id is None:
             raise HTTPException(status_code=404, detail="Slack worker link not found")
-        installation = oauth.store.fetch(body.team_id, tenant=tenant)
+        # Synchronous store (app/db/sync_stores.py) called from an async handler. `tenant` is
+        # passed BY KEYWORD: fetch's second positional parameter is enterprise_id, so a positional
+        # call here would silently look up the wrong installation.
+        installation = await asyncio.to_thread(oauth.store.fetch, body.team_id, tenant=tenant)
         if installation is None or installation.worker_id != worker_id:
             raise HTTPException(status_code=404, detail="Slack installation not found")
         token, channel = installation.bot_token, body.channel

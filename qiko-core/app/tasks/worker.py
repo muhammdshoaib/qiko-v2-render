@@ -30,6 +30,13 @@ async def generate_tender_artifacts(ctx, **kwargs):  # pragma: no cover - invoke
     return await jobs.generate_tender_artifacts(sessionmaker=ctx["sessionmaker"], **kwargs)
 
 
+async def generate_slack_digest(ctx, **kwargs):  # pragma: no cover - invoked by the arq runtime
+    # The SYNC sessionmaker is what carries the Slack installation store (see sync_stores.py):
+    # without it the job cannot resolve a bot token and could never post the digest it paid for.
+    return await jobs.generate_slack_digest(
+        sessionmaker=ctx["sessionmaker"], sync_sessionmaker=ctx.get("sync_sessionmaker"), **kwargs)
+
+
 def _build_sales_runtime(sessionmaker):
     """Build a Postgres-backed OpportunityService for a worker sweep, mirroring the DB-store wiring
     in app.main's lifespan so scheduled scans read/write the same source of truth as the API."""
@@ -84,7 +91,8 @@ async def erase_audit_subject(ctx: dict, **kwargs) -> int:  # pragma: no cover -
         store=SqlAuditStore(ctx.get("audit_sessionmaker") or ctx["sessionmaker"]), **kwargs)
 
 
-FUNCTIONS = [ingest_document, send_email, generate_tender_artifacts, erase_audit_subject]
+FUNCTIONS = [ingest_document, send_email, generate_tender_artifacts, erase_audit_subject,
+             generate_slack_digest]
 
 # arq cron is calendar-based (no native "every N minutes" interval). Rather than encode the
 # configured cadence into a minute-set at startup, the scan cron ticks once a minute and the sweep
@@ -109,6 +117,14 @@ async def apply_audit_retention(ctx: dict) -> dict:
         SqlAuditStore(ctx.get("audit_sessionmaker") or ctx["sessionmaker"]))
 
 
+async def purge_slack_messages(ctx: dict) -> dict:  # pragma: no cover - arq cron runtime
+    from app.db.stores import SqlSlackChannelStore
+
+    return await jobs.purge_slack_messages(
+        SqlSlackChannelStore(ctx["sessionmaker"]),
+        retention_days=get_settings().slack_message_retention_days)
+
+
 CRON_JOBS = [
     # every minute, gated by per-source due-ness
     cron(scan_due_sources, name="sales_intel:scan_due_sources", second=0, unique=True),
@@ -121,16 +137,25 @@ CRON_JOBS = [
     # Before retention, and on the previous day, so a day is archived while it is still in the hot tier.
     # Exporting after the delete would lose exactly the rows the archive exists to keep.
     cron(export_audit_archive, name="audit:export_archive", hour=3, minute=0, unique=True),
+    # Captured Slack message text is third-party personal data, and a channel whose digest never
+    # posts would otherwise keep it forever. Off-peak, once a day.
+    cron(purge_slack_messages, name="channels:purge_slack_messages", hour=4, minute=0, unique=True),
 ]
 
 
 async def on_startup(ctx) -> None:  # pragma: no cover - worker runtime
     from app.core.config import get_settings
-    from app.core.db import build_engine, build_sessionmaker
+    from app.core.db import build_engine, build_sessionmaker, build_sync_engine, build_sync_sessionmaker
 
     engine = build_engine()
     ctx["engine"] = engine
     ctx["sessionmaker"] = build_sessionmaker(engine)
+
+    # A synchronous engine as well, because two durable stores the jobs need are synchronous by
+    # design (the billing stores and the Slack installation store -- see app/db/sync_stores.py).
+    sync_engine = build_sync_engine()
+    ctx["sync_engine"] = sync_engine
+    ctx["sync_sessionmaker"] = build_sync_sessionmaker(sync_engine)
 
     # A separate engine for the audit maintenance role, when one is configured. Retention and erasure
     # need UPDATE and DELETE on audit_events, which migration 0039 takes away from the application role,
@@ -152,6 +177,9 @@ async def on_shutdown(ctx) -> None:  # pragma: no cover - worker runtime
         engine = ctx.get(key)
         if engine is not None:
             await engine.dispose()
+    sync_engine = ctx.get("sync_engine")
+    if sync_engine is not None:
+        sync_engine.dispose()
 
 
 class WorkerSettings:

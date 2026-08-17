@@ -1983,6 +1983,37 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/channels/slack/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Slack Webhook
+         * @description Slack Events API callback. Public, signature-verified, no tenant cookie.
+         *
+         *     Processes `url_verification`, `message` and `app_mention`. Messages from public channels are
+         *     stored in the per-tenant buffer for the digest worker.
+         *
+         *     Capture is behind SLACK_CAPTURE_ENABLED and returns 501 by default, the same shape as the
+         *     WhatsApp inbound webhook: persisting a customer's Slack conversations is not something a
+         *     deploy should start doing merely because a signing secret happens to be set.
+         *
+         *     The 403 body is deliberately generic. The reason (bad signature vs unconfigured secret) is a
+         *     fact about server configuration and belongs in the log, not in a reply to an unauthenticated
+         *     caller.
+         */
+        post: operations["slack_webhook_api_v1_channels_slack_webhook_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/channels/teams/test": {
         parameters: {
             query?: never;
@@ -2638,6 +2669,57 @@ export interface paths {
          */
         put: operations["update_role_api_v1_identity_users__user_id__role_put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/intelligence/agents/{agent_id}/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Sources */
+        get: operations["list_sources_api_v1_intelligence_agents__agent_id__sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/intelligence/agents/{agent_id}/sources/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Source */
+        get: operations["get_source_api_v1_intelligence_agents__agent_id__sources__key__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/intelligence/agents/{agent_id}/sources/{key}/verify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify Source */
+        post: operations["verify_source_api_v1_intelligence_agents__agent_id__sources__key__verify_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5898,6 +5980,18 @@ export interface components {
             user_id: string;
             /** Worker Id */
             worker_id?: string | null;
+        };
+        /** VerifySourceBody */
+        VerifySourceBody: {
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Credential
+             * @default
+             */
+            credential: string;
         };
         /** WebsiteBody */
         WebsiteBody: {
@@ -9814,6 +9908,40 @@ export interface operations {
             };
         };
     };
+    slack_webhook_api_v1_channels_slack_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-slack-signature"?: string;
+                "x-slack-request-timestamp"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     teams_webhook_test_api_v1_channels_teams_test_post: {
         parameters: {
             query?: never;
@@ -11211,6 +11339,111 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RoleBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_sources_api_v1_intelligence_agents__agent_id__sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_source_api_v1_intelligence_agents__agent_id__sources__key__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_source_api_v1_intelligence_agents__agent_id__sources__key__verify_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifySourceBody"];
             };
         };
         responses: {

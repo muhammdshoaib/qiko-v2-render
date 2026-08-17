@@ -27,11 +27,14 @@ DURABLE_STORES = (
     "admin_org",
     "ai_usage", "cost_caps", "audit", "otp_store", "pending_invites", "pending_signups", "consent", "customers",
     "payment_links",
+    # The Slack heads-up assistant. slack_oauth moved OUT of the known-in-memory list below: the
+    # digest job runs in the arq worker process, so an in-memory installation store meant the
+    # worker could never resolve a bot token and the digest was undeliverable in production.
+    "slack_messages", "slack_oauth",
 )
 
 # Known, deliberate exceptions with a recorded reason. Shrinking this list is the goal.
 KNOWN_IN_MEMORY = {
-    "slack_oauth": "OAuth-installed Slack workspaces are lost on restart",
     "slack_links": "Slack user -> worker links are lost on restart",
     "channel_sessions": "per-channel sessions are lost on restart (no production consumer today)",
 }

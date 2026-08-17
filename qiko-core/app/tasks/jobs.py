@@ -214,3 +214,71 @@ async def erase_audit_subject(*, identifier: str, pseudonym: str, request_ref: s
         "source": "tasks.audit", "request_ref": request_ref, "rows": rows,
         "pseudonym": pseudonym})
     return rows
+
+
+def _slack_worker_from_state():
+    """Build a DigestWorker from the live FastAPI app state (the eager dev/test path)."""
+    from app.main import app
+    from app.modules.channels.digest_scheduler import DigestWorker
+
+    return DigestWorker(
+        message_store=app.state.slack_messages,
+        installation_store=app.state.slack_oauth.store,
+        cost_guard=getattr(app.state, "cost_guard", None),
+        usage_store=getattr(app.state, "ai_usage", None),
+    )
+
+
+def _slack_worker_from_sessionmaker(sessionmaker, *, sync_sessionmaker=None):
+    """Build a DigestWorker for the arq worker tier.
+
+    The installation store is built HERE from the worker's own sessionmaker rather than being
+    passed in: an earlier version left it None, so the job resolved no bot token, raised after the
+    model had already been billed, and arq retried it three times.
+    """
+    from app.db.stores import SqlSlackChannelStore, SqlCostCapStore, SqlUsageStore
+    from app.modules.ai.caps import CostGuard
+    from app.modules.ai.gateway import get_provider
+
+    from app.modules.channels.digest_scheduler import DigestWorker
+
+    installation_store = None
+    if sync_sessionmaker is not None:
+        from app.db.sync_stores import SqlSlackInstallationStore
+
+        installation_store = SqlSlackInstallationStore(sync_sessionmaker)
+
+    usage_store = SqlUsageStore(sessionmaker)
+    return DigestWorker(
+        message_store=SqlSlackChannelStore(sessionmaker),
+        installation_store=installation_store,
+        provider=get_provider(),
+        cost_guard=CostGuard(caps=SqlCostCapStore(sessionmaker), usage=usage_store),
+        usage_store=usage_store,
+    )
+
+
+@registry.register("generate_slack_digest")
+async def generate_slack_digest(*, tenant: str, agent_id: str | None = None, team_id: str,
+                                channel_id: str, enterprise_id: str | None = None,
+                                sessionmaker=None, sync_sessionmaker=None) -> dict:
+    """Background job: generate and post a Slack heads-up digest after inactivity."""
+    worker = (_slack_worker_from_state() if sessionmaker is None
+              else _slack_worker_from_sessionmaker(sessionmaker,
+                                                   sync_sessionmaker=sync_sessionmaker))
+    return await worker.run(tenant=tenant, agent_id=agent_id, team_id=team_id,
+                            channel_id=channel_id, enterprise_id=enterprise_id)
+
+
+async def purge_slack_messages(store, *, retention_days: int) -> dict:
+    """Retention for captured Slack text.
+
+    Runs daily. Without it the table keeps third-party personal data for every channel whose
+    digest never posted, which is exactly the case the rest of this feature fails closed into.
+    """
+    from datetime import timedelta
+
+    deleted = await store.purge_older_than(timedelta(days=retention_days))
+    logger.info("slack messages purged", extra={
+        "source": "tasks.channels", "deleted": deleted, "retention_days": retention_days})
+    return {"deleted": deleted, "retention_days": retention_days}

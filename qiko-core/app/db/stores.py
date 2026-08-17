@@ -47,6 +47,15 @@ from app.db.models import AiUsageEvent as AiUsageEventRow
 from app.db.models import PlatformAdminAudit as PlatformAdminAuditRow
 from app.db.models import PolicyRelease as PolicyReleaseRow
 from app.db.models import RfpPack as RfpPackRow
+
+from app.modules.channels.slack_store import (
+    DEFAULT_MESSAGE_LIMIT,
+    SlackMessage,
+    slack_container,
+    slack_message_from_signal,
+    slack_signal_from_message,
+)
+from app.modules.intelligence.models import DEFAULT_SIGNAL_LIMIT, Signal
 from app.db.models import SalesIntelActivityLog as SalesIntelActivityLogRow
 from app.db.models import SalesIntelIngestionSource as SalesIntelIngestionSourceRow
 from app.db.models import SalesIntelOpportunity as SalesIntelOpportunityRow
@@ -58,6 +67,7 @@ from app.db.models import Tenant as TenantRow
 from app.db.models import TeamsWebhook as TeamsWebhookRow
 from app.db.models import User as UserRow
 from app.db.models import VerifiedAnswer
+from app.db.models import IntelligenceSignal as IntelligenceSignalRow
 from app.modules.agents.service import (
     Agent,
     AgentStateAudit,
@@ -127,6 +137,10 @@ def _encrypt_totp(secret: str | None) -> str | None:
 
 def _decrypt_totp(secret: str | None) -> str | None:
     return decrypt(secret[4:]) if secret and secret.startswith("enc:") else secret
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
 @dataclass
@@ -2719,6 +2733,39 @@ def _platform_access_row(*, email: str, actor_email: str, previous_role: str | N
                                    {"role": role, "capabilities": capabilities})))
 
 
+@dataclass
+class SqlSlackChannelStore:
+    """Postgres-backed Slack message buffer implemented as an adapter over the Signal store.
+
+    The Slack digest still operates on `SlackMessage`, but persistence is now the shared
+    `intelligence_signals` table with `source=slack` and `container=team_id/channel_id`.
+    """
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    def __post_init__(self):
+        self._signal_store = SqlSignalStore(self.sessionmaker)
+
+    async def add(self, message: SlackMessage) -> None:
+        await self._signal_store.add(slack_signal_from_message(message))
+
+    async def list_recent(self, tenant: str, agent_id: str, team_id: str, channel_id: str,
+                          since: datetime, limit: int = DEFAULT_MESSAGE_LIMIT) -> list[SlackMessage]:
+        signals = await self._signal_store.list_recent(
+            tenant, agent_id, source="slack",
+            container=slack_container(team_id, channel_id),
+            since=since, limit=limit)
+        return [slack_message_from_signal(s) for s in signals]
+
+    async def clear_channel(self, tenant: str, agent_id: str, team_id: str, channel_id: str) -> int:
+        return await self._signal_store.clear(
+            tenant, agent_id, source="slack",
+            container=slack_container(team_id, channel_id))
+
+    async def purge_older_than(self, older_than: timedelta) -> int:
+        return await self._signal_store.purge_older_than(older_than, source="slack")
+
+
 def _audit_json(row: AuditEventRow) -> dict:
     """Fields listed explicitly, never the ORM object: the same rule every other admin read follows."""
     return {
@@ -2738,3 +2785,99 @@ def _audit_json(row: AuditEventRow) -> dict:
         # Opaque to the client, and it carries the whole sort key so paging cannot skip.
         "_cursor": f"{row.occurred_at.isoformat()}|{row.id}",
     }
+
+
+@dataclass
+class SqlSignalStore:
+    """Postgres-backed signal storage for the Intelligence Worker.
+
+    Its selection semantics are the contract in `app.modules.intelligence.models`, and the shared
+    test suite runs the same assertions against this and the in-memory store. If the two ever
+    disagree, the suite is green about something that is not what ships.
+
+    Idempotency is enforced by the unique constraint rather than by a read-then-write, which would
+    race between two workers sweeping the same source at once.
+    """
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    @staticmethod
+    def _to_domain(row: IntelligenceSignalRow) -> Signal:
+        return Signal(
+            tenant=row.tenant_id, agent_id=row.agent_id, source=row.source, kind=row.kind,
+            external_id=row.external_id, container=row.container, actor=row.actor,
+            title=row.title, body=row.body, occurred_at=_as_utc(row.occurred_at),
+            ref=row.ref, url=row.url, tags=list(row.tags or []), flagged=row.flagged,
+            meta=dict(row.meta or {}))
+
+    @staticmethod
+    def _row(signal: Signal) -> IntelligenceSignalRow:
+        return IntelligenceSignalRow(
+            tenant_id=signal.tenant, agent_id=signal.agent_id, source=signal.source,
+            kind=signal.kind, external_id=signal.external_id, container=signal.container,
+            actor=signal.actor, title=signal.title, body=signal.body,
+            occurred_at=signal.occurred_at, ref=signal.ref, url=signal.url,
+            tags=signal.tags, flagged=signal.flagged, meta=signal.meta)
+
+    def _scope(self, tenant: str, agent_id: str, source: str | None, container: str | None):
+        """The predicates every read and delete shares.
+
+        tenant and agent_id are not optional and there is no code path that omits them: a signal
+        belongs to one worker, and cross-worker reads are prevented by construction rather than by
+        every caller remembering.
+        """
+        clauses = [IntelligenceSignalRow.tenant_id == tenant,
+                   IntelligenceSignalRow.agent_id == agent_id]
+        if source is not None:
+            clauses.append(IntelligenceSignalRow.source == source)
+        if container is not None:
+            clauses.append(IntelligenceSignalRow.container == container)
+        return clauses
+
+    async def add(self, signal: Signal) -> bool:
+        """Insert, returning False when this source event was already ingested."""
+        from sqlalchemy.exc import IntegrityError
+
+        try:
+            async with self.sessionmaker() as s, s.begin():
+                s.add(self._row(signal))
+        except IntegrityError:
+            # The unique constraint did its job: a connector re-read a window it had already seen.
+            return False
+        return True
+
+    async def list_recent(self, tenant: str, agent_id: str, *, source: str | None = None,
+                          container: str | None = None, since: datetime | None = None,
+                          limit: int = DEFAULT_SIGNAL_LIMIT) -> list[Signal]:
+        clauses = self._scope(tenant, agent_id, source, container)
+        if since is not None:
+            clauses.append(IntelligenceSignalRow.occurred_at >= since)
+        async with self.sessionmaker() as s:
+            # Newest `limit` by the query, then reversed, so a transcript reads oldest-first
+            # without pulling the whole history into memory to sort it.
+            stmt = (select(IntelligenceSignalRow).where(*clauses)
+                    .order_by(IntelligenceSignalRow.occurred_at.desc(),
+                              IntelligenceSignalRow.id.desc())
+                    .limit(limit))
+            rows = (await s.execute(stmt)).scalars().all()
+            return [self._to_domain(r) for r in reversed(rows)]
+
+    async def clear(self, tenant: str, agent_id: str, *, source: str | None = None,
+                    container: str | None = None) -> int:
+        async with self.sessionmaker() as s, s.begin():
+            result = await s.execute(
+                delete(IntelligenceSignalRow).where(
+                    *self._scope(tenant, agent_id, source, container)))
+            return result.rowcount or 0
+
+    async def purge_older_than(self, older_than: timedelta,
+                                source: str | None = None) -> int:
+        """Retention across every tenant. Signals carry third-party personal data, so a window
+        that is never enforced is a claim rather than a control."""
+        cutoff = datetime.now(timezone.utc) - older_than
+        clauses = [IntelligenceSignalRow.occurred_at < cutoff]
+        if source is not None:
+            clauses.append(IntelligenceSignalRow.source == source)
+        async with self.sessionmaker() as s, s.begin():
+            result = await s.execute(delete(IntelligenceSignalRow).where(*clauses))
+            return result.rowcount or 0

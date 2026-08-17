@@ -42,8 +42,11 @@ from app.integrations.clients import (
     WhatsAppClient,
 )
 from app.modules.billing.payment_links import PaymentLinkService
+from app.modules.channels.digest_scheduler import DigestScheduler
 from app.modules.channels.sessions import ChannelSessionStore
+from app.modules.channels.slack_events import SlackEventHandler
 from app.modules.channels.slack_oauth import InstallationStore, SlackOAuth, WorkspaceLinkStore
+from app.modules.channels.slack_store import InMemorySlackChannelStore
 from app.modules.channels.teams_integration import TeamsNotifier
 from app.modules.chat.files import FileGenerator
 from app.modules.storage.backend import InMemoryStorage, S3Storage
@@ -54,6 +57,8 @@ from app.tasks.jobs import registry as task_registry
 from app.tasks.queue import get_task_queue as build_task_queue
 from app.modules.admin.customers import CustomerDirectory
 from app.modules.signal.router import router as signal_router
+from app.modules.intelligence.catalog import SourceCatalog
+from app.modules.intelligence.router import router as intelligence_router
 from app.core.tenancy import tenant_dependency
 from app.modules.admin.router import router as admin_router
 from app.modules.agents.router import router as agents_router
@@ -148,6 +153,7 @@ async def lifespan(app: FastAPI):
             SqlRequirementStore,
             SqlRfpPackStore,
             SqlSalesforceConnectionStore,
+            SqlSlackChannelStore,
             SqlTeamsIntegrationStore,
             SqlTeamStore,
             SqlAuditStore,
@@ -216,6 +222,10 @@ async def lifespan(app: FastAPI):
         app.state.pending_invites = SqlPendingInviteStore(sm)
         app.state.pending_signups = SqlPendingSignupStore(sm)
         app.state.consent = ConsentService(store=SqlConsentStore(sm))
+        app.state.slack_messages = SqlSlackChannelStore(sm)
+        if getattr(app.state, "slack_digest_scheduler", None):
+            app.state.slack_digest_scheduler.message_store = app.state.slack_messages
+        app.state.intelligence_catalog = _build_intelligence_catalog()
         set_user_store(SqlUserStore(sm))  # users/sessions/2FA persist to Postgres
 
         # Billing state + the admin Customers console are reached through SYNCHRONOUS route
@@ -227,6 +237,7 @@ async def lifespan(app: FastAPI):
             SqlCustomerDirectory,
             SqlInvoiceStore,
             SqlPaymentLinkStore,
+            SqlSlackInstallationStore,
             SqlSubscriptionStore,
         )
 
@@ -243,6 +254,11 @@ async def lifespan(app: FastAPI):
             gateway=app.state.payment_links.gateway, email=app.state.payment_links.email,
             store=SqlPaymentLinkStore(sync_sm))
         app.state.customers = SqlCustomerDirectory(sync_sm)
+        # Slack installations survive a redeploy AND are visible to the arq worker process, which
+        # is the only way the digest job can resolve a bot token to post with.
+        app.state.slack_oauth.store = SqlSlackInstallationStore(sync_sm)
+        if getattr(app.state, "slack_events", None):
+            app.state.slack_events.installation_store = app.state.slack_oauth.store
         # The billing endpoints are synchronous, so the audit store needs the same sync engine.
         app.state.audit.sync_sessionmaker = sync_sm
     try:
@@ -251,6 +267,23 @@ async def lifespan(app: FastAPI):
         await engine.dispose()
         if app.state.sync_engine is not None:
             app.state.sync_engine.dispose()
+
+
+def _build_intelligence_catalog() -> SourceCatalog:
+    catalog = SourceCatalog()
+    catalog.register(
+        key="slack", name="Slack", connector=None,
+        description="Slack workspace messages via the Events API (push).")
+    catalog.register(
+        key="github", name="GitHub", connector=None,
+        description="Repository commits, pull requests, reviews and CI status.")
+    catalog.register(
+        key="qiko_track", name="Qiko Track", connector=None,
+        description="Tickets, transitions, comments and blocked flags.")
+    catalog.register(
+        key="generic", name="Generic", connector=None,
+        description="Custom webhook or file ingestion.")
+    return catalog
 
 
 def create_app() -> FastAPI:
@@ -455,12 +488,23 @@ def create_app() -> FastAPI:
     app.state.channel_sessions = ChannelSessionStore()
     app.state.slack_oauth = SlackOAuth(InstallationStore())
     app.state.slack_links = WorkspaceLinkStore()
+    app.state.slack_messages = InMemorySlackChannelStore()
+    app.state.intelligence_catalog = _build_intelligence_catalog()
     # S3 when configured, the dev dict otherwise. The guard in assert_secrets_set means a non-dev
     # environment cannot start without a bucket, so this cannot silently degrade in production.
     settings = get_settings()
     app.state.file_generator = FileGenerator(
         S3Storage(bucket=settings.s3_bucket) if settings.s3_bucket else InMemoryStorage())
     app.state.task_queue = build_task_queue(task_registry)
+    app.state.slack_digest_scheduler = DigestScheduler(
+        message_store=app.state.slack_messages,
+        task_queue=app.state.task_queue,
+    )
+    app.state.slack_events = SlackEventHandler(
+        installation_store=app.state.slack_oauth.store,
+        scheduler=app.state.slack_digest_scheduler,
+        signing_secret=settings.slack_signing_secret,
+    )
     # The store the EAGER task backend uses for the erasure job, which is dev and tests only: with the arq
     # backend the job runs on the worker with its own maintenance connection and this is never read.
     from app.tasks import jobs as task_jobs
@@ -472,9 +516,10 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix="/api/v1", dependencies=[Depends(tenant_dependency)])
     for r in (identity_router, identity_users_router, knowledge_router, agents_router, rfp_router,
               assignments_router, admin_router, chat_router, teams_router, leads_router, billing_router,
-              channels_router, excel_router, voice_router, signal_router, public_chat_router, sources_router,
-              twofa_router, onboarding_router, admin_org_router, batch_router, marketing_router, crm_router,
-              sales_intelligence_router, finance_router, notifications_router, consent_router):
+              channels_router, excel_router, voice_router, signal_router, intelligence_router,
+              public_chat_router, sources_router, twofa_router, onboarding_router, admin_org_router,
+              batch_router, marketing_router, crm_router, sales_intelligence_router, finance_router,
+              notifications_router, consent_router):
         app.include_router(r, prefix="/api/v1")
     return app
 
