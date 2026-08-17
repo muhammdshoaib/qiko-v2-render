@@ -70,7 +70,7 @@ export async function loginAvatar(body: { email: string; password: string; totp?
 export async function signupAvatar(body: {
   user_name: string;
   email: string;
-  password: string;
+  password?: string;
   invite_token?: string;
   onboarding_worker?: OnboardingWorkerSignup;
   terms_release_id: string;
@@ -81,9 +81,9 @@ export async function signupAvatar(body: {
     method: "POST",
     // `name` is forwarded: it used to be accepted here as user_name and silently dropped, so every
     // account was created with no display name.
+    // Password is selected during email verification, not at signup.
     body: JSON.stringify({
       email: body.email,
-      password: body.password,
       name: body.user_name,
       invite_token: body.invite_token,
       onboarding_worker: body.onboarding_worker,
@@ -91,6 +91,7 @@ export async function signupAvatar(body: {
       terms_release_id: body.terms_release_id,
       privacy_release_id: body.privacy_release_id,
       cookies_release_id: body.cookies_release_id,
+      ...(body.password ? { password: body.password } : {}),
     }),
   });
 }
