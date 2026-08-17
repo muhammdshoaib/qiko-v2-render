@@ -15,6 +15,7 @@ import { AppShell } from "@/components/app-shell";
 import { WorkerAvatar } from "@/components/worker-avatar";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import { CrmPipeline } from "@/components/crm-pipeline";
+import { SourcesTab } from "@/components/sources-tab";
 import { WorkerVoiceCall } from "@/components/worker-voice-call";
 import {
   addFaq, addPolicy, addWebsite, ask, connectTeamsWebhook, disconnectCalendly, disconnectClickUp,
@@ -35,11 +36,12 @@ import {
 } from "@/lib/behavior-config";
 import { workerTypeLabel } from "@/lib/stringUtils";
 
-type Tab = "Overview" | "Chat" | "Train" | "CRM" | "Connections" | "Settings";
+type Tab = "Overview" | "Chat" | "Train" | "Sources" | "CRM" | "Connections" | "Settings";
 const TABS: { id: Tab; icon: LucideIcon; locked?: boolean }[] = [
   { id: "Overview", icon: Sparkles },
   { id: "Chat", icon: MessageSquare },
   { id: "Train", icon: GraduationCap },
+  { id: "Sources", icon: Database },
   { id: "CRM", icon: Users },
   { id: "Connections", icon: Link2 },
   { id: "Settings", icon: Settings },
@@ -62,7 +64,7 @@ export default function WorkerDetailPage() {
   // editor); this hides/blocks the actions client-side too (QIK-307). Overview + Chat stay viewable.
   const account = useQuery({ queryKey: ["me"], queryFn: me });
   const isViewer = account.data?.role === "viewer";
-  const MANAGE_TABS: Tab[] = ["Train", "Connections", "Settings"];
+  const MANAGE_TABS: Tab[] = ["Train", "Sources", "Connections", "Settings"];
   const tabLocked = (t: Tab) => !!TABS.find((x) => x.id === t)?.locked || (isViewer && MANAGE_TABS.includes(t));
   useEffect(() => {
     if (isViewer && MANAGE_TABS.includes(tab)) setTab("Overview");
@@ -180,6 +182,7 @@ export default function WorkerDetailPage() {
             <TrainTab id={id} worker={worker} docs={docs.data} loading={docs.isLoading}
               onKnowledgeChange={refresh} onWorkerChange={refreshAgents} />
           )}
+          {tab === "Sources" && !isViewer && <SourcesTab agentId={id} />}
           {tab === "CRM" && <CrmTab id={id} readOnly={isViewer} />}
           {tab === "Connections" && !isViewer && <ConnectionsTab id={id} worker={worker} />}
           {tab === "Chat" && <ChatTab id={id} worker={worker} />}

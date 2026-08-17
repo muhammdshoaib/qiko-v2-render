@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 from app.modules.agents.service import Agent
 from app.modules.intelligence.catalog import SourceCatalog
+from app.modules.intelligence.connectors import GitHubConnector, QikoTrackConnector
 from tests.helpers import auth_cookies
 
 
@@ -31,6 +32,12 @@ def client():
         catalog.register(
             key="slack", name="Slack", connector=None,
             description="Slack workspace messages via the Events API (push).")
+        catalog.register(
+            key="github", name="GitHub", connector=GitHubConnector(),
+            description="Repository commits, pull requests, reviews and CI status.")
+        catalog.register(
+            key="qiko_track", name="Qiko Track", connector=QikoTrackConnector(),
+            description="Tickets, transitions, comments and blocked flags.")
         connector = _demo_connector()
         catalog.register(
             key="demo", name="Demo", connector=connector,
@@ -111,3 +118,74 @@ def test_verify_source_without_connector(client):
         cookies=C,
     )
     assert r.status_code == 404
+
+
+def test_github_connect_and_disconnect(client):
+    r = client.post(
+        "/api/v1/intelligence/agents/w1/sources/github",
+        json={"token": "ghp-testtoken", "repo_allowlist": ["owner/repo"]},
+        cookies=C,
+    )
+    assert r.status_code == 200
+    assert r.json()["connected"] is True
+
+    r = client.get("/api/v1/intelligence/agents/w1/sources/github/connection", cookies=C)
+    assert r.status_code == 200
+    assert r.json()["token_masked"].startswith("ghp-")
+    assert r.json()["repo_allowlist"] == ["owner/repo"]
+    assert r.json()["connected"] is True
+
+    r = client.delete("/api/v1/intelligence/agents/w1/sources/github", cookies=C)
+    assert r.status_code == 200
+    assert r.json()["disconnected"] is True
+
+    r = client.get("/api/v1/intelligence/agents/w1/sources/github/connection", cookies=C)
+    assert r.json()["connected"] is False
+
+
+def test_qiko_track_connect_test_and_disconnect(client):
+    r = client.post(
+        "/api/v1/intelligence/agents/w1/sources/qiko_track",
+        json={"token": "qt-token", "project_key": "PROJ-1"},
+        cookies=C,
+    )
+    assert r.status_code == 200
+    assert r.json()["connected"] is True
+
+    r = client.get("/api/v1/intelligence/agents/w1/sources/qiko_track/connection", cookies=C)
+    assert r.status_code == 200
+    assert r.json()["project_key"] == "PROJ-1"
+    assert r.json()["connected"] is True
+
+    r = client.post("/api/v1/intelligence/agents/w1/sources/qiko_track/test", cookies=C)
+    assert r.status_code == 200
+    assert r.json()["ok"] is False
+    assert "not implemented" in r.json()["error"]
+
+    r = client.delete("/api/v1/intelligence/agents/w1/sources/qiko_track", cookies=C)
+    assert r.status_code == 200
+
+
+def test_slack_connect_returns_oauth_url(client):
+    r = client.post("/api/v1/intelligence/agents/w1/sources/slack", cookies=C)
+    assert r.status_code == 200
+    assert r.json()["url"].startswith("https://slack.com/oauth/v2/authorize")
+
+
+def test_slack_watched_channels_are_stored(client):
+    from app.modules.channels.slack_oauth import SlackInstallation
+
+    client.app.state.slack_oauth.store.save(SlackInstallation(
+        team_id="T1", bot_token="xoxb-fake", bot_user_id="U999",
+        tenant="intelco", worker_id="w1"))
+    r = client.post(
+        "/api/v1/intelligence/agents/w1/sources/slack/channels",
+        json={"channel_ids": ["C123", "C456"]},
+        cookies=C,
+    )
+    assert r.status_code == 200
+    assert r.json()["watched_channels"] == ["C123", "C456"]
+
+    r = client.get("/api/v1/intelligence/agents/w1/sources/slack/channels", cookies=C)
+    assert r.status_code == 200
+    assert r.json()["watched_channels"] == ["C123", "C456"]

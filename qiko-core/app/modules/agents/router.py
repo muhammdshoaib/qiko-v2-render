@@ -37,7 +37,8 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 # just because it happens to live in the same free-form config dict as everything else.
 _REDACTED_CONFIG_KEYS = ("vapi_api_key_encrypted", "salesforce_client_secret_encrypted",
                          "calendly_token_encrypted", "clickup_api_token_encrypted",
-                         "slack_bot_token_encrypted", "gmail_app_password_encrypted")
+                         "slack_bot_token_encrypted", "gmail_app_password_encrypted",
+                         "github_token_encrypted", "qiko_track_token_encrypted")
 
 
 # Keys the free-form patch must never WRITE. The list above already stops these being read back; not
@@ -60,6 +61,8 @@ _WRITE_ONLY_VIA_DEDICATED_ENDPOINT = frozenset(_REDACTED_CONFIG_KEYS) | {
     # third party with an error the customer cannot act on.
     "vapi_credentials_added", "salesforce_credentials_added", "calendly_credentials_added",
     "clickup_credentials_added", "slack_credentials_added", "gmail_credentials_added",
+    "github_credentials_added", "qiko_track_credentials_added",
+    "slack_watched_channels", "slack_team_id",
 }
 
 # Config keys whose change is worth recording, split by whether the VALUE is safe to keep.

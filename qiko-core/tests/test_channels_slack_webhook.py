@@ -7,11 +7,14 @@ import json
 import time
 from unittest.mock import Mock
 
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
 from app.main import create_app
+from app.modules.agents.service import Agent
 from app.modules.channels.slack_oauth import SlackInstallation
 from app.modules.channels.slack_store import InMemorySlackChannelStore
 
@@ -54,12 +57,15 @@ def _post(client: TestClient, body: bytes, *, ts: str | None = None,
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setattr(get_settings(), "slack_signing_secret", SECRET)
-    monkeypatch.setattr(get_settings(), "slack_capture_enabled", True)
     monkeypatch.setattr(get_settings(), "slack_digest_interval_minutes", 60)
     app = create_app()
     app.state.slack_oauth.store.save(SlackInstallation(
         team_id="T123", bot_token="xoxb-fake", bot_user_id="U999",
         tenant="tenant-1", worker_id="worker-1"))
+    asyncio.run(app.state.agents.store.add(Agent(
+        id="worker-1", tenant="tenant-1", name="Worker")))
+    asyncio.run(app.state.agents.update_config(
+        "tenant-1", "worker-1", {"slack_watched_channels": ["C456"], "slack_team_id": "T123"}))
     app.state.slack_digest_scheduler.message_store = InMemorySlackChannelStore()
 
     async def fake_enqueue(name, *, defer_by=None, **kwargs):
@@ -140,19 +146,24 @@ def test_a_non_integer_timestamp_fails_closed(client):
     assert resp.status_code == 403
 
 
-def test_capture_is_disabled_by_default(monkeypatch):
-    """Setting a signing secret must not by itself start persisting a customer's conversations."""
+def test_messages_are_dropped_without_watched_channels(monkeypatch):
+    """Per-worker capture: a channel is stored only when the worker explicitly watches it."""
     monkeypatch.setattr(get_settings(), "slack_signing_secret", SECRET)
-    monkeypatch.setattr(get_settings(), "slack_capture_enabled", False)
-    disabled = TestClient(create_app())
+    app = create_app()
+    app.state.slack_oauth.store.save(SlackInstallation(
+        team_id="T123", bot_token="xoxb-fake", bot_user_id="U999",
+        tenant="tenant-1", worker_id="worker-1"))
+    asyncio.run(app.state.agents.store.add(Agent(
+        id="worker-1", tenant="tenant-1", name="Worker")))
+    disabled = TestClient(app)
     resp = _post(disabled, _payload(_message_event()))
-    assert resp.status_code == 501
+    assert resp.status_code == 200
+    assert disabled.app.state.slack_digest_scheduler.message_store._messages == []
 
 
-def test_the_kill_switch_is_not_a_configuration_oracle(monkeypatch):
-    """An unsigned caller must not be able to tell capture-disabled (501) from enabled (403)."""
+def test_the_signature_check_is_not_a_configuration_oracle(monkeypatch):
+    """An unsigned caller must not learn whether a worker has configured capture."""
     monkeypatch.setattr(get_settings(), "slack_signing_secret", SECRET)
-    monkeypatch.setattr(get_settings(), "slack_capture_enabled", False)
     disabled = TestClient(create_app())
     resp = _post(disabled, _payload(_message_event()), signature="v0=deadbeef")
     assert resp.status_code == 403
@@ -209,7 +220,6 @@ def test_an_ambiguous_workspace_is_refused_rather_than_guessed(client):
 def test_an_installation_with_no_tenant_is_not_treated_as_one(monkeypatch):
     """exchange_code(save=True) can persist a tenantless install; it must not collect messages."""
     monkeypatch.setattr(get_settings(), "slack_signing_secret", SECRET)
-    monkeypatch.setattr(get_settings(), "slack_capture_enabled", True)
     app = create_app()
     app.state.slack_oauth.store.save(SlackInstallation(
         team_id="T123", bot_token="xoxb-fake", bot_user_id="U999"))

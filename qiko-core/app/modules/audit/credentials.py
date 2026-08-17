@@ -29,6 +29,8 @@ PROVIDERS: dict[str, str] = {
     "slack": "slack_bot_token_encrypted",
     "gmail": "gmail_app_password_encrypted",
     "teams": "webhook_url_encrypted",
+    "github": "github_token_encrypted",
+    "qiko_track": "qiko_track_token_encrypted",
 }
 
 

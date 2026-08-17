@@ -374,3 +374,14 @@ class SqlSlackInstallationStore:
                 ).limit(2)
             ).scalars().all()
             return self._to_domain(rows[0]) if len(rows) == 1 else None
+
+    def find_for_worker(self, tenant: str, worker_id: str) -> SlackInstallation | None:
+        """Return the single Slack installation for a worker, or None if there is not exactly one."""
+        with self.sessionmaker() as s:
+            rows = s.execute(
+                select(SlackInstallationRow).where(
+                    SlackInstallationRow.tenant_id == tenant,
+                    SlackInstallationRow.worker_id == worker_id,
+                ).limit(2)
+            ).scalars().all()
+            return self._to_domain(rows[0]) if len(rows) == 1 else None

@@ -1997,11 +1997,8 @@ export interface paths {
          * @description Slack Events API callback. Public, signature-verified, no tenant cookie.
          *
          *     Processes `url_verification`, `message` and `app_mention`. Messages from public channels are
-         *     stored in the per-tenant buffer for the digest worker.
-         *
-         *     Capture is behind SLACK_CAPTURE_ENABLED and returns 501 by default, the same shape as the
-         *     WhatsApp inbound webhook: persisting a customer's Slack conversations is not something a
-         *     deploy should start doing merely because a signing secret happens to be set.
+         *     stored in the per-tenant buffer for the digest worker only when the worker has explicitly
+         *     watched that channel via the source-connection UI.
          *
          *     The 403 body is deliberately generic. The reason (bad signature vs unconfigured secret) is a
          *     fact about server configuration and belongs in the log, not in a reply to an unauthenticated
@@ -2752,6 +2749,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/intelligence/agents/{agent_id}/sources/slack/channels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Slack Channels
+         * @description Return watched channels. Full channel list is fetched from Slack in a later milestone.
+         */
+        get: operations["list_slack_channels_api_v1_intelligence_agents__agent_id__sources_slack_channels_get"];
+        put?: never;
+        /**
+         * Set Slack Watched Channels
+         * @description Set the list of Slack channel IDs this worker should capture.
+         */
+        post: operations["set_slack_watched_channels_api_v1_intelligence_agents__agent_id__sources_slack_channels_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/intelligence/agents/{agent_id}/sources/{key}": {
         parameters: {
             query?: never;
@@ -2762,7 +2783,55 @@ export interface paths {
         /** Get Source */
         get: operations["get_source_api_v1_intelligence_agents__agent_id__sources__key__get"];
         put?: never;
+        /**
+         * Connect Source
+         * @description Store per-worker source credentials. Slack returns an OAuth install URL instead.
+         */
+        post: operations["connect_source_api_v1_intelligence_agents__agent_id__sources__key__post"];
+        /**
+         * Disconnect Source
+         * @description Remove stored source credentials. Slack clears the watched channel list.
+         */
+        delete: operations["disconnect_source_api_v1_intelligence_agents__agent_id__sources__key__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/intelligence/agents/{agent_id}/sources/{key}/connection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Source Connection
+         * @description Return the stored connection details for a source, without plaintext secrets.
+         */
+        get: operations["get_source_connection_api_v1_intelligence_agents__agent_id__sources__key__connection_get"];
+        put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/intelligence/agents/{agent_id}/sources/{key}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Test Source
+         * @description Test the stored source credential without mutating the third party.
+         */
+        post: operations["test_source_api_v1_intelligence_agents__agent_id__sources__key__test_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5793,6 +5862,11 @@ export interface components {
              * @default
              */
             worker_id: string;
+        };
+        /** SlackWatchChannelsBody */
+        SlackWatchChannelsBody: {
+            /** Channel Ids */
+            channel_ids?: string[];
         };
         /** SpeakBody */
         SpeakBody: {
@@ -11571,7 +11645,219 @@ export interface operations {
             };
         };
     };
+    list_slack_channels_api_v1_intelligence_agents__agent_id__sources_slack_channels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_slack_watched_channels_api_v1_intelligence_agents__agent_id__sources_slack_channels_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlackWatchChannelsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_source_api_v1_intelligence_agents__agent_id__sources__key__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connect_source_api_v1_intelligence_agents__agent_id__sources__key__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_source_api_v1_intelligence_agents__agent_id__sources__key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_source_connection_api_v1_intelligence_agents__agent_id__sources__key__connection_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_source_api_v1_intelligence_agents__agent_id__sources__key__test_post: {
         parameters: {
             query?: never;
             header?: never;

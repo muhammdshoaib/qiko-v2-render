@@ -34,6 +34,7 @@ class SlackEventHandler:
     installation_store: InstallationStore
     scheduler: DigestScheduler
     signing_secret: str
+    agent_store: object | None = None
     idempotency: IdempotencyGuard = field(default_factory=IdempotencyGuard)
 
     async def handle(self, payload: dict) -> dict:
@@ -115,6 +116,12 @@ class SlackEventHandler:
         ts = event.get("ts", "")
         if not (channel and text and user and ts):
             return
+
+        if self.agent_store is not None:
+            agent = await self.agent_store.get(installation.tenant, installation.worker_id)
+            watched = (agent.config or {}).get("slack_watched_channels") or [] if agent else []
+            if channel not in watched:
+                return
 
         tags = self._extract_tags(text)
         flagged = (event_type == "app_mention" or bool(tags)

@@ -58,6 +58,7 @@ from app.tasks.queue import get_task_queue as build_task_queue
 from app.modules.admin.customers import CustomerDirectory
 from app.modules.signal.router import router as signal_router
 from app.modules.intelligence.catalog import SourceCatalog
+from app.modules.intelligence.connectors import GitHubConnector, QikoTrackConnector
 from app.modules.intelligence.router import router as intelligence_router
 from app.core.tenancy import tenant_dependency
 from app.modules.admin.router import router as admin_router
@@ -260,6 +261,7 @@ async def lifespan(app: FastAPI):
         app.state.slack_oauth.store = SqlSlackInstallationStore(sync_sm)
         if getattr(app.state, "slack_events", None):
             app.state.slack_events.installation_store = app.state.slack_oauth.store
+            app.state.slack_events.agent_store = app.state.agents
         # The billing endpoints are synchronous, so the audit store needs the same sync engine.
         app.state.audit.sync_sessionmaker = sync_sm
     try:
@@ -276,10 +278,10 @@ def _build_intelligence_catalog() -> SourceCatalog:
         key="slack", name="Slack", connector=None,
         description="Slack workspace messages via the Events API (push).")
     catalog.register(
-        key="github", name="GitHub", connector=None,
+        key="github", name="GitHub", connector=GitHubConnector(),
         description="Repository commits, pull requests, reviews and CI status.")
     catalog.register(
-        key="qiko_track", name="Qiko Track", connector=None,
+        key="qiko_track", name="Qiko Track", connector=QikoTrackConnector(),
         description="Tickets, transitions, comments and blocked flags.")
     catalog.register(
         key="generic", name="Generic", connector=None,
@@ -506,6 +508,7 @@ def create_app() -> FastAPI:
         installation_store=app.state.slack_oauth.store,
         scheduler=app.state.slack_digest_scheduler,
         signing_secret=settings.slack_signing_secret,
+        agent_store=app.state.agents,
     )
     # The store the EAGER task backend uses for the erasure job, which is dev and tests only: with the arq
     # backend the job runs on the worker with its own maintenance connection and this is never read.

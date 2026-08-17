@@ -82,6 +82,12 @@ class InstallationStore:
             return None
         return replace(matches[0], bot_token=decrypt(matches[0].bot_token))
 
+    def find_for_worker(self, tenant: str, worker_id: str) -> SlackInstallation | None:
+        """Return the single Slack installation for a worker, or None if there is not exactly one."""
+        matches = [inst for inst in self._installs.values()
+                   if inst.tenant == tenant and inst.worker_id == worker_id]
+        return replace(matches[0], bot_token=decrypt(matches[0].bot_token)) if len(matches) == 1 else None
+
 
 @dataclass
 class WorkspaceLinkStore:

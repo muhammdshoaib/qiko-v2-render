@@ -52,11 +52,8 @@ async def slack_webhook(request: Request,
     """Slack Events API callback. Public, signature-verified, no tenant cookie.
 
     Processes `url_verification`, `message` and `app_mention`. Messages from public channels are
-    stored in the per-tenant buffer for the digest worker.
-
-    Capture is behind SLACK_CAPTURE_ENABLED and returns 501 by default, the same shape as the
-    WhatsApp inbound webhook: persisting a customer's Slack conversations is not something a
-    deploy should start doing merely because a signing secret happens to be set.
+    stored in the per-tenant buffer for the digest worker only when the worker has explicitly
+    watched that channel via the source-connection UI.
 
     The 403 body is deliberately generic. The reason (bad signature vs unconfigured secret) is a
     fact about server configuration and belongs in the log, not in a reply to an unauthenticated
@@ -64,8 +61,6 @@ async def slack_webhook(request: Request,
     """
     body = await request.body()
     s = get_settings()
-    # Signature FIRST, kill switch second. The other order let an unauthenticated caller tell
-    # capture-enabled (403) from capture-disabled (501) and so probe the configuration.
     if s.slack_signing_secret:
         if not handler.verify(x_slack_request_timestamp, body, x_slack_signature):
             logger.warning("slack webhook rejected: signature invalid, stale or missing",
@@ -75,9 +70,6 @@ async def slack_webhook(request: Request,
         logger.error("slack webhook rejected: SLACK_SIGNING_SECRET is not configured",
                      extra={"source": "channels.slack"})
         raise HTTPException(status_code=403, detail="forbidden")
-
-    if not s.slack_capture_enabled:
-        raise HTTPException(status_code=501, detail="Slack message capture is not enabled")
 
     try:
         payload = json.loads(body or b"{}")
@@ -323,7 +315,8 @@ async def slack_install(worker_id: str, request: Request,
 
 @router.get("/slack/callback")
 async def slack_callback(code: str, state: str, request: Request,
-                         oauth=Depends(get_slack_oauth)) -> dict:
+                         oauth=Depends(get_slack_oauth),
+                         agents=Depends(get_agents)) -> dict:
     async def recheck(tenant: str, worker_id: str) -> None:
         _worker, check = await resolve_tenant_worker(request, tenant, worker_id)
         await check()
@@ -333,6 +326,10 @@ async def slack_callback(code: str, state: str, request: Request,
             code, state, recheck_worker=recheck)
     except Exception as exc:
         raise HTTPException(status_code=400, detail="invalid Slack OAuth callback") from exc
+
+    await agents.update_config(
+        installation.tenant, installation.worker_id,
+        {"slack_watched_channels": [], "slack_team_id": installation.team_id})
     return {"team_id": installation.team_id, "installed": True}
 
 

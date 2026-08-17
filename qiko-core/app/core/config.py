@@ -90,9 +90,6 @@ class Settings(BaseSettings):
     # `commands` is NOT requested: no slash-command handler exists in qiko-core, so it would be a
     # scope granted for a surface that does not ship.
     slack_scopes: str = "channels:history,channels:read,app_mentions:read,chat:write"
-    # Capture is opt-in, like channels_inbound_enabled: setting a signing secret alone must not
-    # start persisting a customer's Slack conversations.
-    slack_capture_enabled: bool = False
     slack_digest_interval_minutes: int = 60
     slack_message_retention_days: int = 7
     signal_engine_url: str = ""
@@ -239,12 +236,6 @@ class Settings(BaseSettings):
             # require_csrf validates the Origin header against this list, so a wrong entry 403s
             # login-refresh, logout, 2FA, consent and every admin mutation.
             misconfigured.append("CORS_ALLOW_ORIGINS with https:// origins only")
-        if self.slack_capture_enabled and not self.slack_signing_secret:
-            # The signing secret is the ONLY thing standing between the public webhook and anyone
-            # who can POST to it. Enabling capture without one means the route 403s every real
-            # Slack event, so the feature is silently dead rather than merely insecure.
-            misconfigured.append(
-                "SLACK_SIGNING_SECRET whenever SLACK_CAPTURE_ENABLED is true")
         if misconfigured:
             raise RuntimeError(
                 "unsafe production config: a non-dev deploy must not run on in-memory stores or "

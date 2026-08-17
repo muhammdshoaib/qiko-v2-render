@@ -1154,3 +1154,39 @@ export const getFinanceHistory = (agentId: string, limit = 100) =>
 
 export const clearFinanceHistory = (agentId: string) =>
   request<{ success: boolean }>(`/finance/${agentId}/history`, { method: "DELETE" });
+
+// Intelligence Worker sources (Slack capture, GitHub, Qiko Track).
+export type IntelligenceSource = { key: string; name: string; description: string; pollable: boolean; connected: boolean };
+export type IntelligenceSourceConnection =
+  | { key: "github"; connected: boolean; token_masked: string; repo_allowlist: string[] }
+  | { key: "qiko_track"; connected: boolean; token_masked: string; project_key: string }
+  | { key: "slack"; connected: boolean; team_id: string | null; watched_channels: string[]; channels: { id: string; name: string }[] };
+
+export const listIntelligenceSources = (agentId: string) =>
+  request<IntelligenceSource[]>(`/intelligence/agents/${agentId}/sources`);
+
+export const getIntelligenceSource = (agentId: string, sourceKey: string) =>
+  request<IntelligenceSource>(`/intelligence/agents/${agentId}/sources/${sourceKey}`);
+
+export const getIntelligenceSourceConnection = (agentId: string, sourceKey: string) =>
+  request<IntelligenceSourceConnection>(`/intelligence/agents/${agentId}/sources/${sourceKey}/connection`);
+
+export const connectIntelligenceSource = (agentId: string, sourceKey: string, body: Record<string, unknown> = {}) =>
+  request<{ connected: boolean; url?: string; state?: string }>(`/intelligence/agents/${agentId}/sources/${sourceKey}`, {
+    method: "POST", body: JSON.stringify(body),
+  });
+
+export const disconnectIntelligenceSource = (agentId: string, sourceKey: string) =>
+  request<{ disconnected: boolean }>(`/intelligence/agents/${agentId}/sources/${sourceKey}`, { method: "DELETE" });
+
+export const testIntelligenceSource = (agentId: string, sourceKey: string) =>
+  request<{ ok: boolean; error?: string; team?: string; user?: string; repos?: { full_name: string; private: boolean }[] }>(
+    `/intelligence/agents/${agentId}/sources/${sourceKey}/test`, { method: "POST" });
+
+export const setSlackWatchedChannels = (agentId: string, channelIds: string[]) =>
+  request<{ watched_channels: string[] }>(`/intelligence/agents/${agentId}/sources/slack/channels`, {
+    method: "POST", body: JSON.stringify({ channel_ids: channelIds }),
+  });
+
+export const listSlackWatchedChannels = (agentId: string) =>
+  request<{ watched_channels: string[]; channels: { id: string; name: string }[] }>(`/intelligence/agents/${agentId}/sources/slack/channels`);
