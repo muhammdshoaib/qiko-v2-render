@@ -167,8 +167,8 @@ test.describe("creator login (normal user)", () => {
   });
 });
 
-test.describe("creator register (normal user)", () => {
-  test("sends the display name to the API", async ({ page }) => {
+test.describe("creator register", () => {
+  test("invite signup sends the display name to the API", async ({ page }) => {
     const errors = trackPageErrors(page);
     let signupBody: Record<string, unknown> | null = null;
 
@@ -177,18 +177,14 @@ test.describe("creator register (normal user)", () => {
       return jsonRoute(route, 202, { verification_required: true, email: signupBody.email, expires_in: 600 });
     });
 
-    await page.goto("/signup");
+    // The public /signup page now redirects to /onboarding for the self-serve journey.
+    // The standalone /signup form is still used for invite tokens.
+    await page.goto("/signup?invite=test-invite-token");
     await dismissConsent(page);
     const name = page.locator("#name");
     await expect(name).toBeVisible();
     await name.fill("Ada Lovelace");
     await page.locator("#email").fill("ada" + "@" + "example.invalid");
-    // Must satisfy lib/passwordRequirements.ts (8+ chars, upper, lower, digit, symbol) or the page
-    // rejects the submit client-side and never calls the API.
-    const strongPassword = "Playwright-Test-1!";
-    await page.locator("#password").fill(strongPassword);
-    const confirm = page.locator("#confirmPassword");
-    if (await confirm.count()) await confirm.fill(strongPassword);
     for (const box of await page.locator('input[type="checkbox"]').all()) {
       await box.check().catch(() => {});
     }
@@ -198,14 +194,17 @@ test.describe("creator register (normal user)", () => {
     await expect.poll(() => signupBody).not.toBeNull();
     expect(signupBody!.name).toBe("Ada Lovelace");
     expect(signupBody!.email).toBe("ada" + "@" + "example.invalid");
+    expect(signupBody!.invite_token).toBe("test-invite-token");
+    expect(signupBody!.password).toBeUndefined();
     expect(errors).toEqual([]);
   });
 
-  test("register is reachable anonymously and links back to login", async ({ page }) => {
+  test("public /signup redirects to the onboarding journey", async ({ page }) => {
     await page.goto("/signup");
     await dismissConsent(page);
-    await expect(page).toHaveURL(/\/signup/);
-    await expect(page.getByRole("link", { name: /sign in|log in/i }).first()).toBeVisible();
+    // The redirect is client-side; give it a moment to settle.
+    await page.waitForURL(/\/onboarding/, { timeout: 5000 });
+    await expect(page).toHaveURL(/\/onboarding/);
   });
 });
 
@@ -260,13 +259,21 @@ test.describe("auth guards", () => {
   });
 
   test("public auth pages render for an anonymous visitor", async ({ page }) => {
-    for (const path of ["/login", "/signup", "/forgot-password"]) {
+    for (const path of ["/login", "/forgot-password"]) {
       const errors = trackPageErrors(page);
       await page.goto(path);
       await dismissConsent(page);
       await expect(page).toHaveURL(new RegExp(path.replace("/", "\\/")));
       expect(errors).toEqual([]);
     }
+
+    // Public /signup now redirects to the onboarding journey instead of rendering a register form.
+    const errors = trackPageErrors(page);
+    await page.goto("/signup");
+    await dismissConsent(page);
+    await page.waitForURL(/\/onboarding/, { timeout: 5000 });
+    await expect(page).toHaveURL(/\/onboarding/);
+    expect(errors).toEqual([]);
   });
 });
 
