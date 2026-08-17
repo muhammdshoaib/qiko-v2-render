@@ -16,7 +16,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = "0041_slack_channel_messages"
-down_revision = "0040_conversation_crm_eligible"
+down_revision = "0041_onboarding_worker"
 branch_labels = None
 depends_on = None
 
