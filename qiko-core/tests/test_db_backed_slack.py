@@ -19,11 +19,11 @@ from app.modules.channels.slack_oauth import SlackInstallation
 from app.modules.channels.slack_store import SlackMessage, slack_ts
 
 
-def _msg(*, tenant="t1", team="T1", channel="C1", text="hello", ts=None,
+def _msg(*, tenant="t1", agent_id="w1", team="T1", channel="C1", text="hello", ts=None,
          enterprise=None) -> SlackMessage:
     return SlackMessage(
-        tenant=tenant, team_id=team, channel_id=channel, channel_type="channel", thread_ts=None,
-        user_id="U1", text=text,
+        tenant=tenant, agent_id=agent_id, team_id=team, channel_id=channel,
+        channel_type="channel", thread_ts=None, user_id="U1", text=text,
         ts=ts if ts is not None else slack_ts(datetime.now(timezone.utc)),
         enterprise_id=enterprise)
 
@@ -63,7 +63,8 @@ def test_the_slack_ts_format_is_fixed_width_so_string_order_is_numeric_order():
 async def test_a_round_trip_preserves_the_message(tmp_path):
     store = await _messages(tmp_path / "m.db")
     await store.add(_msg(text="fix pricing", ts="1700000000.100000"))
-    [stored] = await store.list_recent("t1", "T1", "C1", datetime(2020, 1, 1, tzinfo=timezone.utc))
+    [stored] = await store.list_recent("t1", "w1", "T1", "C1",
+                                         datetime(2020, 1, 1, tzinfo=timezone.utc))
     assert (stored.tenant, stored.team_id, stored.channel_id) == ("t1", "T1", "C1")
     assert stored.text == "fix pricing"
     assert stored.enterprise_id is None
@@ -74,9 +75,9 @@ async def test_another_tenant_cannot_read_or_clear_the_channel(tmp_path):
     await store.add(_msg(tenant="t1", ts="1700000000.100000"))
     since = datetime(2020, 1, 1, tzinfo=timezone.utc)
 
-    assert await store.list_recent("t2", "T1", "C1", since) == []
-    assert await store.clear_channel("t2", "T1", "C1") == 0
-    assert len(await store.list_recent("t1", "T1", "C1", since)) == 1
+    assert await store.list_recent("t2", "w1", "T1", "C1", since) == []
+    assert await store.clear_channel("t2", "w1", "T1", "C1") == 0
+    assert len(await store.list_recent("t1", "w1", "T1", "C1", since)) == 1
 
 
 async def test_a_second_workspace_sharing_a_channel_id_is_not_read_or_cleared(tmp_path):
@@ -86,11 +87,11 @@ async def test_a_second_workspace_sharing_a_channel_id_is_not_read_or_cleared(tm
     await store.add(_msg(team="T2", text="theirs", ts="1700000000.200000"))
     since = datetime(2020, 1, 1, tzinfo=timezone.utc)
 
-    ours = await store.list_recent("t1", "T1", "C1", since)
+    ours = await store.list_recent("t1", "w1", "T1", "C1", since)
     assert [m.text for m in ours] == ["ours"]
 
-    assert await store.clear_channel("t1", "T1", "C1") == 1
-    remaining = await store.list_recent("t1", "T2", "C1", since)
+    assert await store.clear_channel("t1", "w1", "T1", "C1") == 1
+    remaining = await store.list_recent("t1", "w1", "T2", "C1", since)
     assert [m.text for m in remaining] == ["theirs"]
 
 
@@ -101,10 +102,10 @@ async def test_the_window_and_the_limit_both_bound_the_read(tmp_path):
     for i in range(10):
         await store.add(_msg(text=f"recent-{i}", ts=slack_ts(now - timedelta(minutes=10 - i))))
 
-    windowed = await store.list_recent("t1", "T1", "C1", now - timedelta(hours=1))
+    windowed = await store.list_recent("t1", "w1", "T1", "C1", now - timedelta(hours=1))
     assert "ancient" not in [m.text for m in windowed]
 
-    limited = await store.list_recent("t1", "T1", "C1", now - timedelta(days=7), limit=3)
+    limited = await store.list_recent("t1", "w1", "T1", "C1", now - timedelta(days=7), limit=3)
     # Newest three, oldest-first, so the transcript still reads in order.
     assert [m.text for m in limited] == ["recent-7", "recent-8", "recent-9"]
 
@@ -114,7 +115,7 @@ async def test_retention_deletes_only_what_is_past_the_window(tmp_path):
     await store.add(_msg(text="keep"))
     assert await store.purge_older_than(timedelta(days=7)) == 0
     assert len(await store.list_recent(
-        "t1", "T1", "C1", datetime(2020, 1, 1, tzinfo=timezone.utc))) == 1
+        "t1", "w1", "T1", "C1", datetime(2020, 1, 1, tzinfo=timezone.utc))) == 1
     # A zero-length window makes everything older than "now", which is the observable proof the
     # cutoff is applied rather than the table simply being truncated.
     assert await store.purge_older_than(timedelta(seconds=0)) == 1

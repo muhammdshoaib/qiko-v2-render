@@ -64,6 +64,7 @@ class DigestScheduler:
         await self.task_queue.enqueue(
             "generate_slack_digest",
             tenant=message.tenant,
+            agent_id=message.agent_id,
             team_id=message.team_id,
             channel_id=message.channel_id,
             # Part of the installation key, so the worker resolves the same workspace the event
@@ -84,14 +85,45 @@ class DigestWorker:
     cost_guard: object | None = None
     usage_store: object | None = None
 
-    async def run(self, *, tenant: str, team_id: str, channel_id: str,
-                  enterprise_id: str | None = None) -> dict:
+    async def run(self, *, tenant: str, agent_id: str | None = None, team_id: str,
+                  channel_id: str, enterprise_id: str | None = None) -> dict:
         """Generate and post a digest if the channel has been quiet long enough."""
         window = _window()
         # A floor, not a cap: see LOOKBACK_FLOOR. The row limit below is the real bound.
         since = datetime.now(timezone.utc) - max(window, LOOKBACK_FLOOR)
+
+        # Resolve the destination BEFORE reading the buffer. The queue identifies the workspace,
+        # but the installation is the authority for the tenant and worker that may read or post.
+        installation, slack = await self._resolve_destination(team_id, enterprise_id)
+        if slack is None:
+            logger.warning("slack digest has no usable installation; not generating",
+                           extra={"source": "channels.digest", "team_id": team_id})
+            return {"ok": False, "error": "no Slack installation for team"}
+
+        # The job arguments come off a queue. The installation's own tenant and worker are the
+        # authority: never trust the queue for the agent_id or tenant that may access data.
+        if installation is not None and installation.tenant != tenant:
+            logger.error("slack digest tenant mismatch; refusing to post",
+                         extra={"source": "channels.digest", "team_id": team_id})
+            return {"ok": False, "error": "installation tenant mismatch"}
+        if installation is not None:
+            if installation.worker_id is None:
+                logger.error("slack digest installation has no worker; refusing to post",
+                             extra={"source": "channels.digest", "team_id": team_id})
+                return {"ok": False, "error": "installation has no worker"}
+            if agent_id is None:
+                agent_id = installation.worker_id
+            elif agent_id != installation.worker_id:
+                logger.error("slack digest worker mismatch; refusing to post",
+                             extra={"source": "channels.digest", "team_id": team_id})
+                return {"ok": False, "error": "installation worker mismatch"}
+        if agent_id is None:
+            logger.error("slack digest has no agent_id; refusing to post",
+                         extra={"source": "channels.digest", "team_id": team_id})
+            return {"ok": False, "error": "no agent_id for digest"}
+
         messages = await self.message_store.list_recent(
-            tenant, team_id, channel_id, since, limit=DEFAULT_MESSAGE_LIMIT)
+            tenant, agent_id, team_id, channel_id, since, limit=DEFAULT_MESSAGE_LIMIT)
 
         latest = _latest_message_ts(messages)
         now = datetime.now(timezone.utc)
@@ -100,21 +132,6 @@ class DigestWorker:
                     "remaining_seconds": (window - (now - latest)).total_seconds()}
         if not messages:
             return {"ok": True, "messages_count": 0}
-
-        # Resolve the destination BEFORE spending on the model (see the module docstring).
-        installation, slack = await self._resolve_destination(team_id, enterprise_id)
-        if slack is None:
-            logger.warning("slack digest has no usable installation; not generating",
-                           extra={"source": "channels.digest", "team_id": team_id})
-            return {"ok": False, "error": "no Slack installation for team"}
-
-        # The job arguments come off a queue. The buffer read is already tenant-scoped, so a
-        # mismatched pair reads nothing, but posting with a token belonging to a different tenant
-        # than the one whose messages we just read is the one thing that must never happen.
-        if installation is not None and installation.tenant != tenant:
-            logger.error("slack digest tenant mismatch; refusing to post",
-                         extra={"source": "channels.digest", "team_id": team_id})
-            return {"ok": False, "error": "installation tenant mismatch"}
 
         # A tenant that has reached its AI spend cap does not get an unmetered background job.
         if self.cost_guard is not None:
@@ -140,7 +157,7 @@ class DigestWorker:
                            extra={"source": "channels.digest", "team_id": team_id})
             return {"ok": False, "error": "slack post failed"}
 
-        cleared = await self.message_store.clear_channel(tenant, team_id, channel_id)
+        cleared = await self.message_store.clear_channel(tenant, agent_id, team_id, channel_id)
         return {"ok": True, "messages_count": cleared, "posted": True}
 
     async def _generate(self, tenant: str, messages: list[SlackMessage]):

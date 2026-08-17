@@ -1,15 +1,24 @@
-"""Shared models and in-memory store for the Slack heads-up assistant.
+"""Shared models and the Slack adapter over the generic Signal store.
 
-Every read and every delete is keyed on (tenant, team_id, channel_id), never on
-(tenant, channel_id). A channel id is only unique WITHIN a workspace, so dropping team_id
-would merge two workspaces that happen to share one into a single digest, and post it with
-whichever workspace's bot token was resolved first.
+The Slack heads-up assistant still speaks `SlackMessage`, but every captured message is now
+a `Signal` in the intelligence worker store. This seam lets the event handler, scheduler and
+digest keep their Slack-specific shape while the storage layer is normalised.
+
+A channel id is only unique WITHIN a workspace, so the `container` field encodes both as
+`team_id/channel_id`. Two workspaces sharing one channel id therefore do not merge into a single
+conversation.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Protocol
+
+from app.modules.intelligence.models import (
+    InMemorySignalStore,
+    Signal,
+    SignalStore,
+)
 
 # The digest only ever needs the tail of a conversation. Capping the read bounds both the
 # prompt handed to the model and the memory held while building it (LLM10 / API4).
@@ -26,9 +35,18 @@ def slack_ts(moment: datetime) -> str:
     return f"{moment.timestamp():017.6f}"
 
 
+def slack_container(team_id: str, channel_id: str) -> str:
+    return f"{team_id}/{channel_id}"
+
+
+def _occurred_at_from_ts(ts: str) -> datetime:
+    return datetime.fromtimestamp(float(ts), tz=timezone.utc)
+
+
 @dataclass
 class SlackMessage:
     tenant: str
+    agent_id: str
     team_id: str
     channel_id: str
     channel_type: str
@@ -36,6 +54,7 @@ class SlackMessage:
     user_id: str
     text: str
     ts: str
+    kind: str = "message"
     flagged: bool = False
     tags: list[str] = field(default_factory=list)
     # Carried so the digest worker can resolve the SAME installation the event arrived for.
@@ -44,44 +63,98 @@ class SlackMessage:
     enterprise_id: str | None = None
 
 
+def slack_signal_from_message(message: SlackMessage) -> Signal:
+    """Convert a Slack message to the normalised Signal shape."""
+    return Signal(
+        tenant=message.tenant,
+        agent_id=message.agent_id,
+        source="slack",
+        kind=message.kind,
+        external_id=message.ts,
+        container=slack_container(message.team_id, message.channel_id),
+        actor=message.user_id,
+        title=message.text[:200],
+        body=message.text,
+        occurred_at=_occurred_at_from_ts(message.ts),
+        ref=None,
+        url=None,
+        tags=list(message.tags),
+        flagged=message.flagged,
+        meta={
+            "team_id": message.team_id,
+            "channel_id": message.channel_id,
+            "channel_type": message.channel_type,
+            "thread_ts": message.thread_ts,
+            "enterprise_id": message.enterprise_id,
+        },
+    )
+
+
+def slack_message_from_signal(signal: Signal) -> SlackMessage:
+    """Rehydrate a SlackMessage from a Signal's meta fields."""
+    meta = signal.meta or {}
+    return SlackMessage(
+        tenant=signal.tenant,
+        agent_id=signal.agent_id,
+        team_id=meta.get("team_id", ""),
+        channel_id=meta.get("channel_id", ""),
+        channel_type=meta.get("channel_type", "channel"),
+        thread_ts=meta.get("thread_ts"),
+        user_id=signal.actor,
+        text=signal.body,
+        ts=signal.external_id,
+        kind=signal.kind or "message",
+        flagged=signal.flagged,
+        tags=list(signal.tags),
+        enterprise_id=meta.get("enterprise_id"),
+    )
+
+
 class SlackChannelStore(Protocol):
-    """Tenant-scoped message buffer for one or more Slack channels."""
+    """Tenant- and agent-scoped message buffer for one or more Slack channels.
+
+    The interface is unchanged from the original Slack-only store, but every implementation now
+    delegates to a `SignalStore` and tags rows with `source=slack`.
+    """
 
     async def add(self, message: SlackMessage) -> None: ...
 
-    async def list_recent(self, tenant: str, team_id: str, channel_id: str, since: datetime,
-                          limit: int = DEFAULT_MESSAGE_LIMIT) -> list[SlackMessage]: ...
+    async def list_recent(self, tenant: str, agent_id: str, team_id: str, channel_id: str,
+                          since: datetime, limit: int = DEFAULT_MESSAGE_LIMIT) -> list[SlackMessage]: ...
 
-    async def clear_channel(self, tenant: str, team_id: str, channel_id: str) -> int: ...
+    async def clear_channel(self, tenant: str, agent_id: str, team_id: str, channel_id: str) -> int: ...
+
+    async def purge_older_than(self, older_than: timedelta) -> int: ...
 
 
 @dataclass
 class InMemorySlackChannelStore:
-    """Dev/test in-memory store. Not multi-process safe, wiped on restart."""
+    """Dev/test SlackChannelStore backed by the in-memory Signal store."""
 
-    _messages: list[SlackMessage] = field(default_factory=list)
+    _signal_store: SignalStore = field(default_factory=InMemorySignalStore)
 
     async def add(self, message: SlackMessage) -> None:
-        self._messages.append(message)
+        await self._signal_store.add(slack_signal_from_message(message))
 
-    async def list_recent(self, tenant: str, team_id: str, channel_id: str, since: datetime,
-                          limit: int = DEFAULT_MESSAGE_LIMIT) -> list[SlackMessage]:
-        # Compared and sorted exactly as the SQL store does, so the implementation the tests drive
-        # and the one that ships cannot select different messages.
-        cutoff = slack_ts(since)
-        matching = [m for m in self._messages
-                    if self._same_channel(m, tenant, team_id, channel_id) and m.ts >= cutoff]
-        matching.sort(key=lambda m: m.ts)
-        # Newest `limit` messages, returned oldest-first so the transcript reads in order.
-        return matching[-limit:]
+    async def list_recent(self, tenant: str, agent_id: str, team_id: str, channel_id: str,
+                          since: datetime, limit: int = DEFAULT_MESSAGE_LIMIT) -> list[SlackMessage]:
+        signals = await self._signal_store.list_recent(
+            tenant, agent_id, source="slack",
+            container=slack_container(team_id, channel_id),
+            since=since, limit=limit)
+        return [slack_message_from_signal(s) for s in signals]
 
-    async def clear_channel(self, tenant: str, team_id: str, channel_id: str) -> int:
-        before = len(self._messages)
-        self._messages = [m for m in self._messages
-                          if not self._same_channel(m, tenant, team_id, channel_id)]
-        return before - len(self._messages)
+    async def clear_channel(self, tenant: str, agent_id: str, team_id: str, channel_id: str) -> int:
+        return await self._signal_store.clear(
+            tenant, agent_id, source="slack",
+            container=slack_container(team_id, channel_id))
 
-    @staticmethod
-    def _same_channel(message: SlackMessage, tenant: str, team_id: str, channel_id: str) -> bool:
-        return (message.tenant == tenant and message.team_id == team_id
-                and message.channel_id == channel_id)
+    async def purge_older_than(self, older_than: timedelta) -> int:
+        return await self._signal_store.purge_older_than(older_than, source="slack")
+
+    @property
+    def _messages(self) -> list[SlackMessage]:
+        """Backwards-compatible view used by tests: every stored SlackMessage, newest last."""
+        if isinstance(self._signal_store, InMemorySignalStore):
+            return [slack_message_from_signal(s) for s in self._signal_store._signals]
+        return []

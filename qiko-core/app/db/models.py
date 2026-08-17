@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, false, true
+from sqlalchemy import JSON, BigInteger, Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, false, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -759,6 +759,54 @@ class SlackInstallation(Base):
     installed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     __table_args__ = (Index("ix_slack_installations_workspace", "team_id", "enterprise_id"),)
+
+
+class IntelligenceSignal(Base):
+    """One normalised event from any source (app.modules.intelligence).
+
+    The single table behind the Intelligence Worker. A Slack message, a merged PR, a Qiko Track
+    transition, an uploaded document and a research finding are all rows here, which is what lets
+    retrieval, chat, the digest and correlation each understand exactly one shape.
+
+    `container` is WHERE it happened, source-defined: for Slack the workspace and channel, for
+    GitHub the repository. It carries the workspace and not just the channel because a channel id
+    is unique only within a workspace.
+
+    `ref` is WHICH WORK ITEM it concerns, and it is the join key across sources. Most rows have
+    none, and a row without one can only be reported as context, never as evidence.
+
+    Unique on (tenant, agent, source, external_id): connectors re-read an overlapping window on
+    every sweep, so the database enforces idempotency rather than trusting each connector to.
+    """
+    __tablename__ = "intelligence_signals"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    source: Mapped[str] = mapped_column(String(32))
+    kind: Mapped[str] = mapped_column(String(32))
+    external_id: Mapped[str] = mapped_column(String(255))
+    container: Mapped[str] = mapped_column(String(255))
+    actor: Mapped[str] = mapped_column(String(255))
+    title: Mapped[str] = mapped_column(Text)
+    body: Mapped[str] = mapped_column(Text)
+    ref: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    tags: Mapped[list] = mapped_column(JSON, default=list)
+    flagged: Mapped[bool] = mapped_column(Boolean, default=False)
+    meta: Mapped[dict] = mapped_column(JSON, default=dict)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "agent_id", "source", "external_id",
+                         name="uq_signal_identity"),
+        # The read every consumer performs: one worker's signals in a window, newest first.
+        Index("ix_signal_worker_time", "tenant_id", "agent_id", "occurred_at"),
+        # Narrowed reads: the digest by container, correlation by ref.
+        Index("ix_signal_container", "tenant_id", "agent_id", "container", "occurred_at"),
+        Index("ix_signal_ref", "tenant_id", "agent_id", "ref"),
+        # The retention sweep scans by age across every tenant.
+        Index("ix_signal_occurred", "occurred_at"),
+    )
 
 
 class SlackChannelMessage(Base):

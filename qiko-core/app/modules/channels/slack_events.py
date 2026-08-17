@@ -80,6 +80,12 @@ class SlackEventHandler:
                                   "event_id": event_id})
             return {"ok": True, "dropped": True}
 
+        if not installation.tenant or not installation.worker_id:
+            logger.warning("slack event for an installation with no tenant/worker; dropped",
+                           extra={"source": "channels.slack", "team_id": team_id,
+                                  "event_id": event_id})
+            return {"ok": True, "dropped": True}
+
         await self._handle_event(event, event_type, installation, team_id, enterprise_id)
         return {"ok": True}
 
@@ -95,12 +101,14 @@ class SlackEventHandler:
             # filtered out below. The bot mention itself is stripped from the stored text.
             text = re.sub(r"<@[A-Z0-9]+>", "", text).strip()
             channel_type = "channel"
+            kind = "mention"
         else:
             # Ignore bot messages, edits, deletions, DMs, and anything that is not a plain
             # message in a public channel. "message_changed" is deliberately NOT stored.
             if event.get("bot_id") or event.get("subtype") or event.get("channel_type") != "channel":
                 return
             channel_type = "channel"
+            kind = "message"
 
         channel = event.get("channel", "")
         user = event.get("user", "")
@@ -113,7 +121,8 @@ class SlackEventHandler:
                    or self._is_mention(text, installation.bot_user_id))
 
         await self.scheduler.on_new_message(SlackMessage(
-            tenant=installation.tenant or "",
+            tenant=installation.tenant,
+            agent_id=installation.worker_id,
             team_id=team_id,
             channel_id=channel,
             channel_type=channel_type,
@@ -121,6 +130,7 @@ class SlackEventHandler:
             user_id=user,
             text=text[:MAX_MESSAGE_CHARS],
             ts=ts,
+            kind=kind,
             flagged=flagged,
             tags=tags,
             enterprise_id=enterprise_id,

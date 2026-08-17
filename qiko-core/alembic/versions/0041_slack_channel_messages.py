@@ -15,8 +15,8 @@ would be summarised as a single conversation.
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0040_slack_channel_messages"
-down_revision = "0039_audit_append_only"
+revision = "0041_slack_channel_messages"
+down_revision = "0040_conversation_crm_eligible"
 branch_labels = None
 depends_on = None
 

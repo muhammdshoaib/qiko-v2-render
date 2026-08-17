@@ -57,6 +57,8 @@ from app.tasks.jobs import registry as task_registry
 from app.tasks.queue import get_task_queue as build_task_queue
 from app.modules.admin.customers import CustomerDirectory
 from app.modules.signal.router import router as signal_router
+from app.modules.intelligence.catalog import SourceCatalog
+from app.modules.intelligence.router import router as intelligence_router
 from app.core.tenancy import tenant_dependency
 from app.modules.admin.router import router as admin_router
 from app.modules.agents.router import router as agents_router
@@ -223,6 +225,7 @@ async def lifespan(app: FastAPI):
         app.state.slack_messages = SqlSlackChannelStore(sm)
         if getattr(app.state, "slack_digest_scheduler", None):
             app.state.slack_digest_scheduler.message_store = app.state.slack_messages
+        app.state.intelligence_catalog = _build_intelligence_catalog()
         set_user_store(SqlUserStore(sm))  # users/sessions/2FA persist to Postgres
 
         # Billing state + the admin Customers console are reached through SYNCHRONOUS route
@@ -264,6 +267,23 @@ async def lifespan(app: FastAPI):
         await engine.dispose()
         if app.state.sync_engine is not None:
             app.state.sync_engine.dispose()
+
+
+def _build_intelligence_catalog() -> SourceCatalog:
+    catalog = SourceCatalog()
+    catalog.register(
+        key="slack", name="Slack", connector=None,
+        description="Slack workspace messages via the Events API (push).")
+    catalog.register(
+        key="github", name="GitHub", connector=None,
+        description="Repository commits, pull requests, reviews and CI status.")
+    catalog.register(
+        key="qiko_track", name="Qiko Track", connector=None,
+        description="Tickets, transitions, comments and blocked flags.")
+    catalog.register(
+        key="generic", name="Generic", connector=None,
+        description="Custom webhook or file ingestion.")
+    return catalog
 
 
 def create_app() -> FastAPI:
@@ -457,6 +477,7 @@ def create_app() -> FastAPI:
     app.state.slack_oauth = SlackOAuth(InstallationStore())
     app.state.slack_links = WorkspaceLinkStore()
     app.state.slack_messages = InMemorySlackChannelStore()
+    app.state.intelligence_catalog = _build_intelligence_catalog()
     # S3 when configured, the dev dict otherwise. The guard in assert_secrets_set means a non-dev
     # environment cannot start without a bucket, so this cannot silently degrade in production.
     settings = get_settings()
@@ -483,9 +504,10 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix="/api/v1", dependencies=[Depends(tenant_dependency)])
     for r in (identity_router, identity_users_router, knowledge_router, agents_router, rfp_router,
               assignments_router, admin_router, chat_router, teams_router, leads_router, billing_router,
-              channels_router, excel_router, voice_router, signal_router, public_chat_router, sources_router,
-              twofa_router, onboarding_router, admin_org_router, batch_router, marketing_router, crm_router,
-              sales_intelligence_router, finance_router, notifications_router, consent_router):
+              channels_router, excel_router, voice_router, signal_router, intelligence_router,
+              public_chat_router, sources_router, twofa_router, onboarding_router, admin_org_router,
+              batch_router, marketing_router, crm_router, sales_intelligence_router, finance_router,
+              notifications_router, consent_router):
         app.include_router(r, prefix="/api/v1")
     return app
 

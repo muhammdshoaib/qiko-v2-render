@@ -25,11 +25,11 @@ from app.modules.channels.slack_oauth import SlackInstallation
 from app.modules.channels.slack_store import InMemorySlackChannelStore, SlackMessage, slack_ts
 
 
-def _msg(text: str, ts: str, *, tenant: str = "t1", team: str = "T1", channel: str = "C1",
-         user: str = "U1", tags=None, flagged: bool = False) -> SlackMessage:
-    return SlackMessage(tenant=tenant, team_id=team, channel_id=channel, channel_type="channel",
-                        thread_ts=None, user_id=user, text=text, ts=ts, flagged=flagged,
-                        tags=tags or [])
+def _msg(text: str, ts: str, *, tenant: str = "t1", agent_id: str = "w1", team: str = "T1",
+         channel: str = "C1", user: str = "U1", tags=None, flagged: bool = False) -> SlackMessage:
+    return SlackMessage(tenant=tenant, agent_id=agent_id, team_id=team, channel_id=channel,
+                        channel_type="channel", thread_ts=None, user_id=user, text=text, ts=ts,
+                        flagged=flagged, tags=tags or [])
 
 
 def _reply(text: str) -> Mock:
@@ -201,7 +201,7 @@ async def test_an_active_channel_defers_instead_of_digesting(installation_store)
         message_store=await _store_with(_msg("still talking", _ts(timedelta()))),
         installation_store=installation_store, provider=provider)
 
-    result = await worker.run(tenant="t1", team_id="T1", channel_id="C1")
+    result = await worker.run(tenant="t1", agent_id="w1", team_id="T1", channel_id="C1")
     assert result["deferred"] is True
     provider.generate.assert_not_called()
 
@@ -214,7 +214,7 @@ async def test_a_quiet_channel_is_digested_posted_and_cleared(installation_store
         message_store=store, installation_store=installation_store, slack_client=slack,
         provider=_reply('{"summary": "discussed pricing", "tone": "calm"}'))
 
-    result = await worker.run(tenant="t1", team_id="T1", channel_id="C1")
+    result = await worker.run(tenant="t1", agent_id="w1", team_id="T1", channel_id="C1")
     assert result["ok"] is True and result["posted"] is True
     slack.send_message.assert_called_once()
     channel, text = slack.send_message.call_args.args
@@ -233,7 +233,7 @@ async def test_an_unresolvable_workspace_costs_nothing():
         message_store=await _store_with(_msg("hi", _ts(timedelta(hours=-2)))),
         installation_store=empty_store, provider=provider)
 
-    result = await worker.run(tenant="t1", team_id="T1", channel_id="C1")
+    result = await worker.run(tenant="t1", agent_id="w1", team_id="T1", channel_id="C1")
     assert result == {"ok": False, "error": "no Slack installation for team"}
     provider.generate.assert_not_called()
 
@@ -246,7 +246,7 @@ async def test_a_missing_installation_store_fails_closed():
         message_store=await _store_with(_msg("hi", _ts(timedelta(hours=-2)))),
         installation_store=None, provider=provider)
 
-    result = await worker.run(tenant="t1", team_id="T1", channel_id="C1")
+    result = await worker.run(tenant="t1", agent_id="w1", team_id="T1", channel_id="C1")
     assert result["ok"] is False
     provider.generate.assert_not_called()
 
@@ -259,7 +259,7 @@ async def test_nothing_is_posted_and_nothing_cleared_when_the_provider_fails(ins
         message_store=store, installation_store=installation_store, slack_client=slack,
         provider=Mock(generate=Mock(return_value=LLMResponse(text="not json", stub=False))))
 
-    result = await worker.run(tenant="t1", team_id="T1", channel_id="C1")
+    result = await worker.run(tenant="t1", agent_id="w1", team_id="T1", channel_id="C1")
     assert result == {"ok": False, "error": "digest unavailable"}
     slack.send_message.assert_not_called()
     # Retained so the next run can try again.
@@ -274,7 +274,7 @@ async def test_a_failed_slack_post_does_not_discard_the_messages(installation_st
         message_store=store, installation_store=installation_store, slack_client=slack,
         provider=_reply('{"summary": "s"}'))
 
-    result = await worker.run(tenant="t1", team_id="T1", channel_id="C1")
+    result = await worker.run(tenant="t1", agent_id="w1", team_id="T1", channel_id="C1")
     assert result == {"ok": False, "error": "slack post failed"}
     assert len(store._messages) == 1
 
@@ -293,7 +293,7 @@ async def test_a_tenant_over_its_ai_cost_cap_is_not_digested(installation_store)
         installation_store=installation_store, slack_client=Mock(),
         provider=provider, cost_guard=guard)
 
-    result = await worker.run(tenant="t1", team_id="T1", channel_id="C1")
+    result = await worker.run(tenant="t1", agent_id="w1", team_id="T1", channel_id="C1")
     assert result == {"ok": False, "error": "cost cap reached"}
     provider.generate.assert_not_called()
 
@@ -306,7 +306,8 @@ async def test_the_enterprise_id_is_carried_into_the_installation_lookup(install
         message_store=await _store_with(_msg("hi", _ts(timedelta(hours=-2)))),
         installation_store=installation_store, provider=_reply('{"summary": "s"}'))
 
-    await worker.run(tenant="t1", team_id="T1", channel_id="C1", enterprise_id="E9")
+    await worker.run(tenant="t1", agent_id="w1", team_id="T1", channel_id="C1",
+                     enterprise_id="E9")
     installation_store.fetch_by_workspace.assert_called_once_with("T1", "E9")
 
 
@@ -321,7 +322,7 @@ async def test_a_queue_payload_naming_another_tenant_is_refused():
         message_store=await _store_with(_msg("hi", _ts(timedelta(hours=-2)))),
         installation_store=other_tenant, provider=provider)
 
-    result = await worker.run(tenant="t1", team_id="T1", channel_id="C1")
+    result = await worker.run(tenant="t1", agent_id="w1", team_id="T1", channel_id="C1")
     assert result == {"ok": False, "error": "installation tenant mismatch"}
     provider.generate.assert_not_called()
 
@@ -338,7 +339,7 @@ async def test_another_workspace_sharing_a_channel_id_is_not_merged_in(installat
         message_store=store, installation_store=installation_store, slack_client=slack,
         provider=_reply('{"summary": "s"}'))
 
-    await worker.run(tenant="t1", team_id="T1", channel_id="C1")
+    await worker.run(tenant="t1", agent_id="w1", team_id="T1", channel_id="C1")
     transcript = worker.provider.generate.call_args.args[0]
     assert "ours" in transcript
     assert "theirs" not in transcript

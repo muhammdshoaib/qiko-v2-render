@@ -259,15 +259,15 @@ def _slack_worker_from_sessionmaker(sessionmaker, *, sync_sessionmaker=None):
 
 
 @registry.register("generate_slack_digest")
-async def generate_slack_digest(*, tenant: str, team_id: str, channel_id: str,
-                                enterprise_id: str | None = None,
+async def generate_slack_digest(*, tenant: str, agent_id: str | None = None, team_id: str,
+                                channel_id: str, enterprise_id: str | None = None,
                                 sessionmaker=None, sync_sessionmaker=None) -> dict:
     """Background job: generate and post a Slack heads-up digest after inactivity."""
     worker = (_slack_worker_from_state() if sessionmaker is None
               else _slack_worker_from_sessionmaker(sessionmaker,
                                                    sync_sessionmaker=sync_sessionmaker))
-    return await worker.run(tenant=tenant, team_id=team_id, channel_id=channel_id,
-                            enterprise_id=enterprise_id)
+    return await worker.run(tenant=tenant, agent_id=agent_id, team_id=team_id,
+                            channel_id=channel_id, enterprise_id=enterprise_id)
 
 
 async def purge_slack_messages(store, *, retention_days: int) -> dict:

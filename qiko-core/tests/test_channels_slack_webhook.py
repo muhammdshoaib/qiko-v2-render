@@ -99,8 +99,8 @@ def test_message_is_stored_and_a_digest_is_scheduled(client):
     assert len(client.app.state.enqueued) == 1
     name, defer_by, kwargs = client.app.state.enqueued[0]
     assert name == "generate_slack_digest"
-    assert kwargs == {"tenant": "tenant-1", "team_id": "T123", "channel_id": "C456",
-                      "enterprise_id": None}
+    assert kwargs == {"tenant": "tenant-1", "agent_id": "worker-1", "team_id": "T123",
+                      "channel_id": "C456", "enterprise_id": None}
     assert defer_by is not None
 
 
