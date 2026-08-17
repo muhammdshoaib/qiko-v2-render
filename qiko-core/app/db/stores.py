@@ -51,6 +51,7 @@ from app.db.models import RfpPack as RfpPackRow
 from app.modules.channels.slack_store import (
     DEFAULT_MESSAGE_LIMIT,
     SlackMessage,
+    _signal_doc_id,
     slack_container,
     slack_message_from_signal,
     slack_signal_from_message,
@@ -111,6 +112,7 @@ from app.modules.identity.security import verify_password
 from app.modules.identity.store import User, UserDirectoryEntry
 from app.modules.identity.team_access import PendingInvite
 from app.modules.knowledge.models import Passage
+from app.modules.knowledge.service import KnowledgeService
 from app.modules.leads.service import Lead
 from app.modules.notifications.models import Notification
 from app.modules.rfp.service import CachedAnswer, PackRequirement, RfpPack, RfpPackNotFound
@@ -2742,12 +2744,21 @@ class SqlSlackChannelStore:
     """
 
     sessionmaker: async_sessionmaker[AsyncSession]
+    knowledge: KnowledgeService | None = None
 
     def __post_init__(self):
         self._signal_store = SqlSignalStore(self.sessionmaker)
 
-    async def add(self, message: SlackMessage) -> None:
-        await self._signal_store.add(slack_signal_from_message(message))
+    async def add(self, message: SlackMessage) -> bool:
+        from app.modules.channels.slack_store import _signal_text
+
+        signal = slack_signal_from_message(message)
+        is_new = await self._signal_store.add(signal)
+        if is_new and self.knowledge is not None:
+            await self.knowledge.ingest(
+                signal.tenant, _signal_doc_id(signal), _signal_text(signal),
+                agent_id=signal.agent_id)
+        return is_new
 
     async def list_recent(self, tenant: str, agent_id: str, team_id: str, channel_id: str,
                           since: datetime, limit: int = DEFAULT_MESSAGE_LIMIT) -> list[SlackMessage]:
@@ -2758,11 +2769,24 @@ class SqlSlackChannelStore:
         return [slack_message_from_signal(s) for s in signals]
 
     async def clear_channel(self, tenant: str, agent_id: str, team_id: str, channel_id: str) -> int:
+        if self.knowledge is not None:
+            signals = await self._signal_store.list_recent(
+                tenant, agent_id, source="slack",
+                container=slack_container(team_id, channel_id),
+                since=datetime.min.replace(tzinfo=timezone.utc), limit=10_000_000)
+            for signal in signals:
+                await self.knowledge.delete_document(
+                    signal.tenant, _signal_doc_id(signal), agent_id=signal.agent_id)
         return await self._signal_store.clear(
             tenant, agent_id, source="slack",
             container=slack_container(team_id, channel_id))
 
     async def purge_older_than(self, older_than: timedelta) -> int:
+        if self.knowledge is not None:
+            signals = await self._signal_store.list_older_than(older_than, source="slack")
+            for signal in signals:
+                await self.knowledge.delete_document(
+                    signal.tenant, _signal_doc_id(signal), agent_id=signal.agent_id)
         return await self._signal_store.purge_older_than(older_than, source="slack")
 
 
@@ -2869,6 +2893,17 @@ class SqlSignalStore:
                 delete(IntelligenceSignalRow).where(
                     *self._scope(tenant, agent_id, source, container)))
             return result.rowcount or 0
+
+    async def list_older_than(self, older_than: timedelta,
+                              source: str | None = None) -> list[Signal]:
+        cutoff = datetime.now(timezone.utc) - older_than
+        clauses = [IntelligenceSignalRow.occurred_at < cutoff]
+        if source is not None:
+            clauses.append(IntelligenceSignalRow.source == source)
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(IntelligenceSignalRow).where(*clauses))).scalars().all()
+            return [self._to_domain(r) for r in rows]
 
     async def purge_older_than(self, older_than: timedelta,
                                 source: str | None = None) -> int:

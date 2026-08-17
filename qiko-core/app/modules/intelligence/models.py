@@ -79,6 +79,9 @@ class SignalStore(Protocol):
     async def purge_older_than(self, older_than: timedelta,
                                 source: str | None = None) -> int: ...
 
+    async def list_older_than(self, older_than: timedelta,
+                              source: str | None = None) -> list[Signal]: ...
+
 
 @dataclass
 class InMemorySignalStore:
@@ -115,12 +118,17 @@ class InMemorySignalStore:
 
     async def purge_older_than(self, older_than: timedelta,
                                source: str | None = None) -> int:
+        old = await self.list_older_than(older_than, source=source)
+        old_keys = {s.dedupe_key for s in old}
+        self._signals = [s for s in self._signals if s.dedupe_key not in old_keys]
+        return len(old)
+
+    async def list_older_than(self, older_than: timedelta,
+                              source: str | None = None) -> list[Signal]:
         cutoff = datetime.now(timezone.utc) - older_than
-        before = len(self._signals)
-        self._signals = [
+        return [
             s for s in self._signals
-            if s.occurred_at >= cutoff and (source is None or s.source == source)]
-        return before - len(self._signals)
+            if s.occurred_at < cutoff and (source is None or s.source == source)]
 
     @staticmethod
     def _matches(signal: Signal, tenant: str, agent_id: str,

@@ -33,6 +33,7 @@ NOT_AUDITED: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/voice/speak"): "per utterance, sub-second cadence",
     ("POST", "/api/v1/rfp/packs/{pack_id}/chat"): "conversational turns, capped at 500 per pack",
     ("POST", "/api/v1/finance/{agent_id}/chat"): "conversational turns over financial documents; the upload and the deletion are audited instead",
+    ("POST", "/api/v1/intelligence/agents/{agent_id}/chat/ask"): "conversational turns over captured signals; the signal capture and source changes are audited instead",
     ("PUT", "/api/v1/rfp/packs/{pack_id}/questions/{question_id}/draft"): (
         "autosave-shaped; the meaningful events are lock/unlock, which are ~111 per tender instead of thousands"),
     ("POST", "/api/v1/notifications/{notification_id}/read"): "read-tracking; read_at is already the record",
