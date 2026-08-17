@@ -216,3 +216,28 @@ async def test_a_duplicate_slack_event_is_not_ingested_twice(tmp_path):
     assert await store.add(msg) is False
     passages = await knowledge.retrieve("t1", "pricing", k=5, agent_id="w1")
     assert len(passages) == 1
+
+
+async def test_clear_channel_also_deletes_knowledge_passages(tmp_path):
+    """Signal retention must keep the knowledge corpus in sync: no orphan passages."""
+    knowledge = KnowledgeService(store=InMemoryVectorStore())
+    store = await _messages(tmp_path / "m.db")
+    store.knowledge = knowledge
+    await store.add(_msg(text="we decided to keep pricing flat", ts="1700000000.100000"))
+    assert len(await knowledge.retrieve("t1", "pricing", k=5, agent_id="w1")) == 1
+
+    assert await store.clear_channel("t1", "w1", "T1", "C1") == 1
+    assert await knowledge.retrieve("t1", "pricing", k=5, agent_id="w1") == []
+
+
+async def test_purge_older_than_also_deletes_knowledge_passages(tmp_path):
+    """Retention across the Slack buffer cascades to the vector store."""
+    knowledge = KnowledgeService(store=InMemoryVectorStore())
+    store = await _messages(tmp_path / "m.db")
+    store.knowledge = knowledge
+    old = datetime.now(timezone.utc) - timedelta(days=8)
+    await store.add(_msg(text="we decided to keep pricing flat", ts=slack_ts(old)))
+    assert len(await knowledge.retrieve("t1", "pricing", k=5, agent_id="w1")) == 1
+
+    assert await store.purge_older_than(timedelta(days=7)) == 1
+    assert await knowledge.retrieve("t1", "pricing", k=5, agent_id="w1") == []

@@ -277,6 +277,11 @@ async def purge_slack_messages(store, *, retention_days: int) -> dict:
     digest never posted, which is exactly the case the rest of this feature fails closed into.
     """
     from datetime import timedelta
+    from app.db.stores import SqlVectorStore
+    from app.modules.knowledge.service import KnowledgeService
+
+    if getattr(store, "knowledge", None) is None and getattr(store, "sessionmaker", None) is not None:
+        store.knowledge = KnowledgeService(store=SqlVectorStore(store.sessionmaker))
 
     deleted = await store.purge_older_than(timedelta(days=retention_days))
     logger.info("slack messages purged", extra={

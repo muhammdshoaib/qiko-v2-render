@@ -6,7 +6,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from app.core.deps import authed_tenant, current_claims, get_chat, require_role, resolve_tenant_worker
+from app.core.deps import authed_tenant, get_chat, require_role, resolve_tenant_worker
 from app.modules.identity.rbac import Role
 from app.modules.intelligence.catalog import SourceCatalog, UnknownSource
 from app.modules.intelligence.chat import IntelligenceChat

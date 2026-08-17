@@ -182,11 +182,24 @@ class InMemorySlackChannelStore:
         return [slack_message_from_signal(s) for s in signals]
 
     async def clear_channel(self, tenant: str, agent_id: str, team_id: str, channel_id: str) -> int:
+        if self.knowledge is not None:
+            signals = await self._signal_store.list_recent(
+                tenant, agent_id, source="slack",
+                container=slack_container(team_id, channel_id),
+                since=datetime.min.replace(tzinfo=timezone.utc), limit=10_000_000)
+            for signal in signals:
+                await self.knowledge.delete_document(
+                    signal.tenant, _signal_doc_id(signal), agent_id=signal.agent_id)
         return await self._signal_store.clear(
             tenant, agent_id, source="slack",
             container=slack_container(team_id, channel_id))
 
     async def purge_older_than(self, older_than: timedelta) -> int:
+        if self.knowledge is not None:
+            signals = await self._signal_store.list_older_than(older_than, source="slack")
+            for signal in signals:
+                await self.knowledge.delete_document(
+                    signal.tenant, _signal_doc_id(signal), agent_id=signal.agent_id)
         return await self._signal_store.purge_older_than(older_than, source="slack")
 
     @property
