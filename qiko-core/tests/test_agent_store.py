@@ -82,6 +82,26 @@ async def test_add_with_limit_counts_disabled_and_archived_and_supports_unlimite
     assert await store.count("acme") == 2
 
 
+async def test_add_with_limit_serializes_concurrent_creates(tmp_path):
+    """Two simultaneous add_with_limit calls for a tenant with limit 1 must produce exactly one agent.
+
+    SQLite ignores SELECT FOR UPDATE, so the store also uses a per-tenant in-process lock to keep
+    the count+insert atomic. This is the regression test for QIKO-1018.
+    """
+    sessionmaker = await _sm(tmp_path / "concurrent.db")
+    async with sessionmaker() as session, session.begin():
+        session.add(Tenant(id="acme", name="Acme"))
+    store = SqlAgentStore(sessionmaker)
+
+    creates = await asyncio.gather(
+        store.add_with_limit(Agent(id="a1", tenant="acme", name="First"), 1),
+        store.add_with_limit(Agent(id="a2", tenant="acme", name="Second"), 1),
+        return_exceptions=True,
+    )
+    assert sum(isinstance(result, Agent) for result in creates) == 1
+    assert sum(isinstance(result, PlanLimitError) for result in creates) == 1
+
+
 @pytest.mark.skipif(not os.getenv("QIKO_TEST_POSTGRES_URL"), reason="temporary PostgreSQL required")
 async def test_postgres_serializes_concurrent_limit_and_toggle():
     engine = create_async_engine(os.environ["QIKO_TEST_POSTGRES_URL"])

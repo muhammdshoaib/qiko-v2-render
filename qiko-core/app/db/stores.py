@@ -6,10 +6,11 @@ redeploy), which the in-memory stubs did not.
 """
 from __future__ import annotations
 
+import asyncio
 import secrets
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from pydantic import ValidationError
@@ -357,6 +358,7 @@ class SqlVectorStore:
 @dataclass
 class SqlAgentStore:
     sessionmaker: async_sessionmaker[AsyncSession]
+    _limit_locks: dict[str, asyncio.Lock] = field(default_factory=dict, repr=False)
 
     def _to_domain(self, r: AgentRow) -> Agent:
         return Agent(id=r.id, tenant=r.tenant_id, name=r.name, atype=r.atype,
@@ -378,21 +380,33 @@ class SqlAgentStore:
 
     async def add_with_limit(self, agent: Agent, worker_limit: int, *,
                              audit: dict | None = None) -> Agent:
-        async with self.sessionmaker() as s, s.begin():
-            tenant = (await s.execute(
-                select(TenantRow).where(TenantRow.id == agent.tenant).with_for_update()
-            )).scalar_one_or_none()
-            if tenant is None:
-                raise KeyError(agent.tenant)
-            count = (await s.execute(
-                select(func.count()).select_from(AgentRow)
-                .where(AgentRow.tenant_id == agent.tenant)
-            )).scalar_one()
-            if worker_limit >= 0 and count >= worker_limit:
-                raise PlanLimitError(f"worker limit {worker_limit} reached")
-            s.add(self._row(agent))
-            if audit is not None:
-                s.add(AuditEventRow(**audit))
+        # SQLite ignores SELECT FOR UPDATE, and the count+insert is otherwise a read-then-write race.
+        # Postgres needs a cross-process lock too, because multiple workers can run the same code.
+        # A per-tenant asyncio lock covers the in-process case and SQLite tests; a transaction-scoped
+        # advisory lock covers cross-process Postgres workers.
+        lock = self._limit_locks.setdefault(agent.tenant, asyncio.Lock())
+        async with lock:
+            async with self.sessionmaker() as s, s.begin():
+                if s.bind.dialect.name == "postgresql":
+                    lock_key = f"worker_limit:{agent.tenant}"
+                    await s.execute(
+                        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"),
+                        {"key": lock_key},
+                    )
+                tenant = (await s.execute(
+                    select(TenantRow).where(TenantRow.id == agent.tenant).with_for_update()
+                )).scalar_one_or_none()
+                if tenant is None:
+                    raise KeyError(agent.tenant)
+                count = (await s.execute(
+                    select(func.count()).select_from(AgentRow)
+                    .where(AgentRow.tenant_id == agent.tenant)
+                )).scalar_one()
+                if worker_limit >= 0 and count >= worker_limit:
+                    raise PlanLimitError(f"worker limit {worker_limit} reached")
+                s.add(self._row(agent))
+                if audit is not None:
+                    s.add(AuditEventRow(**audit))
         return agent
 
     async def list(self, tenant: str) -> list[Agent]:
