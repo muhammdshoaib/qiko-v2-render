@@ -19,6 +19,7 @@ from app.modules.intelligence.models import (
     Signal,
     SignalStore,
 )
+from app.modules.knowledge.service import KnowledgeService
 
 # The digest only ever needs the tail of a conversation. Capping the read bounds both the
 # prompt handed to the model and the memory held while building it (LLM10 / API4).
@@ -63,21 +64,48 @@ class SlackMessage:
     enterprise_id: str | None = None
 
 
+def _slack_permalink(team_id: str, channel_id: str, ts: str) -> str:
+    """A Slack web client deep-link that works for any workspace the user is signed into.
+
+    The `ts` argument already contains the decimal separator used in Slack message timestamps.
+    """
+    return f"https://app.slack.com/client/{team_id}/{channel_id}/{ts}"
+
+
+def _signal_text(signal: Signal) -> str:
+    """Passage text used for retrieval: who, where, and what, with the source link inline."""
+    lines = [f"Slack message from {signal.actor} in {signal.container}"]
+    if signal.tags:
+        lines.append(f"Tags: {', '.join(signal.tags)}")
+    lines.append("")
+    lines.append(signal.body)
+    if signal.url:
+        lines.append("")
+        lines.append(f"Source: {signal.url}")
+    return "\n".join(lines)
+
+
+def _signal_doc_id(signal: Signal) -> str:
+    """Use the source link as the document id when available so citations are clickable."""
+    return signal.url or f"{signal.source}:{signal.external_id}"
+
+
 def slack_signal_from_message(message: SlackMessage) -> Signal:
     """Convert a Slack message to the normalised Signal shape."""
+    container = slack_container(message.team_id, message.channel_id)
     return Signal(
         tenant=message.tenant,
         agent_id=message.agent_id,
         source="slack",
         kind=message.kind,
         external_id=message.ts,
-        container=slack_container(message.team_id, message.channel_id),
+        container=container,
         actor=message.user_id,
         title=message.text[:200],
         body=message.text,
         occurred_at=_occurred_at_from_ts(message.ts),
         ref=None,
-        url=None,
+        url=_slack_permalink(message.team_id, message.channel_id, message.ts),
         tags=list(message.tags),
         flagged=message.flagged,
         meta={
@@ -117,7 +145,9 @@ class SlackChannelStore(Protocol):
     delegates to a `SignalStore` and tags rows with `source=slack`.
     """
 
-    async def add(self, message: SlackMessage) -> None: ...
+    knowledge: KnowledgeService | None
+
+    async def add(self, message: SlackMessage) -> bool: ...
 
     async def list_recent(self, tenant: str, agent_id: str, team_id: str, channel_id: str,
                           since: datetime, limit: int = DEFAULT_MESSAGE_LIMIT) -> list[SlackMessage]: ...
@@ -132,9 +162,16 @@ class InMemorySlackChannelStore:
     """Dev/test SlackChannelStore backed by the in-memory Signal store."""
 
     _signal_store: SignalStore = field(default_factory=InMemorySignalStore)
+    knowledge: KnowledgeService | None = None
 
-    async def add(self, message: SlackMessage) -> None:
-        await self._signal_store.add(slack_signal_from_message(message))
+    async def add(self, message: SlackMessage) -> bool:
+        signal = slack_signal_from_message(message)
+        is_new = await self._signal_store.add(signal)
+        if is_new and self.knowledge is not None:
+            await self.knowledge.ingest(
+                signal.tenant, _signal_doc_id(signal), _signal_text(signal),
+                agent_id=signal.agent_id)
+        return is_new
 
     async def list_recent(self, tenant: str, agent_id: str, team_id: str, channel_id: str,
                           since: datetime, limit: int = DEFAULT_MESSAGE_LIMIT) -> list[SlackMessage]:

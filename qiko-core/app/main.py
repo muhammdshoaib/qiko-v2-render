@@ -223,6 +223,7 @@ async def lifespan(app: FastAPI):
         app.state.pending_signups = SqlPendingSignupStore(sm)
         app.state.consent = ConsentService(store=SqlConsentStore(sm))
         app.state.slack_messages = SqlSlackChannelStore(sm)
+        app.state.slack_messages.knowledge = app.state.knowledge
         if getattr(app.state, "slack_digest_scheduler", None):
             app.state.slack_digest_scheduler.message_store = app.state.slack_messages
         app.state.intelligence_catalog = _build_intelligence_catalog()
@@ -489,6 +490,7 @@ def create_app() -> FastAPI:
     app.state.slack_oauth = SlackOAuth(InstallationStore())
     app.state.slack_links = WorkspaceLinkStore()
     app.state.slack_messages = InMemorySlackChannelStore()
+    app.state.slack_messages.knowledge = app.state.knowledge
     app.state.intelligence_catalog = _build_intelligence_catalog()
     # S3 when configured, the dev dict otherwise. The guard in assert_secrets_set means a non-dev
     # environment cannot start without a bucket, so this cannot silently degrade in production.

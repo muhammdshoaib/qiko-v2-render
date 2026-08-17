@@ -17,6 +17,8 @@ from app.db.stores import SqlSlackChannelStore
 from app.db.sync_stores import SqlSlackInstallationStore
 from app.modules.channels.slack_oauth import SlackInstallation
 from app.modules.channels.slack_store import SlackMessage, slack_ts
+from app.modules.knowledge.service import KnowledgeService
+from app.modules.knowledge.store import InMemoryVectorStore
 
 
 def _msg(*, tenant="t1", agent_id="w1", team="T1", channel="C1", text="hello", ts=None,
@@ -188,3 +190,29 @@ def test_delete_removes_only_the_named_installation(tmp_path):
     store.delete("T1", tenant="t1")
     assert store.fetch("T1", tenant="t1") is None
     assert store.fetch("T2", tenant="t1") is not None
+
+
+async def test_a_captured_message_is_ingested_into_knowledge(tmp_path):
+    """QIW-1004: signals enter the worker's knowledge corpus as they arrive, not in a later digest."""
+    knowledge = KnowledgeService(store=InMemoryVectorStore())
+    store = await _messages(tmp_path / "m.db")
+    store.knowledge = knowledge
+    await store.add(_msg(text="we decided to keep pricing flat", ts="1700000000.100000"))
+
+    passages = await knowledge.retrieve("t1", "pricing decision", k=1, agent_id="w1")
+    assert len(passages) == 1
+    assert "we decided to keep pricing flat" in passages[0].text
+    expected_url = "https://app.slack.com/client/T1/C1/1700000000.100000"
+    assert passages[0].doc_id == expected_url
+
+
+async def test_a_duplicate_slack_event_is_not_ingested_twice(tmp_path):
+    """The signal store dedupes; the knowledge store must stay deduped too."""
+    knowledge = KnowledgeService(store=InMemoryVectorStore())
+    store = await _messages(tmp_path / "m.db")
+    store.knowledge = knowledge
+    msg = _msg(text="we decided to keep pricing flat", ts="1700000000.100000")
+    assert await store.add(msg) is True
+    assert await store.add(msg) is False
+    passages = await knowledge.retrieve("t1", "pricing", k=5, agent_id="w1")
+    assert len(passages) == 1

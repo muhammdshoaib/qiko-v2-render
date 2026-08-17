@@ -111,6 +111,7 @@ from app.modules.identity.security import verify_password
 from app.modules.identity.store import User, UserDirectoryEntry
 from app.modules.identity.team_access import PendingInvite
 from app.modules.knowledge.models import Passage
+from app.modules.knowledge.service import KnowledgeService
 from app.modules.leads.service import Lead
 from app.modules.notifications.models import Notification
 from app.modules.rfp.service import CachedAnswer, PackRequirement, RfpPack, RfpPackNotFound
@@ -2742,12 +2743,21 @@ class SqlSlackChannelStore:
     """
 
     sessionmaker: async_sessionmaker[AsyncSession]
+    knowledge: KnowledgeService | None = None
 
     def __post_init__(self):
         self._signal_store = SqlSignalStore(self.sessionmaker)
 
-    async def add(self, message: SlackMessage) -> None:
-        await self._signal_store.add(slack_signal_from_message(message))
+    async def add(self, message: SlackMessage) -> bool:
+        from app.modules.channels.slack_store import _signal_doc_id, _signal_text
+
+        signal = slack_signal_from_message(message)
+        is_new = await self._signal_store.add(signal)
+        if is_new and self.knowledge is not None:
+            await self.knowledge.ingest(
+                signal.tenant, _signal_doc_id(signal), _signal_text(signal),
+                agent_id=signal.agent_id)
+        return is_new
 
     async def list_recent(self, tenant: str, agent_id: str, team_id: str, channel_id: str,
                           since: datetime, limit: int = DEFAULT_MESSAGE_LIMIT) -> list[SlackMessage]:
