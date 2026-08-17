@@ -79,12 +79,12 @@ def require_role(minimum: Role):
 
 
 async def _platform_admin_role(request: Request, claims: dict = Depends(current_claims)):
-    if not claims.get("mfa"):
-        raise HTTPException(status_code=403, detail="platform admin MFA required")
     email = claims.get("email")
     role = await request.app.state.admin_org.role_of(email) if email else None
     if role is None:
         raise HTTPException(status_code=403, detail="platform admin access required")
+    if not claims.get("mfa"):
+        raise HTTPException(status_code=403, detail="platform admin MFA required")
     return role
 
 
