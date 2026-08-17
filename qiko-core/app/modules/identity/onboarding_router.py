@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 import logging
+import secrets
 import uuid
 from dataclasses import replace
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.concurrency import run_in_threadpool
 
@@ -43,6 +44,7 @@ from app.modules.identity.security import hash_password
 from app.modules.identity.store import User, UserStore
 from app.modules.identity.team_access import ASSIGNABLE_ROLES, PendingInviteStore
 from app.modules.identity.tokens import TokenError, decode_token
+from app.modules.identity import cookies, csrf, tokens
 
 router = APIRouter(prefix="/auth", tags=["identity"])
 logger = logging.getLogger(__name__)
@@ -69,7 +71,8 @@ class SignupBody(BaseModel):
     # receives a server-generated tenant; invited signup derives membership from a signed token.
     tenant: str | None = None
     email: str = Field(min_length=3)
-    password: str = Field(min_length=8)
+    # Password is selected once during email verification, not collected (and ignored) at signup.
+    password: str | None = Field(default=None, min_length=8)
     # The signup form always collected a name; it was dropped on the way in, so every account was
     # created nameless even though users.name exists and Settings renders a display name.
     name: str | None = Field(default=None, max_length=255)
@@ -267,6 +270,30 @@ async def _create_onboarding_worker(candidate: PendingSignup, agents, knowledge)
     )
 
 
+def _user_from_candidate(candidate: PendingSignup, password: str) -> User:
+    return User(
+        id=candidate.user_id,
+        email=candidate.email,
+        password_hash=hash_password(password),
+        tenant=candidate.tenant,
+        role=candidate.role,
+        name=candidate.name,
+        twofa_enabled=False,
+    )
+
+
+async def _issue_session(response: Response, user: User, store: UserStore) -> None:
+    """Issue an authenticated session for a freshly-verified user."""
+    sid = secrets.token_urlsafe(16)
+    await store.set_sid(user.id, sid)
+    access = tokens.create_access_token(
+        user.id, tenant=user.tenant, role=user.role.value, sid=sid, email=user.email, mfa=user.twofa_enabled
+    )
+    refresh = tokens.create_refresh_token(user.id, sid=sid, mfa=user.twofa_enabled)
+    csrf_token = csrf.generate_csrf_token()
+    cookies.set_auth_cookies(response, access, refresh, csrf_token)
+
+
 @router.post(
     "/verify-email",
     response_model=VerifySignupResponse,
@@ -274,6 +301,7 @@ async def _create_onboarding_worker(candidate: PendingSignup, agents, knowledge)
 )
 async def verify_signup(
     body: VerifySignupBody,
+    response: Response,
     store: UserStore = Depends(get_store),
     agents=Depends(get_agents),
     knowledge=Depends(get_knowledge),
@@ -300,6 +328,7 @@ async def verify_signup(
                 await run_in_threadpool(email_sender.send, to=email, subject=subject, body=text_body, html=html_body)
             except Exception:
                 logger.warning("transactional_email_failed", extra={"flow": "signup_welcome"})
+            await _issue_session(response, _user_from_candidate(candidate, body.password), store)
         return _verification_response(candidate, email, candidate.completed_team_id)
 
     candidate = await pending_signups.consume(email, body.code)
@@ -337,14 +366,15 @@ async def verify_signup(
     if candidate.invite_version is None:
         team = await teams.create_team(candidate.tenant, email)
         team_id = team.id
-    await store.add(User(
+    user = User(
         id=candidate.user_id,
         email=email,
         password_hash=hash_password(body.password),
         tenant=candidate.tenant,
         role=candidate.role,
         name=candidate.name,
-    ))
+    )
+    await store.add(user)
     await _create_onboarding_worker(candidate, agents, knowledge)
     if candidate.invite_version is not None:
         await pending_invites.remove(candidate.tenant, email)
@@ -366,6 +396,7 @@ async def verify_signup(
         # Verification already succeeded and its code is consumed. Do not report a retryable failure
         # after creating the account, because a retry cannot reuse the one-time code.
         logger.warning("transactional_email_failed", extra={"flow": "welcome", "tenant": candidate.tenant})
+    await _issue_session(response, user, store)
     return _verification_response(candidate, email, team_id)
 
 

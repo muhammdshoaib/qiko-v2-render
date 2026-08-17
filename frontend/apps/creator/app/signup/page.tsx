@@ -1,16 +1,15 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "@/lib/wouter";
 // import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Eye, EyeOff, ArrowLeft, Check } from "lucide-react";
+import { Loader2, ArrowLeft } from "lucide-react";
 import { Link } from "@/lib/wouter";
 import { toast } from "sonner";
 import { signupAvatar } from "@/lib/avatarApi";
-import { arePasswordRequirementsMet, getPasswordRequirements } from "@/lib/passwordRequirements";
 import { ConsentSettingsButton } from "@/components/consent/ConsentUI";
 import { COOKIES_RELEASE_ID, PRIVACY_RELEASE_ID, TERMS_RELEASE_ID } from "@/lib/consent/consent-record";
 
@@ -19,31 +18,29 @@ export default function SignUp() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{ name?: string; email?: string }>({});
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [acceptedPolicies, setAcceptedPolicies] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+
+  const inviteToken =
+    typeof window === "undefined"
+      ? undefined
+      : new URLSearchParams(window.location.search).get("invite") ?? undefined;
+
+  useEffect(() => {
+    if (!inviteToken) {
+      setLocation("/onboarding");
+    }
+  }, [inviteToken, setLocation]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFieldErrors({});
-    
-    if (password !== confirmPassword) {
-      toast.error("Passwords do not match");
-      return;
-    }
-
-    if (!arePasswordRequirementsMet(password)) {
-      toast.error("Please meet all password requirements");
-      return;
-    }
 
     if (!acceptedPolicies) {
       toast.error("You must confirm your authority and acknowledge the Terms and Privacy Policy");
       return;
     }
-    
+
     setIsLoading(true);
 
     try {
@@ -51,10 +48,7 @@ export default function SignUp() {
       await signupAvatar({
         user_name: name,
         email: normalizedEmail,
-        password,
-        invite_token: typeof window === "undefined"
-          ? undefined
-          : new URLSearchParams(window.location.search).get("invite") ?? undefined,
+        invite_token: inviteToken,
         terms_release_id: TERMS_RELEASE_ID,
         privacy_release_id: PRIVACY_RELEASE_ID,
         cookies_release_id: COOKIES_RELEASE_ID,
@@ -77,8 +71,6 @@ export default function SignUp() {
       setIsLoading(false);
     }
   };
-
-  const passwordRequirements = getPasswordRequirements(password);
 
   return (
     <div className="min-h-screen bg-[#050810] flex items-center justify-center p-4">
@@ -145,55 +137,6 @@ export default function SignUp() {
                 />
                 {fieldErrors.email && <p className="text-xs text-red-400">{fieldErrors.email}</p>}
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-slate-300">Password</Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:ring-cyan-500/20 pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors"
-                  >
-                    {showPassword ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                  </button>
-                </div>
-                {/* Password requirements */}
-                {password && (
-                  <div className="mt-2 space-y-1">
-                    {passwordRequirements.map((req, i) => (
-                      <div key={i} className={`flex items-center gap-2 text-xs ${req.met ? 'text-green-400' : 'text-slate-500'}`}>
-                        <Check className={`w-3 h-3 ${req.met ? 'opacity-100' : 'opacity-30'}`} />
-                        {req.text}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="confirmPassword" className="text-slate-300">Confirm Password</Label>
-                <Input
-                  id="confirmPassword"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="••••••••"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                  className={`bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:ring-cyan-500/20 ${
-                    confirmPassword && password !== confirmPassword ? 'border-red-500' : ''
-                  }`}
-                />
-                {confirmPassword && password !== confirmPassword && (
-                  <p className="text-xs text-red-400">Passwords do not match</p>
-                )}
-              </div>
 
               <div className="flex items-start gap-3 rounded-lg border border-slate-700 bg-slate-900/60 p-3">
                 <input
@@ -214,7 +157,7 @@ export default function SignUp() {
 
               <Button
                 type="submit"
-                disabled={isLoading || password !== confirmPassword || !acceptedPolicies}
+                disabled={isLoading || !acceptedPolicies}
                 className="w-full bg-gradient-to-r from-purple-600 to-cyan-600 text-white border-0"
               >
                 {isLoading ? (

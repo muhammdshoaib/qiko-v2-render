@@ -5594,7 +5594,7 @@ export interface components {
             name?: string | null;
             onboarding_worker?: components["schemas"]["OnboardingWorkerBody"] | null;
             /** Password */
-            password: string;
+            password?: string | null;
             /**
              * Privacy Release Id
              * @constant
