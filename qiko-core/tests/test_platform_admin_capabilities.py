@@ -300,6 +300,16 @@ def test_capability_denial_never_mentions_mfa(client):
     assert "capability" in denied.json()["detail"]
 
 
+def test_capability_denial_for_non_admin_without_mfa_does_not_mention_mfa(client):
+    """A non-platform admin without MFA must receive a plain access denial. If the MFA check ran first,
+    the response would contain 'mfa' and the admin shell would redirect them into 2FA onboarding."""
+    outsider = auth_cookies("other", "owner", email="outsider@invalid", mfa=False)
+    denied = client.get("/api/v1/admin/me", cookies=outsider)
+    assert denied.status_code == 403
+    assert "mfa" not in denied.json()["detail"].lower()
+    assert "access" in denied.json()["detail"].lower()
+
+
 def test_directory_and_audit_are_closed_to_non_platform_admins(client):
     outsider = auth_cookies("other", "owner", email="outsider@invalid")
     assert client.get("/api/v1/admin/org", cookies=outsider).status_code == 403

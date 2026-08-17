@@ -78,6 +78,43 @@ def _complete_signup(client, email: str, password: str = "correct-horse-battery-
     return signup_response, verification
 
 
+def test_signup_does_not_require_password_and_verification_issues_session():
+    """Password is selected once during verification, not typed twice. After verification the
+    user is authenticated, so they are not dumped back at /login."""
+    app = create_app()
+    store = InMemoryUserStore()
+    app.dependency_overrides[get_store] = lambda: store
+    client = TestClient(app)
+    email = "nopassword" + "@" + "example.test"
+    password = "correct-horse-battery-staple"
+
+    signup = client.post(
+        "/api/v1/auth/signup",
+        json={"email": email, "name": "No Password User", **POLICY_ACCEPTANCE},
+    )
+    assert signup.status_code == 202, signup.text
+
+    verification = client.post(
+        "/api/v1/auth/verify-email",
+        json={"email": email, "code": signup.json()["verification_code"],
+              "password": password, **POLICY_ACCEPTANCE},
+    )
+    assert verification.status_code == 200, verification.text
+    assert set(verification.json()) == {"user_id", "email", "team_id"}
+
+    # Session cookies issued by verification; /auth/me works immediately.
+    assert "qiko_access" in client.cookies
+    assert "qiko_csrf" in client.cookies
+    me = client.get("/api/v1/auth/me")
+    assert me.status_code == 200
+    assert me.json()["user"]["email"] == email.lower()
+
+
+    # Login with the verification password also works (session was persisted under that hash).
+    # This is a sanity check that the user record actually received the password.
+    assert client.post("/api/v1/auth/login", json={"email": email, "password": password}).status_code == 200
+
+
 def test_signup_requires_explicit_current_policy_acceptance():
     client = TestClient(create_app())
     base = {"email": "founder" + "@" + "example.test", "password": "pw12345678"}

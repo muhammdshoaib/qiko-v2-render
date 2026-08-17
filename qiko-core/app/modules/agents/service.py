@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
 
+from app.modules.audit import registry as audit_actions
+from app.modules.audit import service as audit_service
 from app.modules.billing.plans import Plan
 
 
@@ -37,6 +39,18 @@ class Agent:
     enabled: bool = True
 
 
+def build_worker_created_audit_row(*, tenant: str, worker_id: str, worker_type: str,
+                                   status: str, source: str) -> dict:
+    """Build a minimal creation event without copying worker or account content."""
+    return audit_service.build_row(audit_service.AuditEvent(
+        action=audit_actions.WORKER_CREATED,
+        target_id=worker_id,
+        tenant_id=tenant,
+        actor_type=audit_service.SYSTEM,
+        metadata={"source": source, "type": worker_type, "status": status},
+    ))
+
+
 @dataclass(frozen=True)
 class AgentStateAudit:
     id: int | None
@@ -50,8 +64,9 @@ class AgentStateAudit:
 
 
 class AgentStore(Protocol):
-    async def add(self, agent: Agent) -> Agent: ...
-    async def add_with_limit(self, agent: Agent, worker_limit: int) -> Agent: ...
+    async def add(self, agent: Agent, *, audit: dict | None = None) -> Agent: ...
+    async def add_with_limit(self, agent: Agent, worker_limit: int, *,
+                             audit: dict | None = None) -> Agent: ...
     async def list(self, tenant: str) -> list[Agent]: ...
     async def count(self, tenant: str) -> int: ...
     async def get(self, tenant: str, agent_id: str) -> Agent | None: ...
@@ -80,16 +95,28 @@ class InMemoryAgentStore:
     audit_store: object | None = None
     _limit_locks: dict[str, asyncio.Lock] = field(default_factory=dict)
 
-    async def add(self, agent: Agent) -> Agent:
-        self._by_tenant.setdefault(agent.tenant, []).append(agent)
+    async def add(self, agent: Agent, *, audit: dict | None = None) -> Agent:
+        agents = self._by_tenant.setdefault(agent.tenant, [])
+        agents.append(agent)
+        try:
+            if audit is not None:
+                if self.audit_store is None:
+                    raise RuntimeError("worker creation audit store is not configured")
+                self.audit_store.add_in(None, audit)
+        except Exception:
+            agents.pop()
+            if not agents:
+                self._by_tenant.pop(agent.tenant, None)
+            raise
         return agent
 
-    async def add_with_limit(self, agent: Agent, worker_limit: int) -> Agent:
+    async def add_with_limit(self, agent: Agent, worker_limit: int, *,
+                             audit: dict | None = None) -> Agent:
         lock = self._limit_locks.setdefault(agent.tenant, asyncio.Lock())
         async with lock:
             if worker_limit >= 0 and await self.count(agent.tenant) >= worker_limit:
                 raise PlanLimitError(f"worker limit {worker_limit} reached")
-            return await self.add(agent)
+            return await self.add(agent, audit=audit)
 
     async def list(self, tenant: str) -> list[Agent]:
         return list(self._by_tenant.get(tenant, []))
@@ -199,8 +226,19 @@ class AgentService:
     async def create(self, tenant: str, name: str, plan: Plan, *, atype: str = "worker",
                       config: dict | None = None) -> Agent:
         agent = Agent(id=uuid.uuid4().hex[:12], tenant=tenant, name=name, atype=atype, config=config or {})
+        audit_row = build_worker_created_audit_row(
+            tenant=tenant,
+            worker_id=agent.id,
+            worker_type=agent.atype,
+            status=agent.status,
+            source="agents_api",
+        )
         try:
-            return await self.store.add_with_limit(agent, plan.worker_limit)
+            # Standalone in-memory services used by unit tests have no audit sink. The application
+            # wires one before handling requests; SQL writes the row directly in add_with_limit.
+            if isinstance(self.store, InMemoryAgentStore) and self.store.audit_store is None:
+                return await self.store.add_with_limit(agent, plan.worker_limit)
+            return await self.store.add_with_limit(agent, plan.worker_limit, audit=audit_row)
         except PlanLimitError as exc:
             raise PlanLimitError(f"plan '{plan.name}' allows {plan.worker_limit} worker(s)") from exc
 

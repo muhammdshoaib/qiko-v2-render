@@ -12,6 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
+from pydantic import ValidationError
 from sqlalchemy import and_, delete, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -67,7 +68,12 @@ from app.db.models import TeamsWebhook as TeamsWebhookRow
 from app.db.models import User as UserRow
 from app.db.models import VerifiedAnswer
 from app.db.models import IntelligenceSignal as IntelligenceSignalRow
-from app.modules.agents.service import Agent, AgentStateAudit, PlanLimitError
+from app.modules.agents.service import (
+    Agent,
+    AgentStateAudit,
+    PlanLimitError,
+    build_worker_created_audit_row,
+)
 from app.modules.assignments.service import Assignment, AssignmentNotFound
 from app.modules.channels.teams_integration import TeamsIntegration
 from app.modules.consent.models import ConsentChoices, ConsentRecord, ConsentSource, PolicyRelease
@@ -94,7 +100,11 @@ from app.modules.identity.admin_rbac import (
     read_capabilities,
 )
 from app.modules.identity.onboarding import hash_otp, new_otp_code
-from app.modules.identity.pending_signup import PendingSignup, hash_signup_code
+from app.modules.identity.pending_signup import (
+    PendingSignup,
+    hash_signup_code,
+    parse_persisted_onboarding_worker,
+)
 from app.modules.identity import twofa
 from app.modules.identity.rbac import Role
 from app.modules.identity.security import verify_password
@@ -355,12 +365,15 @@ class SqlAgentStore:
                         atype=agent.atype, status=agent.status, config=agent.config,
                         created_at=agent.created_at, enabled=agent.enabled)
 
-    async def add(self, agent: Agent) -> Agent:
+    async def add(self, agent: Agent, *, audit: dict | None = None) -> Agent:
         async with self.sessionmaker() as s, s.begin():
             s.add(self._row(agent))
+            if audit is not None:
+                s.add(AuditEventRow(**audit))
         return agent
 
-    async def add_with_limit(self, agent: Agent, worker_limit: int) -> Agent:
+    async def add_with_limit(self, agent: Agent, worker_limit: int, *,
+                             audit: dict | None = None) -> Agent:
         async with self.sessionmaker() as s, s.begin():
             tenant = (await s.execute(
                 select(TenantRow).where(TenantRow.id == agent.tenant).with_for_update()
@@ -374,6 +387,8 @@ class SqlAgentStore:
             if worker_limit >= 0 and count >= worker_limit:
                 raise PlanLimitError(f"worker limit {worker_limit} reached")
             s.add(self._row(agent))
+            if audit is not None:
+                s.add(AuditEventRow(**audit))
         return agent
 
     async def list(self, tenant: str) -> list[Agent]:
@@ -2107,6 +2122,8 @@ class SqlPendingSignupStore:
             terms_release_id=row.terms_release_id,
             privacy_release_id=row.privacy_release_id,
             cookies_release_id=row.cookies_release_id,
+            name=row.name,
+            onboarding_worker=parse_persisted_onboarding_worker(row.onboarding_worker),
             invite_version=row.invite_version,
             attempts_remaining=row.attempts_remaining,
             completed_at=_aware(row.completed_at) if row.completed_at else None,
@@ -2115,12 +2132,15 @@ class SqlPendingSignupStore:
         )
 
     async def put(self, signup: PendingSignup) -> bool:
+        onboarding_worker = parse_persisted_onboarding_worker(signup.onboarding_worker)
         async with self.sessionmaker() as session, session.begin():
             row = await session.get(PendingSignupRow, signup.email.lower())
             values = {
                 "user_id": signup.user_id,
                 "password_hash": signup.password_hash,
                 "tenant_id": signup.tenant,
+                "name": signup.name,
+                "onboarding_worker": onboarding_worker,
                 "role": signup.role.value,
                 "code_hash": signup.code_hash,
                 "expires_at": signup.expires_at,
@@ -2146,10 +2166,14 @@ class SqlPendingSignupStore:
             row = await session.get(PendingSignupRow, email.lower())
             if row is None:
                 return None
+            try:
+                signup = self._to_domain(row)
+            except ValidationError:
+                return None
             if _aware(row.expires_at) <= datetime.now(timezone.utc):
                 await session.delete(row)
                 return None
-            return self._to_domain(row)
+            return signup
 
     async def consume(self, email: str, code: str) -> PendingSignup | None:
         async with self.sessionmaker() as session, session.begin():
@@ -2160,6 +2184,10 @@ class SqlPendingSignupStore:
             )).scalar_one_or_none()
             if row is None:
                 return None
+            try:
+                signup = self._to_domain(row)
+            except ValidationError:
+                return None
             if _aware(row.expires_at) <= datetime.now(timezone.utc):
                 await session.delete(row)
                 return None
@@ -2168,7 +2196,7 @@ class SqlPendingSignupStore:
                 if row.attempts_remaining <= 0:
                     await session.delete(row)
                 return None
-            return self._to_domain(row)
+            return signup
 
     async def finalize_signup(self, email: str, code: str, password_hash: str,
                               terms_release_id: str, privacy_release_id: str,
@@ -2179,6 +2207,10 @@ class SqlPendingSignupStore:
             )).scalar_one_or_none()
             if row is None:
                 return None
+            try:
+                signup = self._to_domain(row)
+            except ValidationError:
+                return None
             now = datetime.now(timezone.utc)
             if _aware(row.expires_at) <= now:
                 await session.delete(row)
@@ -2188,16 +2220,19 @@ class SqlPendingSignupStore:
                 if row.attempts_remaining <= 0:
                     await session.delete(row)
                 return None
+            if row.invite_version is not None and signup.onboarding_worker is not None:
+                return None
             if row.completed_at is not None:
-                return self._to_domain(row), False
+                return signup, False
             existing_user = (await session.execute(select(UserRow).where(UserRow.email == row.email))).scalar_one_or_none()
             if await session.get(UserRow, row.user_id) is not None or existing_user is not None:
                 return None
 
             team_id = None
             if row.invite_version is None:
-                if await session.get(TenantRow, row.tenant_id) is None:
-                    session.add(TenantRow(id=row.tenant_id, name=row.tenant_id))
+                if await session.get(TenantRow, row.tenant_id) is not None:
+                    return None
+                session.add(TenantRow(id=row.tenant_id, name=row.tenant_id))
                 team_id = uuid.uuid4().hex[:12]
                 session.add(TeamRow(id=team_id, tenant_id=row.tenant_id))
                 session.add(TeamMemberRow(team_id=team_id, user_id=row.email, role=Role.owner.value))
@@ -2236,10 +2271,37 @@ class SqlPendingSignupStore:
             session.add(UserRow(
                 id=row.user_id,
                 email=row.email,
+                name=row.name,
                 password_hash=password_hash,
                 tenant_id=row.tenant_id,
                 role=row.role,
             ))
+            if signup.onboarding_worker is not None:
+                worker = signup.onboarding_worker
+                session.add(AgentRow(
+                    id=worker["id"],
+                    tenant_id=row.tenant_id,
+                    name=worker["name"],
+                    atype="worker",
+                    status="training",
+                    config=dict(worker["config"]),
+                    enabled=True,
+                ))
+                session.add(PassageRow(
+                    id=worker["id"],
+                    tenant_id=row.tenant_id,
+                    agent_id=worker["id"],
+                    doc_id=worker["id"],
+                    text=worker["knowledge"],
+                    embedding=[],
+                ))
+                session.add(AuditEventRow(**build_worker_created_audit_row(
+                    tenant=row.tenant_id,
+                    worker_id=worker["id"],
+                    worker_type="worker",
+                    status="training",
+                    source="onboarding",
+                )))
             row.completed_at = now
             row.completed_team_id = team_id
             row.expires_at = now + timedelta(minutes=10)

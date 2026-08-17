@@ -12,7 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
-import { arePasswordRequirementsMet, getPasswordRequirements } from "@/lib/passwordRequirements";
+import { buildOnboardingWorkerDraft } from "@/lib/onboarding-worker";
 import {
   ArrowRight,
   ArrowLeft,
@@ -26,9 +26,6 @@ import {
   X,
   User,
   Mail,
-  Lock,
-  Eye,
-  EyeOff,
   Plane,
   Building2,
   Briefcase,
@@ -42,7 +39,7 @@ import {
   Search,
   Activity,
 } from "lucide-react";
-import { addAvatarKnowledge, createAvatar, createSignalWorker, signupAvatar, getSubscriptionPlans, type SubscriptionPlan } from "@/lib/avatarApi";
+import { addAvatarKnowledge, createAvatar, createSignalWorker, saveAvatarProfile, signupAvatar, getSubscriptionPlans, type SubscriptionPlan } from "@/lib/avatarApi";
 import { COOKIES_RELEASE_ID, PRIVACY_RELEASE_ID, TERMS_RELEASE_ID } from "@/lib/consent/consent-record";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { useAppSelector } from "@/store/hooks";
@@ -121,8 +118,6 @@ interface AssessmentData {
 interface AccountData {
   fullName: string;
   email: string;
-  password: string;
-  confirmPassword: string;
 }
 
 interface AccountFieldErrors {
@@ -269,8 +264,6 @@ export default function Onboarding() {
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState<SubscriptionType | null>(null);
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [wizardData, setWizardData] = useState<WizardData>({});
   const [assessment, setAssessment] = useState<AssessmentData>({
@@ -282,8 +275,6 @@ export default function Onboarding() {
   const [account, setAccount] = useState<AccountData>({
     fullName: "",
     email: "",
-    password: "",
-    confirmPassword: "",
   });
   const [accountFieldErrors, setAccountFieldErrors] = useState<AccountFieldErrors>({});
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionType | null>(null);
@@ -426,44 +417,6 @@ export default function Onboarding() {
     }
   };
 
-  function buildKnowledgePayload(agentUniqueId: string) {
-    const w = wizardData;
-    const name = w.fullName || "My AI Assistant";
-    const title = w.professionalTitle || "";
-    const headline = w.headline || "";
-    const bio = [w.professionalBackground, w.credentials, w.achievements].filter(Boolean).join("\n\n") || headline;
-    return {
-      agent_unique_id: agentUniqueId,
-      user_name: name,
-      full_name: name,
-      headline: title,
-      knowledge: headline,
-      personality: w.tone || "friendly",
-      skills: w?.categories && w?.categories.length > 0 ? w?.categories : [title],
-      about_yourself: bio || `I am a ${title}. I help clients with ${headline}.`,
-      strength: headline,
-      short_bio: headline || `I specialize in ${title}.`,
-      location: w?.location || " ",
-      expertise: w?.categories?.length ? w?.categories.join(", ") : " ",
-      industry: w?.industry || " ",
-      main_goal: " ",
-      target_audience: " ",
-      what_makes_you_unique: " ",
-      more_info: JSON.stringify({
-          additionalGuidance: w?.additionalGuidance,
-          professionalBackground: w?.professionalBackground,
-          credentials: w?.credentials,
-          achievements: w?.achievements,
-          commonMistakes: w?.commonMistakes,
-          frameworks: w?.frameworks,
-          stakeholderBalance: w?.stakeholderBalance,
-          boundaries: w?.boundaries,
-          commonTasks: w?.commonTasks,
-          exampleQA: w?.exampleQA      
-      })
-    };
-  }
-
   async function runCreateAvatarAndKnowledge(plan: SubscriptionType, redirectToDashboardForCheckout = false) {
 
     setIsSubmitting(true);
@@ -493,13 +446,15 @@ export default function Onboarding() {
         return;
       }
 
-      const name = wizardData.fullName || wizardData.professionalTitle || "My AI Assistant";
+      const draft = buildOnboardingWorkerDraft(wizardData);
+      const name = draft.signup.name || draft.signup.title || "My AI Assistant";
       const avatarRes = await createAvatar({ agent_name: name });
       const agentId = avatarRes?.data?.agent_unique_id;
 
       if (!agentId) throw new Error("Avatar created but no agent id returned");
+      await saveAvatarProfile(agentId, draft.config);
       try {
-        await addAvatarKnowledge(buildKnowledgePayload(agentId));
+        await addAvatarKnowledge(agentId, draft.signup.knowledge);
         toast.success("Worker knowledge added successfully.");
       } catch (knowledgeError) {
         const msg = knowledgeError instanceof Error ? knowledgeError.message : "Knowledge save failed";
@@ -532,14 +487,6 @@ export default function Onboarding() {
       toast.error("Please enter a valid email address");
       return false;
     }
-    if (account.password !== account.confirmPassword) {
-      toast.error("Passwords do not match");
-      return false;
-    }
-    if (!arePasswordRequirementsMet(account.password)) {
-      toast.error("Please meet all password requirements");
-      return false;
-    }
     if (!selectedPlan) {
       toast.error("Please select a plan first");
       return false;
@@ -552,10 +499,11 @@ export default function Onboarding() {
     setIsSubmitting(true);
     try {
       setAccountFieldErrors({});
+      const draft = buildOnboardingWorkerDraft(wizardData);
       await signupAvatar({
         user_name: account.fullName,
         email: account.email,
-        password: account.password,
+        onboarding_worker: wizardData.industry === "ai_visibility" ? undefined : draft.signup,
         terms_release_id: TERMS_RELEASE_ID,
         privacy_release_id: PRIVACY_RELEASE_ID,
         cookies_release_id: COOKIES_RELEASE_ID,
@@ -1126,10 +1074,6 @@ export default function Onboarding() {
             setAccount={setAccount}
             accountFieldErrors={accountFieldErrors}
             selectedPlan={selectedPlan}
-            showPassword={showPassword}
-            setShowPassword={setShowPassword}
-            showConfirmPassword={showConfirmPassword}
-            setShowConfirmPassword={setShowConfirmPassword}
             isSubmitting={isSubmitting}
             handleCreateAccount={handleCreateAccount}
             handleBack={handleBack}
@@ -1176,10 +1120,6 @@ function Step6AccountCreation({
   setAccount,
   accountFieldErrors,
   selectedPlan,
-  showPassword,
-  setShowPassword,
-  showConfirmPassword,
-  setShowConfirmPassword,
   isSubmitting,
   handleCreateAccount,
   handleBack,
@@ -1191,17 +1131,12 @@ function Step6AccountCreation({
   setAccount: React.Dispatch<React.SetStateAction<AccountData>>;
   accountFieldErrors: AccountFieldErrors;
   selectedPlan: SubscriptionType | null;
-  showPassword: boolean;
-  setShowPassword: (v: boolean) => void;
-  showConfirmPassword: boolean;
-  setShowConfirmPassword: (v: boolean) => void;
   isSubmitting: boolean;
   handleCreateAccount: () => void;
   handleBack: () => void;
   setStep: (s: number) => void;
   setLocation: (path: string) => void;
 }) {
-  const passwordRequirements = getPasswordRequirements(account.password);
   const [acceptedPolicies, setAcceptedPolicies] = useState(false);
 
   return (
@@ -1245,39 +1180,6 @@ function Step6AccountCreation({
           </div>
           {accountFieldErrors.email && (
             <p className="text-xs text-red-400">{accountFieldErrors.email}</p>
-          )}
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="password" className="text-slate-300 text-sm font-medium">Password</Label>
-          <div className="relative">
-            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500" />
-            <Input id="password" type={showPassword ? "text" : "password"} placeholder="At least 8 characters" value={account.password} onChange={(e) => setAccount((prev) => ({ ...prev, password: e.target.value }))} className="h-14 pl-12 pr-12 bg-[#0a0f1a]/80 border-white/10 text-white placeholder:text-slate-500 rounded-xl focus:border-[#6366F1] focus:ring-[#6366F1]/20" />
-            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
-              {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-            </button>
-          </div>
-          {account.password && (
-            <div className="mt-2 space-y-1">
-              {passwordRequirements.map((req, i) => (
-                <div key={i} className={`flex items-center gap-2 text-xs ${req.met ? "text-green-400" : "text-slate-500"}`}>
-                  <Check className={`w-3 h-3 ${req.met ? "opacity-100" : "opacity-30"}`} />
-                  {req.text}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="confirmPassword" className="text-slate-300 text-sm font-medium">Confirm Password</Label>
-          <div className="relative">
-            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500" />
-            <Input id="confirmPassword" type={showConfirmPassword ? "text" : "password"} placeholder="Confirm your password" value={account.confirmPassword} onChange={(e) => setAccount((prev) => ({ ...prev, confirmPassword: e.target.value }))} className={`h-14 pl-12 pr-12 bg-[#0a0f1a]/80 border-white/10 text-white placeholder:text-slate-500 rounded-xl focus:border-[#6366F1] focus:ring-[#6366F1]/20 ${account.confirmPassword && account.password !== account.confirmPassword ? "border-red-500" : ""}`} />
-            <button type="button" onClick={() => setShowConfirmPassword(!showConfirmPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
-              {showConfirmPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-            </button>
-          </div>
-          {account.confirmPassword && account.password !== account.confirmPassword && (
-            <p className="text-xs text-red-400">Passwords do not match</p>
           )}
         </div>
         <div className="flex items-start gap-3 rounded-xl border border-white/10 bg-[#0a0f1a]/80 p-4">

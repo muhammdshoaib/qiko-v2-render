@@ -97,6 +97,8 @@ class PendingSignup(Base):
     user_id: Mapped[str] = mapped_column(String(64), unique=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     tenant_id: Mapped[str] = mapped_column(String(64))
+    name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    onboarding_worker: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     role: Mapped[str] = mapped_column(String(16))
     code_hash: Mapped[str] = mapped_column(String(64))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)

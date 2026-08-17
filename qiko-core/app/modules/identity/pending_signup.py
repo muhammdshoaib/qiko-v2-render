@@ -8,7 +8,9 @@ import secrets
 import time
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
-from typing import Protocol
+from typing import Annotated, Protocol
+
+from pydantic import BaseModel, ConfigDict, StringConstraints, ValidationError
 
 from app.core.config import get_settings
 from app.modules.identity.rbac import Role
@@ -16,6 +18,43 @@ from app.modules.identity.onboarding import new_otp_code
 
 SIGNUP_VERIFICATION_TTL_SECONDS = 600
 SIGNUP_VERIFICATION_MAX_ATTEMPTS = 5
+
+WorkerId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
+WorkerName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
+WorkerShortText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=255)]
+WorkerLongText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=4000)]
+WorkerTone = Annotated[str, StringConstraints(strip_whitespace=True, max_length=64)]
+WorkerIndustry = Annotated[str, StringConstraints(strip_whitespace=True, max_length=128)]
+
+
+class _PersistedOnboardingWorkerConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    full_name: WorkerName
+    title: WorkerShortText
+    location: WorkerShortText
+    about: WorkerLongText
+    tone: WorkerTone
+    industry: WorkerIndustry
+    expertise: WorkerLongText
+    main_goal: WorkerLongText
+
+
+class PersistedOnboardingWorker(BaseModel):
+    """The only accepted JSON shape for a pending signup's worker draft."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    id: WorkerId
+    name: WorkerName
+    config: _PersistedOnboardingWorkerConfig
+    knowledge: WorkerLongText
+
+
+def parse_persisted_onboarding_worker(value: object | None) -> dict | None:
+    if value is None:
+        return None
+    return PersistedOnboardingWorker.model_validate(value, strict=True).model_dump()
 
 
 def hash_signup_code(code: str) -> str:
@@ -38,6 +77,7 @@ class PendingSignup:
     # The display name typed at signup. It used to be collected by the form and silently dropped,
     # so every account was created with no name even though users.name exists.
     name: str | None = None
+    onboarding_worker: dict | None = None
     invite_version: int | None = None
     attempts_remaining: int = SIGNUP_VERIFICATION_MAX_ATTEMPTS
     completed_at: datetime | None = None
@@ -64,6 +104,10 @@ class InMemoryPendingSignupStore:
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     async def put(self, signup: PendingSignup) -> bool:
+        signup = replace(
+            signup,
+            onboarding_worker=parse_persisted_onboarding_worker(signup.onboarding_worker),
+        )
         email = signup.email.lower()
         async with self._lock:
             existing = await self.get(email)
@@ -88,6 +132,13 @@ class InMemoryPendingSignupStore:
         async with self._lock:
             signup = await self.get(key)
             if signup is None or key in self._claimed:
+                return None
+            try:
+                signup = replace(
+                    signup,
+                    onboarding_worker=parse_persisted_onboarding_worker(signup.onboarding_worker),
+                )
+            except ValidationError:
                 return None
             if not secrets.compare_digest(signup.code_hash, hash_signup_code(code)):
                 remaining = signup.attempts_remaining - 1
@@ -129,9 +180,13 @@ def make_pending_signup(
     privacy_release_id: str,
     cookies_release_id: str,
     name: str | None = None,
+    onboarding_worker: dict | None = None,
     invite_version: int | None = None,
     ttl: int = SIGNUP_VERIFICATION_TTL_SECONDS,
 ) -> tuple[PendingSignup, str]:
+    if invite_version is not None and onboarding_worker is not None:
+        raise ValueError("invited signup cannot create an onboarding worker")
+    onboarding_worker = parse_persisted_onboarding_worker(onboarding_worker)
     code = new_otp_code()
     return PendingSignup(
         user_id=user_id,
@@ -145,5 +200,6 @@ def make_pending_signup(
         privacy_release_id=privacy_release_id,
         cookies_release_id=cookies_release_id,
         name=name,
+        onboarding_worker=onboarding_worker,
         invite_version=invite_version,
     ), code

@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRight, Cookie, CreditCard, KeyRound, Link2, Search, Settings2, Trash2, User, UserPlus, Users } from "lucide-react";
+import QRCode from "qrcode";
+import { ArrowRight, Cookie, CreditCard, KeyRound, Link2, Search, Settings2, Shield, ShieldCheck, Trash2, User, UserPlus, Users } from "lucide-react";
 import { Badge, Button, Input, Label, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -13,8 +14,11 @@ import {
   inviteUser,
   listTenantUsers,
   me,
+  regenerateBackupCodes,
   removeUser,
   subscriptionStatus,
+  twofaSetup,
+  twofaVerify,
   updateProfile,
   updateUserRole,
   type TenantRole,
@@ -25,6 +29,7 @@ import { ConsentSettingsButton } from "@/components/consent/ConsentUI";
 const SETTINGS_TABS = [
   { id: "general", label: "General", icon: Settings2 },
   { id: "team", label: "Team", icon: Users },
+  { id: "security", label: "Security", icon: Shield },
 ] as const;
 
 function SettingsCard({ icon: Icon, iconColor, title, children }: {
@@ -105,6 +110,7 @@ export default function SettingsPage() {
           )}
 
           {tab === "team" && <TeamPanel />}
+          {tab === "security" && <SecurityPanel />}
         </div>
       </div>
     </AppShell>
@@ -181,6 +187,119 @@ function IntegrationsCard() {
         className="w-full border-0 bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-lg shadow-cyan-900/30 hover:shadow-cyan-800/50">
         <Link2 className="size-4" /> Manage worker connections <ArrowRight className="size-4" />
       </Button>
+    </SettingsCard>
+  );
+}
+
+function SecurityPanel() {
+  const qc = useQueryClient();
+  const account = useQuery({ queryKey: ["me"], queryFn: me });
+  const [secret, setSecret] = useState<string | null>(null);
+  const [qr, setQr] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [currentCode, setCurrentCode] = useState("");
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const enabled = account.data?.twofa_enabled === true;
+
+  async function start() {
+    setBusy(true); setError(null);
+    try {
+      const r = await twofaSetup();
+      setSecret(r.secret);
+      setQr(await QRCode.toDataURL(r.provisioning_uri, { width: 192, margin: 1 }));
+    } catch {
+      setError("2FA setup is unavailable. Please retry.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function verify() {
+    setBusy(true); setError(null);
+    try {
+      const result = await twofaVerify(secret!, code, password);
+      setBackupCodes(result.backup_codes);
+      void qc.invalidateQueries({ queryKey: ["me"] });
+    } catch {
+      setError("Verification failed. Check the code and your password, then retry.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function regenerate() {
+    setBusy(true); setError(null);
+    try {
+      const result = await regenerateBackupCodes(password, currentCode);
+      setBackupCodes(result.backup_codes);
+    } catch {
+      setError("Backup code regeneration failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (account.isLoading) return <p role="status" className="text-sm text-slate-400">Loading security status...</p>;
+  if (account.isError) return <p role="alert" className="text-sm text-red-400">Security status unavailable.</p>;
+
+  return (
+    <SettingsCard icon={Shield} iconColor="text-cyan-400" title="Two-factor authentication">
+      <p className="mb-4 text-sm text-slate-400">
+        {enabled
+          ? "2FA is active. Use your authenticator app or a backup code when you sign in."
+          : "Add an extra layer of security. Once enabled, you will need a code from your authenticator app at sign in."}
+      </p>
+      {error && <p role="alert" className="mb-4 text-sm text-red-400">{error}</p>}
+      {backupCodes.length > 0 ? (
+        <div className="space-y-4">
+          <p className="text-sm font-medium text-white">Save these one-time backup codes now. They will not be shown again.</p>
+          <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">{backupCodes.map((c) => <li key={c} className="rounded-lg border border-white/10 bg-white/[0.03] p-2 font-mono text-sm text-slate-200">{c}</li>)}</ul>
+          <Button onClick={() => window.location.assign("/login")} className="w-full border-0 bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-lg shadow-cyan-900/30">
+            I&apos;ve saved these codes, sign in
+          </Button>
+        </div>
+      ) : enabled ? (
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 text-sm text-emerald-400"><ShieldCheck className="size-4" /> 2FA is active on your account.</div>
+          <div className="space-y-2">
+            <Label className="text-sm text-slate-400">Current password</Label>
+            <Input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm text-slate-400">Current authenticator code</Label>
+            <Input inputMode="numeric" maxLength={6} value={currentCode} onChange={(e) => setCurrentCode(e.target.value.replace(/\D/g, ""))} />
+          </div>
+          <Button onClick={regenerate} disabled={busy || !password || currentCode.length !== 6} className="w-full border-0 bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-lg shadow-cyan-900/30 disabled:opacity-50">
+            {busy ? "Generating..." : "Generate new backup codes"}
+          </Button>
+        </div>
+      ) : !secret ? (
+        <Button onClick={start} disabled={busy} className="w-full border-0 bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-lg shadow-cyan-900/30">
+          {busy ? "Preparing..." : "Enable 2FA"}
+        </Button>
+      ) : (
+        <div className="space-y-5">
+          {qr && (
+            <div className="flex justify-center rounded-xl border border-white/10 bg-white/[0.05] p-4">
+              <img src={qr} alt="Authenticator QR code" className="size-48 rounded-md" />
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label className="text-sm text-slate-400">Current password</Label>
+            <Input id="security-password" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <div className="flex flex-col items-center gap-3">
+            <Label htmlFor="security-code" className="text-sm font-medium text-white">Verification code</Label>
+            <Input id="security-code" inputMode="numeric" maxLength={6} placeholder="123456" autoFocus value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} className="w-32 text-center text-lg tracking-[0.3em]" />
+          </div>
+          <Button onClick={verify} disabled={code.length !== 6 || !password || busy} className="w-full border-0 bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-lg shadow-cyan-900/30 disabled:opacity-50">
+            {busy ? "Verifying..." : "Verify & enable 2FA"}
+          </Button>
+        </div>
+      )}
     </SettingsCard>
   );
 }

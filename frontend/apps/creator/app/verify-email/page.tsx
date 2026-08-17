@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useLocation } from "@/lib/wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,6 +8,7 @@ import { verifySignupEmail } from "@/lib/api";
 import { COOKIES_RELEASE_ID, PRIVACY_RELEASE_ID, TERMS_RELEASE_ID } from "@/lib/consent/consent-record";
 
 export default function VerifyEmailPage() {
+  const [, setLocation] = useLocation();
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
@@ -20,9 +22,13 @@ export default function VerifyEmailPage() {
   }, []);
   async function verify() {
     setBusy(true); setError(null);
-    try { await verifySignupEmail({ email, code, password, accept_policies: acceptedPolicies,
-      terms_release_id: TERMS_RELEASE_ID, privacy_release_id: PRIVACY_RELEASE_ID,
-      cookies_release_id: COOKIES_RELEASE_ID }); window.location.assign("/login"); }
+    try {
+      const result = await verifySignupEmail({ email, code, password, accept_policies: acceptedPolicies,
+        terms_release_id: TERMS_RELEASE_ID, privacy_release_id: PRIVACY_RELEASE_ID,
+        cookies_release_id: COOKIES_RELEASE_ID });
+      // The backend issues an authenticated session on verification.
+      setLocation(result.worker_id ? "/creating" : "/dashboard");
+    }
     catch { setError("Verification failed. Check the code or request a new signup email."); }
     finally { setBusy(false); }
   }

@@ -113,7 +113,7 @@ export async function syncAuthenticatedConsent(body: Record<string, unknown>): P
 export const recordAnonymousConsent = (body: Record<string, unknown>) =>
   request<{ recorded: boolean }>("/consent/anonymous", { method: "POST", body: JSON.stringify(body) });
 export const verifySignupEmail = (body: Record<string, unknown>) =>
-  request<{ user_id: string; email: string }>("/auth/verify-email", {
+  request<{ user_id: string; email: string; team_id: string | null; worker_id?: string }>("/auth/verify-email", {
     method: "POST", body: JSON.stringify(body),
   });
 
@@ -122,13 +122,25 @@ export const login = (email: string, password: string) =>
   request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
 export const logout = () => request("/auth/logout", { method: "POST" });
 export const me = async () => {
-  const res = await request<{ user: { id: string; email: string; name: string | null; role: string } }>("/auth/me");
+  const res = await request<{ user: { id: string; email: string; name: string | null; role: string; twofa_enabled: boolean } }>("/auth/me");
   return res.user;
 };
 // Update the current user's own profile (display name). CSRF header is auto-added by request().
 export const updateProfile = (name: string) =>
   request<{ user: { id: string; email: string; name: string | null; role: string } }>("/auth/me", {
     method: "PATCH", body: JSON.stringify({ name }),
+  });
+
+// Two-factor authentication (voluntary in Creator; mandatory once enabled)
+export const twofaSetup = () =>
+  request<{ secret: string; provisioning_uri: string }>("/auth/2fa/setup", { method: "POST" });
+export const twofaVerify = (secret: string, code: string, password: string) =>
+  request<{ enabled: boolean; reauthentication_required: boolean; backup_codes: string[] }>("/auth/2fa/verify-setup", {
+    method: "POST", body: JSON.stringify({ secret, code, password }),
+  });
+export const regenerateBackupCodes = (password: string, currentCode: string) =>
+  request<{ backup_codes: string[]; reauthentication_required: boolean }>("/auth/2fa/backup-codes/regenerate", {
+    method: "POST", body: JSON.stringify({ password, current_code: currentCode }),
   });
 // Non-redirecting session probe for client-side UI gating, including on public pages
 // (onboarding/forgot-password/reset-password). Unlike me()/request(), a 401 here returns null instead
