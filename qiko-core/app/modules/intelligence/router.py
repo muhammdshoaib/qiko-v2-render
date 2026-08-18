@@ -18,6 +18,7 @@ from app.modules.agents.service import AgentService
 from app.modules.identity.rbac import Role
 from app.modules.intelligence.catalog import SourceCatalog, UnknownSource
 from app.modules.intelligence.chat import IntelligenceChat
+from app.modules.intelligence.ingest import ingest_source
 from app.modules.chat.service import ChatService
 
 router = APIRouter(prefix="/intelligence", tags=["intelligence"])
@@ -316,7 +317,22 @@ async def connect_source(
             tenant=tenant, agent_id=agent_id, agent_name=agent.name,
             action=audit_actions.CREDENTIAL_SET, claims=claims, request=request))
     await recheck()
-    return {"connected": True}
+
+    result: dict = {"connected": True}
+    if key == "qiko_track":
+        try:
+            ingest_config = {
+                "project_keys": validated.project_keys,
+                "base_url": str(validated.base_url or ""),
+            }
+            result["ingested"] = await ingest_source(
+                tenant, agent_id, key, ingest_config, secret,
+                catalog=catalog,
+                signal_store=request.app.state.intelligence_signal_store,
+                knowledge=request.app.state.knowledge)
+        except Exception:  # noqa: BLE001 - a failed first ingest must not roll back the connection
+            pass
+    return result
 
 
 @router.get("/agents/{agent_id}/sources/{key}/connection")
