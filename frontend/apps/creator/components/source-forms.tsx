@@ -100,12 +100,17 @@ export function QikoTrackForm({
   onChange: OnChange;
 }) {
   const [token, setToken] = useState("");
-  const [projectKey, setProjectKey] = useState("");
+  const [projectKeys, setProjectKeys] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const c = connection?.key === "qiko_track" ? connection : undefined;
 
   const connect = useMutation({
-    mutationFn: () => connectIntelligenceSource(agentId, "qiko_track", { token, project_key: projectKey }),
+    mutationFn: () => connectIntelligenceSource(agentId, "qiko_track", {
+      token,
+      project_keys: projectKeys.split(",").map((k) => k.trim()).filter(Boolean),
+      base_url: baseUrl || undefined,
+    }),
     onSuccess: () => { setToken(""); setMessage(null); onChange(); },
     onError: (e: Error) => setMessage(e.message),
   });
@@ -127,10 +132,14 @@ export function QikoTrackForm({
           <Input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="Paste Qiko Track token" />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Project key</Label>
-          <Input value={projectKey} onChange={(e) => setProjectKey(e.target.value)} placeholder="PROJ-1" />
+          <Label className="text-xs">Base URL (optional, defaults to https://track.qiko.ai)</Label>
+          <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://track.qiko.ai" />
         </div>
-        <Button disabled={!token || !projectKey || connect.isPending} onClick={() => connect.mutate()} className="w-full">
+        <div className="space-y-1">
+          <Label className="text-xs">Project keys (comma separated)</Label>
+          <Input value={projectKeys} onChange={(e) => setProjectKeys(e.target.value)} placeholder="QIW, PROJ-1" />
+        </div>
+        <Button disabled={!token || !projectKeys || connect.isPending} onClick={() => connect.mutate()} className="w-full">
           {connect.isPending && <Loader2 className="size-4 animate-spin" />} Connect
         </Button>
         {message && <p className="text-xs text-muted-foreground">{message}</p>}
@@ -141,7 +150,8 @@ export function QikoTrackForm({
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">Token: {c.token_masked || "saved"}</p>
-      <p className="text-xs text-muted-foreground">Project: {c.project_key}</p>
+      <p className="text-xs text-muted-foreground">Projects: {c.project_keys.join(", ")}</p>
+      {c.base_url && <p className="text-xs text-muted-foreground">Base URL: {c.base_url}</p>}
       <div className="flex gap-2">
         <Button variant="outline" size="sm" disabled={test.isPending} onClick={() => test.mutate()}>
           {test.isPending && <Loader2 className="size-4 animate-spin" />} Test
