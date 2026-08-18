@@ -6,11 +6,14 @@ callers can re-read the same window and only new signals are written or indexed.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timezone
 
 from app.modules.intelligence.catalog import SourceCatalog
 from app.modules.intelligence.models import Signal, SignalStore
 from app.modules.knowledge.service import KnowledgeService
+
+logger = logging.getLogger(__name__)
 
 
 async def ingest_source(tenant: str, agent_id: str, source: str, config: dict, credential: str,
@@ -30,19 +33,24 @@ async def ingest_source(tenant: str, agent_id: str, source: str, config: dict, c
 
     added = 0
     existing = 0
-    errors: list[str] = []
+    errors = 0
     for signal in signals:
         try:
             is_new = await signal_store.add(signal)
         except Exception as exc:  # noqa: BLE001 - a single signal must not abort the batch
-            errors.append(str(exc))
+            logger.warning("failed to ingest signal %s: %s", signal.external_id, exc)
+            errors += 1
             continue
         if is_new:
             added += 1
             if knowledge is not None:
-                await knowledge.ingest(
-                    signal.tenant, _signal_doc_id(signal), _signal_text(signal),
-                    agent_id=signal.agent_id)
+                try:
+                    await knowledge.ingest(
+                        signal.tenant, _signal_doc_id(signal), _signal_text(signal),
+                        agent_id=signal.agent_id)
+                except Exception as exc:  # noqa: BLE001 - indexing failure must not drop the signal
+                    logger.warning("failed to index signal %s: %s", signal.external_id, exc)
+                    errors += 1
         else:
             existing += 1
     return {"added": added, "existing": existing, "errors": errors}
