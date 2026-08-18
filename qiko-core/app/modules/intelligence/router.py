@@ -3,6 +3,8 @@ and grounded chat over captured signals.
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -22,6 +24,7 @@ from app.modules.intelligence.ingest import ingest_source
 from app.modules.chat.service import ChatService
 
 router = APIRouter(prefix="/intelligence", tags=["intelligence"])
+logger = logging.getLogger(__name__)
 
 
 class VerifySourceBody(BaseModel):
@@ -319,8 +322,8 @@ async def connect_source(
                 catalog=catalog,
                 signal_store=request.app.state.intelligence_signal_store,
                 knowledge=request.app.state.knowledge)
-        except Exception:  # noqa: BLE001 - a failed first ingest must not roll back the connection
-            pass
+        except Exception as exc:  # noqa: BLE001 - a failed first ingest must not roll back the connection
+            logger.warning("initial qiko_track ingest failed for %s/%s: %s", tenant, agent_id, exc)
     return result
 
 

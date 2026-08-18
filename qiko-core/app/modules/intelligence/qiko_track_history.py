@@ -13,6 +13,7 @@ from typing import Any, Protocol
 
 from app.modules.intelligence.models import Signal, SignalStore
 from app.modules.intelligence.qiko_track_client import QikoTrackClient, QikoTrackClientError
+from app.modules.sales_intelligence.ssrf import SsrfError
 
 
 class HistoryStrategy(Protocol):
@@ -39,10 +40,10 @@ class PollAndDiff:
         if not project_keys:
             return []
 
-        client = QikoTrackClient(base_url, token, transport=transport, resolver=resolver)
         try:
+            client = QikoTrackClient(base_url, token, transport=transport, resolver=resolver)
             tickets = await client.list_tickets()
-        except QikoTrackClientError:
+        except (QikoTrackClientError, SsrfError):
             return []
 
         project_set = set(project_keys)
