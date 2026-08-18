@@ -70,11 +70,12 @@ class SignalStore(Protocol):
     async def add(self, signal: Signal) -> bool: ...
 
     async def list_recent(self, tenant: str, agent_id: str, *, source: str | None = None,
-                          container: str | None = None, since: datetime | None = None,
+                          container: str | None = None, ref: str | None = None,
+                          since: datetime | None = None,
                           limit: int = DEFAULT_SIGNAL_LIMIT) -> list[Signal]: ...
 
     async def clear(self, tenant: str, agent_id: str, *, source: str | None = None,
-                    container: str | None = None) -> int: ...
+                    container: str | None = None, ref: str | None = None) -> int: ...
 
     async def purge_older_than(self, older_than: timedelta,
                                 source: str | None = None) -> int: ...
@@ -100,20 +101,21 @@ class InMemorySignalStore:
         return True
 
     async def list_recent(self, tenant: str, agent_id: str, *, source: str | None = None,
-                          container: str | None = None, since: datetime | None = None,
+                          container: str | None = None, ref: str | None = None,
+                          since: datetime | None = None,
                           limit: int = DEFAULT_SIGNAL_LIMIT) -> list[Signal]:
         matching = [s for s in self._signals
-                    if self._matches(s, tenant, agent_id, source, container)
+                    if self._matches(s, tenant, agent_id, source, container, ref)
                     and (since is None or s.occurred_at >= since)]
         matching.sort(key=lambda s: s.occurred_at)
         # Newest `limit`, returned oldest-first so a transcript built from them reads in order.
         return matching[-limit:]
 
     async def clear(self, tenant: str, agent_id: str, *, source: str | None = None,
-                    container: str | None = None) -> int:
+                    container: str | None = None, ref: str | None = None) -> int:
         before = len(self._signals)
         self._signals = [s for s in self._signals
-                         if not self._matches(s, tenant, agent_id, source, container)]
+                         if not self._matches(s, tenant, agent_id, source, container, ref)]
         return before - len(self._signals)
 
     async def purge_older_than(self, older_than: timedelta,
@@ -132,8 +134,9 @@ class InMemorySignalStore:
 
     @staticmethod
     def _matches(signal: Signal, tenant: str, agent_id: str,
-                 source: str | None, container: str | None) -> bool:
+                 source: str | None, container: str | None, ref: str | None) -> bool:
         # tenant and agent_id are never optional: there is no read across workers, by construction.
         return (signal.tenant == tenant and signal.agent_id == agent_id
                 and (source is None or signal.source == source)
-                and (container is None or signal.container == container))
+                and (container is None or signal.container == container)
+                and (ref is None or signal.ref == ref))

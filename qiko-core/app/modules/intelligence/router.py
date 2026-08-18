@@ -3,8 +3,10 @@ and grounded chat over captured signals.
 """
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.crypto import decrypt, encrypt
 from app.core.deps import (
@@ -18,9 +20,11 @@ from app.modules.agents.service import AgentService
 from app.modules.identity.rbac import Role
 from app.modules.intelligence.catalog import SourceCatalog, UnknownSource
 from app.modules.intelligence.chat import IntelligenceChat
+from app.modules.intelligence.ingest import ingest_source
 from app.modules.chat.service import ChatService
 
 router = APIRouter(prefix="/intelligence", tags=["intelligence"])
+logger = logging.getLogger(__name__)
 
 
 class VerifySourceBody(BaseModel):
@@ -33,14 +37,22 @@ class AskBody(BaseModel):
     conversation_id: str = Field(default="")
 
 
-class GithubConnectionBody(BaseModel):
-    token: str = Field(min_length=1)
+class ConnectSourceBody(BaseModel):
+    """Request body for source connections. Fields are optional because each source uses a subset."""
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = Field(default="")
     repo_allowlist: list[str] = Field(default_factory=list)
+    project_keys: list[str] = Field(default_factory=list)
+    project_key: str = Field(default="")
+    base_url: str = Field(default="")
 
-
-class QikoTrackConnectionBody(BaseModel):
-    token: str = Field(min_length=1)
-    project_key: str = Field(min_length=1)
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_project_keys(cls, values):
+        if isinstance(values, dict) and values.get("project_key") and not values.get("project_keys"):
+            values["project_keys"] = [values["project_key"]]
+        return values
 
 
 class SlackWatchChannelsBody(BaseModel):
@@ -59,7 +71,8 @@ _SOURCE_CONFIG = {
     "qiko_track": {
         "added": "qiko_track_credentials_added",
         "token": "qiko_track_token_encrypted",
-        "project_key": "qiko_track_project_key",
+        "project_keys": "qiko_track_project_keys",
+        "base_url": "qiko_track_base_url",
         "label": "Qiko Track",
     },
     "slack": {
@@ -240,13 +253,13 @@ async def list_conversations(
 @router.post("/agents/{agent_id}/sources/{key}")
 async def connect_source(
     agent_id: str, key: str, request: Request,
+    body: ConnectSourceBody = Body(default_factory=ConnectSourceBody),
     tenant: str = Depends(authed_tenant),
     claims: dict = Depends(current_claims),
     _role: dict = Depends(require_role(Role.editor)),
     agents: AgentService = Depends(get_agents),
     catalog: SourceCatalog = Depends(get_source_catalog),
     slack_oauth=Depends(get_slack_oauth),
-    body: dict = Body(default_factory=dict),
 ) -> dict:
     """Store per-worker source credentials. Slack returns an OAuth install URL instead."""
     _worker, recheck = await _resolve_worker(request, tenant, agent_id)
@@ -264,28 +277,27 @@ async def connect_source(
         return result
 
     if key == "github":
-        try:
-            validated = GithubConnectionBody.model_validate(body)
-        except Exception as exc:
-            raise HTTPException(status_code=422, detail="GitHub token is required") from exc
+        if not body.token:
+            raise HTTPException(status_code=422, detail="GitHub token is required")
         meta = _SOURCE_CONFIG["github"]
-        secret = validated.token
+        secret = body.token
         patch = {
             meta["added"]: True,
             meta["token"]: encrypt(secret),
-            meta["allowlist"]: validated.repo_allowlist,
+            meta["allowlist"]: body.repo_allowlist,
         }
     elif key == "qiko_track":
-        try:
-            validated = QikoTrackConnectionBody.model_validate(body)
-        except Exception as exc:
-            raise HTTPException(status_code=422, detail="Qiko Track token is required") from exc
+        if not body.token:
+            raise HTTPException(status_code=422, detail="Qiko Track token is required")
+        if not body.project_keys:
+            raise HTTPException(status_code=422, detail="at least one project key is required")
         meta = _SOURCE_CONFIG["qiko_track"]
-        secret = validated.token
+        secret = body.token
         patch = {
             meta["added"]: True,
             meta["token"]: encrypt(secret),
-            meta["project_key"]: validated.project_key,
+            meta["project_keys"]: body.project_keys,
+            meta["base_url"]: body.base_url,
         }
     else:
         raise HTTPException(status_code=404, detail="source not found")
@@ -297,7 +309,22 @@ async def connect_source(
             tenant=tenant, agent_id=agent_id, agent_name=agent.name,
             action=audit_actions.CREDENTIAL_SET, claims=claims, request=request))
     await recheck()
-    return {"connected": True}
+
+    result: dict = {"connected": True}
+    if key == "qiko_track":
+        try:
+            ingest_config = {
+                "project_keys": body.project_keys,
+                "base_url": body.base_url,
+            }
+            result["ingested"] = await ingest_source(
+                tenant, agent_id, key, ingest_config, secret,
+                catalog=catalog,
+                signal_store=request.app.state.intelligence_signal_store,
+                knowledge=request.app.state.knowledge)
+        except Exception as exc:  # noqa: BLE001 - a failed first ingest must not roll back the connection
+            logger.warning("initial qiko_track ingest failed for %s/%s: %s", tenant, agent_id, exc)
+    return result
 
 
 @router.get("/agents/{agent_id}/sources/{key}/connection")
@@ -334,7 +361,8 @@ async def get_source_connection(
             "key": key,
             "connected": bool(cfg.get("qiko_track_credentials_added") and cfg.get("qiko_track_token_encrypted")),
             "token_masked": _mask(plaintext or ""),
-            "project_key": cfg.get("qiko_track_project_key") or "",
+            "project_keys": cfg.get("qiko_track_project_keys") or [],
+            "base_url": cfg.get("qiko_track_base_url") or "",
         }
     if key == "slack":
         inst = await _slack_installation_for_agent(slack_oauth.store, tenant, agent_id)
@@ -380,7 +408,10 @@ async def disconnect_source(
         patch = {meta["added"]: False, meta["token"]: None, meta["allowlist"]: None}
     elif key == "qiko_track":
         meta = _SOURCE_CONFIG["qiko_track"]
-        patch = {meta["added"]: False, meta["token"]: None, meta["project_key"]: None}
+        patch = {
+            meta["added"]: False, meta["token"]: None,
+            meta["project_keys"]: None, meta["base_url"]: None,
+        }
     elif key == "slack":
         meta = _SOURCE_CONFIG["slack"]
         patch = {meta["watched"]: None, meta["team_id"]: None}
@@ -428,7 +459,13 @@ async def test_source(
             await recheck()
             raise
         connector = catalog.connector_for(key)
-        config = {"repo_allowlist": cfg.get(meta.get("allowlist", ""))} if key == "github" else {"project_key": cfg.get(meta.get("project_key", ""))}
+        if key == "github":
+            config = {"repo_allowlist": cfg.get(meta.get("allowlist", ""))}
+        else:
+            config = {
+                "project_keys": cfg.get(meta.get("project_keys", "")) or [],
+                "base_url": cfg.get(meta.get("base_url", "")) or "",
+            }
         result = await connector.verify(config=config, credential=credential)
         await audit_credentials.record_credential_exercised(
             request.app.state.audit, provider=key, tenant=tenant, agent_id=agent_id,

@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
-from app.modules.intelligence.models import Signal
+from app.modules.intelligence.models import Signal, SignalStore
 
 
 class UnknownSource(Exception):
@@ -34,9 +34,15 @@ class Connector(Protocol):
     key: str
 
     async def fetch_since(self, *, config: dict, credential: str,
-                          since: datetime) -> list[Signal]:
+                          since: datetime, tenant: str, agent_id: str,
+                          signal_store: "SignalStore" | None = None) -> list[Signal]:
         """Signals from this source since `since`. Must be idempotent: callers re-read an
-        overlapping window on every sweep and rely on `external_id` to deduplicate."""
+        overlapping window on every sweep and rely on `external_id` to deduplicate.
+
+        `signal_store` is provided so poll-and-diff strategies can compare against previously
+        ingested state without introducing a second persistence seam. `tenant` and `agent_id`
+        scope every emitted Signal.
+        """
         ...
 
     async def verify(self, *, config: dict, credential: str) -> dict:

@@ -98,6 +98,10 @@ class Settings(BaseSettings):
     ga4_access_token: str = ""
     voice_model: str = "amazon.nova-sonic-v1:0"
 
+    # Qiko Track integration. Base URL is per-worker and is allowlisted for SSRF/API7 protection.
+    qiko_track_api_base: str = "https://track.qiko.ai"
+    qiko_track_api_allowlist: list[str] = ["https://track.qiko.ai"]
+
     # Salesforce OAuth (authorization_code + PKCE, matching the real IDG Sales Salesforce
     # Connected App flow -- NOT the client_credentials shape used by app.integrations.clients.
     # SalesforceClient/app.modules.crm's generic per-worker connection; see

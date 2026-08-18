@@ -4944,6 +4944,31 @@ export interface components {
             /** Worker Id */
             worker_id: string;
         };
+        /**
+         * ConnectSourceBody
+         * @description Request body for source connections. Fields are optional because each source uses a subset.
+         */
+        ConnectSourceBody: {
+            /**
+             * Base Url
+             * @default
+             */
+            base_url: string;
+            /**
+             * Project Key
+             * @default
+             */
+            project_key: string;
+            /** Project Keys */
+            project_keys?: string[];
+            /** Repo Allowlist */
+            repo_allowlist?: string[];
+            /**
+             * Token
+             * @default
+             */
+            token: string;
+        };
         /** ConsentChoicesBody */
         ConsentChoicesBody: {
             /** Analytics */
@@ -11761,9 +11786,7 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": {
-                    [key: string]: unknown;
-                };
+                "application/json": components["schemas"]["ConnectSourceBody"];
             };
         };
         responses: {

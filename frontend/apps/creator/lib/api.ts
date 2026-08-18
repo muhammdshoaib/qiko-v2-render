@@ -1212,7 +1212,7 @@ export const clearFinanceHistory = (agentId: string) =>
 export type IntelligenceSource = { key: string; name: string; description: string; pollable: boolean; connected: boolean };
 export type IntelligenceSourceConnection =
   | { key: "github"; connected: boolean; token_masked: string; repo_allowlist: string[] }
-  | { key: "qiko_track"; connected: boolean; token_masked: string; project_key: string }
+  | { key: "qiko_track"; connected: boolean; token_masked: string; project_keys: string[]; base_url: string }
   | { key: "slack"; connected: boolean; team_id: string | null; watched_channels: string[]; channels: { id: string; name: string }[] };
 
 export const listIntelligenceSources = (agentId: string) =>

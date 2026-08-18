@@ -6,12 +6,16 @@ Nothing here writes to the third party; `verify()` performs read-only checks.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
 
+from app.core.config import get_settings
 from app.modules.intelligence.models import Signal
+from app.modules.intelligence.qiko_track_client import QikoTrackClient, QikoTrackClientError
+from app.modules.intelligence.qiko_track_history import PollAndDiff
+from app.modules.sales_intelligence.ssrf import SsrfError
 
 
 @dataclass
@@ -22,7 +26,8 @@ class GitHubConnector:
     _base: str = "https://api.github.com"
 
     async def fetch_since(self, *, config: dict, credential: str,
-                          since: Any) -> list[Signal]:
+                          since: Any, tenant: str, agent_id: str,
+                          signal_store: Any | None = None) -> list[Signal]:
         """Poll connector; not used until the GitHub scheduler milestone."""
         raise NotImplementedError("GitHub fetch is not implemented yet")
 
@@ -68,25 +73,69 @@ class GitHubConnector:
 
 @dataclass
 class QikoTrackConnector:
-    """Qiko Track connector placeholder.
-
-    The v1 REST API contract is still being finalised (see
-    `.devin/specs/2026-08-15-qiko-track-api-requirements-for-intelligence-worker.md`), so this
-    connector stores the credential and reports an actionable "not yet" status instead of failing
-    silently or guessing at endpoints.
-    """
+    """Read-only Qiko Track connector: verify token and emit normalised signals."""
 
     key: str = "qiko_track"
+    transport: Any | None = field(default=None, repr=False)
+    resolver: Any | None = field(default=None, repr=False)
+    history_strategy: Any = field(default_factory=PollAndDiff, repr=False)
+
+    def _base_url(self, config: dict) -> str:
+        return config.get("base_url") or get_settings().qiko_track_api_base
+
+    def _project_keys(self, config: dict) -> list[str]:
+        keys = config.get("project_keys") or []
+        if isinstance(keys, str):
+            keys = [keys]
+        return [k.strip() for k in keys if k and k.strip()]
 
     async def fetch_since(self, *, config: dict, credential: str,
-                          since: Any) -> list[Signal]:
-        """Poll connector; not used until the Qiko Track scheduler milestone."""
-        raise NotImplementedError("Qiko Track fetch is not implemented yet")
+                          since: Any, tenant: str, agent_id: str,
+                          signal_store: Any | None = None) -> list[Signal]:
+        """Poll connector; emits one Signal per observed ticket change."""
+        if self.history_strategy is None:
+            return []
+        return await self.history_strategy.fetch(
+            base_url=self._base_url(config),
+            token=credential,
+            project_keys=self._project_keys(config),
+            tenant=tenant,
+            agent_id=agent_id,
+            signal_store=signal_store,
+            since=since,
+            transport=self.transport,
+            resolver=self.resolver,
+        )
 
     async def verify(self, *, config: dict, credential: str) -> dict:
+        if not credential:
+            return {"ok": False, "error": "Qiko Track token is required"}
+
+        project_keys = self._project_keys(config)
+        if not project_keys:
+            return {"ok": False, "error": "at least one project key is required"}
+
+        base_url = self._base_url(config)
+        try:
+            client = QikoTrackClient(
+                base_url, credential, transport=self.transport, resolver=self.resolver)
+            context = await client.get_context()
+        except SsrfError as exc:
+            return {"ok": False, "error": f"unsafe base URL: {exc}"}
+        except QikoTrackClientError as exc:
+            return {"ok": False, "error": str(exc)}
+
+        actor = context.get("actor") or {}
+        projects = context.get("projects") or []
+        visible = [{"key": p.get("key"), "name": p.get("name")} for p in projects]
         return {
-            "ok": False,
-            "error": (
-                "Qiko Track connector is not implemented yet; "
-                "the token and project key are saved and will be used when the connector lands."),
+            "ok": True,
+            "actor": {
+                "name": actor.get("name"),
+                "email": actor.get("email"),
+                "role": actor.get("role"),
+                "scopes": actor.get("scopes") or [],
+            },
+            "scopes": actor.get("scopes") or [],
+            "projects": visible,
         }

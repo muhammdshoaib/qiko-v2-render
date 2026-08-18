@@ -59,6 +59,7 @@ from app.modules.admin.customers import CustomerDirectory
 from app.modules.signal.router import router as signal_router
 from app.modules.intelligence.catalog import SourceCatalog
 from app.modules.intelligence.connectors import GitHubConnector, QikoTrackConnector
+from app.modules.intelligence.models import InMemorySignalStore
 from app.modules.intelligence.router import router as intelligence_router
 from app.core.tenancy import tenant_dependency
 from app.modules.admin.router import router as admin_router
@@ -154,6 +155,7 @@ async def lifespan(app: FastAPI):
             SqlRequirementStore,
             SqlRfpPackStore,
             SqlSalesforceConnectionStore,
+            SqlSignalStore,
             SqlSlackChannelStore,
             SqlTeamsIntegrationStore,
             SqlTeamStore,
@@ -227,6 +229,7 @@ async def lifespan(app: FastAPI):
         app.state.slack_messages.knowledge = app.state.knowledge
         if getattr(app.state, "slack_digest_scheduler", None):
             app.state.slack_digest_scheduler.message_store = app.state.slack_messages
+        app.state.intelligence_signal_store = SqlSignalStore(sm)
         app.state.intelligence_catalog = _build_intelligence_catalog()
         set_user_store(SqlUserStore(sm))  # users/sessions/2FA persist to Postgres
 
@@ -493,6 +496,7 @@ def create_app() -> FastAPI:
     app.state.slack_links = WorkspaceLinkStore()
     app.state.slack_messages = InMemorySlackChannelStore()
     app.state.slack_messages.knowledge = app.state.knowledge
+    app.state.intelligence_signal_store = InMemorySignalStore()
     app.state.intelligence_catalog = _build_intelligence_catalog()
     # S3 when configured, the dev dict otherwise. The guard in assert_secrets_set means a non-dev
     # environment cannot start without a bucket, so this cannot silently degrade in production.

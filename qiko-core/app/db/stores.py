@@ -2843,7 +2843,8 @@ class SqlSignalStore:
             occurred_at=signal.occurred_at, ref=signal.ref, url=signal.url,
             tags=signal.tags, flagged=signal.flagged, meta=signal.meta)
 
-    def _scope(self, tenant: str, agent_id: str, source: str | None, container: str | None):
+    def _scope(self, tenant: str, agent_id: str, source: str | None, container: str | None,
+               ref: str | None):
         """The predicates every read and delete shares.
 
         tenant and agent_id are not optional and there is no code path that omits them: a signal
@@ -2856,6 +2857,8 @@ class SqlSignalStore:
             clauses.append(IntelligenceSignalRow.source == source)
         if container is not None:
             clauses.append(IntelligenceSignalRow.container == container)
+        if ref is not None:
+            clauses.append(IntelligenceSignalRow.ref == ref)
         return clauses
 
     async def add(self, signal: Signal) -> bool:
@@ -2871,9 +2874,10 @@ class SqlSignalStore:
         return True
 
     async def list_recent(self, tenant: str, agent_id: str, *, source: str | None = None,
-                          container: str | None = None, since: datetime | None = None,
+                          container: str | None = None, ref: str | None = None,
+                          since: datetime | None = None,
                           limit: int = DEFAULT_SIGNAL_LIMIT) -> list[Signal]:
-        clauses = self._scope(tenant, agent_id, source, container)
+        clauses = self._scope(tenant, agent_id, source, container, ref)
         if since is not None:
             clauses.append(IntelligenceSignalRow.occurred_at >= since)
         async with self.sessionmaker() as s:
@@ -2887,11 +2891,11 @@ class SqlSignalStore:
             return [self._to_domain(r) for r in reversed(rows)]
 
     async def clear(self, tenant: str, agent_id: str, *, source: str | None = None,
-                    container: str | None = None) -> int:
+                    container: str | None = None, ref: str | None = None) -> int:
         async with self.sessionmaker() as s, s.begin():
             result = await s.execute(
                 delete(IntelligenceSignalRow).where(
-                    *self._scope(tenant, agent_id, source, container)))
+                    *self._scope(tenant, agent_id, source, container, ref)))
             return result.rowcount or 0
 
     async def list_older_than(self, older_than: timedelta,

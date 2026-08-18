@@ -205,7 +205,8 @@ class _FakeConnector:
     def __init__(self) -> None:
         self.verified = False
 
-    async def fetch_since(self, *, config, credential, since):
+    async def fetch_since(self, *, config, credential, since, tenant, agent_id,
+                          signal_store=None):
         return [_sig(source="fake", external_id="from-connector")]
 
     async def verify(self, *, config, credential):

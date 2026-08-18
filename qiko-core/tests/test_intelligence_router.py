@@ -144,23 +144,41 @@ def test_github_connect_and_disconnect(client):
 
 
 def test_qiko_track_connect_test_and_disconnect(client):
+    from datetime import datetime, timezone
+    from app.modules.intelligence.models import Signal
+
+    async def _fake_verify(*, config, credential):
+        return {"ok": True, "actor": {"name": "A"}, "scopes": ["read"], "projects": config.get("project_keys", [])}
+
+    async def _fake_fetch_since(*, config, credential, since, tenant, agent_id, signal_store):
+        return [Signal(
+            tenant=tenant, agent_id=agent_id, source="qiko_track", kind="ticket_created",
+            external_id="PROJ-1:PROJ-1:created:2026-08-18T00:00:00+00:00",
+            container="PROJ-1", actor="A", title="PROJ-1 created", body="",
+            occurred_at=datetime(2026, 8, 18, tzinfo=timezone.utc), ref="PROJ-1",
+        )]
+
+    connector = client.app.state.intelligence_catalog.connector_for("qiko_track")
+    connector.verify = _fake_verify
+    connector.fetch_since = _fake_fetch_since
+
     r = client.post(
         "/api/v1/intelligence/agents/w1/sources/qiko_track",
-        json={"token": "qt-token", "project_key": "PROJ-1"},
+        json={"token": "qt-token", "project_keys": ["PROJ-1"], "base_url": "https://track.qiko.ai"},
         cookies=C,
     )
     assert r.status_code == 200
     assert r.json()["connected"] is True
+    assert r.json()["ingested"]["added"] == 1
 
     r = client.get("/api/v1/intelligence/agents/w1/sources/qiko_track/connection", cookies=C)
     assert r.status_code == 200
-    assert r.json()["project_key"] == "PROJ-1"
+    assert r.json()["project_keys"] == ["PROJ-1"]
     assert r.json()["connected"] is True
 
     r = client.post("/api/v1/intelligence/agents/w1/sources/qiko_track/test", cookies=C)
     assert r.status_code == 200
-    assert r.json()["ok"] is False
-    assert "not implemented" in r.json()["error"]
+    assert r.json()["ok"] is True
 
     r = client.delete("/api/v1/intelligence/agents/w1/sources/qiko_track", cookies=C)
     assert r.status_code == 200

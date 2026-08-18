@@ -31,6 +31,7 @@ DURABLE_STORES = (
     # digest job runs in the arq worker process, so an in-memory installation store meant the
     # worker could never resolve a bot token and the digest was undeliverable in production.
     "slack_messages", "slack_oauth",
+    "intelligence_signal_store",
 )
 
 # Known, deliberate exceptions with a recorded reason. Shrinking this list is the goal.
