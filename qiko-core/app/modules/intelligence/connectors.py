@@ -14,6 +14,7 @@ import httpx
 from app.core.config import get_settings
 from app.modules.intelligence.models import Signal
 from app.modules.intelligence.qiko_track_client import QikoTrackClient, QikoTrackClientError
+from app.modules.intelligence.qiko_track_history import PollAndDiff
 from app.modules.sales_intelligence.ssrf import SsrfError
 
 
@@ -25,7 +26,8 @@ class GitHubConnector:
     _base: str = "https://api.github.com"
 
     async def fetch_since(self, *, config: dict, credential: str,
-                          since: Any, signal_store: Any | None = None) -> list[Signal]:
+                          since: Any, tenant: str, agent_id: str,
+                          signal_store: Any | None = None) -> list[Signal]:
         """Poll connector; not used until the GitHub scheduler milestone."""
         raise NotImplementedError("GitHub fetch is not implemented yet")
 
@@ -76,7 +78,7 @@ class QikoTrackConnector:
     key: str = "qiko_track"
     transport: Any | None = field(default=None, repr=False)
     resolver: Any | None = field(default=None, repr=False)
-    history_strategy: Any | None = field(default=None, repr=False)
+    history_strategy: Any = field(default_factory=PollAndDiff, repr=False)
 
     def _base_url(self, config: dict) -> str:
         return config.get("base_url") or get_settings().qiko_track_api_base
@@ -88,7 +90,8 @@ class QikoTrackConnector:
         return [k.strip() for k in keys if k and k.strip()]
 
     async def fetch_since(self, *, config: dict, credential: str,
-                          since: Any, signal_store: Any | None = None) -> list[Signal]:
+                          since: Any, tenant: str, agent_id: str,
+                          signal_store: Any | None = None) -> list[Signal]:
         """Poll connector; emits one Signal per observed ticket change."""
         if self.history_strategy is None:
             return []
@@ -96,6 +99,8 @@ class QikoTrackConnector:
             base_url=self._base_url(config),
             token=credential,
             project_keys=self._project_keys(config),
+            tenant=tenant,
+            agent_id=agent_id,
             signal_store=signal_store,
             since=since,
             transport=self.transport,
@@ -112,10 +117,9 @@ class QikoTrackConnector:
 
         base_url = self._base_url(config)
         try:
-            async with QikoTrackClient(
-                base_url, credential, transport=self.transport, resolver=self.resolver
-            ) as client:
-                context = await client.get_context()
+            client = QikoTrackClient(
+                base_url, credential, transport=self.transport, resolver=self.resolver)
+            context = await client.get_context()
         except SsrfError as exc:
             return {"ok": False, "error": f"unsafe base URL: {exc}"}
         except QikoTrackClientError as exc:

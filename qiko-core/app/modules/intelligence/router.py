@@ -40,7 +40,22 @@ class GithubConnectionBody(BaseModel):
 
 class QikoTrackConnectionBody(BaseModel):
     token: str = Field(min_length=1)
-    project_key: str = Field(min_length=1)
+    project_keys: list[str] = Field(default_factory=list)
+    project_key: str = Field(default="")
+    base_url: str = Field(default="")
+
+    @staticmethod
+    def normalize_project_keys(values: dict) -> dict:
+        if values.get("project_key") and not values.get("project_keys"):
+            values["project_keys"] = [values["project_key"]]
+        return values
+
+    @classmethod
+    def model_validate(cls, obj, *, strict=None, from_attributes=None, context=None):
+        if isinstance(obj, dict):
+            obj = cls.normalize_project_keys(obj)
+        return super().model_validate(
+            obj, strict=strict, from_attributes=from_attributes, context=context)
 
 
 class SlackWatchChannelsBody(BaseModel):
@@ -59,7 +74,8 @@ _SOURCE_CONFIG = {
     "qiko_track": {
         "added": "qiko_track_credentials_added",
         "token": "qiko_track_token_encrypted",
-        "project_key": "qiko_track_project_key",
+        "project_keys": "qiko_track_project_keys",
+        "base_url": "qiko_track_base_url",
         "label": "Qiko Track",
     },
     "slack": {
@@ -280,12 +296,15 @@ async def connect_source(
             validated = QikoTrackConnectionBody.model_validate(body)
         except Exception as exc:
             raise HTTPException(status_code=422, detail="Qiko Track token is required") from exc
+        if not validated.project_keys:
+            raise HTTPException(status_code=422, detail="at least one project key is required")
         meta = _SOURCE_CONFIG["qiko_track"]
         secret = validated.token
         patch = {
             meta["added"]: True,
             meta["token"]: encrypt(secret),
-            meta["project_key"]: validated.project_key,
+            meta["project_keys"]: validated.project_keys,
+            meta["base_url"]: str(validated.base_url or ""),
         }
     else:
         raise HTTPException(status_code=404, detail="source not found")
@@ -334,7 +353,8 @@ async def get_source_connection(
             "key": key,
             "connected": bool(cfg.get("qiko_track_credentials_added") and cfg.get("qiko_track_token_encrypted")),
             "token_masked": _mask(plaintext or ""),
-            "project_key": cfg.get("qiko_track_project_key") or "",
+            "project_keys": cfg.get("qiko_track_project_keys") or [],
+            "base_url": cfg.get("qiko_track_base_url") or "",
         }
     if key == "slack":
         inst = await _slack_installation_for_agent(slack_oauth.store, tenant, agent_id)
@@ -380,7 +400,10 @@ async def disconnect_source(
         patch = {meta["added"]: False, meta["token"]: None, meta["allowlist"]: None}
     elif key == "qiko_track":
         meta = _SOURCE_CONFIG["qiko_track"]
-        patch = {meta["added"]: False, meta["token"]: None, meta["project_key"]: None}
+        patch = {
+            meta["added"]: False, meta["token"]: None,
+            meta["project_keys"]: None, meta["base_url"]: None,
+        }
     elif key == "slack":
         meta = _SOURCE_CONFIG["slack"]
         patch = {meta["watched"]: None, meta["team_id"]: None}
@@ -428,7 +451,13 @@ async def test_source(
             await recheck()
             raise
         connector = catalog.connector_for(key)
-        config = {"repo_allowlist": cfg.get(meta.get("allowlist", ""))} if key == "github" else {"project_key": cfg.get(meta.get("project_key", ""))}
+        if key == "github":
+            config = {"repo_allowlist": cfg.get(meta.get("allowlist", ""))}
+        else:
+            config = {
+                "project_keys": cfg.get(meta.get("project_keys", "")) or [],
+                "base_url": cfg.get(meta.get("base_url", "")) or "",
+            }
         result = await connector.verify(config=config, credential=credential)
         await audit_credentials.record_credential_exercised(
             request.app.state.audit, provider=key, tenant=tenant, agent_id=agent_id,

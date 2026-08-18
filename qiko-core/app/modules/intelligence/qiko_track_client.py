@@ -21,50 +21,46 @@ class QikoTrackClientError(Exception):
 class QikoTrackClient:
     """Async client with injectable transport/resolver for testing and SSRF validation."""
 
-    def __init__(self, base_url: str, token: str, *, transport=None, resolver=None) -> None:
+    def __init__(self, base_url: str, token: str, *, transport: Any | None = None,
+                 resolver: Any | None = None) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
-        self._validate_url(resolver)
-        self._client = httpx.AsyncClient(
-            base_url=self.base_url,
-            transport=transport,
-            headers={"Accept": "application/json"},
-            timeout=15.0,
-        )
+        self._transport = transport
+        self._resolver = resolver
+        self._validate_url()
 
-    def _validate_url(self, resolver) -> None:
-        assert_public_url(self.base_url, resolver=resolver)
+    def _validate_url(self) -> None:
+        assert_public_url(self.base_url, resolver=self._resolver)
         parsed = urlparse(self.base_url)
         allowed = set(get_settings().qiko_track_api_allowlist or [])
         origin = f"{parsed.scheme}://{parsed.netloc}"
         if allowed and origin not in allowed:
             raise SsrfError(f"host not in allowlist: {origin}")
 
-    async def __aenter__(self) -> "QikoTrackClient":
-        return self
-
-    async def __aexit__(self, *exc: Any) -> None:
-        await self._client.aclose()
-
     async def get_context(self) -> dict:
-        return await self._get("/api/v1/context")
+        return await self._request("GET", "/api/v1/context")
 
     async def list_tickets(self, *, project: str | None = None, limit: int = 200) -> list[dict]:
-        params = {"limit": min(max(1, limit), 200)}
+        params: dict[str, Any] = {"limit": min(max(1, limit), 200)}
         if project:
             params["project"] = project
-        body = await self._get("/api/v1/tickets", params=params)
+        body = await self._request("GET", "/api/v1/tickets", params=params)
         return body.get("tickets") or []
 
     async def get_ticket(self, key: str) -> dict:
-        return await self._get(f"/api/v1/tickets/{key}")
+        return await self._request("GET", f"/api/v1/tickets/{key}")
 
-    async def _get(self, path: str, params: dict | None = None) -> dict:
-        headers = {"Authorization": f"Bearer {self.token}"}
-        try:
-            response = await self._client.get(path, params=params, headers=headers)
-        except httpx.HTTPError as exc:
-            raise QikoTrackClientError(f"could not reach Qiko Track: {exc}") from exc
+    async def _request(self, method: str, path: str, params: dict | None = None) -> dict:
+        headers = {"Accept": "application/json", "Authorization": f"Bearer {self.token}"}
+        async with httpx.AsyncClient(
+            base_url=self.base_url,
+            transport=self._transport,
+            timeout=15.0,
+        ) as client:
+            try:
+                response = await client.request(method, path, params=params, headers=headers)
+            except httpx.HTTPError as exc:
+                raise QikoTrackClientError(f"could not reach Qiko Track: {exc}") from exc
         try:
             body = response.json() if response.content else {}
         except json.JSONDecodeError as exc:

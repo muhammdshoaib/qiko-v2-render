@@ -144,9 +144,15 @@ def test_github_connect_and_disconnect(client):
 
 
 def test_qiko_track_connect_test_and_disconnect(client):
+    async def _fake_verify(*, config, credential):
+        return {"ok": True, "actor": {"name": "A"}, "scopes": ["read"], "projects": config.get("project_keys", [])}
+
+    connector = client.app.state.intelligence_catalog.connector_for("qiko_track")
+    connector.verify = _fake_verify
+
     r = client.post(
         "/api/v1/intelligence/agents/w1/sources/qiko_track",
-        json={"token": "qt-token", "project_key": "PROJ-1"},
+        json={"token": "qt-token", "project_keys": ["PROJ-1"], "base_url": "https://track.qiko.ai"},
         cookies=C,
     )
     assert r.status_code == 200
@@ -154,13 +160,12 @@ def test_qiko_track_connect_test_and_disconnect(client):
 
     r = client.get("/api/v1/intelligence/agents/w1/sources/qiko_track/connection", cookies=C)
     assert r.status_code == 200
-    assert r.json()["project_key"] == "PROJ-1"
+    assert r.json()["project_keys"] == ["PROJ-1"]
     assert r.json()["connected"] is True
 
     r = client.post("/api/v1/intelligence/agents/w1/sources/qiko_track/test", cookies=C)
     assert r.status_code == 200
-    assert r.json()["ok"] is False
-    assert "not implemented" in r.json()["error"]
+    assert r.json()["ok"] is True
 
     r = client.delete("/api/v1/intelligence/agents/w1/sources/qiko_track", cookies=C)
     assert r.status_code == 200
