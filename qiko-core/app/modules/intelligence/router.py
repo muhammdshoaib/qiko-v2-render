@@ -4,7 +4,7 @@ and grounded chat over captured signals.
 from __future__ import annotations
 
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.crypto import decrypt, encrypt
 from app.core.deps import (
@@ -34,29 +34,22 @@ class AskBody(BaseModel):
     conversation_id: str = Field(default="")
 
 
-class GithubConnectionBody(BaseModel):
-    token: str = Field(min_length=1)
+class ConnectSourceBody(BaseModel):
+    """Request body for source connections. Fields are optional because each source uses a subset."""
+    model_config = ConfigDict(extra="forbid")
+
+    token: str = Field(default="")
     repo_allowlist: list[str] = Field(default_factory=list)
-
-
-class QikoTrackConnectionBody(BaseModel):
-    token: str = Field(min_length=1)
     project_keys: list[str] = Field(default_factory=list)
     project_key: str = Field(default="")
     base_url: str = Field(default="")
 
-    @staticmethod
-    def normalize_project_keys(values: dict) -> dict:
-        if values.get("project_key") and not values.get("project_keys"):
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_project_keys(cls, values):
+        if isinstance(values, dict) and values.get("project_key") and not values.get("project_keys"):
             values["project_keys"] = [values["project_key"]]
         return values
-
-    @classmethod
-    def model_validate(cls, obj, *, strict=None, from_attributes=None, context=None):
-        if isinstance(obj, dict):
-            obj = cls.normalize_project_keys(obj)
-        return super().model_validate(
-            obj, strict=strict, from_attributes=from_attributes, context=context)
 
 
 class SlackWatchChannelsBody(BaseModel):
@@ -257,13 +250,13 @@ async def list_conversations(
 @router.post("/agents/{agent_id}/sources/{key}")
 async def connect_source(
     agent_id: str, key: str, request: Request,
+    body: ConnectSourceBody = Body(default_factory=ConnectSourceBody),
     tenant: str = Depends(authed_tenant),
     claims: dict = Depends(current_claims),
     _role: dict = Depends(require_role(Role.editor)),
     agents: AgentService = Depends(get_agents),
     catalog: SourceCatalog = Depends(get_source_catalog),
     slack_oauth=Depends(get_slack_oauth),
-    body: dict = Body(default_factory=dict),
 ) -> dict:
     """Store per-worker source credentials. Slack returns an OAuth install URL instead."""
     _worker, recheck = await _resolve_worker(request, tenant, agent_id)
@@ -281,31 +274,27 @@ async def connect_source(
         return result
 
     if key == "github":
-        try:
-            validated = GithubConnectionBody.model_validate(body)
-        except Exception as exc:
-            raise HTTPException(status_code=422, detail="GitHub token is required") from exc
+        if not body.token:
+            raise HTTPException(status_code=422, detail="GitHub token is required")
         meta = _SOURCE_CONFIG["github"]
-        secret = validated.token
+        secret = body.token
         patch = {
             meta["added"]: True,
             meta["token"]: encrypt(secret),
-            meta["allowlist"]: validated.repo_allowlist,
+            meta["allowlist"]: body.repo_allowlist,
         }
     elif key == "qiko_track":
-        try:
-            validated = QikoTrackConnectionBody.model_validate(body)
-        except Exception as exc:
-            raise HTTPException(status_code=422, detail="Qiko Track token is required") from exc
-        if not validated.project_keys:
+        if not body.token:
+            raise HTTPException(status_code=422, detail="Qiko Track token is required")
+        if not body.project_keys:
             raise HTTPException(status_code=422, detail="at least one project key is required")
         meta = _SOURCE_CONFIG["qiko_track"]
-        secret = validated.token
+        secret = body.token
         patch = {
             meta["added"]: True,
             meta["token"]: encrypt(secret),
-            meta["project_keys"]: validated.project_keys,
-            meta["base_url"]: str(validated.base_url or ""),
+            meta["project_keys"]: body.project_keys,
+            meta["base_url"]: body.base_url,
         }
     else:
         raise HTTPException(status_code=404, detail="source not found")
@@ -322,8 +311,8 @@ async def connect_source(
     if key == "qiko_track":
         try:
             ingest_config = {
-                "project_keys": validated.project_keys,
-                "base_url": str(validated.base_url or ""),
+                "project_keys": body.project_keys,
+                "base_url": body.base_url,
             }
             result["ingested"] = await ingest_source(
                 tenant, agent_id, key, ingest_config, secret,
