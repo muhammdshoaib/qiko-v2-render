@@ -4,7 +4,7 @@
 // backend `charts`/`insights`/`trends` shapes may firm up later (see TODO(finance-backend) in api.ts),
 // so the dashboard derives everything it can from `properties[]` when a chart block is absent.
 import type {
-  FinanceAnalytics, FinanceProperty, FinanceSummary, FinanceSummaryMetric, FinanceTrends,
+  FinanceAnalytics, FinanceProperty, FinanceSummary, FinanceSummaryMetric, FinanceSummaryObject, FinanceTrends,
   FinanceUnitExpense, FinanceUnitLedger, FinanceMonthlyTrend, FinanceFile,
 } from "@/lib/api";
 
@@ -78,6 +78,7 @@ export type NormalizedSummary = {
   propertyCount: number; vendorCount: number;
   formatted: Partial<Record<"totalIncome" | "totalExpenses" | "netProfit" | "outstanding", string>>;
   subtitle: Partial<Record<"totalIncome" | "totalExpenses" | "netProfit" | "outstanding", string>>;
+  details?: FinanceSummaryObject;
 };
 
 export function normalizeFinanceSummary(summary: FinanceSummary | undefined): NormalizedSummary {
@@ -97,6 +98,7 @@ export function normalizeFinanceSummary(summary: FinanceSummary | undefined): No
     out.outstanding = num("outstanding");
     out.propertyCount = num("propertyCount");
     out.vendorCount = num("vendorCount");
+    out.details = Object.fromEntries([...byKey.entries()].map(([k, v]) => [k, v.value])) as FinanceSummaryObject;
     (["totalIncome", "totalExpenses", "netProfit", "outstanding"] as const).forEach((k) => {
       const row = byKey.get(k);
       if (row?.formatted) out.formatted[k] = row.formatted;
@@ -111,6 +113,7 @@ export function normalizeFinanceSummary(summary: FinanceSummary | undefined): No
   out.outstanding = Number(summary.outstanding ?? 0);
   out.propertyCount = Number(summary.propertyCount ?? 0);
   out.vendorCount = Number(summary.vendorCount ?? 0);
+  out.details = summary;
   return out;
 }
 

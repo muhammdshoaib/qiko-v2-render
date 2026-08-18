@@ -1063,10 +1063,41 @@ export const resumeSubscription = () =>
  * The backend may instead return a flat object (legacy ELUserAnalyticsSummary); the client normalizes
  * both -- see components/finance/utils.ts:normalizeFinanceSummary. */
 export type FinanceSummaryMetric = { key: string; label?: string; value?: number | string; formatted?: string; subtitle?: string };
-export type FinanceSummary = FinanceSummaryMetric[] | {
+export type FinanceSummaryObject = {
   propertyCount?: number; vendorCount?: number; totalIncome?: number; totalExpenses?: number;
   netProfit?: number; outstanding?: number; expenseBreakdown?: { net?: number; vat?: number };
+
+  // totalIncome section
+  totalIncomeUnitCount?: number; totalIncomeAveragePerProperty?: number;
+  totalIncomeTopProperty?: string; totalIncomeTopPropertyRef?: string; totalIncomeTopPropertyIncome?: number;
+
+  // totalExpenses section
+  totalExpensesNet?: number; totalExpensesVat?: number; totalExpensesPropertyCount?: number;
+  totalExpensesInvoiceCount?: number; totalExpensesAveragePerProperty?: number;
+  totalExpensesTopVendor?: string; totalExpensesTopVendorAmount?: number;
+  totalExpensesTopCategory?: string; totalExpensesTopCategoryAmount?: number;
+
+  // netProfit section
+  netProfitMarginPercent?: number; netProfitAverageMargin?: number;
+  netProfitTopProperty?: string; netProfitTopPropertyRef?: string; netProfitTopPropertyProfit?: number;
+  netProfitLowestPerformanceProperty?: string; netProfitLowestPerformancePropertyRef?: string;
+  netProfitLowestPerformancePropertyProfit?: number; netProfitCostToIncomeRatio?: number;
+  netProfitPropertyCount?: number;
+
+  // outstanding section
+  outstandingPropertyCount?: number; outstandingPositiveTotal?: number; outstandingNegativeTotal?: number;
+  outstandingTopProperty?: string; outstandingTopPropertyRef?: string; outstandingTopPropertyOutstanding?: number;
+  outstandingAveragePerProperty?: number; outstandingAsPercentOfIncome?: number; outstandingIncomeReceivableCount?: number;
+
+  // propertyCount / portfolio section
+  highPerforming?: number; averagePerforming?: number; underPerforming?: number;
+  highRisk?: number; mediumRisk?: number; lowRisk?: number;
+  totalUnits?: number; totalInvoices?: number;
+  averageIncomePerProperty?: number; averageExpensePerProperty?: number;
+  topProperty?: string; topPropertyRef?: string; worstProperty?: string; worstPropertyRef?: string;
 };
+
+export type FinanceSummary = FinanceSummaryMetric[] | FinanceSummaryObject;
 
 export type FinanceExpenseCategory = { category: string; amount: number };
 export type FinanceTopVendor = { vendorName: string; amount: number };

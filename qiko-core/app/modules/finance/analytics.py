@@ -231,6 +231,120 @@ def _public_property(p: dict) -> dict:
     }
 
 
+def _build_summary(raw_props: list[dict], f_exp: list[ExpenseRow], f_inc: list[IncomeRow],
+                   total_income: float, total_expenses: float, total_nett: float, total_vat: float,
+                   total_outstanding: float, net_profit: float, property_count: int) -> dict:
+    # totalIncome section
+    income_unit_refs = {i.unit_ref for i in f_inc if i.unit_ref}
+    top_income_prop = max(raw_props, key=lambda p: p["income"]) if raw_props else None
+
+    # totalExpenses section
+    expense_property_refs = {e.property_ref for e in f_exp if e.property_ref}
+    vendor_amounts: dict[str, float] = {}
+    for e in f_exp:
+        if e.vendor:
+            vendor_amounts[e.vendor] = vendor_amounts.get(e.vendor, 0.0) + e.gross
+    top_vendor = max(vendor_amounts.items(), key=lambda kv: kv[1]) if vendor_amounts else None
+    category_amounts: dict[str, float] = {}
+    for e in f_exp:
+        cat = e.heading or "Other"
+        category_amounts[cat] = category_amounts.get(cat, 0.0) + e.gross
+    top_category = max(category_amounts.items(), key=lambda kv: kv[1]) if category_amounts else None
+
+    # netProfit section
+    top_netprofit = raw_props[0] if raw_props else None
+    worst_netprofit = raw_props[-1] if raw_props else None
+    avg_margin = _round2(sum(p["marginPercent"] for p in raw_props) / len(raw_props)) if raw_props else 0.0
+    overall_margin = _round2((net_profit / total_income) * 100) if total_income != 0 else 0.0
+    overall_cti = _round2((total_expenses / total_income) * 100) if total_income != 0 else 0.0
+    expense_property_count = len(expense_property_refs)
+
+    # outstanding section
+    outstanding_props = [p for p in raw_props if p["outstanding"] != 0]
+    positive_outstanding = _round2(sum(p["outstanding"] for p in raw_props if p["outstanding"] > 0))
+    negative_outstanding = _round2(sum(p["outstanding"] for p in raw_props if p["outstanding"] < 0))
+    top_outstanding = max(raw_props, key=lambda p: abs(p["outstanding"])) if raw_props else None
+    outstanding_property_count = len(outstanding_props)
+    outstanding_avg = _round2(total_outstanding / outstanding_property_count) if outstanding_property_count else 0.0
+    outstanding_pct = _round2((total_outstanding / total_income) * 100) if total_income != 0 else 0.0
+    income_receivable_count = sum(1 for i in f_inc if i.income_receivable != 0)
+
+    # propertyCount / portfolio section
+    high_performing = sum(1 for p in raw_props if p["profitabilityClass"] == "high_performing")
+    average_performing = sum(1 for p in raw_props if p["profitabilityClass"] == "average_performing")
+    under_performing = sum(1 for p in raw_props if p["profitabilityClass"] == "under_performing")
+    high_risk = sum(1 for p in raw_props if p["riskLevel"] == "high")
+    medium_risk = sum(1 for p in raw_props if p["riskLevel"] == "medium")
+    low_risk = sum(1 for p in raw_props if p["riskLevel"] == "low")
+    total_units = sum(p["unitCount"] for p in raw_props)
+    total_invoices = len(f_exp)
+    avg_income_per_property = _round2(total_income / property_count) if property_count else 0.0
+    avg_expense_per_property = _round2(total_expenses / property_count) if property_count else 0.0
+
+    def _prop_detail(p: dict | None) -> dict:
+        if not p:
+            return {"name": "", "ref": "", "value": 0.0}
+        return {"name": p["name"], "ref": p["propertyRef"], "value": 0.0}
+
+    return {
+        # base
+        "propertyCount": property_count, "vendorCount": sum(1 for v in vendor_amounts),
+        "totalIncome": total_income, "totalExpenses": total_expenses, "netProfit": net_profit,
+        "outstanding": total_outstanding, "expenseBreakdown": {"net": total_nett, "vat": total_vat},
+
+        # totalIncome
+        "totalIncomeUnitCount": len(income_unit_refs),
+        "totalIncomeAveragePerProperty": avg_income_per_property,
+        "totalIncomeTopProperty": top_income_prop["name"] if top_income_prop else "",
+        "totalIncomeTopPropertyRef": top_income_prop["propertyRef"] if top_income_prop else "",
+        "totalIncomeTopPropertyIncome": top_income_prop["income"] if top_income_prop else 0.0,
+
+        # totalExpenses
+        "totalExpensesNet": total_nett, "totalExpensesVat": total_vat,
+        "totalExpensesPropertyCount": expense_property_count,
+        "totalExpensesInvoiceCount": total_invoices,
+        "totalExpensesAveragePerProperty": avg_expense_per_property,
+        "totalExpensesTopVendor": top_vendor[0] if top_vendor else "",
+        "totalExpensesTopVendorAmount": _round2(top_vendor[1]) if top_vendor else 0.0,
+        "totalExpensesTopCategory": top_category[0] if top_category else "",
+        "totalExpensesTopCategoryAmount": _round2(top_category[1]) if top_category else 0.0,
+
+        # netProfit
+        "netProfitMarginPercent": overall_margin,
+        "netProfitAverageMargin": avg_margin,
+        "netProfitTopProperty": top_netprofit["name"] if top_netprofit else "",
+        "netProfitTopPropertyRef": top_netprofit["propertyRef"] if top_netprofit else "",
+        "netProfitTopPropertyProfit": top_netprofit["netProfit"] if top_netprofit else 0.0,
+        "netProfitLowestPerformanceProperty": worst_netprofit["name"] if worst_netprofit else "",
+        "netProfitLowestPerformancePropertyRef": worst_netprofit["propertyRef"] if worst_netprofit else "",
+        "netProfitLowestPerformancePropertyProfit": worst_netprofit["netProfit"] if worst_netprofit else 0.0,
+        "netProfitCostToIncomeRatio": overall_cti,
+        "netProfitPropertyCount": expense_property_count,
+
+        # outstanding
+        "outstandingPropertyCount": outstanding_property_count,
+        "outstandingPositiveTotal": positive_outstanding,
+        "outstandingNegativeTotal": negative_outstanding,
+        "outstandingTopProperty": top_outstanding["name"] if top_outstanding else "",
+        "outstandingTopPropertyRef": top_outstanding["propertyRef"] if top_outstanding else "",
+        "outstandingTopPropertyOutstanding": top_outstanding["outstanding"] if top_outstanding else 0.0,
+        "outstandingAveragePerProperty": outstanding_avg,
+        "outstandingAsPercentOfIncome": outstanding_pct,
+        "outstandingIncomeReceivableCount": income_receivable_count,
+
+        # propertyCount / portfolio
+        "highPerforming": high_performing, "averagePerforming": average_performing,
+        "underPerforming": under_performing, "highRisk": high_risk, "mediumRisk": medium_risk,
+        "lowRisk": low_risk, "totalUnits": total_units, "totalInvoices": total_invoices,
+        "averageIncomePerProperty": avg_income_per_property,
+        "averageExpensePerProperty": avg_expense_per_property,
+        "topProperty": top_netprofit["name"] if top_netprofit else "",
+        "topPropertyRef": top_netprofit["propertyRef"] if top_netprofit else "",
+        "worstProperty": worst_netprofit["name"] if worst_netprofit else "",
+        "worstPropertyRef": worst_netprofit["propertyRef"] if worst_netprofit else "",
+    }
+
+
 def compute_analytics(expenses: list[ExpenseRow], incomes: list[IncomeRow], *,
                       frm: str | None = None, to: str | None = None,
                       currency: str = DEFAULT_CURRENCY) -> dict:
@@ -309,6 +423,9 @@ def compute_analytics(expenses: list[ExpenseRow], incomes: list[IncomeRow], *,
                                total_outstanding, len(distinct_vendors), risk_counts)
     trends = _build_trends(raw_props, real_exp, total_income, total_outstanding)
 
+    summary = _build_summary(raw_props, f_exp, f_inc, total_income, total_expenses, total_nett,
+                             total_vat, total_outstanding, net_profit, len(real_refs))
+
     return {
         "status": "success",
         "currency": currency,
@@ -316,11 +433,7 @@ def compute_analytics(expenses: list[ExpenseRow], incomes: list[IncomeRow], *,
             "from": date_from or "", "to": date_to or "",
             "label": _month_label(date_from, date_to) if date_from and date_to else "",
         },
-        "summary": {
-            "propertyCount": len(real_refs), "vendorCount": len(distinct_vendors),
-            "totalIncome": total_income, "totalExpenses": total_expenses, "netProfit": net_profit,
-            "outstanding": total_outstanding, "expenseBreakdown": {"net": total_nett, "vat": total_vat},
-        },
+        "summary": summary,
         "properties": [_public_property(p) for p in raw_props],
         "charts": charts,
         "insights": insights,
