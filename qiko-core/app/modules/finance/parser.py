@@ -213,8 +213,8 @@ def rows_to_expenses(raw_rows: list[dict]):
             continue
         expenditure_desc = _str(_pick(r, EXPENSE_COLS["expenditure_desc"]))
         prop_desc = _pick(r, EXPENSE_COLS["property_desc"])
-        if not prop_desc and not expenditure_desc:
-            prop_desc = _pick_exact(r, ["Desc", "Description"])
+        if not prop_desc:
+            prop_desc = _pick_exact(r, ["Desc"])
         out.append(ExpenseRow(
             property_ref=property_ref, property_desc=_str(prop_desc),
             heading=_str(_pick(r, EXPENSE_COLS["heading"])), vendor=_text_only(_pick(r, EXPENSE_COLS["vendor"])),
@@ -224,8 +224,8 @@ def rows_to_expenses(raw_rows: list[dict]):
             fixflo_ref=_str(_pick(r, EXPENSE_COLS["fixflo_ref"])),
             supplier_ref=_str(_pick(r, EXPENSE_COLS["supplier_ref"])),
             expenditure_desc=expenditure_desc,
-            period_from=_dmy_to_iso(_pick(r, EXPENSE_COLS["period_from"])),
-            period_to=_dmy_to_iso(_pick(r, EXPENSE_COLS["period_to"])),
+            period_from=_parse_date(_pick(r, EXPENSE_COLS["period_from"])),
+            period_to=_parse_date(_pick(r, EXPENSE_COLS["period_to"])),
             settled=_str(_pick(r, EXPENSE_COLS["settled"])),
         ))
     return out

@@ -113,8 +113,9 @@ def _monthly_trends(expenses: list[ExpenseRow], incomes: list[IncomeRow]) -> lis
 
     exp_by_month: dict[str, float] = {}
     for e in expenses:
-        if e.exp_date:
-            exp_by_month[e.exp_date[:7]] = exp_by_month.get(e.exp_date[:7], 0.0) + e.gross
+        d = e.period_to or e.exp_date
+        if d:
+            exp_by_month[d[:7]] = exp_by_month.get(d[:7], 0.0) + e.gross
 
     months = sorted(set(inc_by_month) | set(exp_by_month))
     return [{
@@ -242,10 +243,13 @@ def compute_analytics(expenses: list[ExpenseRow], incomes: list[IncomeRow], *,
             return False
         return True
 
-    f_exp = [e for e in expenses if in_range(e.exp_date)]
+    def _exp_date(e: ExpenseRow) -> str:
+        return e.period_to or e.exp_date
+
+    f_exp = [e for e in expenses if in_range(_exp_date(e))]
     f_inc = [i for i in incomes if in_range(i.tran_date)]
 
-    all_dates = sorted([e.exp_date for e in f_exp if e.exp_date] + [i.tran_date for i in f_inc if i.tran_date])
+    all_dates = sorted([_exp_date(e) for e in f_exp if _exp_date(e)] + [i.tran_date for i in f_inc if i.tran_date])
     date_from = frm or (all_dates[0] if all_dates else None)
     date_to = to or (all_dates[-1] if all_dates else None)
 
