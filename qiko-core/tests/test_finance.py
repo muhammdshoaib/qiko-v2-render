@@ -124,6 +124,78 @@ def test_analytics_risk_score_formula_is_cost_to_income_based():
     assert prop_b["riskScore"] == round(expected_cti * 2.5)
 
 
+def test_analytics_summary_cards_field_mapping():
+    """Regression coverage for the full qiko-fields-tracking.pdf summary contract."""
+    expenses, incomes = parse_workbook(_build_workbook())
+    result = compute_analytics(expenses, incomes)
+    s = result["summary"]
+
+    assert s["propertyCount"] == 2
+    assert s["vendorCount"] == 2
+    assert s["totalIncome"] == 1900.0
+    assert s["totalExpenses"] == 1740.0
+    assert s["netProfit"] == 160.0
+    assert s["outstanding"] == 350.0
+    assert s["expenseBreakdown"] == {"net": 1450.0, "vat": 290.0}
+
+    # totalIncome section
+    assert s["totalIncomeUnitCount"] == 3
+    assert s["totalIncomeAveragePerProperty"] == pytest.approx(950.0, rel=1e-2)
+    assert s["totalIncomeTopProperty"] == "12 High Street"
+    assert s["totalIncomeTopPropertyRef"] == "A001"
+    assert s["totalIncomeTopPropertyIncome"] == 1000.0
+
+    # totalExpenses section
+    assert s["totalExpensesNet"] == 1450.0
+    assert s["totalExpensesVat"] == 290.0
+    assert s["totalExpensesPropertyCount"] == 2
+    assert s["totalExpensesInvoiceCount"] == 4
+    assert s["totalExpensesAveragePerProperty"] == pytest.approx(870.0, rel=1e-2)
+    assert s["totalExpensesTopVendor"] == "Acme Maintenance"
+    assert s["totalExpensesTopVendorAmount"] == 1680.0
+    assert s["totalExpensesTopCategory"] == "Repairs"
+    assert s["totalExpensesTopCategoryAmount"] == 1680.0
+
+    # netProfit section
+    assert s["netProfitMarginPercent"] == pytest.approx(8.42, rel=1e-2)
+    assert s["netProfitAverageMargin"] == pytest.approx(4.34, rel=1e-2)
+    assert s["netProfitTopProperty"] == "12 High Street"
+    assert s["netProfitTopPropertyRef"] == "A001"
+    assert s["netProfitTopPropertyProfit"] == 820.0
+    assert s["netProfitLowestPerformanceProperty"] == "9 Mill Road"
+    assert s["netProfitLowestPerformancePropertyRef"] == "B002"
+    assert s["netProfitLowestPerformancePropertyProfit"] == -660.0
+    assert s["netProfitCostToIncomeRatio"] == pytest.approx(91.58, rel=1e-2)
+    assert s["netProfitPropertyCount"] == 2
+
+    # outstanding section
+    assert s["outstandingPropertyCount"] == 1
+    assert s["outstandingPositiveTotal"] == 350.0
+    assert s["outstandingNegativeTotal"] == 0.0
+    assert s["outstandingTopProperty"] == "9 Mill Road"
+    assert s["outstandingTopPropertyRef"] == "B002"
+    assert s["outstandingTopPropertyOutstanding"] == 350.0
+    assert s["outstandingAveragePerProperty"] == pytest.approx(350.0, rel=1e-2)
+    assert s["outstandingAsPercentOfIncome"] == pytest.approx(18.42, rel=1e-2)
+    assert s["outstandingIncomeReceivableCount"] == 2
+
+    # propertyCount / portfolio section
+    assert s["highPerforming"] == 1
+    assert s["averagePerforming"] == 0
+    assert s["underPerforming"] == 1
+    assert s["highRisk"] == 2
+    assert s["mediumRisk"] == 0
+    assert s["lowRisk"] == 0
+    assert s["totalUnits"] == 3
+    assert s["totalInvoices"] == 4
+    assert s["averageIncomePerProperty"] == pytest.approx(950.0, rel=1e-2)
+    assert s["averageExpensePerProperty"] == pytest.approx(870.0, rel=1e-2)
+    assert s["topProperty"] == "12 High Street"
+    assert s["topPropertyRef"] == "A001"
+    assert s["worstProperty"] == "9 Mill Road"
+    assert s["worstPropertyRef"] == "B002"
+
+
 def test_analytics_insights_and_trends_present():
     expenses, incomes = parse_workbook(_build_workbook())
     result = compute_analytics(expenses, incomes)
