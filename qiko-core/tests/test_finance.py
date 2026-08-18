@@ -395,3 +395,45 @@ async def test_sql_finance_file_store_persists_and_is_tenant_scoped(tmp_path):
     assert await SqlFinanceFileStore(sm2).get("beta", "agent-1", stored.id) is None
     assert (await svc2.history("beta", "agent-1"))["count"] == 0
     assert (await svc2.history("acme", "agent-1"))["count"] == 2
+
+
+def test_parser_maps_description_column_to_expenditure_desc():
+    wb = Workbook()
+    exp = wb.active
+    exp.title = "Exp YTD"
+    exp.append([
+        "Property Reference", "Unit Ref", "Unit Description", "Description",
+        "Heading", "Supname", "Nett", "Vat", "Gross", "Exp date",
+    ])
+    exp.append(["A001", "A001/1", "Flat 1, 12 High Street", "Leaking radiator",
+                "Repairs", "Acme Maintenance", 100.0, 20.0, 120.0, "01/03/2024"])
+    exp.append(["A001", "A001/1", "Flat 1, 12 High Street", "Window cleaning",
+                "Cleaning", "Sparkle Clean", 50.0, 10.0, 60.0, "05/03/2024"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    expenses, _ = parse_workbook(buf.getvalue())
+    assert len(expenses) == 2
+    assert expenses[0].expenditure_desc == "Leaking radiator"
+    assert expenses[1].expenditure_desc == "Window cleaning"
+    assert expenses[0].property_desc == ""  # Description should not become property name
+
+
+def test_analytics_enriches_property_ref_and_monthly_trends():
+    expenses, incomes = parse_workbook(_build_workbook())
+    result = compute_analytics(expenses, incomes)
+
+    prop_a = next(p for p in result["properties"] if p["propertyRef"] == "A001")
+    assert prop_a["name"] == "12 High Street"
+    assert "monthlyTrends" in prop_a
+    assert any(t["month"] == "2024-03" for t in prop_a["monthlyTrends"])
+    assert prop_a["vendorCount"] == 2
+    assert prop_a["unitCount"] == 1
+
+    assert "monthlyTrends" in result["charts"]
+
+    unit = prop_a["unitLedger"][0]
+    assert unit["propertyRef"] == "A001"
+    assert unit["propertyName"] == "12 High Street"
+    assert unit["expenses"][0]["propertyRef"] == "A001"
+    assert unit["expenses"][0]["unitRef"] == "A001/1"
+    assert unit["expenses"][0]["expenditureDescription"] != ""

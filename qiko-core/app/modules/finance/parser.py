@@ -108,7 +108,10 @@ EXPENSE_COLS = {
     "unit_desc": ["Unit Description", "Unit Desc", "Unit Name"],
     "fixflo_ref": ["FixFlo Reference", "FixFlo Ref", "FixFlo", "Fixflo Reference"],
     "supplier_ref": ["Supplier ref.", "Supplier Ref", "Sup Ref", "Supplier Code"],
-    "expenditure_desc": ["Expenditure Description", "Exp Description", "Expense Description", "Work Description"],
+    "expenditure_desc": [
+        "Expenditure Description", "Exp Description", "Expense Description",
+        "Work Description", "Description", "Desc",
+    ],
     "period_from": ["Period[1]", "Period From", "Period Start"],
     "period_to": ["Period[2]", "Period To", "Period End"],
     "settled": ["Settled[1]", "Settled", "Paid", "Payment Status"],
@@ -208,8 +211,9 @@ def rows_to_expenses(raw_rows: list[dict]):
             property_ref = unit_ref[:slash] if slash > 0 else unit_ref
         if not property_ref:
             continue
+        expenditure_desc = _str(_pick(r, EXPENSE_COLS["expenditure_desc"]))
         prop_desc = _pick(r, EXPENSE_COLS["property_desc"])
-        if prop_desc is None or prop_desc == "":
+        if not prop_desc and not expenditure_desc:
             prop_desc = _pick_exact(r, ["Desc", "Description"])
         out.append(ExpenseRow(
             property_ref=property_ref, property_desc=_str(prop_desc),
@@ -219,7 +223,7 @@ def rows_to_expenses(raw_rows: list[dict]):
             unit_ref=unit_ref, unit_desc=_str(_pick(r, EXPENSE_COLS["unit_desc"])),
             fixflo_ref=_str(_pick(r, EXPENSE_COLS["fixflo_ref"])),
             supplier_ref=_str(_pick(r, EXPENSE_COLS["supplier_ref"])),
-            expenditure_desc=_str(_pick(r, EXPENSE_COLS["expenditure_desc"])),
+            expenditure_desc=expenditure_desc,
             period_from=_dmy_to_iso(_pick(r, EXPENSE_COLS["period_from"])),
             period_to=_dmy_to_iso(_pick(r, EXPENSE_COLS["period_to"])),
             settled=_str(_pick(r, EXPENSE_COLS["settled"])),

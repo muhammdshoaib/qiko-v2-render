@@ -5,6 +5,7 @@
 // so the dashboard derives everything it can from `properties[]` when a chart block is absent.
 import type {
   FinanceAnalytics, FinanceProperty, FinanceSummary, FinanceSummaryMetric, FinanceTrends,
+  FinanceUnitExpense, FinanceUnitLedger, FinanceMonthlyTrend, FinanceFile,
 } from "@/lib/api";
 
 // ── Colors (match the reference: green=income/positive, red=expenses/negative, amber/orange=risk,
@@ -137,11 +138,26 @@ function mapClassification(raw: string | undefined): keyof typeof CLASSIFICATION
 }
 
 // ── Derived chart datasets ────────────────────────────────────────────────────────────────────
-export type PropertyBar = { name: string; fullName: string; staNo: string; income: number; expenses: number; profit: number; margin: number };
+export type PropertyBar = {
+  name: string; fullName: string; propertyName: string; propertyRef: string; staNo: string;
+  income: number; expenses: number; profit: number; margin: number;
+};
 
 /** Income / expenses / profit per property, top 10 by profit. Prefers charts.incomeVsExpensesByProperty
  * when present, otherwise derives from properties[]. */
 export function propertyBars(analytics: FinanceAnalytics | undefined): PropertyBar[] {
+  const chart = analytics?.charts?.incomeVsExpensesByProperty;
+  if (Array.isArray(chart) && chart.length > 0) {
+    return chart.map((p) => {
+      const income = Math.round(Number(p.income ?? 0));
+      const expenses = Math.round(Number(p.expenses ?? 0));
+      const profit = Math.round(Number(p.netProfit ?? income - expenses));
+      const margin = income > 0 ? Math.round((profit / income) * 100) : 0;
+      const name = String(p.propertyName ?? "-");
+      return { name, fullName: name, propertyName: name, propertyRef: String(p.propertyRef ?? name), staNo: String(p.propertyId ?? name), income, expenses, profit, margin };
+    }).sort((a, b) => b.profit - a.profit).slice(0, 10);
+  }
+
   const props = activeProperties(analytics);
   const rows: PropertyBar[] = props.map((p) => {
     const income = Math.round(Number(p.income ?? 0));
@@ -149,7 +165,7 @@ export function propertyBars(analytics: FinanceAnalytics | undefined): PropertyB
     const profit = Math.round(Number(p.netProfit ?? income - expenses));
     const margin = income > 0 ? Math.round((profit / income) * 100) : Math.round(Number(p.marginPercent ?? 0));
     const name = String(p.name ?? p.propertyId ?? "-");
-    return { name, fullName: name, staNo: String(p.propertyId ?? name), income, expenses, profit, margin };
+    return { name, fullName: name, propertyName: name, propertyRef: String(p.propertyRef ?? name), staNo: String(p.propertyId ?? name), income, expenses, profit, margin };
   });
   return rows.sort((a, b) => b.profit - a.profit).slice(0, 10);
 }
@@ -217,15 +233,16 @@ export function vendorRows(analytics: FinanceAnalytics | undefined): VendorRow[]
   });
 }
 
-export type RiskRow = { name: string; fullName: string; staNo: string; riskScore: number; riskLevel: string; color: string };
+export type RiskRow = { name: string; fullName: string; propertyRef: string; propertyName: string; staNo: string; riskScore: number; riskLevel: string; color: string };
 
 export function riskRows(analytics: FinanceAnalytics | undefined): RiskRow[] {
   return activeProperties(analytics)
     .map((p) => {
-      const name = String(p.name ?? p.propertyId ?? "-");
+      const name = String(p.name ?? p.propertyRef ?? p.propertyId ?? "-");
       const level = String(p.riskLevel ?? "low").toLowerCase();
       return {
-        name, fullName: name, staNo: String(p.propertyId ?? name),
+        name, fullName: name, propertyRef: String(p.propertyRef ?? name), propertyName: name,
+        staNo: String(p.propertyId ?? name),
         riskScore: Math.round(Number(p.riskScore ?? 0)),
         riskLevel: level, color: riskLevelHex(level),
       };
@@ -307,4 +324,52 @@ export function trendSections(payload: FinanceTrends | undefined): TrendSection[
   }
 
   return sections;
+}
+
+// ── File month options + date helpers ------------------------------------------------------------
+export function monthOptionsFromFiles(files?: FinanceFile[]): { label: string; value: string }[] {
+  const opts: { label: string; value: string }[] = [{ label: "All time", value: "all" }];
+  const seen = new Set<string>();
+  if (!files) return opts;
+  for (const file of files) {
+    if (!file?.uploadedAt) continue;
+    const d = new Date(file.uploadedAt);
+    if (Number.isNaN(d.getTime())) continue;
+    const month = d.toLocaleString("en-GB", { month: "short", year: "numeric" });
+    const value = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+    if (!seen.has(value)) {
+      seen.add(value);
+      opts.push({ label: month, value });
+    }
+  }
+  return opts;
+}
+
+export function formatDateShort(value: string | null | undefined): string {
+  if (!value) return "-";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit" });
+}
+
+export function allExpenses(analytics: FinanceAnalytics | undefined, search = ""): FinanceUnitExpense[] {
+  const q = search.trim().toLowerCase();
+  const list: FinanceUnitExpense[] = [];
+  for (const p of activeProperties(analytics)) {
+    for (const u of p.unitLedger ?? []) {
+      for (const e of u.expenses ?? []) {
+        const enriched: FinanceUnitExpense = {
+          ...e,
+          propertyRef: e.propertyRef ?? p.propertyRef ?? p.propertyId,
+          propertyName: e.propertyName ?? p.name ?? e.propertyRef,
+          unitRef: e.unitRef ?? u.unitRef,
+          unitDescription: e.unitDescription ?? u.unitDescription,
+        };
+        if (!q || [e.heading, e.expenditureDescription, e.supplierName, e.propertyName, e.unitDescription].some((s) => String(s ?? "").toLowerCase().includes(q))) {
+          list.push(enriched);
+        }
+      }
+    }
+  }
+  return list;
 }

@@ -105,6 +105,26 @@ def _profitability_label(cls: str) -> str:
     return " ".join(w.capitalize() for w in cls.split("_"))
 
 
+def _monthly_trends(expenses: list[ExpenseRow], incomes: list[IncomeRow]) -> list[dict]:
+    inc_by_month: dict[str, float] = {}
+    for i in incomes:
+        if i.tran_date:
+            inc_by_month[i.tran_date[:7]] = inc_by_month.get(i.tran_date[:7], 0.0) + i.amount
+
+    exp_by_month: dict[str, float] = {}
+    for e in expenses:
+        if e.exp_date:
+            exp_by_month[e.exp_date[:7]] = exp_by_month.get(e.exp_date[:7], 0.0) + e.gross
+
+    months = sorted(set(inc_by_month) | set(exp_by_month))
+    return [{
+        "month": m,
+        "income": _round2(inc_by_month.get(m, 0.0)),
+        "expenses": _round2(exp_by_month.get(m, 0.0)),
+        "netProfit": _round2(inc_by_month.get(m, 0.0) - exp_by_month.get(m, 0.0)),
+    } for m in months]
+
+
 def _build_property(ref: str, desc: str, expenses: list[ExpenseRow], incomes: list[IncomeRow]) -> dict:
     income = _round2(sum(i.amount for i in incomes))
     expenses_total = _round2(sum(e.gross for e in expenses))
@@ -129,7 +149,7 @@ def _build_property(ref: str, desc: str, expenses: list[ExpenseRow], incomes: li
         ({"vendorName": name, "amount": _round2(sum(e.gross for e in rows))} for name, rows in by_vendor.items()),
         key=lambda v: v["amount"], reverse=True)[:5]
 
-    unit_ledger = _build_unit_ledger(expenses, incomes)
+    unit_ledger = _build_unit_ledger(ref, _friendly_name(desc), expenses, incomes)
 
     return {
         "propertyId": "", "propertyRef": ref, "name": _friendly_name(desc),
@@ -137,12 +157,13 @@ def _build_property(ref: str, desc: str, expenses: list[ExpenseRow], incomes: li
         "marginPercent": margin, "outstanding": outstanding, "costToIncomeRatio": cost_to_income,
         "riskScore": risk_score, "riskLevel": _risk_level(risk_score),
         "profitabilityClass": _profitability_class(margin),
-        "invoiceCount": len(expenses),
+        "invoiceCount": len(expenses), "vendorCount": len(by_vendor), "unitCount": len(unit_ledger),
         "expenseCategories": expense_categories, "topVendors": top_vendors, "unitLedger": unit_ledger,
+        "monthlyTrends": _monthly_trends(expenses, incomes),
     }
 
 
-def _build_unit_ledger(expenses: list[ExpenseRow], incomes: list[IncomeRow]) -> list[dict]:
+def _build_unit_ledger(property_ref: str, property_name: str, expenses: list[ExpenseRow], incomes: list[IncomeRow]) -> list[dict]:
     unit_income: dict[str, dict] = {}
     for i in incomes:
         ref = i.unit_ref or i.property_ref
@@ -161,6 +182,11 @@ def _build_unit_ledger(expenses: list[ExpenseRow], incomes: list[IncomeRow]) -> 
             acc["desc"] = e.unit_desc
         acc["rows"].append(e)
 
+    by_vendor: dict[str, list[ExpenseRow]] = {}
+    for e in expenses:
+        if e.vendor:
+            by_vendor.setdefault(e.vendor, []).append(e)
+
     ledger: list[dict] = []
     for ref in set(unit_income) | set(unit_expense):
         inc = unit_income.get(ref, {"income": 0.0, "outstanding": 0.0})
@@ -168,9 +194,18 @@ def _build_unit_ledger(expenses: list[ExpenseRow], incomes: list[IncomeRow]) -> 
         rows: list[ExpenseRow] = exp["rows"]
         ledger.append({
             "unitRef": ref, "unitDescription": exp["desc"],
+            "propertyRef": property_ref, "propertyName": property_name,
             "income": _round2(inc["income"]), "outstanding": _round2(inc["outstanding"]),
             "totalGross": _round2(sum(e.gross for e in rows)),
+            "totalNett": _round2(sum(e.nett for e in rows)),
+            "totalVat": _round2(sum(e.vat for e in rows)),
+            "netProfit": _round2(inc["income"] - sum(e.gross for e in rows)),
+            "invoiceCount": len(rows),
+            "vendorCount": len({e.vendor for e in rows if e.vendor}),
+            "topVendor": max(((e.vendor, e.gross) for e in rows if e.vendor), key=lambda x: x[1], default=["", 0.0])[0],
             "expenses": [{
+                "propertyRef": property_ref, "propertyName": property_name,
+                "unitRef": ref, "unitDescription": exp["desc"],
                 "heading": e.heading, "expenditureDescription": e.expenditure_desc,
                 "nett": _round2(e.nett), "vat": _round2(e.vat), "gross": _round2(e.gross),
                 "settled": e.settled, "invoiceDate": e.exp_date, "periodFrom": e.period_from,
@@ -184,12 +219,14 @@ def _build_unit_ledger(expenses: list[ExpenseRow], incomes: list[IncomeRow]) -> 
 def _public_property(p: dict) -> dict:
     """The ELUserProperty view returned in the analytics `properties[]` array."""
     return {
-        "propertyId": p["propertyId"], "name": p["name"], "income": p["income"],
-        "expenses": p["expenses"], "netProfit": p["netProfit"], "marginPercent": p["marginPercent"],
-        "outstanding": p["outstanding"], "costToIncomeRatio": p["costToIncomeRatio"],
-        "riskScore": p["riskScore"], "riskLevel": p["riskLevel"],
-        "profitabilityClass": p["profitabilityClass"], "expenseCategories": p["expenseCategories"],
-        "topVendors": p["topVendors"], "unitLedger": p["unitLedger"],
+        "propertyId": p["propertyId"], "propertyRef": p["propertyRef"], "name": p["name"],
+        "income": p["income"], "expenses": p["expenses"], "netProfit": p["netProfit"],
+        "marginPercent": p["marginPercent"], "outstanding": p["outstanding"],
+        "costToIncomeRatio": p["costToIncomeRatio"], "riskScore": p["riskScore"],
+        "riskLevel": p["riskLevel"], "profitabilityClass": p["profitabilityClass"],
+        "invoiceCount": p["invoiceCount"], "vendorCount": p["vendorCount"], "unitCount": p["unitCount"],
+        "expenseCategories": p["expenseCategories"], "topVendors": p["topVendors"],
+        "unitLedger": p["unitLedger"], "monthlyTrends": p["monthlyTrends"],
     }
 
 
@@ -263,6 +300,7 @@ def compute_analytics(expenses: list[ExpenseRow], incomes: list[IncomeRow], *,
         risk_counts[p["riskLevel"]] += 1
 
     charts = _build_charts(raw_props, real_exp, total_expenses)
+    charts["monthlyTrends"] = _monthly_trends(real_exp, f_inc)
     insights = _build_insights(raw_props, charts, total_income, total_expenses, net_profit,
                                total_outstanding, len(distinct_vendors), risk_counts)
     trends = _build_trends(raw_props, real_exp, total_income, total_outstanding)

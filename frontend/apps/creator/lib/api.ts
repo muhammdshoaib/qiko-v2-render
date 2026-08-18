@@ -1071,19 +1071,41 @@ export type FinanceSummary = FinanceSummaryMetric[] | {
 export type FinanceExpenseCategory = { category: string; amount: number };
 export type FinanceTopVendor = { vendorName: string; amount: number };
 
+export type FinanceMonthlyTrend = { month: string; income: number; expenses: number; netProfit: number };
+
+export type FinanceUnitExpense = {
+  propertyRef?: string; propertyName?: string;
+  unitRef?: string; unitDescription?: string;
+  heading?: string; expenditureDescription?: string;
+  supplierName?: string; supplierRef?: string; fixFloRef?: string;
+  nett?: number; vat?: number; gross?: number;
+  settled?: string; invoiceDate?: string; periodFrom?: string; periodTo?: string;
+};
+
+export type FinanceUnitLedger = {
+  unitRef?: string; unitDescription?: string;
+  propertyRef?: string; propertyName?: string;
+  income?: number; outstanding?: number; totalGross?: number; totalNett?: number; totalVat?: number;
+  netProfit?: number; invoiceCount?: number; vendorCount?: number; topVendor?: string;
+  expenses?: FinanceUnitExpense[];
+};
+
 /** Per-property analytics row (mirrors ELUserProperty). */
 export type FinanceProperty = {
-  propertyId?: string; name?: string; income?: number; expenses?: number; netProfit?: number;
+  propertyId?: string; propertyRef?: string; name?: string; income?: number; expenses?: number; netProfit?: number;
   marginPercent?: number; outstanding?: number; costToIncomeRatio?: number; riskScore?: number;
   riskLevel?: string; profitabilityClass?: string;
+  invoiceCount?: number; vendorCount?: number; unitCount?: number;
   expenseCategories?: FinanceExpenseCategory[]; topVendors?: FinanceTopVendor[];
+  unitLedger?: FinanceUnitLedger[]; monthlyTrends?: FinanceMonthlyTrend[];
 };
 
 export type FinanceChartVendor = { vendorName: string; amount: number; sharePercent?: number };
-export type FinanceChartIncomeExpense = { propertyId?: string; propertyName: string; income: number; expenses: number };
+export type FinanceChartIncomeExpense = { propertyId?: string; propertyRef?: string; propertyName: string; income: number; expenses: number; netProfit?: number };
 export type FinanceCharts = {
   incomeVsExpensesByProperty?: FinanceChartIncomeExpense[];
   topVendorsBySpend?: FinanceChartVendor[];
+  monthlyTrends?: FinanceMonthlyTrend[];
   // Some fields (profitabilityClassification, expenseCategories drilldown details) are optional/richer
   // in the original; the dashboard derives its donuts from properties[] when absent.
   [key: string]: unknown;
