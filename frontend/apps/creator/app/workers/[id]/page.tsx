@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -10,7 +10,7 @@ import {
   MessageSquare, Phone, Plus, Search, SendHorizonal, Settings, Share2, Sparkles, Trash2, Upload, Users, Zap,
   type LucideIcon,
 } from "lucide-react";
-import { Badge, Button, Card, CardContent, Input, Label, Skeleton, cn } from "@qiko/ui";
+import { Badge, Button, Card, CardContent, Dialog, Input, Label, Skeleton, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import { WorkerAvatar } from "@/components/worker-avatar";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
@@ -938,6 +938,8 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState<BehaviorKey | null>("prompts");
+  const [pendingDelete, setPendingDelete] = useState<{ key: BehaviorKey; entryId: string; title: string } | null>(null);
+  const deleteOpenerRef = useRef<HTMLElement | null>(null);
   const save = useMutation({
     mutationFn: async (operation: BehaviorMutation) => {
       const latestWorker = (await listAgents()).find((agent) => agent.id === id);
@@ -1021,7 +1023,7 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
     setCat(key, upsertBehaviorEntry(items[key], cleanedEntry));
     save.mutate({ type: "upsert", key, entry: cleanedEntry });
   };
-  const removeItem = (key: BehaviorKey, entryId: string) => {
+  const requestRemove = (key: BehaviorKey, entryId: string, opener: HTMLElement | null) => {
     if (save.isPending) return;
     const entry = items[key].find((item) => item.id === entryId);
     if (!entry) return;
@@ -1035,8 +1037,14 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
       clearValidationError(key, entryId);
       return;
     }
-    const label = entry.title.trim();
-    if (!window.confirm(label ? `Delete "${label}"?` : "Delete this behavior entry?")) return;
+    deleteOpenerRef.current = opener;
+    setPendingDelete({ key, entryId, title: entry.title.trim() });
+  };
+
+  const confirmRemove = () => {
+    if (!pendingDelete || save.isPending) return;
+    const { key, entryId } = pendingDelete;
+    setPendingDelete(null);
     save.mutate({ type: "remove", key, entryId });
   };
 
@@ -1102,7 +1110,7 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
                             aria-describedby={validationField === "title" ? validationMessageId : undefined}
                             onChange={(e) => editItem(c.key, entry.id, "title", e.target.value)} />
                           <Button type="button" variant="ghost" size="icon" aria-label={`Delete ${entry.title || "item"}`} className="shrink-0"
-                            disabled={save.isPending} onClick={() => removeItem(c.key, entry.id)}>
+                            disabled={save.isPending} onClick={(e) => requestRemove(c.key, entry.id, e.currentTarget)}>
                             <Trash2 className="size-4 text-muted-foreground" />
                           </Button>
                         </div>
@@ -1130,6 +1138,31 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
           );
         })}
       </div>
+
+      <Dialog
+        open={!!pendingDelete}
+        onClose={() => setPendingDelete(null)}
+        opener={deleteOpenerRef.current}
+        busy={save.isPending}
+        labelledBy="delete-behavior-title"
+      >
+        {pendingDelete && (
+          <div className="space-y-4">
+            <h3 id="delete-behavior-title" className="text-lg font-semibold text-white">
+              Delete {pendingDelete.title ? `"${pendingDelete.title}"` : "this behavior entry"}?
+            </h3>
+            <p className="text-sm text-slate-300">This cannot be undone.</p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" disabled={save.isPending} onClick={() => setPendingDelete(null)}>
+                Cancel
+              </Button>
+              <Button type="button" variant="destructive" disabled={save.isPending} onClick={confirmRemove}>
+                {save.isPending ? "Deleting..." : "Delete"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
     </div>
   );
 }
