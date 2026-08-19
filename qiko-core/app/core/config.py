@@ -102,6 +102,14 @@ class Settings(BaseSettings):
     qiko_track_api_base: str = "https://track.qiko.ai"
     qiko_track_api_allowlist: list[str] = ["https://track.qiko.ai"]
 
+    # GitHub App (read-only connector). Empty means GitHub App install flow is unavailable.
+    github_app_id: str = ""
+    github_app_private_key: str = ""
+    github_app_slug: str = ""
+    github_app_webhook_secret: str = ""
+    github_api_base: str = "https://api.github.com"
+    github_api_allowlist: list[str] = ["https://api.github.com"]
+
     # Salesforce OAuth (authorization_code + PKCE, matching the real IDG Sales Salesforce
     # Connected App flow -- NOT the client_credentials shape used by app.integrations.clients.
     # SalesforceClient/app.modules.crm's generic per-worker connection; see
