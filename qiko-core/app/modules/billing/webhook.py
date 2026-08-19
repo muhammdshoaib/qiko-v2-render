@@ -39,6 +39,12 @@ class Invoice:
     customer_id: str
     amount_cents: int
     status: str
+    currency: str | None = None
+    number: str | None = None
+    hosted_invoice_url: str | None = None
+    invoice_pdf: str | None = None
+    period_start: datetime | None = None
+    period_end: datetime | None = None
 
 
 @dataclass
@@ -105,11 +111,25 @@ class StripeWebhookHandler:
         etype = event.get("type", "")
         obj = event.get("data", {}).get("object", {})
         if etype.startswith("invoice."):
+            period_start = None
+            ts = obj.get("period_start")
+            if ts:
+                period_start = datetime.fromtimestamp(int(ts), tz=timezone.utc)
+            period_end = None
+            ts = obj.get("period_end")
+            if ts:
+                period_end = datetime.fromtimestamp(int(ts), tz=timezone.utc)
             self.invoices.upsert(Invoice(
                 stripe_invoice_id=obj.get("id", ""),
                 customer_id=obj.get("customer", ""),
                 amount_cents=int(obj.get("amount_paid", obj.get("amount_due", 0)) or 0),
-                status=obj.get("status", "open")))
+                status=obj.get("status", "open"),
+                currency=obj.get("currency"),
+                number=obj.get("number"),
+                hosted_invoice_url=obj.get("hosted_invoice_url"),
+                invoice_pdf=obj.get("invoice_pdf"),
+                period_start=period_start,
+                period_end=period_end))
             return "invoice_synced"
         if etype == "checkout.session.completed":
             # Payment-link checkouts carry the Qiko session id in metadata so we can flip the link

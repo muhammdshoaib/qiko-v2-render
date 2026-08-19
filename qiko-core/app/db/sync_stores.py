@@ -130,7 +130,10 @@ class SqlIdempotencyGuard:
 
 def _invoice_from_row(r: InvoiceRow) -> Invoice:
     return Invoice(stripe_invoice_id=r.stripe_invoice_id, customer_id=r.customer_id,
-                   amount_cents=r.amount_cents, status=r.status)
+                   amount_cents=r.amount_cents, status=r.status,
+                   currency=r.currency, number=r.number,
+                   hosted_invoice_url=r.hosted_invoice_url, invoice_pdf=r.invoice_pdf,
+                   period_start=r.period_start, period_end=r.period_end)
 
 
 @dataclass
@@ -146,11 +149,21 @@ class SqlInvoiceStore:
             is_new = row is None
             if is_new:
                 s.add(InvoiceRow(stripe_invoice_id=inv.stripe_invoice_id, customer_id=inv.customer_id,
-                                 amount_cents=inv.amount_cents, status=inv.status))
+                                 amount_cents=inv.amount_cents, status=inv.status,
+                                 currency=inv.currency, number=inv.number,
+                                 hosted_invoice_url=inv.hosted_invoice_url,
+                                 invoice_pdf=inv.invoice_pdf,
+                                 period_start=inv.period_start, period_end=inv.period_end))
             else:
                 row.customer_id = inv.customer_id
                 row.amount_cents = inv.amount_cents
                 row.status = inv.status
+                row.currency = inv.currency
+                row.number = inv.number
+                row.hosted_invoice_url = inv.hosted_invoice_url
+                row.invoice_pdf = inv.invoice_pdf
+                row.period_start = inv.period_start
+                row.period_end = inv.period_end
             return is_new
 
     def get(self, invoice_id: str) -> Invoice | None:

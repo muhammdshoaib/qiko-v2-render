@@ -218,8 +218,8 @@ export const workerMonitoring = (days = 30, page = 1, tenantId?: string, sort?: 
  * (qiko-core/app/integrations/clients.py:57 sends currency "usd"), and because the tenants page used
  * to render the same earnings_cents figure as GBP while customers hardcoded a "$" prefix. Three
  * spellings of one number is a bug that a right-aligned money column makes obvious. */
-export const formatMoney = (cents: number) =>
-  (cents / 100).toLocaleString(undefined, { style: "currency", currency: "USD" });
+export const formatMoney = (cents: number, currency = "USD") =>
+  (cents / 100).toLocaleString(undefined, { style: "currency", currency });
 
 /** nano-USD to a human string. Values are integers on purpose, see the pricing module. */
 export const formatUsd = (nanoUsd: number) =>
@@ -310,7 +310,18 @@ export type Analytics = {
 };
 export const analytics = () => request<Analytics>("/admin/analytics");
 
-export type Invoice = { stripe_invoice_id: string; customer_id: string; amount_cents: number; status: string };
+export type Invoice = {
+  stripe_invoice_id: string;
+  customer_id: string;
+  amount_cents: number;
+  currency: string | null;
+  number: string | null;
+  hosted_invoice_url: string | null;
+  invoice_pdf: string | null;
+  period_start: string | null;
+  period_end: string | null;
+  status: string;
+};
 /** Paginated and sortable like every other directory. It used to return a bare array, which is fine for
  *  one customer and unusable after a year of monthly invoices across a hundred accounts. */
 export const listInvoices = (search = "", page = 1, sort?: ListSort, status?: string) =>

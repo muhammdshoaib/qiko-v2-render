@@ -121,7 +121,10 @@ def test_webhook_syncs_invoice_and_activates_subscription_durably(tmp_path):
     handler = StripeWebhookHandler(invoices=SqlInvoiceStore(sm), subscriptions=subs)
 
     assert handler.handle({"id": "evt_1", "type": "invoice.paid", "data": {"object": {
-        "id": "in_9", "customer": "cus_9", "amount_paid": 4900, "status": "paid"}}}) == "invoice_synced"
+        "id": "in_9", "customer": "cus_9", "amount_paid": 4900, "status": "paid",
+        "currency": "usd", "number": "INV-9", "hosted_invoice_url": "https://invoice/9",
+        "invoice_pdf": "https://invoice/9/pdf", "period_start": 1704067200,
+        "period_end": 1706745600}}}) == "invoice_synced"
     assert handler.handle({"id": "evt_2", "type": "checkout.session.completed", "data": {"object": {
         "client_reference_id": "acme", "customer": "cus_9",
         "metadata": {"plan": "pro"}}}}) == "subscription_activated"
@@ -132,7 +135,13 @@ def test_webhook_syncs_invoice_and_activates_subscription_durably(tmp_path):
     fresh = SqlSubscriptionStore(_reopen(path))
     assert fresh.get("acme").plan == "pro" and fresh.get("acme").status == "active"
     assert fresh.get_customer("acme") == "cus_9"
-    assert SqlInvoiceStore(_reopen(path)).get("in_9").amount_cents == 4900
+    inv = SqlInvoiceStore(_reopen(path)).get("in_9")
+    assert inv.amount_cents == 4900
+    assert inv.currency == "usd"
+    assert inv.number == "INV-9"
+    assert inv.hosted_invoice_url == "https://invoice/9"
+    assert inv.invoice_pdf == "https://invoice/9/pdf"
+    assert inv.period_start is not None and inv.period_end is not None
 
 
 def test_migration_0024_imports_and_chains():
@@ -303,3 +312,33 @@ def test_migration_0044_creates_webhook_events_table(tmp_path):
         with Operations.context(ctx):
             mod.upgrade()
     assert "webhook_events" in inspect(engine).get_table_names()
+
+
+def test_migration_0045_adds_invoice_columns(tmp_path):
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy import inspect
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'm45.db'}")
+    # Start from the migration that created billing_invoices so the column additions have a target.
+    base = (Path(__file__).resolve().parent.parent / "alembic" / "versions"
+            / "0024_billing_durability_and_admin_customers.py")
+    spec = importlib.util.spec_from_file_location("mig_0024_for_45", base)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    with engine.begin() as conn:
+        ctx = MigrationContext.configure(conn)
+        with Operations.context(ctx):
+            mod.upgrade()
+    path = (Path(__file__).resolve().parent.parent / "alembic" / "versions"
+            / "0045_billing_invoices_columns.py")
+    spec = importlib.util.spec_from_file_location("mig_0045", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    with engine.begin() as conn:
+        ctx = MigrationContext.configure(conn)
+        with Operations.context(ctx):
+            mod.upgrade()
+    cols = {c["name"] for c in inspect(engine).get_columns("billing_invoices")}
+    assert {"currency", "number", "hosted_invoice_url", "invoice_pdf",
+            "period_start", "period_end"} <= cols
