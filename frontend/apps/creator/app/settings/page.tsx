@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import QRCode from "qrcode";
-import { ArrowRight, Cookie, CreditCard, KeyRound, Link2, Search, Settings2, Shield, ShieldCheck, Trash2, User, UserPlus, Users } from "lucide-react";
+import { ArrowRight, Calendar, Cookie, CreditCard, KeyRound, Link2, ListChecks, Mail, MessageCircle, Phone, Search, Settings2, Share2, Shield, ShieldCheck, Trash2, User, UserPlus, Users } from "lucide-react";
 import { Badge, Button, Input, Label, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -12,6 +12,7 @@ import {
   cancelInvite,
   getTeamsWebhookStatus,
   inviteUser,
+  listAgents,
   listTenantUsers,
   me,
   regenerateBackupCodes,
@@ -21,6 +22,7 @@ import {
   twofaVerify,
   updateProfile,
   updateUserRole,
+  type Agent,
   type TenantRole,
   type TenantUser,
 } from "@/lib/api";
@@ -30,6 +32,7 @@ const SETTINGS_TABS = [
   { id: "general", label: "General", icon: Settings2 },
   { id: "team", label: "Team", icon: Users },
   { id: "security", label: "Security", icon: Shield },
+  { id: "integrations", label: "Integrations", icon: Link2 },
 ] as const;
 
 function SettingsCard({ icon: Icon, iconColor, title, children }: {
@@ -92,7 +95,7 @@ export default function SettingsPage() {
 
               <BillingCard />
 
-              <IntegrationsCard />
+              <IntegrationsCard onManage={() => setTab("integrations")} />
 
               <SettingsCard icon={KeyRound} iconColor="text-amber-400" title="Change Password">
                 <p className="mb-4 text-sm text-slate-400">Update your account password securely.</p>
@@ -111,6 +114,7 @@ export default function SettingsPage() {
 
           {tab === "team" && <TeamPanel />}
           {tab === "security" && <SecurityPanel />}
+          {tab === "integrations" && <IntegrationsPanel />}
         </div>
       </div>
     </AppShell>
@@ -170,7 +174,7 @@ function BillingCard() {
   );
 }
 
-function IntegrationsCard() {
+function IntegrationsCard({ onManage }: { onManage: () => void }) {
   const teams = useQuery({ queryKey: ["teams-webhook"], queryFn: getTeamsWebhookStatus, retry: false });
   return (
     <SettingsCard icon={Link2} iconColor="text-cyan-400" title="Integrations">
@@ -183,11 +187,53 @@ function IntegrationsCard() {
           {teams.isLoading ? "\u2026" : teams.data?.connected ? "Connected" : "Not connected"}
         </Badge>
       </div>
-      <Button onClick={() => (window.location.href = "/workers")}
+      <Button onClick={onManage}
         className="w-full border-0 bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-lg shadow-cyan-900/30 hover:shadow-cyan-800/50">
-        <Link2 className="size-4" /> Manage worker connections <ArrowRight className="size-4" />
+        <Link2 className="size-4" /> Manage integrations <ArrowRight className="size-4" />
       </Button>
     </SettingsCard>
+  );
+}
+
+type IntegrationMeta = { id: string; name: string; description: string; icon: React.ComponentType<{ className?: string }>; color: string };
+
+const INTEGRATIONS: IntegrationMeta[] = [
+  { id: "voice", name: "Voice", description: "Enable phone calls for workers through Vapi.", icon: Phone, color: "text-amber-400" },
+  { id: "calendly", name: "Calendly", description: "Let workers schedule meetings directly in chat.", icon: Calendar, color: "text-blue-400" },
+  { id: "clickup", name: "ClickUp", description: "Create and update tasks from worker conversations.", icon: ListChecks, color: "text-purple-400" },
+  { id: "slack", name: "Slack", description: "Send messages and alerts to your Slack workspace.", icon: MessageCircle, color: "text-pink-400" },
+  { id: "gmail", name: "Gmail", description: "Send and read emails from worker conversations.", icon: Mail, color: "text-red-400" },
+  { id: "teams", name: "Microsoft Teams", description: "Post notifications to a Teams channel via webhook.", icon: Users, color: "text-emerald-400" },
+  { id: "salesforce", name: "Salesforce", description: "Push opportunities to your Salesforce org.", icon: Share2, color: "text-sky-400" },
+];
+
+function IntegrationsPanel() {
+  const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
+  const configureUrl = useMemo(() => {
+    if (agents.data && agents.data.length === 1) return `/workers/${agents.data[0].id}?tab=Connections`;
+    return "/workers";
+  }, [agents.data]);
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="flex items-center gap-2 text-2xl font-semibold text-white">
+          <Link2 className="size-6 text-cyan-400" /> Integrations
+        </h2>
+        <p className="mt-1 text-slate-400">Manage your external tools and worker connections.</p>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {INTEGRATIONS.map((integration) => (
+          <SettingsCard key={integration.id} icon={integration.icon} iconColor={integration.color} title={integration.name}>
+            <p className="mb-4 text-sm text-slate-400">{integration.description}</p>
+            <Button onClick={() => (window.location.href = configureUrl)}
+              className="w-full border-0 bg-gradient-to-r from-cyan-600 to-indigo-600 text-white shadow-lg shadow-cyan-900/30 hover:shadow-cyan-800/50">
+              <Link2 className="size-4" /> Configure <ArrowRight className="size-4" />
+            </Button>
+          </SettingsCard>
+        ))}
+      </div>
+    </div>
   );
 }
 
