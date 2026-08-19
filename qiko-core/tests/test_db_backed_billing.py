@@ -251,7 +251,43 @@ def test_cancel_and_resume_call_stripe_when_subscription_id_known(tmp_path):
     assert SqlSubscriptionStore(sm).get("acme").cancel_at_period_end is False
 
 
-def test_migration_0043_creates_webhook_events_table(tmp_path):
+def test_payment_link_webhook_marks_link_paid(tmp_path):
+    path = tmp_path / "link_webhook.db"
+    sm, _ = _sessionmaker(path)
+    links = PaymentLinkService(_FakeLinkGateway(), ConsoleEmailSender(), store=SqlPaymentLinkStore(sm))
+    subs = SubscriptionService(_FakeStripe(), store=SqlSubscriptionStore(sm))
+    log = links.create("buyer@x.com", 5000)
+
+    handler = StripeWebhookHandler(
+        invoices=SqlInvoiceStore(sm), subscriptions=subs,
+        idempotency=SqlIdempotencyGuard(sm, source="stripe"),
+        payment_links=links)
+    assert handler.handle({"id": "evt_cs_1", "type": "checkout.session.completed",
+                           "data": {"object": {"metadata": {"qiko_session_id": log.session_id},
+                                               "payment_status": "paid"}}}) == "payment_link_paid"
+    assert links.logs_for("buyer@x.com")[0].status == "paid"
+    # Duplicate event is ignored.
+    assert handler.handle({"id": "evt_cs_1", "type": "checkout.session.completed",
+                           "data": {"object": {"metadata": {"qiko_session_id": log.session_id},
+                                               "payment_status": "paid"}}}) == "duplicate"
+
+
+def test_payment_link_webhook_unknown_session_is_noop(tmp_path):
+    path = tmp_path / "link_unknown.db"
+    sm, _ = _sessionmaker(path)
+    links = PaymentLinkService(_FakeLinkGateway(), ConsoleEmailSender(), store=SqlPaymentLinkStore(sm))
+    subs = SubscriptionService(_FakeStripe(), store=SqlSubscriptionStore(sm))
+
+    handler = StripeWebhookHandler(
+        invoices=SqlInvoiceStore(sm), subscriptions=subs,
+        idempotency=SqlIdempotencyGuard(sm, source="stripe"),
+        payment_links=links)
+    assert handler.handle({"id": "evt_cs_2", "type": "checkout.session.completed",
+                           "data": {"object": {"metadata": {"qiko_session_id": "no-such-session"},
+                                               "payment_status": "paid"}}}) == "payment_link_unknown"
+
+
+def test_migration_0044_creates_webhook_events_table(tmp_path):
     from alembic.migration import MigrationContext
     from alembic.operations import Operations
     from sqlalchemy import inspect

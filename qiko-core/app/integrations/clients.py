@@ -57,7 +57,8 @@ class StripeClient:
         data = {"line_items[0][price_data][currency]": "usd",
                 "line_items[0][price_data][unit_amount]": str(amount_cents),
                 "line_items[0][price_data][product_data][name]": f"Invoice {session_id}",
-                "line_items[0][quantity]": "1"}
+                "line_items[0][quantity]": "1",
+                "metadata[qiko_session_id]": session_id}
         r = self._c.post("/payment_links", data=data)
         r.raise_for_status()
         return r.json()["url"]

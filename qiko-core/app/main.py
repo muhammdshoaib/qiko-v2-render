@@ -264,12 +264,13 @@ async def lifespan(app: FastAPI):
         # only the STATE backend changes from in-memory to Postgres.
         stripe_gateway = app.state.subscriptions.gateway
         app.state.subscriptions = SubscriptionService(stripe_gateway, store=SqlSubscriptionStore(sync_sm))
-        app.state.stripe_webhook = StripeWebhookHandler(
-            invoices=SqlInvoiceStore(sync_sm), subscriptions=app.state.subscriptions,
-            idempotency=SqlIdempotencyGuard(sync_sm, source="stripe"))
         app.state.payment_links = PaymentLinkService(
             gateway=app.state.payment_links.gateway, email=app.state.payment_links.email,
             store=SqlPaymentLinkStore(sync_sm))
+        app.state.stripe_webhook = StripeWebhookHandler(
+            invoices=SqlInvoiceStore(sync_sm), subscriptions=app.state.subscriptions,
+            idempotency=SqlIdempotencyGuard(sync_sm, source="stripe"),
+            payment_links=app.state.payment_links)
         app.state.customers = SqlCustomerDirectory(sync_sm)
         # Slack installations survive a redeploy AND are visible to the arq worker process, which
         # is the only way the digest job can resolve a bot token to post with.
@@ -481,9 +482,11 @@ def create_app() -> FastAPI:
     # from the tenant's own encrypted credential, so they are deliberately NOT wired here.
     stripe_gateway = StripeClient() if settings.stripe_secret_key else StubStripeGateway()
     app.state.subscriptions = SubscriptionService(stripe_gateway)
+    app.state.payment_links = PaymentLinkService(gateway=stripe_gateway, email=get_email_sender())
     # Give the webhook the subscription service so checkout.session.completed can link the tenant
     # (from the session's client_reference_id) to its real Stripe customer id and activate.
-    app.state.stripe_webhook = StripeWebhookHandler(subscriptions=app.state.subscriptions)
+    app.state.stripe_webhook = StripeWebhookHandler(
+        subscriptions=app.state.subscriptions, payment_links=app.state.payment_links)
     app.state.whatsapp = WhatsAppAdapter(
         WhatsAppClient() if settings.whatsapp_access_token else StubWhatsAppGateway())
     app.state.excel = ExcelService(app.state.knowledge)
@@ -493,7 +496,6 @@ def create_app() -> FastAPI:
     app.state.signal_engine = SignalEngineClient() if settings.signal_engine_url else StubSignalEngine()
     app.state.customers = CustomerDirectory()
     app.state.ga4 = GA4Client() if settings.ga4_property_id and settings.ga4_access_token else StubGA4Gateway()
-    app.state.payment_links = PaymentLinkService(gateway=stripe_gateway, email=get_email_sender())
     app.state.admin_org = AdminOrg()
     # The unified audit row for a grant or revoke. Attached to the STORE rather than the wrapper,
     # because that is where the record is written, and after construction because admin_org is built
