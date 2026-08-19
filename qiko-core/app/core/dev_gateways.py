@@ -15,6 +15,13 @@ class StubStripeGateway:
     def create_payment_link(self, *, amount_cents: int, session_id: str, recurring: bool) -> str:
         return f"https://pay.stripe.test/{session_id}?amt={amount_cents}"
 
+    def create_invoice(self, *, customer_id: str, amount_cents: int, currency: str = "usd",
+                       description: str = "", send: bool = False) -> dict:
+        return {"id": "in_test", "number": "TEST-1", "amount_due": amount_cents,
+                "currency": currency, "status": "open",
+                "hosted_invoice_url": f"https://invoice.stripe.test/{customer_id}",
+                "invoice_pdf": f"https://invoice.stripe.test/{customer_id}/pdf"}
+
     def cancel_subscription(self, *, stripe_subscription_id: str) -> None:
         pass
 

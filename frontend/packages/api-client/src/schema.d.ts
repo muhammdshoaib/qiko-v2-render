@@ -1615,7 +1615,8 @@ export interface paths {
          */
         get: operations["invoices_api_v1_billing_invoices_get"];
         put?: never;
-        post?: never;
+        /** Create Invoice */
+        post: operations["create_invoice_api_v1_billing_invoices_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5137,6 +5138,28 @@ export interface components {
             atype: string;
             /** Name */
             name: string;
+        };
+        /** CreateInvoiceBody */
+        CreateInvoiceBody: {
+            /** Amount Cents */
+            amount_cents: number;
+            /**
+             * Currency
+             * @default usd
+             */
+            currency: string;
+            /** Customer Id */
+            customer_id: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Send
+             * @default false
+             */
+            send: boolean;
         };
         /**
          * CreateOpportunityBody
@@ -9534,6 +9557,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_invoice_api_v1_billing_invoices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateInvoiceBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

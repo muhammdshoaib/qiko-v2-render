@@ -20,8 +20,9 @@ import {
   Alert, Badge, Button, Card, CardContent, DataTable, Input, SegmentedFilter, Skeleton, type Column,
 } from "@qiko/ui";
 import { DirectoryPage } from "@/components/directory-page";
+import { useQueryClient } from "@tanstack/react-query";
 import {
-  adminMe, createPaymentLink, formatMoney, listInvoices, listPaymentLinks,
+  adminMe, createInvoice, createPaymentLink, formatMoney, listInvoices, listPaymentLinks,
   type Invoice, type PaymentLink,
 } from "@/lib/api";
 
@@ -60,6 +61,65 @@ const linkColumns: Column<PaymentLink>[] = [
   { id: "status", header: "Status",
     cell: (row) => <Badge variant={row.status === "paid" ? "success" : "muted"}>{row.status}</Badge> },
 ];
+
+function CreateInvoice({ canManageBilling, onCreated }: { canManageBilling: boolean; onCreated: () => void }) {
+  const [customerId, setCustomerId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [currency, setCurrency] = useState("usd");
+  const [description, setDescription] = useState("");
+  const [send, setSend] = useState(false);
+  const create = useMutation({
+    mutationFn: () => createInvoice({
+      customer_id: customerId,
+      amount_cents: Math.round(Number(amount) * 100),
+      currency,
+      description,
+      send,
+    }),
+    onSuccess: () => {
+      setAmount("");
+      setDescription("");
+      onCreated();
+    },
+  });
+
+  return (
+    <Card>
+      <CardContent className="space-y-3 pt-6">
+        <div>
+          <h2 className="font-semibold">Create invoice</h2>
+          <p className="text-xs text-muted-foreground">Stripe customer id or tenant id.</p>
+        </div>
+        {!canManageBilling && (
+          <p role="status" className="text-sm text-muted-foreground">
+            Read-only access. Creating an invoice needs the Manage billing capability.
+          </p>
+        )}
+        <div className="grid gap-3 sm:grid-cols-[1fr_6rem_6rem_auto]">
+          <Input aria-label="Customer" placeholder="Customer id / tenant"
+            value={customerId} onChange={(e) => setCustomerId(e.target.value)} />
+          <Input type="number" min="0.5" step="0.01" aria-label="Amount" placeholder="Amount"
+            value={amount} onChange={(e) => setAmount(e.target.value)} />
+          <Input aria-label="Currency" placeholder="Currency" maxLength={3}
+            value={currency} onChange={(e) => setCurrency(e.target.value)} />
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={send} onChange={(e) => setSend(e.target.checked)} /> Send
+          </label>
+        </div>
+        <Input aria-label="Description" placeholder="Description"
+          value={description} onChange={(e) => setDescription(e.target.value)} />
+        {canManageBilling && (
+          <Button disabled={!customerId || Number(amount) <= 0 || create.isPending}
+            onClick={() => create.mutate()}>
+            {create.isPending ? "Creating..." : "Create invoice"}
+          </Button>
+        )}
+        {create.isError && <Alert tone="error">Invoice creation failed.</Alert>}
+        {create.isSuccess && <p role="status" className="text-sm text-success">Invoice created.</p>}
+      </CardContent>
+    </Card>
+  );
+}
 
 /** The lookup panel, above the directory. Kept as its own component so the directory below it stays a
  *  plain use of the shared shell rather than a special case. */
@@ -148,6 +208,7 @@ function InvoicesView() {
   const status = params.get("status") ?? "";
   const me = useQuery({ queryKey: ["admin-me"], queryFn: adminMe });
   const canManageBilling = me.data?.capabilities?.includes("manage_billing") ?? false;
+  const queryClient = useQueryClient();
 
   const setStatus = useCallback((value: string) => {
     const next = new URLSearchParams(params.toString());
@@ -155,6 +216,10 @@ function InvoicesView() {
     next.delete("page");
     router.replace(`?${next.toString()}`, { scroll: false });
   }, [params, router]);
+
+  const refreshInvoices = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["invoices"] });
+  }, [queryClient]);
 
   return (
     <DirectoryPage<Invoice>
@@ -180,6 +245,7 @@ function InvoicesView() {
       )}
       filters={
         <div className="space-y-5">
+          <CreateInvoice canManageBilling={canManageBilling} onCreated={refreshInvoices} />
           <PaymentLinks canManageBilling={canManageBilling} />
           <SegmentedFilter label="Filter by status" value={status}
             options={[{ value: "", label: "All" }, { value: "paid", label: "Paid" },

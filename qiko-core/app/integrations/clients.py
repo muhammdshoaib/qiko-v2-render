@@ -58,10 +58,43 @@ class StripeClient:
                 "line_items[0][price_data][unit_amount]": str(amount_cents),
                 "line_items[0][price_data][product_data][name]": f"Invoice {session_id}",
                 "line_items[0][quantity]": "1",
-                "metadata[qiko_session_id]": session_id}
+                "metadata[qiko_session_id]": session_id,
+                "mode": "subscription" if recurring else "payment"}
+        if not recurring:
+            # One-time payments: ask Stripe to create a real invoice so the webhook can sync it.
+            data["invoice_creation[enabled]"] = "true"
+            data["invoice_creation[invoice_data][metadata][qiko_session_id]"] = session_id
         r = self._c.post("/payment_links", data=data)
         r.raise_for_status()
         return r.json()["url"]
+
+    def create_invoice(self, *, customer_id: str, amount_cents: int, currency: str = "usd",
+                       description: str = "", send: bool = False) -> dict:
+        # Add a line item to the customer, then create and finalize the invoice.
+        r = self._c.post("/invoiceitems", data={
+            "customer": customer_id,
+            "amount": str(amount_cents),
+            "currency": currency,
+            "description": description,
+        })
+        r.raise_for_status()
+        r = self._c.post("/invoices", data={
+            "customer": customer_id,
+            "collection_method": "send_invoice",
+            "days_until_due": "1",
+            "auto_advance": "false",
+        })
+        r.raise_for_status()
+        inv = r.json()
+        # Finalize so the invoice gets a number and PDF/URL.
+        r = self._c.post(f"/invoices/{inv['id']}/finalize")
+        r.raise_for_status()
+        inv = r.json()
+        if send:
+            r = self._c.post(f"/invoices/{inv['id']}/send")
+            r.raise_for_status()
+            inv = r.json()
+        return inv
 
     def cancel_subscription(self, *, stripe_subscription_id: str) -> None:
         r = self._c.post(f"/subscriptions/{stripe_subscription_id}",
