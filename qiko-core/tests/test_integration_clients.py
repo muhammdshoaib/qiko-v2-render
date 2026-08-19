@@ -108,6 +108,43 @@ def test_calendly_available_slots():
     assert slots == ["2026-07-10T10:00:00Z"]
 
 
+def test_calendly_resolves_public_scheduling_url_to_api_uri():
+    seen = []
+    event_api_uri = "https://api.calendly.com/event_types/AAAA"
+
+    def handler(req):
+        seen.append(req.url.path)
+        if req.url.path == "/users/me":
+            return httpx.Response(200, json={"resource": {"uri": "https://api.calendly.com/users/USER"}})
+        if req.url.path == "/event_types":
+            return httpx.Response(200, json={"collection": [
+                {"uri": event_api_uri, "scheduling_url": "https://calendly.com/acme/30min"},
+            ]})
+        return httpx.Response(200, json={"collection": [{"start_time": "2026-07-10T10:00:00Z"}]})
+
+    slots = CalendlyClient("cal-test", client=_client("https://api.calendly.com", handler)).available_slots(
+        "https://calendly.com/acme/30min")
+    assert slots == ["2026-07-10T10:00:00Z"]
+    assert "/event_types" in seen
+    assert seen[-1] == "/event_type_available_times"
+
+
+def test_calendly_create_booking_uses_invitees_endpoint():
+    seen = {}
+
+    def handler(req):
+        seen["path"] = req.url.path
+        seen["body"] = json.loads(req.content)
+        return httpx.Response(200, json={"resource": {"uri": "https://api.calendly.com/invitees/INV"}})
+
+    CalendlyClient("cal-test", client=_client("https://api.calendly.com", handler)).create_booking(
+        "https://api.calendly.com/event_types/AAAA", "a@x.com", "2026-07-10T10:00:00Z")
+    assert seen["path"] == "/invitees"
+    assert seen["body"]["event_type"] == "https://api.calendly.com/event_types/AAAA"
+    assert seen["body"]["invitee"]["email"] == "a@x.com"
+    assert "name" in seen["body"]["invitee"]
+
+
 def test_signal_engine_flow():
     def handler(req: httpx.Request) -> httpx.Response:
         if req.url.path == "/projects":
