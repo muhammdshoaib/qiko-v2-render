@@ -250,6 +250,7 @@ async def lifespan(app: FastAPI):
         # these lived only in process memory and were wiped on every restart.
         from app.db.sync_stores import (
             SqlCustomerDirectory,
+            SqlIdempotencyGuard,
             SqlInvoiceStore,
             SqlPaymentLinkStore,
             SqlSlackInstallationStore,
@@ -264,7 +265,8 @@ async def lifespan(app: FastAPI):
         stripe_gateway = app.state.subscriptions.gateway
         app.state.subscriptions = SubscriptionService(stripe_gateway, store=SqlSubscriptionStore(sync_sm))
         app.state.stripe_webhook = StripeWebhookHandler(
-            invoices=SqlInvoiceStore(sync_sm), subscriptions=app.state.subscriptions)
+            invoices=SqlInvoiceStore(sync_sm), subscriptions=app.state.subscriptions,
+            idempotency=SqlIdempotencyGuard(sync_sm, source="stripe"))
         app.state.payment_links = PaymentLinkService(
             gateway=app.state.payment_links.gateway, email=app.state.payment_links.email,
             store=SqlPaymentLinkStore(sync_sm))

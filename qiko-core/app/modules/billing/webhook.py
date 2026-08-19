@@ -7,12 +7,15 @@ from __future__ import annotations
 import hashlib
 import hmac
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from datetime import datetime, timezone
+from typing import Protocol
 
+from app.modules.billing.subscriptions import Subscription, SubscriptionService
 from app.modules.channels.webhooks import IdempotencyGuard
 
-if TYPE_CHECKING:
-    from app.modules.billing.subscriptions import SubscriptionService
+
+class IdempotencyStore(Protocol):
+    def is_duplicate(self, event_id: str) -> bool: ...
 
 
 def _parse_sig_header(header: str) -> tuple[str, str]:
@@ -60,10 +63,37 @@ class InvoiceStore:
 @dataclass
 class StripeWebhookHandler:
     invoices: InvoiceStore = field(default_factory=InvoiceStore)
-    idempotency: IdempotencyGuard = field(default_factory=IdempotencyGuard)
+    idempotency: IdempotencyStore = field(default_factory=IdempotencyGuard)
     # Optional so the handler stays usable/testable standalone; wired in app.main so the webhook
     # can link tenant<->Stripe-customer and activate the subscription on checkout completion.
     subscriptions: "SubscriptionService | None" = None
+
+    def _subscription_from_event(self, obj: dict) -> "Subscription | None":
+        """Build a Subscription object from a Stripe subscription object, or None if unparseable."""
+        stripe_customer_id = obj.get("customer") or ""
+        if self.subscriptions is None or not stripe_customer_id:
+            return None
+        tenant = self.subscriptions.store.get_tenant_by_customer(stripe_customer_id)
+        if not tenant:
+            return None
+        period_end = None
+        ts = obj.get("current_period_end")
+        if ts:
+            period_end = datetime.fromtimestamp(int(ts), tz=timezone.utc)
+        plan = (obj.get("metadata") or {}).get("plan")
+        existing = self.subscriptions.status(tenant)
+        if plan is None and existing is not None:
+            plan = existing.plan
+        if plan is None:
+            plan = "pro"
+        return Subscription(
+            customer_id=tenant,
+            plan=plan,
+            status=obj.get("status", "active"),
+            cancel_at_period_end=bool(obj.get("cancel_at_period_end", False)),
+            stripe_subscription_id=obj.get("id"),
+            current_period_end=period_end,
+        )
 
     def handle(self, event: dict) -> str:
         """Process a (already signature-verified) event; returns the action taken."""
@@ -93,4 +123,17 @@ class StripeWebhookHandler:
                 self.subscriptions.activate(tenant, plan)
                 return "subscription_activated"
             return "checkout_completed"
+        if etype in ("customer.subscription.created", "customer.subscription.updated"):
+            sub = self._subscription_from_event(obj)
+            if sub is not None:
+                self.subscriptions.store.put(sub)
+                return "subscription_synced"
+            return "ignored"
+        if etype == "customer.subscription.deleted":
+            sub = self._subscription_from_event(obj)
+            if sub is not None:
+                sub.status = "canceled"
+                self.subscriptions.store.put(sub)
+                return "subscription_deleted"
+            return "ignored"
         return "ignored"

@@ -12,6 +12,7 @@ tenant's plan/status survives a restart instead of being wiped on every redeploy
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Protocol
 
 from app.modules.billing.plans import SELF_SERVE_PLANS, Plan, get_plan, stripe_price_for
@@ -26,6 +27,8 @@ class StripeGateway(Protocol):
     def create_checkout_session(self, *, customer_id: str, price_id: str, promo: str | None,
                                 client_reference_id: str | None = None, plan: str | None = None) -> str: ...
     def billing_portal_url(self, *, customer_id: str) -> str: ...
+    def cancel_subscription(self, *, stripe_subscription_id: str) -> None: ...
+    def resume_subscription(self, *, stripe_subscription_id: str) -> None: ...
 
 
 @dataclass
@@ -34,6 +37,8 @@ class Subscription:
     plan: str
     status: str = "active"          # active | canceled
     cancel_at_period_end: bool = False
+    stripe_subscription_id: str | None = None
+    current_period_end: datetime | None = None
 
 
 class SubscriptionStore(Protocol):
@@ -45,6 +50,7 @@ class SubscriptionStore(Protocol):
     def all(self) -> list[Subscription]: ...
     def get_customer(self, tenant: str) -> str | None: ...
     def set_customer(self, tenant: str, stripe_customer_id: str) -> None: ...
+    def get_tenant_by_customer(self, stripe_customer_id: str) -> str | None: ...
 
 
 @dataclass
@@ -56,6 +62,8 @@ class InMemorySubscriptionStore:
     _subs: dict[str, Subscription] = field(default_factory=dict)
     # tenant -> real Stripe customer id ("cus_..."), set from the checkout webhook.
     _customers: dict[str, str] = field(default_factory=dict)
+    # Reverse lookup: Stripe customer id -> tenant.
+    _tenant_by_customer: dict[str, str] = field(default_factory=dict)
 
     def get(self, subject: str) -> Subscription | None:
         return self._subs.get(subject)
@@ -71,6 +79,10 @@ class InMemorySubscriptionStore:
 
     def set_customer(self, tenant: str, stripe_customer_id: str) -> None:
         self._customers[tenant] = stripe_customer_id
+        self._tenant_by_customer[stripe_customer_id] = tenant
+
+    def get_tenant_by_customer(self, stripe_customer_id: str) -> str | None:
+        return self._tenant_by_customer.get(stripe_customer_id)
 
 
 @dataclass
@@ -141,6 +153,8 @@ class SubscriptionService:
         sub = self.store.get(customer_id)
         if sub is None:
             raise KeyError(customer_id)
+        if sub.stripe_subscription_id:
+            self.gateway.cancel_subscription(stripe_subscription_id=sub.stripe_subscription_id)
         sub.cancel_at_period_end = True  # stays active until period end
         self.store.put(sub)
         return sub
@@ -151,6 +165,8 @@ class SubscriptionService:
             raise KeyError(customer_id)
         if sub.status != "active":
             raise ValueError("cannot resume a canceled subscription")
+        if sub.stripe_subscription_id:
+            self.gateway.resume_subscription(stripe_subscription_id=sub.stripe_subscription_id)
         sub.cancel_at_period_end = False
         self.store.put(sub)
         return sub

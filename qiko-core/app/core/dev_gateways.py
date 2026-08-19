@@ -15,6 +15,12 @@ class StubStripeGateway:
     def create_payment_link(self, *, amount_cents: int, session_id: str, recurring: bool) -> str:
         return f"https://pay.stripe.test/{session_id}?amt={amount_cents}"
 
+    def cancel_subscription(self, *, stripe_subscription_id: str) -> None:
+        pass
+
+    def resume_subscription(self, *, stripe_subscription_id: str) -> None:
+        pass
+
 
 
 

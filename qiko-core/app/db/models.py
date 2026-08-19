@@ -958,3 +958,12 @@ class AdminCustomerFlag(Base):
     is_studio: Mapped[bool] = mapped_column(default=False)
     deleted: Mapped[bool] = mapped_column(default=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class WebhookEvent(Base):
+    """Durable idempotency key for inbound webhooks. Previously kept only in process memory,
+    so duplicate deliveries across redeploys or replicas were not deduplicated."""
+    __tablename__ = "webhook_events"
+    source: Mapped[str] = mapped_column(String(32), primary_key=True)
+    event_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
