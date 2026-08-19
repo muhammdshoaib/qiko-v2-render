@@ -64,6 +64,8 @@ INVOICE_SORTS: SortSpec = {
     "customer": lambda row: _text(row["customer_id"]),
     "status": lambda row: _text(row["status"]),
     "amount": lambda row: row["amount_cents"],
+    "number": lambda row: _text(row["number"]),
+    "period": lambda row: (row["period_start"] or "", row["period_end"] or ""),
 }
 
 WORKER_SORTS: SortSpec = {

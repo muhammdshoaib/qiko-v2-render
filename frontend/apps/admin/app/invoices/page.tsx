@@ -25,10 +25,16 @@ import {
   type Invoice, type PaymentLink,
 } from "@/lib/api";
 
+function formatPeriod(start: string | null, end: string | null) {
+  if (!start || !end) return "-";
+  const fmt = (d: string) => new Date(d).toLocaleDateString();
+  return `${fmt(start)} - ${fmt(end)}`;
+}
+
 const invoiceColumns: Column<Invoice>[] = [
   {
     id: "invoice", header: "Invoice", rowHeader: true, sortable: true,
-    cell: (row) => <span className="truncate font-medium">{row.stripe_invoice_id}</span>,
+    cell: (row) => <span className="truncate font-medium">{row.number || row.stripe_invoice_id}</span>,
   },
   { id: "customer", header: "Customer", sortable: true, hideBelow: "md",
     cell: (row) => <span className="truncate">{row.customer_id}</span> },
@@ -39,7 +45,9 @@ const invoiceColumns: Column<Invoice>[] = [
     ),
   },
   { id: "amount", header: "Amount", sortable: true, numeric: true,
-    cell: (row) => formatMoney(row.amount_cents) },
+    cell: (row) => formatMoney(row.amount_cents, row.currency || "USD") },
+  { id: "period", header: "Period", sortable: true, hideBelow: "md",
+    cell: (row) => formatPeriod(row.period_start, row.period_end) },
 ];
 
 const linkColumns: Column<PaymentLink>[] = [
@@ -160,6 +168,16 @@ function InvoicesView() {
       fetchPage={(search, page, sort) => listInvoices(search, page, sort, status || undefined)}
       rowKey={(row) => row.stripe_invoice_id}
       columns={invoiceColumns}
+      actions={(row) => (
+        <div className="flex gap-2">
+          {row.hosted_invoice_url && (
+            <a className="text-sm underline" href={row.hosted_invoice_url} target="_blank" rel="noreferrer">Open</a>
+          )}
+          {row.invoice_pdf && (
+            <a className="text-sm underline" href={row.invoice_pdf} target="_blank" rel="noreferrer">PDF</a>
+          )}
+        </div>
+      )}
       filters={
         <div className="space-y-5">
           <PaymentLinks canManageBilling={canManageBilling} />
