@@ -939,7 +939,9 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState<BehaviorKey | null>("prompts");
   const [pendingDelete, setPendingDelete] = useState<{ key: BehaviorKey; entryId: string; title: string } | null>(null);
+  const [pendingHelp, setPendingHelp] = useState<{ label: string; help: string } | null>(null);
   const deleteOpenerRef = useRef<HTMLElement | null>(null);
+  const helpOpenerRef = useRef<HTMLElement | null>(null);
   const save = useMutation({
     mutationFn: async (operation: BehaviorMutation) => {
       const latestWorker = (await listAgents()).find((agent) => agent.id === id);
@@ -1079,9 +1081,17 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
                   className="flex flex-1 items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60">
                   <ChevronDown className={cn("size-4 shrink-0 text-slate-500 transition-transform", !isOpen && "-rotate-90")} />
                   <span className="text-sm font-semibold text-white">{c.label}</span>
-                  <span title={c.help} aria-label={c.help} className="cursor-help text-slate-500 hover:text-slate-300">
+                  <button
+                    type="button"
+                    aria-label={`Help for ${c.label}`}
+                    className="cursor-help text-slate-500 hover:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 rounded"
+                    onClick={(e) => {
+                      helpOpenerRef.current = e.currentTarget;
+                      setPendingHelp({ label: c.label, help: c.help });
+                    }}
+                  >
                     <HelpCircle className="size-3.5" />
-                  </span>
+                  </button>
                   <Badge variant="muted">{all.length}</Badge>
                 </button>
                 <Button variant="outline" size="sm" className="h-8 shrink-0" onClick={() => addItem(c.key)}
@@ -1158,6 +1168,28 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
               </Button>
               <Button type="button" variant="destructive" disabled={save.isPending} onClick={confirmRemove}>
                 {save.isPending ? "Deleting..." : "Delete"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+
+      <Dialog
+        open={!!pendingHelp}
+        onClose={() => setPendingHelp(null)}
+        opener={helpOpenerRef.current}
+        busy={false}
+        labelledBy="behavior-help-title"
+      >
+        {pendingHelp && (
+          <div className="space-y-4">
+            <h3 id="behavior-help-title" className="text-lg font-semibold text-white">
+              {pendingHelp.label}
+            </h3>
+            <p className="text-sm text-slate-300">{pendingHelp.help}</p>
+            <div className="flex justify-end">
+              <Button type="button" variant="outline" onClick={() => setPendingHelp(null)}>
+                Close
               </Button>
             </div>
           </div>
