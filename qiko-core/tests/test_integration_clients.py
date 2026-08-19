@@ -135,6 +135,33 @@ def test_ga4_run_report_parses_rows():
     assert rows == [{"pagePath": "/", "sessions": "100"}]
 
 
+def test_ga4_property_id_strips_properties_prefix():
+    seen = {}
+
+    def handler(req):
+        seen["url"] = str(req.url)
+        return httpx.Response(200, json={
+            "dimensionHeaders": [{"name": "pagePath"}],
+            "metricHeaders": [{"name": "sessions"}],
+            "rows": [],
+        })
+
+    GA4Client(property_id="properties/123", client=_client("https://analyticsdata.googleapis.com/v1beta", handler)).run_report(
+        "2026-07-01", "2026-07-07", ["sessions"], ["pagePath"])
+    assert seen["url"].endswith("/properties/123:runReport")
+
+
+def test_ga4_property_id_rejects_measurement_id():
+    import pytest
+
+    def handler(req):
+        return httpx.Response(200, json={"dimensionHeaders": [], "metricHeaders": [], "rows": []})
+
+    client = GA4Client(property_id="G-ABC123", client=_client("https://analyticsdata.googleapis.com/v1beta", handler))
+    with pytest.raises(ValueError, match="Measurement ID"):
+        client.run_report("2026-07-01", "2026-07-07", ["sessions"], ["pagePath"])
+
+
 def _sf_mock(handler) -> httpx.Client:
     return httpx.Client(transport=httpx.MockTransport(handler))
 
