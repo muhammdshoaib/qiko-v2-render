@@ -93,6 +93,17 @@ def test_agent_plan_limit_cannot_be_bypassed_by_client_supplied_plan(client):
         assert r.status_code == 403, f"plan={fake_plan} should not bypass the free-tier limit"
 
 
+def test_premium_plan_worker_limit_blocks_fourth_worker(client):
+    """A Premium (pro) subscription allows exactly 3 workers; the fourth POST /agents is 403."""
+    c = auth_cookies("premiumteam", "owner")
+    assert client.post("/api/v1/billing/subscription/activate", json={"plan": "pro"}, cookies=c).status_code == 200
+    for i in range(3):
+        r = client.post("/api/v1/agents", json={"name": f"worker-{i}"}, cookies=c)
+        assert r.status_code == 200, r.text
+    r = client.post("/api/v1/agents", json={"name": "worker-3"}, cookies=c)
+    assert r.status_code == 403, r.text
+
+
 def test_batch_answer_is_grounded_confidence_scored_and_gated(client):
     c = auth_cookies("batchco", "owner")
     agent_id = client.post("/api/v1/agents", json={"name": "Batch"}, cookies=c).json()["id"]
