@@ -2,10 +2,10 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { Button, DataTable, type Column, type SortOrder } from "@qiko/ui";
 import type { FinanceProperty, FinanceUnitLedger } from "@/lib/api";
 import { useFinance } from "./finance-context";
+import { DrilldownFrame } from "./drilldown-frame";
 import { ExpenseList } from "./expense-list";
 import { MonthlyTrendsChart } from "./monthly-trends-chart";
 import { formatCurrency } from "./utils";
@@ -20,7 +20,7 @@ function Field({ label, value, sub }: { label: string; value?: React.ReactNode; 
   );
 }
 
-export function PropertyDetail({ propertyRef, unitRef }: { propertyRef: string; unitRef?: string }) {
+export function PropertyDetail({ propertyRef, unitRef, from }: { propertyRef: string; unitRef?: string; from?: string | null }) {
   const { agentId, analytics } = useFinance();
   const router = useRouter();
 
@@ -53,12 +53,13 @@ export function PropertyDetail({ propertyRef, unitRef }: { propertyRef: string; 
     );
   }
 
-  return <PropertyOverview property={property} propertyRef={propertyRef} />;
+  return <PropertyOverview property={property} propertyRef={propertyRef} from={from} />;
 }
 
-function PropertyOverview({ property, propertyRef }: { property: FinanceProperty; propertyRef: string }) {
+function PropertyOverview({ property, propertyRef, from }: { property: FinanceProperty; propertyRef: string; from?: string | null }) {
   const { agentId } = useFinance();
   const router = useRouter();
+  const fromPortfolio = from === "portfolio";
 
   const [sort, setSort] = useState<keyof FinanceUnitLedger | "expenses">("income");
   const [order, setOrder] = useState<SortOrder>("desc");
@@ -88,20 +89,15 @@ function PropertyOverview({ property, propertyRef }: { property: FinanceProperty
   const totalCategories = property.expenseCategories ?? [];
 
   return (
-    <div className="space-y-6 p-4">
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => router.push(`/studio/${agentId}/finance`)}
-          className="inline-flex items-center gap-1 text-xs text-white/55 hover:text-white/80"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to dashboard
-        </button>
-      </div>
-
-      <h1 className="text-lg font-semibold text-white">{property.name || property.propertyRef}</h1>
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <DrilldownFrame
+        backLabel={fromPortfolio ? "Back to properties" : "Back to dashboard"}
+        onBack={() => router.push(fromPortfolio ? `/studio/${agentId}/finance/breakdown?view=properties` : `/studio/${agentId}/finance`)}
+        title={property.name || property.propertyRef || "Property"}
+        subtitle={<p className="text-sm text-white/55">{`Property ${property.propertyRef ?? ""} — income, expenses, risk, and vendor mix for the selected period.`}</p>}
+      >
+        <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Field label="Reference" value={property.propertyRef} />
         <Field label="Income" value={formatCurrency(property.income)} />
         <Field label="Expenses" value={formatCurrency(property.expenses)} />
@@ -133,7 +129,7 @@ function PropertyOverview({ property, propertyRef }: { property: FinanceProperty
             <Button
               variant="outline"
               size="sm"
-              onClick={() => router.push(`/studio/${agentId}/finance/property/${encodeURIComponent(propertyRef)}?unit=${encodeURIComponent(u.unitRef ?? "")}`)}
+              onClick={() => router.push(`/studio/${agentId}/finance/property/${encodeURIComponent(propertyRef)}?unit=${encodeURIComponent(u.unitRef ?? "")}${fromPortfolio ? "&from=portfolio" : ""}`)}
             >
               View
             </Button>
@@ -184,22 +180,22 @@ function PropertyOverview({ property, propertyRef }: { property: FinanceProperty
       <div className="rounded-xl border border-white/[0.06] p-4" style={{ background: "oklch(0.16 0.02 250)" }}>
         <ExpenseList filter={{ propertyRef: property.propertyRef ?? property.propertyId ?? "" }} title="Property expenses" />
       </div>
+        </div>
+      </DrilldownFrame>
     </div>
   );
 }
 
 function UnitDetail({ property, unit, onBack }: { property: FinanceProperty; unit: FinanceUnitLedger; onBack: () => void }) {
-  const { agentId } = useFinance();
 
   return (
-    <div className="space-y-6 p-4">
-      <button type="button" onClick={onBack} className="inline-flex items-center gap-1 text-xs text-white/55 hover:text-white/80">
-        <ArrowLeft className="h-3.5 w-3.5" /> Back to {property.name || property.propertyRef}
-      </button>
-
-      <h1 className="text-lg font-semibold text-white">{unit.unitRef}</h1>
-      <p className="text-sm text-white/60">{unit.unitDescription}</p>
-
+    <DrilldownFrame
+      backLabel={`Back to ${property.name || property.propertyRef || "property"}`}
+      onBack={onBack}
+      title={unit.unitRef || "Unit"}
+      subtitle={unit.unitDescription}
+    >
+      <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Field label="Income" value={formatCurrency(unit.income)} />
         <Field label="Outstanding" value={formatCurrency(unit.outstanding)} />
@@ -217,6 +213,7 @@ function UnitDetail({ property, unit, onBack }: { property: FinanceProperty; uni
           title="Unit expenses"
         />
       </div>
-    </div>
+      </div>
+    </DrilldownFrame>
   );
 }

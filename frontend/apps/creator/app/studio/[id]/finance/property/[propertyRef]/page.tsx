@@ -8,5 +8,6 @@ export default function PropertyPage() {
   const searchParams = useSearchParams();
   const propertyRef = decodeURIComponent(params.propertyRef);
   const unitRef = searchParams.get("unit") ?? undefined;
-  return <PropertyDetail propertyRef={propertyRef} unitRef={unitRef} />;
+  const from = searchParams.get("from");
+  return <PropertyDetail propertyRef={propertyRef} unitRef={unitRef} from={from} />;
 }

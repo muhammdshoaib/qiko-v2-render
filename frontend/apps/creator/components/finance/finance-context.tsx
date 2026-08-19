@@ -13,18 +13,24 @@ interface FinanceContextValue {
   filesLoading: boolean;
   month: string;
   setMonth: (value: string) => void;
-  chatOpen: boolean;
-  setChatOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  search: string;
+  setSearch: (value: string) => void;
+  pendingPrompt: string | null;
+  setPendingPrompt: (value: string | null) => void;
   filesOpen: boolean;
   setFilesOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  chatTab: boolean;
+  setChatTab: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const FinanceContext = createContext<FinanceContextValue | null>(null);
 
 export function FinanceProvider({ agentId, children }: { agentId: string; children: React.ReactNode }) {
   const [month, setMonth] = useState<string>("all");
-  const [chatOpen, setChatOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [filesOpen, setFilesOpen] = useState(false);
+  const [chatTab, setChatTab] = useState(false);
 
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const workerName = useMemo(() => agents.data?.find((a) => a.id === agentId)?.name ?? "Financial Analyst", [agents.data, agentId]);
@@ -50,11 +56,15 @@ export function FinanceProvider({ agentId, children }: { agentId: string; childr
     filesLoading: filesQ.isLoading,
     month,
     setMonth,
-    chatOpen,
-    setChatOpen,
+    search,
+    setSearch,
+    pendingPrompt,
+    setPendingPrompt,
     filesOpen,
     setFilesOpen,
-  }), [agentId, workerName, analyticsQ.data, analyticsQ.isLoading, filesQ.data, filesQ.isLoading, month, chatOpen, filesOpen]);
+    chatTab,
+    setChatTab,
+  }), [agentId, workerName, analyticsQ.data, analyticsQ.isLoading, filesQ.data, filesQ.isLoading, month, search, pendingPrompt, filesOpen, chatTab]);
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
 }

@@ -8,7 +8,10 @@ import type { TrendSection } from "./utils";
 
 const ICONS = { building: Building2, alert: AlertTriangle, tag: Tag } as const;
 
-export function InsightRail({ sections, className }: { sections: TrendSection[]; className?: string }) {
+export function InsightRail({ sections, className, onInsightClick }: {
+  sections: TrendSection[]; className?: string;
+  onInsightClick?: (text: string, sectionTitle: string, insightTitle?: string) => void;
+}) {
   return (
     <div className={cn("flex h-full flex-col", className)}>
       <div className="flex h-14 shrink-0 items-center border-b border-white/[0.06] px-3">
@@ -35,14 +38,28 @@ export function InsightRail({ sections, className }: { sections: TrendSection[];
               </div>
               <div className="space-y-2">
                 {section.insights.map((insight, i) => (
-                  <div key={`${section.title}-${i}`}
-                    className="relative block w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 pl-4 text-left">
-                    <span className={cn("absolute left-0 top-0 h-full w-1 rounded-l-lg", section.accent)} />
-                    {insight.title ? (
-                      <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-white/70">{insight.title}</p>
-                    ) : null}
-                    <p className="text-[13px] leading-relaxed text-white/82">{insight.text}</p>
-                  </div>
+                  onInsightClick ? (
+                    <button
+                      key={`${section.title}-${i}`}
+                      type="button"
+                      onClick={() => onInsightClick(insight.text, section.title, insight.title)}
+                      className="relative block w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 pl-4 text-left transition-colors hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/55"
+                    >
+                      <span className={cn("absolute left-0 top-0 h-full w-1 rounded-l-lg", section.accent)} />
+                      {insight.title ? (
+                        <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-white/70">{insight.title}</p>
+                      ) : null}
+                      <p className="text-[13px] leading-relaxed text-white/82">{insight.text}</p>
+                    </button>
+                  ) : (
+                    <div key={`${section.title}-${i}`} className="relative block w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2.5 pl-4 text-left">
+                      <span className={cn("absolute left-0 top-0 h-full w-1 rounded-l-lg", section.accent)} />
+                      {insight.title ? (
+                        <p className="mb-1 text-[12px] font-semibold uppercase tracking-wide text-white/70">{insight.title}</p>
+                      ) : null}
+                      <p className="text-[13px] leading-relaxed text-white/82">{insight.text}</p>
+                    </div>
+                  )
                 ))}
               </div>
             </section>

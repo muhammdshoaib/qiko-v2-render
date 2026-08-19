@@ -117,6 +117,64 @@ export function normalizeFinanceSummary(summary: FinanceSummary | undefined): No
   return out;
 }
 
+export type KpiMetricKey = "totalIncome" | "totalExpenses" | "netProfit";
+
+const KPI_TITLES: Record<KpiMetricKey, string> = {
+  totalIncome: "Total Income",
+  totalExpenses: "Total Expenses",
+  netProfit: "Net Profit",
+};
+
+const KPI_DRILLDOWN_HIDDEN = new Set(["key", "label", "value", "formatted"]);
+
+/** Extra fields shown on the KPI click screen (same filtering as V1 userDashboard). */
+export function kpiMetricDrilldown(summary: FinanceSummary | undefined, key: KpiMetricKey): {
+  title: string;
+  formatted: string;
+  details: Array<[string, unknown]>;
+} {
+  const normalized = normalizeFinanceSummary(summary);
+  const fallback =
+    key === "totalIncome" ? normalized.totalIncome
+      : key === "totalExpenses" ? normalized.totalExpenses
+        : normalized.netProfit;
+
+  if (Array.isArray(summary)) {
+    const row = summary.find((r) => r && r.key === key) as Record<string, unknown> | undefined;
+    if (row) {
+      return {
+        title: String(row.label || KPI_TITLES[key]),
+        formatted: String(row.formatted || (row.value != null ? row.value : formatCurrency(fallback))),
+        details: Object.entries(row).filter(([k, value]) => {
+          if (KPI_DRILLDOWN_HIDDEN.has(k)) return false;
+          if (value == null) return false;
+          if (typeof value === "string" && value.trim() === "") return false;
+          return true;
+        }),
+      };
+    }
+  }
+
+  const source = (!Array.isArray(summary) && summary ? summary : normalized.details) as Record<string, unknown> | undefined;
+  const details: Array<[string, unknown]> = [];
+  if (source) {
+    for (const [k, value] of Object.entries(source)) {
+      if (k === key) continue;
+      if (!k.startsWith(key) && !(key === "totalExpenses" && k === "expenseBreakdown")) continue;
+      if (value == null) continue;
+      if (typeof value === "string" && value.trim() === "") continue;
+      details.push([k, value]);
+    }
+  }
+  if (normalized.subtitle[key]) details.unshift(["subtitle", normalized.subtitle[key]]);
+
+  return {
+    title: KPI_TITLES[key],
+    formatted: normalized.formatted[key] ?? formatCurrency(fallback),
+    details,
+  };
+}
+
 // ── Property display filter (hide all-zero rows, like financialDisplayFilters.isActiveElApiProperty) ─
 const EPS = 1e-6;
 export function isActiveProperty(p: FinanceProperty): boolean {

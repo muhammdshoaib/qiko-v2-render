@@ -9,16 +9,17 @@ function source(path: string): string {
   return readFileSync(resolve(process.cwd(), path), "utf8");
 }
 
-// EL-1000: the 5 KPI cards on the Financial Analyst dashboard show only a label and a value, no
-// drill-in detail lines (those belong to the drilldown pages, not the top-level summary).
-test("KPI cards render five headline metrics with no detail breakdown lines", () => {
+// EL-1000 / EL-1009: the KPI cards on the Financial Analyst dashboard match V1's 4-card layout
+// (Income, Expenses, Net Profit, Total Properties - no separate Outstanding card) and show only
+// a label and a value, no drill-in detail lines (those belong to the drilldown pages).
+test("KPI cards render V1's four headline metrics with no detail breakdown lines", () => {
   const src = source("components/finance/kpi-cards.tsx");
 
   assert.match(src, /label="Total Income"/);
   assert.match(src, /label="Total Expenses"/);
   assert.match(src, /label="Net Profit"/);
-  assert.match(src, /label="Outstanding"/);
   assert.match(src, /label="Total Properties"/);
+  assert.doesNotMatch(src, /label="Outstanding"/);
 
   for (const removed of [
     "totalIncomeTopProperty", "totalIncomeAveragePerProperty", "totalIncomeUnitCount",

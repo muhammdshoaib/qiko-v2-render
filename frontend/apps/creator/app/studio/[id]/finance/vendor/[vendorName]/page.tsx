@@ -1,9 +1,8 @@
 "use client";
 
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useMemo } from "react";
-import { ArrowLeft } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { DrilldownFrame } from "@/components/finance/drilldown-frame";
 import { useFinance } from "@/components/finance/finance-context";
 import { ExpenseList } from "@/components/finance/expense-list";
 import { allExpenses, formatCurrency } from "@/components/finance/utils";
@@ -34,27 +33,22 @@ export default function VendorPage() {
   const propertyCount = new Set(rows.map((r) => r.propertyRef)).size;
 
   return (
-    <div className="space-y-6 p-4">
-      <button
-        type="button"
-        onClick={() => router.push(`/studio/${agentId}/finance`)}
-        className="inline-flex items-center gap-1 text-xs text-white/55 hover:text-white/80"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" /> Back to dashboard
-      </button>
-
-      <h1 className="text-lg font-semibold text-white">{vendorName}</h1>
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Field label="Total gross" value={formatCurrency(totalGross)} />
-        <Field label="Total nett" value={formatCurrency(totalNett)} />
-        <Field label="Invoices" value={invoiceCount} />
-        <Field label="Properties" value={propertyCount} />
+    <DrilldownFrame
+      onBack={() => router.push(`/studio/${agentId}/finance`)}
+      title={vendorName}
+      subtitle={<p className="text-sm text-white/55">{`${propertyCount} properties · ${invoiceCount} invoices — vendor spend profile and payment mix.`}</p>}
+    >
+      <div className="space-y-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Field label="Total gross" value={formatCurrency(totalGross)} />
+          <Field label="Total nett" value={formatCurrency(totalNett)} />
+          <Field label="Invoices" value={invoiceCount} />
+          <Field label="Properties" value={propertyCount} />
+        </div>
+        <div className="rounded-xl border border-white/[0.06] p-4" style={{ background: "oklch(0.16 0.02 250)" }}>
+          <ExpenseList filter={{ vendorName }} title="Vendor invoices" />
+        </div>
       </div>
-
-      <div className="rounded-xl border border-white/[0.06] p-4" style={{ background: "oklch(0.16 0.02 250)" }}>
-        <ExpenseList filter={{ vendorName }} title="Vendor invoices" />
-      </div>
-    </div>
+    </DrilldownFrame>
   );
 }

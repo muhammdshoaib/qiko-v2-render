@@ -215,9 +215,9 @@ test.describe("Finance drilldown dashboard", () => {
 
     await page.getByRole("button", { name: /Total Properties/ }).click();
     await expect(page).toHaveURL(new RegExp(`https?://[^/]+/studio/${AGENT_ID}/finance/breakdown\\?view=properties`));
-    await expect(page.getByRole("heading", { name: "All properties" }).first()).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Portfolio properties" }).first()).toBeVisible();
 
-    await page.getByRole("table", { name: /All properties/ }).locator("tr").filter({ hasText: "Avenue House" }).getByRole("button", { name: "View" }).click();
+    await page.getByRole("table", { name: "Portfolio properties" }).getByRole("button", { name: /Avenue House/ }).click();
     await expect(page).toHaveURL(new RegExp(`https?://[^/]+/studio/${AGENT_ID}/finance/property/A001`));
     await expect(page.getByRole("heading", { name: "Avenue House" })).toBeVisible();
 
@@ -233,7 +233,7 @@ test.describe("Finance drilldown dashboard", () => {
 
     await page.getByRole("button", { name: /^Utilities$/ }).click();
     await expect(page).toHaveURL(new RegExp(`https?://[^/]+/studio/${AGENT_ID}/finance/expenditure\\?category=Utilities`));
-    await expect(page.getByRole("heading", { name: /Expenditure/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Expense category/ })).toBeVisible();
     await expect(page.getByText("2 expense rows")).toBeVisible();
 
     await page.goto(`/studio/${AGENT_ID}/finance`);
@@ -260,7 +260,7 @@ test.describe("Finance drilldown dashboard", () => {
   test("Expenditure and history pages render with filters", async ({ page }) => {
     await page.goto(`/studio/${AGENT_ID}/finance/expenditure?category=Utilities`);
     await dismissConsent(page);
-    await expect(page.getByRole("heading", { name: /Expenditure/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Expense category/ })).toBeVisible();
     await expect(page.getByText("2 expense rows")).toBeVisible();
 
     await page.goto(`/studio/${AGENT_ID}/finance/vendor/Acme%20Maintenance`);
@@ -270,6 +270,6 @@ test.describe("Finance drilldown dashboard", () => {
 
     await page.goto(`/studio/${AGENT_ID}/finance/history`);
     await dismissConsent(page);
-    await expect(page.getByText("No conversations yet.")).toBeVisible();
+    await expect(page.getByText("No messages yet")).toBeVisible();
   });
 });

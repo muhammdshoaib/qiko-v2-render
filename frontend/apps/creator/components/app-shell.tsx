@@ -134,7 +134,9 @@ export function AppShell({ title, children }: { title: string; children: React.R
             <div className="w-9" />
           </div>
         </div>
-        <main className="flex-1 md:ml-[200px]">{children}</main>
+        <main className={cn("flex min-h-0 min-w-0 flex-1 flex-col", collapsed ? "md:pl-[72px]" : "md:pl-[200px]")}>
+          {children}
+        </main>
       </div>
     </div>
   );

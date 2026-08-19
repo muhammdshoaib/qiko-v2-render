@@ -1,7 +1,7 @@
 "use client";
 
 // "Ask Analyst" chat surface -- posts to POST /finance/{agentId}/chat and renders grounded answers.
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { MessageSquare, SendHorizonal, Sparkles } from "lucide-react";
 import { cn } from "@qiko/ui";
@@ -15,7 +15,11 @@ const SUGGESTED = [
   "What are my largest expense categories?",
 ];
 
-export function FinanceChatPanel({ agentId, workerName }: { agentId: string; workerName: string }) {
+export function FinanceChatPanel({
+  agentId, workerName: _workerName, pendingPrompt, onPendingConsumed,
+}: {
+  agentId: string; workerName: string; pendingPrompt?: string | null; onPendingConsumed?: () => void;
+}) {
   const [messages, setMessages] = useState<{ role: string; text: string }[]>([]);
   const [text, setText] = useState("");
   const send = useMutation({
@@ -32,13 +36,20 @@ export function FinanceChatPanel({ agentId, workerName }: { agentId: string; wor
     setText("");
   }
 
+  useEffect(() => {
+    if (!pendingPrompt) return;
+    submit(pendingPrompt);
+    onPendingConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingPrompt]);
+
   return (
-    <section className="flex h-full flex-col overflow-hidden rounded-2xl border border-white/[0.08]" style={{ background: "oklch(0.15 0.02 250)" }}>
+    <section className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08]" style={{ background: "oklch(0.15 0.02 250)" }}>
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-white/[0.06] px-4">
         <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/20 text-indigo-300"><MessageSquare className="h-4 w-4" /></span>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-white/90">Financial Chat</p>
-          <p className="text-[11px] text-white/35">Grounded in {workerName}&apos;s uploaded workbooks</p>
+          <p className="text-[11px] text-white/35">Clean workspace for quick analysis</p>
         </div>
       </div>
 
