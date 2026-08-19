@@ -12,6 +12,7 @@ from app.modules.storage.keys import assert_tenant_scoped
 class StorageBackend(Protocol):
     def put(self, tenant: str, key: str, data: bytes, content_type: str = "application/octet-stream") -> str: ...
     def get(self, tenant: str, key: str) -> bytes: ...
+    def delete(self, tenant: str, key: str) -> None: ...
 
 
 @dataclass
@@ -26,6 +27,10 @@ class InMemoryStorage:
     def get(self, tenant: str, key: str) -> bytes:
         assert_tenant_scoped(tenant, key)
         return self._objects[key]
+
+    def delete(self, tenant: str, key: str) -> None:
+        assert_tenant_scoped(tenant, key)
+        self._objects.pop(key, None)
 
 
 @dataclass
@@ -50,6 +55,10 @@ class S3Storage:
     def get(self, tenant: str, key: str) -> bytes:  # pragma: no cover - network
         assert_tenant_scoped(tenant, key)
         return self._client().get_object(Bucket=self.bucket, Key=key)["Body"].read()
+
+    def delete(self, tenant: str, key: str) -> None:  # pragma: no cover - network
+        assert_tenant_scoped(tenant, key)
+        self._client().delete_object(Bucket=self.bucket, Key=key)
 
     def presigned_get_url(self, tenant: str, key: str, *, expires: int = 3600) -> str:  # pragma: no cover - needs creds
         assert_tenant_scoped(tenant, key)

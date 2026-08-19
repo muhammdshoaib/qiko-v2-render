@@ -4,9 +4,10 @@ and grounded chat over captured signals.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 import jwt
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.config import get_settings
@@ -23,7 +24,9 @@ from app.modules.identity.rbac import Role
 from app.modules.intelligence.catalog import SourceCatalog, UnknownSource
 from app.modules.intelligence.chat import IntelligenceChat
 from app.modules.intelligence.discrepancies import DiscrepancyEngine
+from app.modules.intelligence.documents import SUPPORTED_DOCUMENT_EXTENSIONS, UnsupportedDocumentError
 from app.modules.intelligence.ingest import ingest_source
+from app.modules.knowledge.parsing import MAX_UPLOAD_BYTES
 from app.modules.chat.service import ChatService
 
 router = APIRouter(prefix="/intelligence", tags=["intelligence"])
@@ -61,6 +64,17 @@ class ConnectSourceBody(BaseModel):
 
 class SlackWatchChannelsBody(BaseModel):
     channel_ids: list[str] = Field(default_factory=list)
+
+
+class DocumentOut(BaseModel):
+    doc_id: str
+    filename: str
+    content_type: str
+    size: int
+    status: str
+    error_message: str | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 # Config keys managed by the source-connection endpoints. They are encrypted at rest, returned only
@@ -656,3 +670,92 @@ async def list_discrepancies(
     discrepancies = await engine.analyze(tenant, agent_id)
     await recheck()
     return [d.to_dict() for d in discrepancies]
+
+
+@router.post("/agents/{agent_id}/documents")
+async def upload_document(
+    agent_id: str, request: Request,
+    file: UploadFile = File(...),
+    tenant: str = Depends(authed_tenant),
+    claims: dict = Depends(require_role(Role.editor)),
+) -> DocumentOut:
+    """Upload a document to a worker. Parsing and ingestion run off the request path."""
+    _worker, recheck = await _resolve_worker(request, tenant, agent_id)
+    if file.filename is None or not any(file.filename.lower().endswith(f".{ext}")
+                                        for ext in SUPPORTED_DOCUMENT_EXTENSIONS):
+        raise HTTPException(status_code=422, detail="unsupported or missing file extension")
+    data = await file.read()
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=f"file exceeds {MAX_UPLOAD_BYTES} bytes")
+    actor = str(claims.get("email") or claims.get("sub") or "unknown")
+    try:
+        doc = await request.app.state.document_service.upload(
+            tenant=tenant, agent_id=agent_id, filename=file.filename,
+            content_type=file.content_type or "application/octet-stream",
+            data=data, actor=actor)
+    except UnsupportedDocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
+    await audit.record(
+        request.app.state.audit,
+        audit.AuditEvent(
+            action=audit_actions.DOCUMENT_INGESTED,
+            target_id=doc.doc_id,
+            target_label=doc.filename,
+            tenant_id=tenant,
+            actor_type=audit.USER,
+            actor_id=str(claims.get("sub") or ""),
+            actor_label=str(claims.get("email") or claims.get("sub") or ""),
+            changes={"doc_id": doc.doc_id, "chunks": 0},
+            metadata={"agent_id": agent_id, "size": doc.size},
+        ),
+        request=request,
+    )
+    await recheck()
+    return DocumentOut.model_validate(doc, from_attributes=True)
+
+
+@router.get("/agents/{agent_id}/documents")
+async def list_documents(
+    agent_id: str, request: Request,
+    tenant: str = Depends(authed_tenant),
+    _claims: dict = Depends(require_role(Role.viewer)),
+) -> list[DocumentOut]:
+    """List documents uploaded to this worker."""
+    _worker, recheck = await _resolve_worker(request, tenant, agent_id)
+    docs = await request.app.state.document_service.list(tenant, agent_id)
+    await recheck()
+    return [DocumentOut.model_validate(d, from_attributes=True) for d in docs]
+
+
+@router.delete("/agents/{agent_id}/documents/{doc_id}")
+async def delete_document(
+    agent_id: str, doc_id: str, request: Request,
+    tenant: str = Depends(authed_tenant),
+    claims: dict = Depends(require_role(Role.editor)),
+) -> dict:
+    """Delete an uploaded document and all derived passages and signals."""
+    _worker, recheck = await _resolve_worker(request, tenant, agent_id)
+    doc = await request.app.state.document_service.document_store.get(tenant, agent_id, doc_id)
+    if doc is None:
+        await recheck()
+        raise HTTPException(status_code=404, detail="document not found")
+    await request.app.state.document_service.delete(tenant, agent_id, doc_id)
+    await audit.record(
+        request.app.state.audit,
+        audit.AuditEvent(
+            action=audit_actions.DOCUMENT_DELETED,
+            target_id=doc_id,
+            target_label=doc.filename,
+            tenant_id=tenant,
+            actor_type=audit.USER,
+            actor_id=str(claims.get("sub") or ""),
+            actor_label=str(claims.get("email") or claims.get("sub") or ""),
+            changes={"doc_id": doc_id, "passages_removed": 0},
+            metadata={"agent_id": agent_id},
+        ),
+        request=request,
+    )
+    await recheck()
+    return {"deleted": True}

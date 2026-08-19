@@ -811,6 +811,32 @@ class IntelligenceSignal(Base):
     )
 
 
+class IntelligenceDocument(Base):
+    """An uploaded document owned by a worker (app.modules.intelligence).
+
+    The original bytes live in the storage backend; this row tracks status,
+    metadata and the storage key so delete can remove both the object and the
+    derived passages/signals.
+    """
+    __tablename__ = "intelligence_documents"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True)
+    doc_id: Mapped[str] = mapped_column(String(64), index=True)
+    filename: Mapped[str] = mapped_column(String(255))
+    content_type: Mapped[str] = mapped_column(String(128), default="application/octet-stream")
+    size: Mapped[int] = mapped_column(Integer, default=0)
+    storage_key: Mapped[str] = mapped_column(String(512))
+    status: Mapped[str] = mapped_column(String(16), default="uploading")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "agent_id", "doc_id", name="uq_intelligence_document"),
+        Index("ix_intelligence_documents_worker", "tenant_id", "agent_id", "updated_at"),
+    )
+
+
 class SlackChannelMessage(Base):
     """One captured Slack message for the AI heads-up assistant (app.modules.channels.slack_events)."""
     __tablename__ = "slack_channel_messages"

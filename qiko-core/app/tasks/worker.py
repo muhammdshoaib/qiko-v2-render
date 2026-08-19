@@ -20,6 +20,10 @@ async def ingest_document(ctx, **kwargs):  # pragma: no cover - invoked by the a
     return await jobs.ingest_document(**kwargs)
 
 
+async def process_uploaded_document(ctx, **kwargs):  # pragma: no cover - invoked by the arq runtime
+    return await jobs.process_uploaded_document(sessionmaker=ctx.get("sessionmaker"), **kwargs)
+
+
 async def send_email(ctx, **kwargs):  # pragma: no cover - invoked by the arq runtime
     return await jobs.send_email(**kwargs)
 
@@ -91,8 +95,8 @@ async def erase_audit_subject(ctx: dict, **kwargs) -> int:  # pragma: no cover -
         store=SqlAuditStore(ctx.get("audit_sessionmaker") or ctx["sessionmaker"]), **kwargs)
 
 
-FUNCTIONS = [ingest_document, send_email, generate_tender_artifacts, erase_audit_subject,
-             generate_slack_digest]
+FUNCTIONS = [ingest_document, process_uploaded_document, send_email, generate_tender_artifacts,
+             erase_audit_subject, generate_slack_digest]
 
 # arq cron is calendar-based (no native "every N minutes" interval). Rather than encode the
 # configured cadence into a minute-set at startup, the scan cron ticks once a minute and the sweep
