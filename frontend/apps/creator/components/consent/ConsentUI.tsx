@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { Settings2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { isAppShellRoute } from "@/lib/consent/app-shell-routes";
 import {
   Dialog,
   DialogContent,
@@ -170,8 +172,14 @@ export function ConsentSettingsButton({ variant = "inline", className = "" }: {
   className?: string;
 }) {
   const { openPreferences } = useConsent();
+  const pathname = usePathname();
 
   if (variant === "floating") {
+    // AppShell'd routes already surface cookie settings inline (Settings > Privacy choices), and
+    // the floating button has twice collided with in-app chrome anchored to the same corner
+    // (Logout, then the chat send button - see app-shell-routes.ts). Only show it where there's
+    // no other entry point.
+    if (isAppShellRoute(pathname)) return null;
     return (
       <button
         type="button"

@@ -189,7 +189,10 @@ export function ProfitabilityRankingChart({ data, onPropertyClick }: { data: Pro
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
           <XAxis dataKey="name" tick={AXIS_TICK} angle={-35} textAnchor="end" height={60} tickFormatter={(v) => truncate(String(v))} />
           <YAxis tick={AXIS_TICK} tickFormatter={(v) => `£${(Number(v) / 1000).toFixed(0)}k`} />
-          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} formatter={(v) => formatCurrency(Number(v))} />
+          {/* Bars are colored per-point via <Cell> below, not via a top-level Bar fill, so Recharts
+              has no series color to key its default tooltip item text off - force it explicitly
+              or it renders black on this dark tooltip background. */}
+          <Tooltip contentStyle={TOOLTIP_STYLE} itemStyle={{ color: "#e2e8f0" }} cursor={{ fill: "rgba(255,255,255,0.04)" }} formatter={(v) => formatCurrency(Number(v))} />
           <Bar dataKey="profit" name="Net Profit" radius={[4, 4, 0, 0]} onClick={handleBarClick}>
             {data.map((entry, i) => <Cell key={i} fill={entry.profit >= 0 ? INCOME_COLOR : EXPENSE_COLOR} className={onPropertyClick ? "cursor-pointer" : undefined} />)}
           </Bar>

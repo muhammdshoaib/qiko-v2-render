@@ -14,13 +14,9 @@ function fmt(n: number | null | undefined) {
   return formatCurrency(n);
 }
 
-function pct(n: number | null | undefined) {
-  return `${(Number(n ?? 0)).toFixed(1)}%`;
-}
-
-function Card({ label, value, icon: Icon, color, onClick, children }: {
+function Card({ label, value, icon: Icon, color, onClick }: {
   label: string; value: React.ReactNode; icon: React.ElementType; color: string;
-  onClick?: () => void; children?: React.ReactNode;
+  onClick?: () => void;
 }) {
   return (
     <button
@@ -36,7 +32,6 @@ function Card({ label, value, icon: Icon, color, onClick, children }: {
         <Icon className="h-4 w-4 shrink-0" style={{ color }} />
       </div>
       <div className="mt-2 break-words text-lg font-bold leading-tight text-white/90 sm:text-xl">{value}</div>
-      {children && <div className="mt-2 space-y-0.5 text-[10px] leading-snug text-white/48">{children}</div>}
     </button>
   );
 }
@@ -44,53 +39,13 @@ function Card({ label, value, icon: Icon, color, onClick, children }: {
 export function KpiCards({ summary, propertyCount, onOpenPortfolio, onKpiClick }: {
   summary: NormalizedSummary; propertyCount: number; onOpenPortfolio?: () => void; onKpiClick?: (key: KpiKey) => void;
 }) {
-  const d = summary.details;
-
   return (
     <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-      <Card label="Total Income" value={summary.formatted.totalIncome ?? fmt(summary.totalIncome)} icon={TrendingUp} color={INCOME_COLOR} onClick={() => onKpiClick?.("income")}>
-        {d?.totalIncomeTopProperty && <div>Top: {d.totalIncomeTopProperty} ({fmt(d.totalIncomeTopPropertyIncome)})</div>}
-        {d?.totalIncomeAveragePerProperty !== undefined && d.totalIncomeAveragePerProperty > 0 && <div>Avg / property: {fmt(d.totalIncomeAveragePerProperty)}</div>}
-        {d?.totalIncomeUnitCount !== undefined && d.totalIncomeUnitCount > 0 && <div>Units: {d.totalIncomeUnitCount}</div>}
-      </Card>
-
-      <Card label="Total Expenses" value={summary.formatted.totalExpenses ?? fmt(summary.totalExpenses)} icon={TrendingDown} color={EXPENSE_COLOR} onClick={() => onKpiClick?.("expenses")}>
-        {d?.totalExpensesTopVendor && <div>Top vendor: {d.totalExpensesTopVendor} ({fmt(d.totalExpensesTopVendorAmount)})</div>}
-        {d?.totalExpensesTopCategory && <div>Top category: {d.totalExpensesTopCategory} ({fmt(d.totalExpensesTopCategoryAmount)})</div>}
-        {d?.totalExpensesInvoiceCount !== undefined && d.totalExpensesInvoiceCount > 0 && <div>Invoices: {d.totalExpensesInvoiceCount}</div>}
-        {d?.totalExpensesAveragePerProperty !== undefined && d.totalExpensesAveragePerProperty > 0 && <div>Avg / property: {fmt(d.totalExpensesAveragePerProperty)}</div>}
-      </Card>
-
-      <Card label="Net Profit" value={summary.formatted.netProfit ?? fmt(summary.netProfit)} icon={DollarSign} color={PROFIT_COLOR} onClick={() => onKpiClick?.("profit")}>
-        {d?.netProfitMarginPercent !== undefined && <div>Margin: {pct(d.netProfitMarginPercent)}</div>}
-        {d?.netProfitAverageMargin !== undefined && <div>Avg margin: {pct(d.netProfitAverageMargin)}</div>}
-        {d?.netProfitTopProperty && <div>Top: {d.netProfitTopProperty} ({fmt(d.netProfitTopPropertyProfit)})</div>}
-        {d?.netProfitLowestPerformanceProperty && <div>Worst: {d.netProfitLowestPerformanceProperty} ({fmt(d.netProfitLowestPerformancePropertyProfit)})</div>}
-        {d?.netProfitCostToIncomeRatio !== undefined && <div>CTI: {pct(d.netProfitCostToIncomeRatio)}</div>}
-      </Card>
-
-      <Card label="Outstanding" value={summary.formatted.outstanding ?? fmt(summary.outstanding)} icon={Wallet} color={RECEIVABLE_COLOR}>
-        {d?.outstandingPropertyCount !== undefined && d.outstandingPropertyCount > 0 && <div>Properties with arrears: {d.outstandingPropertyCount}</div>}
-        {(d?.outstandingPositiveTotal !== undefined || d?.outstandingNegativeTotal !== undefined) && (d?.outstandingPositiveTotal || d?.outstandingNegativeTotal) && (
-          <div>Positive / negative: {fmt(d.outstandingPositiveTotal)} / {fmt(d.outstandingNegativeTotal)}</div>
-        )}
-        {d?.outstandingTopProperty && <div>Top debtor: {d.outstandingTopProperty} ({fmt(d.outstandingTopPropertyOutstanding)})</div>}
-        {d?.outstandingAsPercentOfIncome !== undefined && <div>As % of income: {pct(d.outstandingAsPercentOfIncome)}</div>}
-      </Card>
-
-      <Card label="Total Properties" value={propertyCount} icon={Building2} color="#22d3ee" onClick={onOpenPortfolio}>
-        {(d?.highPerforming !== undefined || d?.averagePerforming !== undefined || d?.underPerforming !== undefined) && (
-          <div>High / Avg / Under: {d?.highPerforming ?? 0} / {d?.averagePerforming ?? 0} / {d?.underPerforming ?? 0}</div>
-        )}
-        {(d?.highRisk !== undefined || d?.mediumRisk !== undefined || d?.lowRisk !== undefined) && (
-          <div>High / Med / Low risk: {d?.highRisk ?? 0} / {d?.mediumRisk ?? 0} / {d?.lowRisk ?? 0}</div>
-        )}
-        {d?.totalUnits !== undefined && d?.totalInvoices !== undefined && <div>Units / Invoices: {d.totalUnits} / {d.totalInvoices}</div>}
-        {(d?.averageIncomePerProperty !== undefined || d?.averageExpensePerProperty !== undefined) && (
-          <div>Avg income / expense: {fmt(d?.averageIncomePerProperty)} / {fmt(d?.averageExpensePerProperty)}</div>
-        )}
-        {d?.topProperty && d?.worstProperty && <div>Top / Worst: {d.topProperty} / {d.worstProperty}</div>}
-      </Card>
+      <Card label="Total Income" value={summary.formatted.totalIncome ?? fmt(summary.totalIncome)} icon={TrendingUp} color={INCOME_COLOR} onClick={() => onKpiClick?.("income")} />
+      <Card label="Total Expenses" value={summary.formatted.totalExpenses ?? fmt(summary.totalExpenses)} icon={TrendingDown} color={EXPENSE_COLOR} onClick={() => onKpiClick?.("expenses")} />
+      <Card label="Net Profit" value={summary.formatted.netProfit ?? fmt(summary.netProfit)} icon={DollarSign} color={PROFIT_COLOR} onClick={() => onKpiClick?.("profit")} />
+      <Card label="Outstanding" value={summary.formatted.outstanding ?? fmt(summary.outstanding)} icon={Wallet} color={RECEIVABLE_COLOR} />
+      <Card label="Total Properties" value={propertyCount} icon={Building2} color="#22d3ee" onClick={onOpenPortfolio} />
     </div>
   );
 }

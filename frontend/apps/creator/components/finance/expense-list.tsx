@@ -20,12 +20,15 @@ export function ExpenseList({
   showSearch = true,
   hideProperty = false,
   hideUnit = false,
+  hideViewUnitAction = false,
   title = "Expenses",
 }: {
   filter?: ExpenseListFilter;
   showSearch?: boolean;
   hideProperty?: boolean;
   hideUnit?: boolean;
+  /** Suppress the per-row "View unit" action: redundant when the list is already scoped to one unit. */
+  hideViewUnitAction?: boolean;
   title?: string;
 }) {
   const { agentId, analytics } = useFinance();
@@ -114,7 +117,7 @@ export function ExpenseList({
         sort={sort}
         order={order}
         onSortChange={(s, o) => { setSort(s); setOrder(o); }}
-        actions={(e) =>
+        actions={hideViewUnitAction ? undefined : (e) =>
           e.unitRef ? (
             <button
               type="button"

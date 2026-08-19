@@ -213,6 +213,7 @@ function UnitDetail({ property, unit, onBack }: { property: FinanceProperty; uni
           showSearch={false}
           hideProperty
           hideUnit
+          hideViewUnitAction
           title="Unit expenses"
         />
       </div>
