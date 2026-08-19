@@ -39,14 +39,15 @@ function refreshSession(): Promise<boolean> {
 
 async function doFetch(path: string, opts: RequestInit): Promise<Response> {
   const csrf = csrfToken();
+  const isFormData = typeof FormData !== "undefined" && opts.body instanceof FormData;
+  const baseHeaders: Record<string, string> = {};
+  if (csrf) baseHeaders["x-csrf-token"] = csrf;
+  if (!isFormData) baseHeaders["Content-Type"] = "application/json";
   return fetch(`${BASE}${path}`, {
     credentials: "include",
     ...opts,
-    // Spread opts FIRST so our merged headers (Content-Type + CSRF + any caller headers) are the
-    // final `headers` and cannot be clobbered by opts.headers.
     headers: {
-      "Content-Type": "application/json",
-      ...(csrf ? { "x-csrf-token": csrf } : {}),
+      ...baseHeaders,
       ...(opts.headers ?? {}),
     },
   });
@@ -1274,3 +1275,24 @@ export const setSlackWatchedChannels = (agentId: string, channelIds: string[]) =
 
 export const listSlackWatchedChannels = (agentId: string) =>
   request<{ watched_channels: string[]; channels: { id: string; name: string }[] }>(`/intelligence/agents/${agentId}/sources/slack/channels`);
+
+// Intelligence Worker documents (uploaded files ingested as evidence)
+export type IntelligenceDocument = {
+  doc_id: string;
+  filename: string;
+  content_type: string;
+  size: number;
+  status: string;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
+export const listIntelligenceDocuments = (agentId: string) =>
+  request<IntelligenceDocument[]>(`/intelligence/agents/${agentId}/documents`);
+export const uploadIntelligenceDocument = (agentId: string, file: File) => {
+  const form = new FormData();
+  form.append("file", file);
+  return request<IntelligenceDocument>(`/intelligence/agents/${agentId}/documents`, { method: "POST", body: form });
+};
+export const deleteIntelligenceDocument = (agentId: string, docId: string) =>
+  request<{ deleted: boolean }>(`/intelligence/agents/${agentId}/documents/${encodeURIComponent(docId)}`, { method: "DELETE" });

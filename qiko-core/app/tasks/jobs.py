@@ -11,6 +11,7 @@ import logging
 from app.core.tenancy import reset_tenant, set_tenant
 from app.modules.audit import registry as audit_actions
 from app.modules.audit import service as audit
+from app.modules.intelligence.documents import DocumentService
 from app.modules.knowledge.service import KnowledgeService
 from app.tasks.queue import TaskRegistry
 
@@ -30,10 +31,59 @@ _audit_store: object | None = None
 
 
 @registry.register("ingest_document")
-async def ingest_document(*, tenant: str, doc_id: str, text: str, knowledge: KnowledgeService | None = None) -> int:
+async def ingest_document(*, tenant: str, doc_id: str, text: str,
+                          agent_id: str | None = None,
+                          knowledge: KnowledgeService | None = None) -> int:
     """Chunk + embed + store a document. Heavy, so it runs off the request path."""
     svc = knowledge or _knowledge
-    return await svc.ingest(tenant, doc_id, text)
+    return await svc.ingest(tenant, doc_id, text, agent_id=agent_id)
+
+
+@registry.register("process_uploaded_document")
+async def process_uploaded_document(
+    *,
+    tenant: str,
+    agent_id: str,
+    doc_id: str,
+    storage_key: str,
+    filename: str,
+    content_type: str,
+    actor: str,
+    document_service: DocumentService | None = None,
+    sessionmaker=None,
+) -> None:
+    """Parse, chunk, embed and emit a signal for an uploaded document.
+
+    The API passes a built DocumentService when running eagerly (dev/tests); in production the
+    arq worker passes a sessionmaker and the services are built here so only serialisable ids
+    cross Redis.
+    """
+    if document_service is None:
+        if sessionmaker is None:
+            raise ValueError("process_uploaded_document requires sessionmaker or document_service")
+        from app.core.config import get_settings
+        from app.db.stores import SqlDocumentStore, SqlSignalStore, SqlVectorStore
+        from app.modules.intelligence.documents import DocumentService as _DocumentService
+        from app.modules.storage.backend import InMemoryStorage, S3Storage
+
+        settings = get_settings()
+        storage = InMemoryStorage()
+        if settings.s3_bucket:
+            storage = S3Storage(bucket=settings.s3_bucket)
+        document_service = _DocumentService(
+            document_store=SqlDocumentStore(sessionmaker),
+            knowledge=KnowledgeService(store=SqlVectorStore(sessionmaker)),
+            signal_store=SqlSignalStore(sessionmaker),
+            storage=storage,
+        )
+    await document_service.process(
+        tenant=tenant,
+        agent_id=agent_id,
+        doc_id=doc_id,
+        storage_key=storage_key,
+        filename=filename,
+        actor=actor,
+    )
 
 
 @registry.register("send_email")

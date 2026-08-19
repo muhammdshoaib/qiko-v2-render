@@ -161,10 +161,12 @@ async def lifespan(app: FastAPI):
             SqlTeamStore,
             SqlAuditStore,
             SqlCostCapStore,
+            SqlDocumentStore,
             SqlUsageStore,
             SqlUserStore,
             SqlVectorStore,
         )
+        from app.modules.intelligence.documents import DocumentService as DocumentService_
         from app.modules.identity.router import set_store as set_user_store
 
         sm = app.state.sessionmaker
@@ -230,6 +232,14 @@ async def lifespan(app: FastAPI):
         if getattr(app.state, "slack_digest_scheduler", None):
             app.state.slack_digest_scheduler.message_store = app.state.slack_messages
         app.state.intelligence_signal_store = SqlSignalStore(sm)
+        app.state.intelligence_document_store = SqlDocumentStore(sm)
+        app.state.document_service = DocumentService_(
+            document_store=app.state.intelligence_document_store,
+            knowledge=app.state.knowledge,
+            signal_store=app.state.intelligence_signal_store,
+            storage=app.state.file_generator.storage,
+            task_queue=app.state.task_queue,
+        )
         app.state.intelligence_catalog = _build_intelligence_catalog()
         set_user_store(SqlUserStore(sm))  # users/sessions/2FA persist to Postgres
 
@@ -497,6 +507,9 @@ def create_app() -> FastAPI:
     app.state.slack_messages = InMemorySlackChannelStore()
     app.state.slack_messages.knowledge = app.state.knowledge
     app.state.intelligence_signal_store = InMemorySignalStore()
+    from app.modules.intelligence.documents import DocumentService as DocumentService_, InMemoryDocumentStore
+    app.state.intelligence_document_store = InMemoryDocumentStore()
+    # file_generator is built below; document_service is wired after it.
     app.state.intelligence_catalog = _build_intelligence_catalog()
     # S3 when configured, the dev dict otherwise. The guard in assert_secrets_set means a non-dev
     # environment cannot start without a bucket, so this cannot silently degrade in production.
@@ -504,6 +517,13 @@ def create_app() -> FastAPI:
     app.state.file_generator = FileGenerator(
         S3Storage(bucket=settings.s3_bucket) if settings.s3_bucket else InMemoryStorage())
     app.state.task_queue = build_task_queue(task_registry)
+    app.state.document_service = DocumentService_(
+        document_store=app.state.intelligence_document_store,
+        knowledge=app.state.knowledge,
+        signal_store=app.state.intelligence_signal_store,
+        storage=app.state.file_generator.storage,
+        task_queue=app.state.task_queue,
+    )
     app.state.slack_digest_scheduler = DigestScheduler(
         message_store=app.state.slack_messages,
         task_queue=app.state.task_queue,

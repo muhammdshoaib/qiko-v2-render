@@ -57,6 +57,7 @@ from app.modules.channels.slack_store import (
     slack_message_from_signal,
     slack_signal_from_message,
 )
+from app.modules.intelligence.documents import Document, DocumentNotFound
 from app.modules.intelligence.models import DEFAULT_SIGNAL_LIMIT, Signal
 from app.db.models import SalesIntelActivityLog as SalesIntelActivityLogRow
 from app.db.models import SalesIntelIngestionSource as SalesIntelIngestionSourceRow
@@ -69,6 +70,7 @@ from app.db.models import Tenant as TenantRow
 from app.db.models import TeamsWebhook as TeamsWebhookRow
 from app.db.models import User as UserRow
 from app.db.models import VerifiedAnswer
+from app.db.models import IntelligenceDocument as IntelligenceDocumentRow
 from app.db.models import IntelligenceSignal as IntelligenceSignalRow
 from app.modules.agents.service import (
     Agent,
@@ -2936,3 +2938,86 @@ class SqlSignalStore:
         async with self.sessionmaker() as s, s.begin():
             result = await s.execute(delete(IntelligenceSignalRow).where(*clauses))
             return result.rowcount or 0
+
+
+@dataclass
+class SqlDocumentStore:
+    """Postgres-backed uploaded document metadata for the Intelligence Worker."""
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    @staticmethod
+    def _to_domain(row: IntelligenceDocumentRow) -> Document:
+        return Document(
+            doc_id=row.doc_id,
+            tenant=row.tenant_id,
+            agent_id=row.agent_id,
+            filename=row.filename,
+            content_type=row.content_type,
+            size=row.size,
+            storage_key=row.storage_key,
+            status=row.status,
+            error_message=row.error_message,
+            created_at=_as_utc(row.created_at),
+            updated_at=_as_utc(row.updated_at),
+        )
+
+    @staticmethod
+    def _row(doc: Document) -> IntelligenceDocumentRow:
+        return IntelligenceDocumentRow(
+            tenant_id=doc.tenant,
+            agent_id=doc.agent_id,
+            doc_id=doc.doc_id,
+            filename=doc.filename,
+            content_type=doc.content_type,
+            size=doc.size,
+            storage_key=doc.storage_key,
+            status=doc.status,
+            error_message=doc.error_message,
+            created_at=doc.created_at,
+            updated_at=doc.updated_at,
+        )
+
+    async def add(self, doc: Document) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(self._row(doc))
+
+    async def get(self, tenant: str, agent_id: str, doc_id: str) -> Document | None:
+        async with self.sessionmaker() as s:
+            row = (await s.execute(
+                select(IntelligenceDocumentRow).where(
+                    IntelligenceDocumentRow.tenant_id == tenant,
+                    IntelligenceDocumentRow.agent_id == agent_id,
+                    IntelligenceDocumentRow.doc_id == doc_id))).scalar_one_or_none()
+            return self._to_domain(row) if row else None
+
+    async def list(self, tenant: str, agent_id: str) -> list[Document]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(IntelligenceDocumentRow).where(
+                    IntelligenceDocumentRow.tenant_id == tenant,
+                    IntelligenceDocumentRow.agent_id == agent_id)
+                .order_by(IntelligenceDocumentRow.updated_at.desc()))).scalars().all()
+            return [self._to_domain(r) for r in rows]
+
+    async def update(self, doc: Document) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            existing = (await s.execute(
+                select(IntelligenceDocumentRow).where(
+                    IntelligenceDocumentRow.tenant_id == doc.tenant,
+                    IntelligenceDocumentRow.agent_id == doc.agent_id,
+                    IntelligenceDocumentRow.doc_id == doc.doc_id))).scalar_one_or_none()
+            if existing is None:
+                raise DocumentNotFound(doc.doc_id)
+            for field in ("filename", "content_type", "size", "storage_key",
+                          "status", "error_message", "updated_at"):
+                setattr(existing, field, getattr(doc, field))
+
+    async def delete(self, tenant: str, agent_id: str, doc_id: str) -> bool:
+        async with self.sessionmaker() as s, s.begin():
+            result = await s.execute(
+                delete(IntelligenceDocumentRow).where(
+                    IntelligenceDocumentRow.tenant_id == tenant,
+                    IntelligenceDocumentRow.agent_id == agent_id,
+                    IntelligenceDocumentRow.doc_id == doc_id))
+            return (result.rowcount or 0) > 0

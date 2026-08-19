@@ -207,3 +207,42 @@ def test_slack_watched_channels_are_stored(client):
     r = client.get("/api/v1/intelligence/agents/w1/sources/slack/channels", cookies=C)
     assert r.status_code == 200
     assert r.json()["watched_channels"] == ["C123", "C456"]
+
+
+def test_upload_document_requires_auth(client):
+    r = client.post("/api/v1/intelligence/agents/w1/documents")
+    assert r.status_code == 401
+
+
+def test_upload_document_rejects_unsupported_extension(client):
+    r = client.post(
+        "/api/v1/intelligence/agents/w1/documents",
+        cookies=C,
+        files={"file": ("bad.exe", b"data", "application/octet-stream")},
+    )
+    assert r.status_code == 422
+
+
+def test_upload_document_and_delete(client):
+    content = b"This is the QIKO-1234 brief for the intelligence worker."
+    r = client.post(
+        "/api/v1/intelligence/agents/w1/documents",
+        cookies=C,
+        files={"file": ("brief.txt", content, "text/plain")},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["filename"] == "brief.txt"
+    assert body["status"] == "ready"
+    assert body["size"] == len(content)
+    doc_id = body["doc_id"]
+
+    r = client.get("/api/v1/intelligence/agents/w1/documents", cookies=C)
+    assert r.status_code == 200
+    assert any(d["doc_id"] == doc_id for d in r.json())
+
+    r = client.delete(f"/api/v1/intelligence/agents/w1/documents/{doc_id}", cookies=C)
+    assert r.status_code == 200
+
+    r = client.get("/api/v1/intelligence/agents/w1/documents", cookies=C)
+    assert not any(d["doc_id"] == doc_id for d in r.json())
