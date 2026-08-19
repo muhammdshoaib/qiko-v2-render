@@ -19,12 +19,12 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import {
-  Activity, Bot, Building2, Coins, CreditCard, Users,
+  Activity, Bot, Building2, Coins, CreditCard, TrendingUp, Users,
 } from "lucide-react";
 import { Alert, BarList, Card, CardContent, Skeleton, TrendChart, type SeriesPoint } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import {
-  adminMe, aiCost, formatMoney, formatUsd, listTenants, overview, workerMonitoring,
+  adminMe, aiCost, formatMoney, formatUsd, listTenants, overview, revenueReport, workerMonitoring,
   type Capability,
 } from "@/lib/api";
 
@@ -98,6 +98,11 @@ export default function OverviewPage() {
     // be refused is a 403 in the log and a red herring for whoever reads it next.
     enabled: me.isSuccess && can("view_ai_cost"),
   });
+  const revenue = useQuery({
+    queryKey: ["overview-revenue"],
+    queryFn: revenueReport,
+    enabled: me.isSuccess && can("view_customers"),
+  });
 
   const loading = me.isLoading || (me.isSuccess && ov.isLoading);
 
@@ -151,7 +156,12 @@ export default function OverviewPage() {
               <Kpi label="Active subscriptions" value={ov.data.active_subscriptions}
                 hint={`${planMix.length} ${planMix.length === 1 ? "plan" : "plans"} in use`}
                 icon={CreditCard} href="/subscriptions" />
-              <Kpi label="Tenants" value={tenants.data?.total ?? "-"} icon={Building2} href="/tenants" />
+              {can("view_customers") ? (
+                <Kpi label="Revenue" value={revenue.data ? formatMoney(revenue.data.total_paid_cents) : "-"}
+                  icon={TrendingUp} href="/revenue" />
+              ) : (
+                <Kpi label="Tenants" value={tenants.data?.total ?? "-"} icon={Building2} href="/tenants" />
+              )}
               {can("view_ai_cost") ? (
                 <Kpi label="AI spend" value={spend.data ? formatUsd(spend.data.totals.cost_nano_usd) : "-"}
                   hint={`last ${WINDOW_DAYS} days`} icon={Coins} href="/ai-cost" />

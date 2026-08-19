@@ -305,9 +305,11 @@ class CreateInvoiceBody(BaseModel):
 
 @router.post("/invoices")
 def create_invoice(request: Request, body: CreateInvoiceBody,
+                   claims: dict = Depends(current_claims),
                    _identity=Depends(require_platform_capability(Capability.manage_billing)),
                    subs=Depends(get_subscriptions), handler=Depends(get_stripe_webhook)) -> dict:
     csrf.require_csrf(request)
+    actor = str(claims.get("email") or "")
     # customer_id may be a Stripe customer id or a tenant id with a linked Stripe customer.
     customer = body.customer_id
     if not customer.startswith("cus_"):
@@ -326,11 +328,26 @@ def create_invoice(request: Request, body: CreateInvoiceBody,
         currency=inv.get("currency"), number=inv.get("number"),
         hosted_invoice_url=inv.get("hosted_invoice_url"), invoice_pdf=inv.get("invoice_pdf"))
     handler.invoices.upsert(stored)
+    audit.record_sync(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.INVOICE_CREATED, target_id=stored.stripe_invoice_id,
+        target_label=customer, actor_type=audit.PLATFORM_ADMIN,
+        actor_id=actor, actor_label=actor,
+        changes=audit.diff(audit_actions.INVOICE_CREATED, {}, {
+            "amount_cents": body.amount_cents, "currency": body.currency,
+            "customer_id": body.customer_id, "description": body.description})),
+        request=request)
     return asdict(stored)
 
 
 @router.post("/invoices/reconcile")
-def reconcile_invoices_route(request: Request,
+def reconcile_invoices_route(request: Request, claims: dict = Depends(current_claims),
                              _identity=Depends(require_platform_capability(Capability.manage_billing))) -> dict:
     csrf.require_csrf(request)
-    return request.app.state.invoice_reconciliation.reconcile()
+    actor = str(claims.get("email") or "")
+    result = request.app.state.invoice_reconciliation.reconcile()
+    audit.record_sync(request.app.state.audit, audit.AuditEvent(
+        action=audit_actions.INVOICE_RECONCILED, target_id="billing",
+        actor_type=audit.PLATFORM_ADMIN, actor_id=actor, actor_label=actor,
+        changes=audit.diff(audit_actions.INVOICE_RECONCILED, {}, result)),
+        request=request)
+    return result

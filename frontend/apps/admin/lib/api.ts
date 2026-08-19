@@ -199,6 +199,17 @@ export type AiCost = {
 };
 export const aiCost = (days = 30) => request<AiCost>(`/admin/ai-cost?days=${days}`);
 
+export type RevenueReport = {
+  total_paid_cents: number;
+  outstanding_cents: number;
+  mrr_cents: number;
+  arr_cents: number;
+  active_subscriptions: number;
+  by_plan: Record<string, number>;
+  monthly: { month: string; paid_cents: number }[];
+};
+export const revenueReport = () => request<RevenueReport>("/admin/revenue");
+
 export type MonitoredWorker = {
   tenant_id: string; id: string; name: string; status: string; enabled: boolean;
   created_at: string; calls: number; last_seen: string | null;

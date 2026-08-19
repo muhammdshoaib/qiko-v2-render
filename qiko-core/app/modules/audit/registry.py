@@ -113,6 +113,8 @@ SUBSCRIPTION_RESUMED = "billing.subscription_resumed"
 PAYMENT_LINK_ATTEMPTED = "billing.payment_link_attempted"
 PAYMENT_LINK_CREATED = "billing.payment_link_created"
 PAYMENT_LINK_MARKED_PAID = "billing.payment_link_marked_paid"
+INVOICE_CREATED = "billing.invoice_created"
+INVOICE_RECONCILED = "billing.invoice_reconciled"
 STRIPE_WEBHOOK_APPLIED = "billing.stripe_webhook_applied"
 COST_CAP_SET = "billing.cost_cap_set"
 COST_CAP_REMOVED = "billing.cost_cap_removed"
@@ -216,9 +218,13 @@ _SPECS: tuple[ActionSpec, ...] = (
     _spec(PAYMENT_LINK_MARKED_PAID, BILLING, "payment_link", read_capability=Capability.manage_billing,
           # An operator declaring money received without money moving. If one row in this table ever
           # matters in a dispute, it is this one. Local-only, so it can and must be transactional.
-          # Not transactional: the payment-link store is the separate SYNC engine, so it cannot share a transaction with an async write.
           durability=STANDARD, diff_fields=("amount_cents", "status", "links_marked"),
           template="{actor} marked a payment link paid"),
+    _spec(INVOICE_CREATED, BILLING, "invoice", read_capability=Capability.manage_billing,
+          durability=EXTERNAL, diff_fields=("amount_cents", "currency", "customer_id", "description"),
+          template="{actor} created an invoice"),
+    _spec(INVOICE_RECONCILED, BILLING, "billing", read_capability=Capability.manage_billing,
+          template="{actor} ran invoice reconciliation"),
     _spec(STRIPE_WEBHOOK_APPLIED, BILLING, "tenant", read_capability=Capability.manage_billing,
           durability=CRITICAL, diff_fields=("plan", "status"),
           template="Stripe applied {target}"),

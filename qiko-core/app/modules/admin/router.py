@@ -25,7 +25,7 @@ from app.modules.ai.caps import PLATFORM, UNLIMITED, CostCap
 from app.modules.audit import registry as audit_actions
 from app.modules.audit import retention as audit_retention
 from app.modules.audit import service as audit
-from app.modules.admin.metrics import Subscription, revenue_metrics
+from app.modules.admin.revenue import revenue_report_dict
 from app.modules.health.system import (
     database_stats,
     process_stats,
@@ -90,18 +90,12 @@ class CustomerDetailOut(BaseModel):
     worker_state_audit: list[WorkerStateAuditOut]
 
 
-class SubscriptionIn(BaseModel):
-    customer_id: str
-    plan: str
-    price_cents: int
-    interval: str = "month"
-    status: str = "active"
-
-
-@router.post("/revenue")
-def revenue(subs: list[SubscriptionIn], _tenant: str = Depends(authed_tenant),
+@router.get("/revenue")
+def revenue(request: Request, _tenant: str = Depends(authed_tenant),
             _identity=Depends(require_platform_capability(Capability.view_customers))) -> dict:
-    return revenue_metrics([Subscription(**s.model_dump()) for s in subs])
+    return revenue_report_dict(
+        invoices=request.app.state.stripe_webhook.invoices,
+        subscriptions=request.app.state.subscriptions.store)
 
 
 @router.get("/customers")
