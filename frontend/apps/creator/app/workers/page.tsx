@@ -7,7 +7,7 @@ import { Plus } from "lucide-react";
 import { Badge, Button } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import { WorkerAvatar, workerTypeIcon } from "@/components/worker-avatar";
-import { createAgent, getAgentUsage, listAgents, me, type Agent } from "@/lib/api";
+import { createAgent, getAgentUsage, listAgents, me, updateAgentConfig, type Agent } from "@/lib/api";
 import { workerTypeLabel } from "@/lib/stringUtils";
 
 // Per-type tint for the workers-list GROUP header icon (matches idg-sales.qiko.ai: a small coloured
@@ -159,24 +159,44 @@ export default function WorkersPage() {
 }
 
 function WorkerCard({ agent }: { agent: Agent }) {
+  const qc = useQueryClient();
+  const ready = agent.status === "ready";
+  const studioLinked = agent.config?.studio_linked === true;
+  const pushStudio = useMutation({
+    mutationFn: () => updateAgentConfig(agent.id, { studio_linked: !studioLinked }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agents"] }),
+  });
+
   return (
-    <Link href={`/workers/${agent.id}`} className="group block cursor-pointer rounded-2xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">
-      <div className="relative overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.015] py-2 backdrop-blur-xl transition-colors group-hover:bg-white/[0.03]">
-        <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-400 to-violet-500" />
-        <div className="flex items-start gap-4 p-5">
-          <WorkerAvatar name={agent.name} size="lg" ready={agent.status === "ready"} />
+    <div className="group relative overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.015] py-2 backdrop-blur-xl transition-colors hover:bg-white/[0.03]">
+      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-cyan-400 to-violet-500" />
+      <div className="flex items-start gap-4 p-5">
+        <Link href={`/workers/${agent.id}`} className="flex min-w-0 flex-1 items-start gap-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">
+          <WorkerAvatar name={agent.name} size="lg" ready={ready} />
           <div className="min-w-0 flex-1">
             <h3 className="truncate font-semibold capitalize text-white transition-colors group-hover:text-cyan-300">{agent.name}</h3>
             <div className="mt-1 flex flex-wrap items-center gap-1">
-              <Badge variant={agent.status === "ready" ? "success" : "muted"} dot={agent.status === "ready"} className="text-xs capitalize">
+              <Badge variant={ready ? "success" : "muted"} dot={ready} className="text-xs capitalize">
                 {agent.status}
               </Badge>
               <Badge variant="muted" className="text-xs">{workerTypeLabel(agent.atype)}</Badge>
             </div>
             {agent.created_at && <span className="mt-1 block truncate text-xs text-slate-400">Created: {formatDate(agent.created_at)}</span>}
           </div>
+        </Link>
+        <div className="flex flex-col items-end gap-2">
+          <Button
+            variant={studioLinked ? "outline" : "default"}
+            size="sm"
+            disabled={!ready || pushStudio.isPending}
+            title={!ready ? "Make the worker Ready before pushing it to Studio" : studioLinked ? "Remove from Studio" : "Push to Studio"}
+            onClick={() => pushStudio.mutate()}
+          >
+            {pushStudio.isPending ? "Saving…" : studioLinked ? "In Studio" : "Push to Studio"}
+          </Button>
+          {pushStudio.isError && <span className="text-xs text-red-500">Failed</span>}
         </div>
       </div>
-    </Link>
+    </div>
   );
 }
