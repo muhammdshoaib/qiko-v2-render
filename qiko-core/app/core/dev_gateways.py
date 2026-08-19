@@ -22,6 +22,10 @@ class StubStripeGateway:
                 "hosted_invoice_url": f"https://invoice.stripe.test/{customer_id}",
                 "invoice_pdf": f"https://invoice.stripe.test/{customer_id}/pdf"}
 
+    def list_invoices(self, *, status: str | None = None,
+                      created_after=None) -> list[dict]:
+        return []
+
     def cancel_subscription(self, *, stripe_subscription_id: str) -> None:
         pass
 

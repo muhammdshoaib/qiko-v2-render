@@ -101,6 +101,31 @@ def test_stripe_invoice_create_finalize_and_send():
     assert len(calls) == 4  # invoiceitem, invoice, finalize, send
 
 
+def test_stripe_list_invoices_paginates_and_filters():
+    calls = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append(str(req.url))
+        query = str(req.url.query)
+        # Return two pages to exercise pagination, then stop.
+        if "starting_after" in query:
+            return httpx.Response(200, json={
+                "data": [{"id": "in_3", "customer": "cus_1", "amount_due": 3000,
+                          "status": "open", "currency": "usd"}],
+                "has_more": False})
+        return httpx.Response(200, json={
+            "data": [{"id": "in_1", "customer": "cus_1", "amount_due": 1000,
+                      "status": "open", "currency": "usd"},
+                     {"id": "in_2", "customer": "cus_2", "amount_paid": 2000,
+                      "status": "paid", "currency": "usd"}],
+            "has_more": True})
+
+    c = StripeClient(client=_client("https://api.stripe.com/v1", handler))
+    items = c.list_invoices(status="open")
+    assert len(items) == 3
+    assert all("status=open" in u for u in calls)
+
+
 def test_whatsapp_send_text_meta_shape():
     seen = {}
 

@@ -6,6 +6,8 @@ from configured secrets (loaded via SSM). Live/credentialed integration testing 
 """
 from __future__ import annotations
 
+from datetime import datetime
+
 import httpx
 
 from app.core.config import get_settings
@@ -95,6 +97,28 @@ class StripeClient:
             r.raise_for_status()
             inv = r.json()
         return inv
+
+    def list_invoices(self, *, status: str | None = None,
+                      created_after: datetime | None = None) -> list[dict]:
+        """List Stripe invoices with optional status and created-after filter, paginating automatically."""
+        params: dict[str, str] = {"limit": "100"}
+        if status:
+            params["status"] = status
+        if created_after:
+            params["created[gte]"] = str(int(created_after.timestamp()))
+        items: list[dict] = []
+        while True:
+            r = self._c.get("/invoices", params=params)
+            r.raise_for_status()
+            page = r.json()
+            items.extend(page.get("data", []))
+            if not page.get("has_more"):
+                break
+            last = items[-1].get("id") if items else None
+            if not last:
+                break
+            params["starting_after"] = last
+        return items
 
     def cancel_subscription(self, *, stripe_subscription_id: str) -> None:
         r = self._c.post(f"/subscriptions/{stripe_subscription_id}",

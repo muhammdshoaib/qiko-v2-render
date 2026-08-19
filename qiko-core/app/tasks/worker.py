@@ -8,10 +8,13 @@ scheduler: scan enabled ingestion sources on cadence, and send deadline reminder
 """
 from __future__ import annotations
 
+import asyncio
+
 from arq import cron
 from arq.connections import RedisSettings
 
 from app.core.config import get_settings
+from app.modules.billing.reconciliation import InvoiceReconciliationService
 from app.modules.sales_intelligence import scheduler as sales_scheduler
 from app.tasks import jobs
 
@@ -95,8 +98,18 @@ async def erase_audit_subject(ctx: dict, **kwargs) -> int:  # pragma: no cover -
         store=SqlAuditStore(ctx.get("audit_sessionmaker") or ctx["sessionmaker"]), **kwargs)
 
 
+async def reconcile_invoices(ctx) -> dict:  # pragma: no cover - invoked by the arq cron runtime
+    from app.db.sync_stores import SqlInvoiceStore
+    from app.integrations.clients import StripeClient
+
+    svc = InvoiceReconciliationService(
+        invoices=SqlInvoiceStore(ctx["sync_sessionmaker"]),
+        gateway=StripeClient())
+    return await asyncio.to_thread(svc.reconcile)
+
+
 FUNCTIONS = [ingest_document, process_uploaded_document, send_email, generate_tender_artifacts,
-             erase_audit_subject, generate_slack_digest]
+             erase_audit_subject, generate_slack_digest, reconcile_invoices]
 
 # arq cron is calendar-based (no native "every N minutes" interval). Rather than encode the
 # configured cadence into a minute-set at startup, the scan cron ticks once a minute and the sweep
@@ -144,6 +157,9 @@ CRON_JOBS = [
     # Captured Slack message text is third-party personal data, and a channel whose digest never
     # posts would otherwise keep it forever. Off-peak, once a day.
     cron(purge_slack_messages, name="channels:purge_slack_messages", hour=4, minute=0, unique=True),
+    # Sync open invoices plus the last 24h of new invoices from Stripe so the console never drifts
+    # from the source of truth between webhook deliveries and retries.
+    cron(reconcile_invoices, name="billing:reconcile_invoices", hour=3, minute=0, unique=True),
 ]
 
 

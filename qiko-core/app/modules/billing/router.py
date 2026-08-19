@@ -327,3 +327,10 @@ def create_invoice(request: Request, body: CreateInvoiceBody,
         hosted_invoice_url=inv.get("hosted_invoice_url"), invoice_pdf=inv.get("invoice_pdf"))
     handler.invoices.upsert(stored)
     return asdict(stored)
+
+
+@router.post("/invoices/reconcile")
+def reconcile_invoices_route(request: Request,
+                             _identity=Depends(require_platform_capability(Capability.manage_billing))) -> dict:
+    csrf.require_csrf(request)
+    return request.app.state.invoice_reconciliation.reconcile()

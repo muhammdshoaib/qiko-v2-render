@@ -24,6 +24,13 @@ def test_worker_settings_registers_sales_cron_jobs():
     assert by_name["sales_intel:send_deadline_reminders"].minute == 0
 
 
+def test_worker_settings_registers_invoice_reconciliation_cron():
+    by_name = {c.name: c for c in WorkerSettings.cron_jobs}
+    assert "billing:reconcile_invoices" in by_name
+    assert by_name["billing:reconcile_invoices"].hour == 3
+    assert by_name["billing:reconcile_invoices"].minute == 0
+
+
 def test_get_task_queue_defaults_to_eager():
     assert isinstance(get_task_queue(registry), EagerTaskQueue)
 

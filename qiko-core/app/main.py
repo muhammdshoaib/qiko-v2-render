@@ -74,6 +74,7 @@ from app.modules.rfp.router import router as rfp_router
 from app.modules.rfp.service import PackAnswerService, RequirementService, RfpPackService
 from app.modules.rfp.tree import PackTreeService
 from app.modules.billing.router import router as billing_router
+from app.modules.billing.reconciliation import InvoiceReconciliationService
 from app.modules.billing.subscriptions import SubscriptionService
 from app.modules.billing.webhook import StripeWebhookHandler
 from app.modules.channels.router import router as channels_router
@@ -273,6 +274,8 @@ async def lifespan(app: FastAPI):
             invoices=SqlInvoiceStore(sync_sm), subscriptions=app.state.subscriptions,
             idempotency=SqlIdempotencyGuard(sync_sm, source="stripe"),
             payment_links=app.state.payment_links)
+        app.state.invoice_reconciliation = InvoiceReconciliationService(
+            invoices=app.state.stripe_webhook.invoices, gateway=app.state.subscriptions.gateway)
         app.state.customers = SqlCustomerDirectory(sync_sm)
         # Slack installations survive a redeploy AND are visible to the arq worker process, which
         # is the only way the digest job can resolve a bot token to post with.
@@ -491,6 +494,8 @@ def create_app() -> FastAPI:
     # (from the session's client_reference_id) to its real Stripe customer id and activate.
     app.state.stripe_webhook = StripeWebhookHandler(
         subscriptions=app.state.subscriptions, payment_links=app.state.payment_links)
+    app.state.invoice_reconciliation = InvoiceReconciliationService(
+        invoices=app.state.stripe_webhook.invoices, gateway=app.state.subscriptions.gateway)
     app.state.whatsapp = WhatsAppAdapter(
         WhatsAppClient() if settings.whatsapp_access_token else StubWhatsAppGateway())
     app.state.excel = ExcelService(app.state.knowledge)
