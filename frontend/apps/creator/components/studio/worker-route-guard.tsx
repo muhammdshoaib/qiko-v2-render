@@ -12,6 +12,7 @@ const TYPE_SEGMENTS: Record<string, string | null> = {
   pre_sales_writer: "pre-sales",
   finance: "finance",
   sales_intelligence: "sales-intelligence",
+  intelligence: "intelligence",
 };
 
 export function StudioWorkerRouteGuard({ children }: { children: ReactNode }) {

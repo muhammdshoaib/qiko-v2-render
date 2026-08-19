@@ -20,6 +20,7 @@ const VERTICAL_ROUTES: Record<string, string> = {
   pre_sales_writer: "pre-sales",
   sales_intelligence: "sales-intelligence",
   finance: "finance",
+  intelligence: "intelligence",
 };
 
 const TABS = ["Overview", "Chat", "Research"] as const;

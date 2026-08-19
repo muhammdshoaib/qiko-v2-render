@@ -41,6 +41,8 @@ export function workerTypeLabel(atype?: string | null): string {
       return "Sales Intelligence";
     case "finance":
       return "Financial Analyst";
+    case "intelligence":
+      return "Intelligence Worker";
     default:
       return atype ? toTitleFromSlug(atype) : "AI Worker";
   }

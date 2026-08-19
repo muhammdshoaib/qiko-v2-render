@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import logging
 
+import jwt
 from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.core.config import get_settings
 from app.core.crypto import decrypt, encrypt
 from app.core.deps import (
     authed_tenant, current_claims, get_agents, get_chat, get_slack_oauth,
@@ -20,6 +22,7 @@ from app.modules.agents.service import AgentService
 from app.modules.identity.rbac import Role
 from app.modules.intelligence.catalog import SourceCatalog, UnknownSource
 from app.modules.intelligence.chat import IntelligenceChat
+from app.modules.intelligence.discrepancies import DiscrepancyEngine
 from app.modules.intelligence.ingest import ingest_source
 from app.modules.chat.service import ChatService
 
@@ -43,6 +46,7 @@ class ConnectSourceBody(BaseModel):
 
     token: str = Field(default="")
     repo_allowlist: list[str] = Field(default_factory=list)
+    watched_branches: list[str] = Field(default_factory=list)
     project_keys: list[str] = Field(default_factory=list)
     project_key: str = Field(default="")
     base_url: str = Field(default="")
@@ -66,6 +70,7 @@ _SOURCE_CONFIG = {
         "added": "github_credentials_added",
         "token": "github_token_encrypted",
         "allowlist": "github_repo_allowlist",
+        "watched_branches": "github_watched_branches",
         "label": "GitHub",
     },
     "qiko_track": {
@@ -278,13 +283,14 @@ async def connect_source(
 
     if key == "github":
         if not body.token:
-            raise HTTPException(status_code=422, detail="GitHub token is required")
+            raise HTTPException(status_code=422, detail="GitHub token or installation id is required")
         meta = _SOURCE_CONFIG["github"]
         secret = body.token
         patch = {
             meta["added"]: True,
             meta["token"]: encrypt(secret),
             meta["allowlist"]: body.repo_allowlist,
+            meta["watched_branches"]: body.watched_branches,
         }
     elif key == "qiko_track":
         if not body.token:
@@ -311,20 +317,99 @@ async def connect_source(
     await recheck()
 
     result: dict = {"connected": True}
-    if key == "qiko_track":
+    if key in ("qiko_track", "github"):
         try:
-            ingest_config = {
-                "project_keys": body.project_keys,
-                "base_url": body.base_url,
-            }
+            if key == "qiko_track":
+                ingest_config = {
+                    "project_keys": body.project_keys,
+                    "base_url": body.base_url,
+                }
+            else:
+                ingest_config = {
+                    "repo_allowlist": body.repo_allowlist,
+                    "watched_branches": body.watched_branches,
+                }
             result["ingested"] = await ingest_source(
                 tenant, agent_id, key, ingest_config, secret,
                 catalog=catalog,
                 signal_store=request.app.state.intelligence_signal_store,
                 knowledge=request.app.state.knowledge)
         except Exception as exc:  # noqa: BLE001 - a failed first ingest must not roll back the connection
-            logger.warning("initial qiko_track ingest failed for %s/%s: %s", tenant, agent_id, exc)
+            logger.warning("initial %s ingest failed for %s/%s: %s", key, tenant, agent_id, exc)
     return result
+
+
+@router.get("/agents/{agent_id}/sources/github/install")
+async def github_app_install(
+    agent_id: str, request: Request,
+    tenant: str = Depends(authed_tenant),
+    claims: dict = Depends(current_claims),
+    _role: dict = Depends(require_role(Role.editor)),
+    agents: AgentService = Depends(get_agents),
+) -> dict:
+    """Return the GitHub App installation URL for this worker."""
+    settings = get_settings()
+    if not settings.github_app_slug:
+        raise HTTPException(status_code=503, detail="GitHub App is not configured")
+    _worker, recheck = await _resolve_worker(request, tenant, agent_id)
+    agent = await agents.get(tenant, agent_id)
+    if agent is None:
+        await recheck()
+        raise HTTPException(status_code=404, detail="agent not found")
+    state = jwt.encode(
+        {"tenant": tenant, "agent_id": agent_id, "sub": claims.get("sub")},
+        settings.session_secret,
+        algorithm="HS256",
+    )
+    url = f"https://github.com/apps/{settings.github_app_slug}/installations/new?state={state}"
+    await recheck()
+    return {"url": url}
+
+
+@router.get("/sources/github/callback")
+async def github_app_callback(
+    request: Request,
+    installation_id: str | None = None,
+    setup_action: str = "",
+    state: str = "",
+    tenant: str = Depends(authed_tenant),
+    claims: dict = Depends(current_claims),
+    _role: dict = Depends(require_role(Role.editor)),
+    agents: AgentService = Depends(get_agents),
+) -> dict:
+    """Store a GitHub App installation id after the user installs the app."""
+    settings = get_settings()
+    if not state:
+        raise HTTPException(status_code=422, detail="missing state")
+    try:
+        payload = jwt.decode(state, settings.session_secret, algorithms=["HS256"])
+    except Exception as exc:
+        raise HTTPException(status_code=401, detail="invalid state") from exc
+    if payload.get("tenant") != tenant:
+        raise HTTPException(status_code=403, detail="tenant mismatch")
+    agent_id = payload.get("agent_id")
+    if not agent_id:
+        raise HTTPException(status_code=422, detail="missing agent id")
+    if setup_action != "install" or not installation_id or not installation_id.isdigit():
+        raise HTTPException(status_code=422, detail="missing installation id")
+    agent = await agents.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    meta = _SOURCE_CONFIG["github"]
+    secret = installation_id
+    patch = {
+        meta["added"]: True,
+        meta["token"]: encrypt(secret),
+        meta["allowlist"]: [],
+        meta["watched_branches"]: [],
+    }
+    await agents.update_config(
+        tenant, agent_id, patch,
+        audit=_build_credential_audit(
+            provider="github", secret=secret, encrypted_key=meta["token"],
+            tenant=tenant, agent_id=agent_id, agent_name=agent.name,
+            action=audit_actions.CREDENTIAL_SET, claims=claims, request=request))
+    return {"connected": True}
 
 
 @router.get("/agents/{agent_id}/sources/{key}/connection")
@@ -354,6 +439,7 @@ async def get_source_connection(
             "connected": bool(cfg.get("github_credentials_added") and cfg.get("github_token_encrypted")),
             "token_masked": _mask(plaintext or ""),
             "repo_allowlist": cfg.get("github_repo_allowlist") or [],
+            "watched_branches": cfg.get("github_watched_branches") or [],
         }
     if key == "qiko_track":
         plaintext = _plaintext_of_config(cfg, _SOURCE_CONFIG["qiko_track"]["token"])
@@ -405,7 +491,7 @@ async def disconnect_source(
 
     if key == "github":
         meta = _SOURCE_CONFIG["github"]
-        patch = {meta["added"]: False, meta["token"]: None, meta["allowlist"]: None}
+        patch = {meta["added"]: False, meta["token"]: None, meta["allowlist"]: None, meta["watched_branches"]: None}
     elif key == "qiko_track":
         meta = _SOURCE_CONFIG["qiko_track"]
         patch = {
@@ -460,7 +546,10 @@ async def test_source(
             raise
         connector = catalog.connector_for(key)
         if key == "github":
-            config = {"repo_allowlist": cfg.get(meta.get("allowlist", ""))}
+            config = {
+                "repo_allowlist": cfg.get(meta.get("allowlist", "")) or [],
+                "watched_branches": cfg.get(meta.get("watched_branches", "")) or [],
+            }
         else:
             config = {
                 "project_keys": cfg.get(meta.get("project_keys", "")) or [],
@@ -546,3 +635,17 @@ async def list_slack_channels(
         "watched_channels": cfg.get("slack_watched_channels") or [],
         "channels": [],
     }
+
+
+@router.get("/agents/{agent_id}/discrepancies")
+async def list_discrepancies(
+    agent_id: str, request: Request,
+    tenant: str = Depends(authed_tenant),
+    _claims: dict = Depends(require_role(Role.admin)),
+) -> list[dict]:
+    """Surface claim-vs-evidence discrepancies for this worker. Owner/admin only."""
+    _worker, recheck = await _resolve_worker(request, tenant, agent_id)
+    engine = DiscrepancyEngine(request.app.state.intelligence_signal_store)
+    discrepancies = await engine.analyze(tenant, agent_id)
+    await recheck()
+    return [d.to_dict() for d in discrepancies]

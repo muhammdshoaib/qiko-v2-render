@@ -2732,6 +2732,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/intelligence/agents/{agent_id}/discrepancies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Discrepancies
+         * @description Surface claim-vs-evidence discrepancies for this worker. Owner/admin only.
+         */
+        get: operations["list_discrepancies_api_v1_intelligence_agents__agent_id__discrepancies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/intelligence/agents/{agent_id}/sources": {
         parameters: {
             query?: never;
@@ -2741,6 +2761,26 @@ export interface paths {
         };
         /** List Sources */
         get: operations["list_sources_api_v1_intelligence_agents__agent_id__sources_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/intelligence/agents/{agent_id}/sources/github/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Github App Install
+         * @description Return the GitHub App installation URL for this worker.
+         */
+        get: operations["github_app_install_api_v1_intelligence_agents__agent_id__sources_github_install_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2849,6 +2889,26 @@ export interface paths {
         put?: never;
         /** Verify Source */
         post: operations["verify_source_api_v1_intelligence_agents__agent_id__sources__key__verify_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/intelligence/sources/github/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Github App Callback
+         * @description Store a GitHub App installation id after the user installs the app.
+         */
+        get: operations["github_app_callback_api_v1_intelligence_sources_github_callback_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4968,6 +5028,8 @@ export interface components {
              * @default
              */
             token: string;
+            /** Watched Branches */
+            watched_branches?: string[];
         };
         /** ConsentChoicesBody */
         ConsentChoicesBody: {
@@ -11637,6 +11699,39 @@ export interface operations {
             };
         };
     };
+    list_discrepancies_api_v1_intelligence_agents__agent_id__discrepancies_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_sources_api_v1_intelligence_agents__agent_id__sources_get: {
         parameters: {
             query?: never;
@@ -11657,6 +11752,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    github_app_install_api_v1_intelligence_agents__agent_id__sources_github_install_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */
@@ -11929,6 +12057,41 @@ export interface operations {
                 "application/json": components["schemas"]["VerifySourceBody"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    github_app_callback_api_v1_intelligence_sources_github_callback_get: {
+        parameters: {
+            query?: {
+                installation_id?: string | null;
+                setup_action?: string;
+                state?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

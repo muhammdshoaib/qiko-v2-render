@@ -20,6 +20,8 @@ function groupIconTint(atype: string): string {
       return "border-cyan-500/30 bg-cyan-500/10 text-cyan-400";
     case "finance":
       return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+    case "intelligence":
+      return "border-amber-500/30 bg-amber-500/10 text-amber-400";
     default:
       return "border-violet-500/30 bg-violet-500/10 text-violet-400";
   }
