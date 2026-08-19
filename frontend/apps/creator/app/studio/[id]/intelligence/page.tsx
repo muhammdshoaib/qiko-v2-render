@@ -3,9 +3,10 @@
 import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Bot, Link as LinkIcon, MessageSquare, RefreshCw, SendHorizonal, ShieldAlert } from "lucide-react";
-import { Badge, Button } from "@qiko/ui";
+import { ArrowLeft, Bot, Link as LinkIcon, MessageSquare, RefreshCw, SendHorizonal, ShieldAlert, Database } from "lucide-react";
+import { Badge, Button, cn } from "@qiko/ui";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
+import { SourcesTab } from "@/components/sources-tab";
 import { WorkerAvatar } from "@/components/worker-avatar";
 import {
   askIntelligence, getDiscrepancies, listAgents, listIntelligenceSources, type Discrepancy, type IntelligenceSource,
@@ -37,6 +38,8 @@ export default function IntelligenceWorkerPage() {
     return map;
   }, [discrepancies.data]);
 
+  const [tab, setTab] = useState<"discrepancies" | "chat" | "sources">("discrepancies");
+
   if (agents.isLoading) return <PageSkeleton />;
   if (!worker) return <UnavailableState onBack={() => router.push("/studio")} />;
 
@@ -58,38 +61,69 @@ export default function IntelligenceWorkerPage() {
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-4 p-4 sm:p-6 lg:flex-row">
-        <section className="flex-1 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
-              <ShieldAlert className="size-4 text-amber-400" /> Open discrepancies
-            </h2>
-            <button onClick={() => discrepancies.refetch()} className="text-white/50 hover:text-white">
-              <RefreshCw className="size-4" />
-            </button>
-          </div>
+      <main className="mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6">
+        <div className="mb-4 border-b border-white/[0.08]">
+          <nav className="flex gap-6" aria-label="Intelligence tabs">
+            {([
+              { key: "discrepancies", label: "Discrepancies", icon: ShieldAlert },
+              { key: "chat", label: "Chat", icon: MessageSquare },
+              { key: "sources", label: "Sources", icon: Database },
+            ] as const).map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                className={cn(
+                  "flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium transition-colors",
+                  tab === key
+                    ? "border-primary text-white"
+                    : "border-transparent text-white/50 hover:text-white"
+                )}
+              >
+                <Icon className="size-4" /> {label}
+              </button>
+            ))}
+          </nav>
+        </div>
 
-          {discrepancies.isLoading && <PageSkeleton />}
-          {!discrepancies.isLoading && (discrepancies.data?.length ?? 0) === 0 && (
-            <EmptyState sources={sources.data ?? []} />
-          )}
-
-          {Array.from(byClass.entries()).map(([cls, items]) => (
-            <div key={cls} className="space-y-2">
-              <p className="text-xs font-medium uppercase tracking-wide text-white/40">{cls.replace(/_/g, " ")}</p>
-              {items.map((d, idx) => (
-                <DiscrepancyCard key={`${cls}-${idx}`} discrepancy={d} />
-              ))}
+        {tab === "discrepancies" && (
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+                <ShieldAlert className="size-4 text-amber-400" /> Open discrepancies
+              </h2>
+              <button onClick={() => discrepancies.refetch()} className="text-white/50 hover:text-white">
+                <RefreshCw className="size-4" />
+              </button>
             </div>
-          ))}
-        </section>
+            {discrepancies.isLoading && <PageSkeleton />}
+            {!discrepancies.isLoading && (discrepancies.data?.length ?? 0) === 0 && (
+              <EmptyState sources={sources.data ?? []} />
+            )}
+            {Array.from(byClass.entries()).map(([cls, items]) => (
+              <div key={cls} className="space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-white/40">{cls.replace(/_/g, " ")}</p>
+                {items.map((d, idx) => (
+                  <DiscrepancyCard key={`${cls}-${idx}`} discrepancy={d} />
+                ))}
+              </div>
+            ))}
+          </section>
+        )}
 
-        <section className="flex flex-1 flex-col gap-4 lg:max-w-md">
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
-            <MessageSquare className="size-4 text-primary" /> Ask the worker
-          </h2>
-          <IntelligenceChat agentId={agentId} />
-        </section>
+        {tab === "chat" && (
+          <section className="flex flex-col gap-4 lg:max-w-2xl">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+              <MessageSquare className="size-4 text-primary" /> Ask the worker
+            </h2>
+            <IntelligenceChat agentId={agentId} />
+          </section>
+        )}
+
+        {tab === "sources" && (
+          <section className="text-white">
+            <SourcesTab agentId={agentId} />
+          </section>
+        )}
       </main>
     </div>
   );

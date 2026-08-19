@@ -282,10 +282,12 @@ async def connect_source(
         return result
 
     if key == "github":
-        if not body.token:
-            raise HTTPException(status_code=422, detail="GitHub token or installation id is required")
         meta = _SOURCE_CONFIG["github"]
-        secret = body.token
+        if body.token:
+            secret = body.token
+        else:
+            secret = stored_credential(
+                agent.config or {}, flag=meta["added"], key=meta["token"], label=meta["label"])
         patch = {
             meta["added"]: True,
             meta["token"]: encrypt(secret),
@@ -293,16 +295,21 @@ async def connect_source(
             meta["watched_branches"]: body.watched_branches,
         }
     elif key == "qiko_track":
-        if not body.token:
-            raise HTTPException(status_code=422, detail="Qiko Track token is required")
-        if not body.project_keys:
-            raise HTTPException(status_code=422, detail="at least one project key is required")
         meta = _SOURCE_CONFIG["qiko_track"]
-        secret = body.token
+        if body.token:
+            secret = body.token
+        else:
+            secret = stored_credential(
+                agent.config or {}, flag=meta["added"], key=meta["token"], label=meta["label"])
+        project_keys = body.project_keys
+        if not project_keys:
+            project_keys = agent.config.get(meta["project_keys"]) or [] if agent.config else []
+        if not project_keys:
+            raise HTTPException(status_code=422, detail="at least one project key is required")
         patch = {
             meta["added"]: True,
             meta["token"]: encrypt(secret),
-            meta["project_keys"]: body.project_keys,
+            meta["project_keys"]: project_keys,
             meta["base_url"]: body.base_url,
         }
     else:

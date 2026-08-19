@@ -1235,7 +1235,7 @@ export const clearFinanceHistory = (agentId: string) =>
 // Intelligence Worker sources (Slack capture, GitHub, Qiko Track).
 export type IntelligenceSource = { key: string; name: string; description: string; pollable: boolean; connected: boolean };
 export type IntelligenceSourceConnection =
-  | { key: "github"; connected: boolean; token_masked: string; repo_allowlist: string[] }
+  | { key: "github"; connected: boolean; token_masked: string; repo_allowlist: string[]; watched_branches: string[] }
   | { key: "qiko_track"; connected: boolean; token_masked: string; project_keys: string[]; base_url: string }
   | { key: "slack"; connected: boolean; team_id: string | null; watched_channels: string[]; channels: { id: string; name: string }[] };
 
@@ -1248,6 +1248,9 @@ export const getIntelligenceSource = (agentId: string, sourceKey: string) =>
 export const getIntelligenceSourceConnection = (agentId: string, sourceKey: string) =>
   request<IntelligenceSourceConnection>(`/intelligence/agents/${agentId}/sources/${sourceKey}/connection`);
 
+export const getGitHubAppInstallUrl = (agentId: string) =>
+  request<{ url: string }>(`/intelligence/agents/${agentId}/sources/github/install`);
+
 export const connectIntelligenceSource = (agentId: string, sourceKey: string, body: Record<string, unknown> = {}) =>
   request<{ connected: boolean; url?: string; state?: string }>(`/intelligence/agents/${agentId}/sources/${sourceKey}`, {
     method: "POST", body: JSON.stringify(body),
@@ -1255,6 +1258,10 @@ export const connectIntelligenceSource = (agentId: string, sourceKey: string, bo
 
 export const disconnectIntelligenceSource = (agentId: string, sourceKey: string) =>
   request<{ disconnected: boolean }>(`/intelligence/agents/${agentId}/sources/${sourceKey}`, { method: "DELETE" });
+
+export const verifyIntelligenceSource = (agentId: string, sourceKey: string, body: Record<string, unknown>) =>
+  request<{ ok: boolean; error?: string; team?: string; user?: string; repos?: { full_name: string; private: boolean }[] }>(
+    `/intelligence/agents/${agentId}/sources/${sourceKey}/verify`, { method: "POST", body: JSON.stringify(body) });
 
 export const testIntelligenceSource = (agentId: string, sourceKey: string) =>
   request<{ ok: boolean; error?: string; team?: string; user?: string; repos?: { full_name: string; private: boolean }[] }>(
