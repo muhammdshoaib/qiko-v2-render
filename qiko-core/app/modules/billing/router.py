@@ -18,7 +18,7 @@ from app.core.deps import (
     require_platform_capability,
     require_role,
 )
-from app.modules.billing.subscriptions import CheckoutUnavailableError
+from app.modules.billing.subscriptions import AlreadySubscribedError, CheckoutUnavailableError
 from app.modules.billing.team_billing import team_plan
 from app.modules.billing.webhook import verify_stripe_signature
 from app.modules.audit import registry as audit_actions
@@ -108,7 +108,10 @@ def plans() -> list[dict]:
 
 
 @router.post("/checkout")
-def checkout(body: CheckoutBody, tenant: str = Depends(authed_tenant), subs=Depends(get_subscriptions)) -> dict:
+def checkout(request: Request, body: CheckoutBody, tenant: str = Depends(authed_tenant),
+             subs=Depends(get_subscriptions)) -> dict:
+    # State-changing request from the creator UI: require the double-submit CSRF token.
+    csrf.require_csrf(request)
     # The real Stripe price is resolved server-side from config (client-supplied price_id is ignored
     # for security). When Stripe isn't provisioned for the plan, return a clear 503 instead of a 404
     # or a broken redirect, so the UI can show "checkout unavailable" and a retry.
@@ -116,6 +119,8 @@ def checkout(body: CheckoutBody, tenant: str = Depends(authed_tenant), subs=Depe
         return {"url": subs.start_checkout(tenant, body.plan, promo=body.promo)}
     except CheckoutUnavailableError as e:
         raise HTTPException(status_code=503, detail=str(e)) from e
+    except AlreadySubscribedError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
     except httpx.HTTPError as e:
         raise HTTPException(status_code=502, detail="payment provider error") from e
 

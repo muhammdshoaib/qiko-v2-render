@@ -1,11 +1,17 @@
 import asyncio
 
 from app.core.config import Environment, get_settings
+from app.modules.identity import csrf
 from app.modules.identity.admin_rbac import AdminRole
 from tests.helpers import auth_cookies, bootstrap_admin
 
 C = auth_cookies("bill", "owner")
 ADMIN_EMAIL = "billing-admin" + "@" + "example.com"
+
+
+def _with_csrf(cookies: dict) -> tuple[dict, dict]:
+    token = csrf.generate_csrf_token()
+    return {**cookies, csrf.CSRF_COOKIE: token}, {csrf.CSRF_HEADER: token, "origin": "http://localhost:3000"}
 
 
 def _admin_cookies(client):
@@ -26,7 +32,9 @@ def _platform_viewer_cookies(client):
 
 def test_checkout_and_portal(client):
     # Tenant-scoped: no client-supplied customer id -- the subject is the authed tenant.
-    assert "url" in client.post("/api/v1/billing/checkout", json={"plan": "pro"}, cookies=C).json()
+    cookies, headers = _with_csrf(C)
+    assert "url" in client.post("/api/v1/billing/checkout", json={"plan": "pro"},
+                                cookies=cookies, headers=headers).json()
     assert "url" in client.get("/api/v1/billing/portal", cookies=C).json()
 
 
@@ -38,7 +46,9 @@ def test_paid_activation_disabled_and_checkout_unavailable_outside_dev(client, m
     # Direct activate stays dev-only (404). Checkout no longer 404s: without a configured Stripe price
     # it fails closed with a clear 503 (not a broken redirect) so the UI can show "unavailable".
     assert client.post("/api/v1/billing/subscription/activate", json={"plan": "pro"}, cookies=C).status_code == 404
-    assert client.post("/api/v1/billing/checkout", json={"plan": "pro"}, cookies=C).status_code == 503
+    cookies, headers = _with_csrf(C)
+    assert client.post("/api/v1/billing/checkout", json={"plan": "pro"},
+                       cookies=cookies, headers=headers).status_code == 503
 
 
 def test_checkout_uses_configured_price_outside_dev(client, monkeypatch):
@@ -46,19 +56,31 @@ def test_checkout_uses_configured_price_outside_dev(client, monkeypatch):
     monkeypatch.setattr(settings, "environment", Environment.preprod)
     monkeypatch.setattr(settings, "stripe_price_pro", "price_live_123")  # provisioned in SSM
 
-    res = client.post("/api/v1/billing/checkout", json={"plan": "pro"}, cookies=C)
+    cookies, headers = _with_csrf(C)
+    res = client.post("/api/v1/billing/checkout", json={"plan": "pro"},
+                     cookies=cookies, headers=headers)
     assert res.status_code == 200 and "url" in res.json()
 
     # Price tampering is prevented: a client-supplied price_id is ignored; the server-configured
     # price is used (the stub checkout URL reflects the price it was given).
     tampered = client.post("/api/v1/billing/checkout",
-                           json={"plan": "pro", "price_id": "price_attacker"}, cookies=C)
+                           json={"plan": "pro", "price_id": "price_attacker"},
+                           cookies=cookies, headers=headers)
     assert tampered.status_code == 200
     url = tampered.json()["url"]
     assert "price_live_123" in url and "price_attacker" not in url
 
     # Enterprise is contact-sales: not self-serve checkout even when Stripe is configured.
-    assert client.post("/api/v1/billing/checkout", json={"plan": "enterprise"}, cookies=C).status_code == 503
+    assert client.post("/api/v1/billing/checkout", json={"plan": "enterprise"},
+                       cookies=cookies, headers=headers).status_code == 503
+
+
+def test_checkout_rejects_active_paid_subscription(client):
+    # Activate a paid subscription, then try to start a new checkout for the same tenant.
+    client.post("/api/v1/billing/subscription/activate", json={"plan": "pro"}, cookies=C)
+    cookies, headers = _with_csrf(C)
+    assert client.post("/api/v1/billing/checkout", json={"plan": "pro"},
+                       cookies=cookies, headers=headers).status_code == 409
 
 
 def test_billing_lifecycle_requires_tenant_admin_or_owner(client):

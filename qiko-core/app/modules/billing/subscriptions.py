@@ -23,6 +23,11 @@ class CheckoutUnavailableError(Exception):
     the plan is contact-sales/trial). The router maps this to a clear 503, never a 404 or a redirect."""
 
 
+class AlreadySubscribedError(Exception):
+    """Raised when a tenant that already has an active paid subscription tries to start a new
+    self-serve checkout, which would create duplicate charges. The router maps this to 409."""
+
+
 class StripeGateway(Protocol):
     def create_checkout_session(self, *, customer_id: str, price_id: str, promo: str | None,
                                 client_reference_id: str | None = None, plan: str | None = None) -> str: ...
@@ -104,6 +109,9 @@ class SubscriptionService:
         # Only self-serve plans can be checked out (free is a trial, enterprise is contact-sales).
         if plan_name not in SELF_SERVE_PLANS:
             raise CheckoutUnavailableError(f"plan '{plan_name}' is not available for self-serve checkout")
+        existing = self.status(tenant)
+        if existing is not None and existing.status == "active" and existing.plan != "free":
+            raise AlreadySubscribedError(f"tenant already has an active {existing.plan} subscription")
         # The price is resolved SERVER-SIDE from config, never from client input, so a caller cannot
         # check out against an arbitrary Stripe price. In dev/stub (debug) fall back to a placeholder
         # so the flow is exercisable without real Stripe; in prod an empty price fails closed (503).
