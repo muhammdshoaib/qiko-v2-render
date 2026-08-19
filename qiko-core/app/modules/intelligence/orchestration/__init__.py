@@ -20,6 +20,7 @@ from app.modules.intelligence.orchestration.roles import (
     Specialist,
     Synthesizer,
 )
+from app.modules.intelligence.orchestration.runner import Pipeline, PipelineConfig
 
 __all__ = [
     "ConsolidatedOutput",
@@ -29,6 +30,8 @@ __all__ = [
     "Finding",
     "InMemoryPipelineRunStore",
     "Magistrate",
+    "Pipeline",
+    "PipelineConfig",
     "PipelineRun",
     "PipelineRunStore",
     "Scout",
