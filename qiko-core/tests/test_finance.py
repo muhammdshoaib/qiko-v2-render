@@ -306,6 +306,39 @@ async def test_service_chat_is_grounded_in_analytics_via_stub():
     assert history["history"][0]["role"] == "user"
 
 
+async def test_service_chat_follow_up_sees_the_prior_exchange():
+    # EL-1003: "why do you say that" must resolve against what was actually asked/answered, not
+    # just be persisted for the transcript while the model itself gets no memory of it.
+    svc = FinanceService(provider=StubProvider())
+    await svc.upload("acme", "agent-1", _build_workbook(), filename="p.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    await svc.chat("acme", "agent-1", "Which property has the highest risk score?")
+    follow_up = await svc.chat("acme", "agent-1", "why do you say that")
+    assert "RECENT CONVERSATION" in follow_up["reply"]
+    assert "highest risk score" in follow_up["reply"]
+
+
+async def test_service_chat_includes_vendor_names_for_vendor_questions():
+    # EL-1007: vendor questions used to get no vendor names in CONTEXT at all, so the model
+    # (correctly, per its own system prompt) refused rather than invent one.
+    svc = FinanceService(provider=StubProvider())
+    await svc.upload("acme", "agent-1", _build_workbook(), filename="p.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    result = await svc.chat("acme", "agent-1", "Who is my biggest vendor by spend?")
+    assert "VENDORS" in result["reply"]
+    assert "Acme Maintenance" in result["reply"]
+
+
+async def test_service_chat_includes_unit_level_data_for_unit_questions():
+    # EL-1008: unit-level questions used to get nothing finer-grained than the property row.
+    svc = FinanceService(provider=StubProvider())
+    await svc.upload("acme", "agent-1", _build_workbook(), filename="p.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    result = await svc.chat("acme", "agent-1", "Show me the unit level breakdown for 12 High Street")
+    assert "UNITS" in result["reply"]
+    assert "A001/1" in result["reply"]
+
+
 async def test_service_chat_without_data_does_not_hallucinate():
     svc = FinanceService(provider=StubProvider(canned="SHOULD NOT BE CALLED"))
     result = await svc.chat("acme", "agent-empty", "How much profit did we make?")

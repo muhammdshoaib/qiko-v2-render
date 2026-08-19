@@ -32,6 +32,7 @@ from app.modules.finance.models import (
 from app.modules.finance.parser import ParseError, parse_workbook
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB cap, mirrors the frontend contract + main.py request cap
+_HISTORY_LOOKBACK = 6  # messages (3 exchanges) fed back into the prompt for follow-up questions
 ALLOWED_CONTENT_TYPES = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",  # .xlsx
     "application/octet-stream",  # some browsers/clients send this for a file upload
@@ -173,11 +174,15 @@ class FinanceService:
 
         await recheck()
         analytics = await self.analytics(tenant, agent_id)
+        # Fetch the prior turns before this exchange is stored, so a follow-up ("why do you say
+        # that") can resolve against what was actually asked/answered (EL-1003).
+        prior = await self.chats.list_for_agent(tenant, agent_id, limit=_HISTORY_LOOKBACK)
+        history = [{"role": m.role, "content": m.content} for m in prior]
         # Offload the (synchronous, network-bound) LLM call to a thread so it doesn't block the
         # event loop -- same pattern the rfp router uses for its provider calls.
         try:
             result = await asyncio.to_thread(
-                FinancialAnalystChat(self.provider).answer, message, analytics)
+                FinancialAnalystChat(self.provider).answer, message, analytics, history)
         finally:
             await recheck()
         user = FinanceChatMessage(
