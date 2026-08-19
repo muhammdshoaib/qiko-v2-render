@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timedelta, timezone
+
+import httpx
 
 from fastapi.responses import JSONResponse
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -46,6 +49,7 @@ from app.modules.identity.team_access import ASSIGNABLE_ROLES
 from app.modules.identity.team_access import ROLE_LABELS
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+logger = logging.getLogger(__name__)
 
 
 class AdminSelfOut(BaseModel):
@@ -295,10 +299,18 @@ def overview(request: Request, _tenant: str = Depends(authed_tenant),
 @router.get("/analytics")
 def analytics(request: Request, _tenant: str = Depends(authed_tenant),
               _identity=Depends(require_platform_capability(Capability.view_customers)),
-              start: str = "2026-01-01", end: str = "2026-12-31") -> dict:
+              start: str = "2026-01-01", end: str = "2026-12-31",
+              fallback_start: str = "2020-01-01") -> dict:
     from app.modules.admin.ga4 import GA4Analytics
 
-    return GA4Analytics(request.app.state.ga4).dashboard(start, end)
+    empty = {"sessions": 0, "active_users": 0, "top_pages": [], "had_data": False}
+    try:
+        return GA4Analytics(request.app.state.ga4).dashboard(start, end, fallback_start=fallback_start)
+    except (httpx.HTTPStatusError, httpx.RequestError, ValueError) as exc:
+        logger.warning("admin analytics unavailable: %s", exc)
+    except Exception as exc:
+        logger.exception("admin analytics failed: %s", exc)
+    return empty
 
 
 class TenantDirectoryRow(BaseModel):

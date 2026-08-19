@@ -6408,6 +6408,7 @@ export interface operations {
             query?: {
                 start?: string;
                 end?: string;
+                fallback_start?: string;
             };
             header?: never;
             path?: never;

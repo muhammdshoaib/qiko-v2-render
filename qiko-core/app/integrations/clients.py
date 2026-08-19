@@ -302,10 +302,24 @@ class GA4Client:
                           {"Authorization": f"Bearer {token}"}, client)
 
     def run_report(self, start: str, end: str, metrics: list[str], dimensions: list[str]) -> list[dict]:
+        property_id = (self._property or "").strip()
+        if property_id.startswith("properties/"):
+            property_id = property_id[len("properties/"):]
+        if property_id.startswith("G-"):
+            raise ValueError(
+                f"GA4 property ID {property_id!r} looks like a Measurement ID. "
+                "Use the numeric property ID from Admin > Property details."
+            )
+        if not property_id.isdigit():
+            raise ValueError(
+                f"GA4 property ID {property_id!r} is not a numeric property ID. "
+                "Use the numeric property ID from Admin > Property details."
+            )
+
         body = {"dateRanges": [{"startDate": start, "endDate": end}],
                 "metrics": [{"name": m} for m in metrics],
                 "dimensions": [{"name": d} for d in dimensions]}
-        r = self._c.post(f"/properties/{self._property}:runReport", json=body)
+        r = self._c.post(f"/properties/{property_id}:runReport", json=body)
         r.raise_for_status()
         payload = r.json()
         dim_names = [d["name"] for d in payload.get("dimensionHeaders", [])]
