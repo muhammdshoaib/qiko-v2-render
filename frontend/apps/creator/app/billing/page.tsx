@@ -19,7 +19,7 @@ export default function BillingPage() {
     onSuccess: (res) => { if (res?.url) window.location.href = res.url; },
   });
   const checkout = useMutation({
-    mutationFn: (p: BillingPlan) => startCheckout(p.name, p.price_id),
+    mutationFn: (p: BillingPlan) => startCheckout(p.key, p.price_id),
     onSuccess: (res) => { if (res?.url) window.location.href = res.url; },
   });
 
@@ -78,8 +78,8 @@ export default function BillingPage() {
           ) : (
             <div className="mx-auto mb-12 grid max-w-3xl justify-items-center gap-6 md:grid-cols-2">
               {plans.data?.map((p) => {
-                const isEnterprise = p.name === "Enterprise";
-                const isCurrent = !!currentPlanName && p.name.trim().toLowerCase() === currentPlanName;
+                const isEnterprise = p.key === "enterprise";
+                const isCurrent = !!currentPlanName && p.key === currentPlanName;
                 const checkingOut = checkout.isPending && checkout.variables?.id === p.id;
                 return (
                   <Card key={p.id} className="relative flex h-full w-full max-w-sm flex-col border-white/[0.06] bg-white/[0.015] p-6">
