@@ -13,6 +13,13 @@ from app.modules.knowledge.parsing import extract_text
 from app.modules.knowledge.store import InMemoryVectorStore, VectorStore
 
 
+def _doc_name(sample: Passage | None, doc_id: str) -> str:
+    if sample is None or not sample.text:
+        return doc_id
+    first = next((line.strip() for line in sample.text.splitlines() if line.strip()), "")
+    return first[:120] or doc_id
+
+
 @dataclass
 class KnowledgeService:
     embeddings: EmbeddingsProvider = None  # type: ignore[assignment]
@@ -47,11 +54,13 @@ class KnowledgeService:
         Per-worker listings show only that worker's own documents; the tenant-wide view (no
         agent_id) includes shared/legacy documents as well."""
         counts: dict[str, int] = {}
+        sample: dict[str, Passage] = {}
         for p in await self.store.get(tenant, agent_id):
             if agent_id is not None and p.agent_id is None:
                 continue
             counts[p.doc_id] = counts.get(p.doc_id, 0) + 1
-        return [{"doc_id": d, "chunks": c} for d, c in sorted(counts.items())]
+            sample.setdefault(p.doc_id, p)
+        return [{"doc_id": d, "name": _doc_name(sample.get(d), d), "chunks": c} for d, c in sorted(counts.items())]
 
     async def delete_document(self, tenant: str, doc_id: str, *, agent_id: str | None = None) -> int:
         """Remove a document's vectors (cascade), scoped to one worker when agent_id is given.

@@ -1255,22 +1255,25 @@ function DocumentLibrary({ id, docs, loading, onChange }: { id: string; docs?: D
           <p className="mt-1 max-w-sm text-xs text-slate-500">Add a document from the Add New tab and it will appear here (and in studio Sources).</p>
         </div>
       )}
-      {docs?.map((d) => (
-        <Card key={d.doc_id}><CardContent className="flex items-center justify-between gap-3 py-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <FileText className="size-4 shrink-0 text-muted-foreground" />
-            <span className="truncate text-sm font-medium text-white">{d.doc_id}</span>
-            <Badge variant="muted">{d.chunks} passage{d.chunks === 1 ? "" : "s"}</Badge>
-          </div>
-          <Button variant="ghost" size="icon" aria-label={`Delete ${d.doc_id}`}
-            disabled={remove.isPending && remove.variables === d.doc_id}
-            onClick={() => { if (window.confirm(`Remove "${d.doc_id}" from the knowledge base?`)) remove.mutate(d.doc_id); }}>
-            {remove.isPending && remove.variables === d.doc_id
-              ? <Loader2 className="size-4 animate-spin text-muted-foreground" />
-              : <Trash2 className="size-4 text-muted-foreground" />}
-          </Button>
-        </CardContent></Card>
-      ))}
+      {docs?.map((d) => {
+        const label = d.name || d.doc_id;
+        return (
+          <Card key={d.doc_id}><CardContent className="flex items-center justify-between gap-3 py-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <FileText className="size-4 shrink-0 text-muted-foreground" />
+              <span className="truncate text-sm font-medium text-white">{label}</span>
+              <Badge variant="muted">{d.chunks} passage{d.chunks === 1 ? "" : "s"}</Badge>
+            </div>
+            <Button variant="ghost" size="icon" aria-label={`Delete ${label}`}
+              disabled={remove.isPending && remove.variables === d.doc_id}
+              onClick={() => { if (window.confirm(`Remove "${label}" from the knowledge base?`)) remove.mutate(d.doc_id); }}>
+              {remove.isPending && remove.variables === d.doc_id
+                ? <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                : <Trash2 className="size-4 text-muted-foreground" />}
+            </Button>
+          </CardContent></Card>
+        );
+      })}
     </div>
   );
 }
@@ -1575,19 +1578,22 @@ function KnowledgeTab({ id, docs, loading, onChange }: { id: string; docs?: Doc[
 
       <div className="space-y-2">
         {loading && [0, 1].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
-        {docs?.map((d) => (
-          <Card key={d.doc_id}><CardContent className="flex items-center justify-between py-3">
-            <div className="flex min-w-0 items-center gap-3"><FileText className="size-4 shrink-0 text-muted-foreground" />
-              <span className="truncate text-sm font-medium">{d.doc_id}</span><Badge variant="muted">{d.chunks} passage{d.chunks === 1 ? "" : "s"}</Badge></div>
-            <Button variant="ghost" size="icon" aria-label={`Delete ${d.doc_id}`}
-              disabled={remove.isPending && remove.variables === d.doc_id}
-              onClick={() => { if (window.confirm(`Remove "${d.doc_id}" from the knowledge base?`)) remove.mutate(d.doc_id); }}>
-              {remove.isPending && remove.variables === d.doc_id
-                ? <Loader2 className="size-4 animate-spin text-muted-foreground" />
-                : <Trash2 className="size-4 text-muted-foreground" />}
-            </Button>
-          </CardContent></Card>
-        ))}
+        {docs?.map((d) => {
+          const label = d.name || d.doc_id;
+          return (
+            <Card key={d.doc_id}><CardContent className="flex items-center justify-between py-3">
+              <div className="flex min-w-0 items-center gap-3"><FileText className="size-4 shrink-0 text-muted-foreground" />
+                <span className="truncate text-sm font-medium">{label}</span><Badge variant="muted">{d.chunks} passage{d.chunks === 1 ? "" : "s"}</Badge></div>
+              <Button variant="ghost" size="icon" aria-label={`Delete ${label}`}
+                disabled={remove.isPending && remove.variables === d.doc_id}
+                onClick={() => { if (window.confirm(`Remove "${label}" from the knowledge base?`)) remove.mutate(d.doc_id); }}>
+                {remove.isPending && remove.variables === d.doc_id
+                  ? <Loader2 className="size-4 animate-spin text-muted-foreground" />
+                  : <Trash2 className="size-4 text-muted-foreground" />}
+              </Button>
+            </CardContent></Card>
+          );
+        })}
         {docs?.length === 0 && <p className="py-6 text-center text-sm text-muted-foreground">No documents yet.</p>}
       </div>
     </div>

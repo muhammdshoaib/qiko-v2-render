@@ -244,7 +244,7 @@ export const testTeamsWebhook = (workerId: string) =>
   });
 
 // Knowledge + chat
-export type Doc = { doc_id: string; chunks: number };
+export type Doc = { doc_id: string; name?: string; chunks: number };
 // agentId scopes knowledge to a single worker (QIK-315). Pass the worker id from the worker/studio
 // pages so a worker only ever ingests/lists/deletes/retrieves its own documents.
 export const ingest = (doc_id: string, text: string, agentId?: string) =>

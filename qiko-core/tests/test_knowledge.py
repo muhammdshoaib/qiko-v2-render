@@ -119,6 +119,14 @@ async def test_ingest_and_retrieve_are_agent_scoped():
     assert len(await svc.list_documents("acme")) == 2
 
 
+async def test_list_documents_includes_readable_name():
+    svc = KnowledgeService(store=InMemoryVectorStore())
+    # Source-style documents put a human-readable title on the first line.
+    await svc.ingest("acme", "site", "Company homepage\nhttps://example.com\nDetails here.")
+    docs = await svc.list_documents("acme")
+    assert docs == [{"doc_id": "site", "name": "Company homepage", "chunks": 1}]
+
+
 async def test_delete_is_agent_scoped():
     svc = KnowledgeService(store=InMemoryVectorStore())
     await svc.ingest("acme", "shared-name", ISO, agent_id="a1")
