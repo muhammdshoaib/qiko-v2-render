@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Protocol
 
+from app.modules.billing.payment_links import PaymentLinkService
 from app.modules.billing.subscriptions import Subscription, SubscriptionService
 from app.modules.channels.webhooks import IdempotencyGuard
 
@@ -67,6 +68,7 @@ class StripeWebhookHandler:
     # Optional so the handler stays usable/testable standalone; wired in app.main so the webhook
     # can link tenant<->Stripe-customer and activate the subscription on checkout completion.
     subscriptions: "SubscriptionService | None" = None
+    payment_links: "PaymentLinkService | None" = None
 
     def _subscription_from_event(self, obj: dict) -> "Subscription | None":
         """Build a Subscription object from a Stripe subscription object, or None if unparseable."""
@@ -110,6 +112,15 @@ class StripeWebhookHandler:
                 status=obj.get("status", "open")))
             return "invoice_synced"
         if etype == "checkout.session.completed":
+            # Payment-link checkouts carry the Qiko session id in metadata so we can flip the link
+            # to paid even when there is no client_reference_id (subscription checkouts set that).
+            qiko_session_id = (obj.get("metadata") or {}).get("qiko_session_id") or ""
+            if qiko_session_id and self.payment_links is not None:
+                log = self.payment_links.store.get(qiko_session_id)
+                if log is not None:
+                    self.payment_links.update_status(qiko_session_id, "paid")
+                    return "payment_link_paid"
+                return "payment_link_unknown"
             # We set client_reference_id=tenant when creating the checkout session
             # (subscriptions.start_checkout), so Stripe echoes it back here. That -- never client
             # input -- is the tenant the new Stripe customer belongs to. Stay defensive: any
