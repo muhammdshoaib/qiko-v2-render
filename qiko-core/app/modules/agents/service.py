@@ -19,7 +19,7 @@ from app.modules.audit import service as audit_service
 from app.modules.billing.plans import Plan
 
 
-AGENT_TYPES = {"worker", "pre_sales_writer", "sales_intelligence", "finance"}
+AGENT_TYPES = {"worker", "pre_sales_writer", "sales_intelligence", "finance", "intelligence"}
 AGENT_STATUSES = {"training", "ready"}
 
 

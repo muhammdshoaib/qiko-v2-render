@@ -4,7 +4,7 @@
 // name) in bold white, plus an optional emerald "ready" status dot. Styling only -- no data
 // fetching or behaviour. The per-type lucide icon (workerTypeIcon) is still exported for the
 // workers-list GROUP headers.
-import { Bot, FileText, LineChart, Radar, type LucideIcon } from "lucide-react";
+import { Activity, Bot, FileText, LineChart, Radar, type LucideIcon } from "lucide-react";
 import { cn } from "@qiko/ui";
 
 // Per-vertical icon, keyed off Agent.atype. Unknown/legacy types get the generic Bot. Used for the
@@ -17,6 +17,8 @@ export function workerTypeIcon(atype?: string | null): LucideIcon {
       return Radar;
     case "finance":
       return LineChart;
+    case "intelligence":
+      return Activity;
     default:
       return Bot;
   }

@@ -167,7 +167,7 @@ export type AgentUsage = { used_count: number; worker_limit: number };
 export const listAgents = async () =>
   (await request<Agent[]>("/agents")).filter((agent) => agent.enabled !== false);
 export const getAgentUsage = () => request<AgentUsage>("/agents/usage");
-export const createAgent = (name: string, atype: "worker" | "pre_sales_writer" | "sales_intelligence" | "finance" = "worker") =>
+export const createAgent = (name: string, atype: "worker" | "pre_sales_writer" | "sales_intelligence" | "finance" | "intelligence" = "worker") =>
   request<Agent>("/agents", { method: "POST", body: JSON.stringify({ name, atype }) });
 export const markReady = (id: string) => request<Agent>(`/agents/${id}/ready`, { method: "POST" });
 export const updateAgentConfig = (id: string, patch: Record<string, unknown>) =>
@@ -263,6 +263,30 @@ export const ask = (conversation_id: string, question: string, agent_id: string)
     method: "POST",
     body: JSON.stringify({ conversation_id, question, agent_id }),
   });
+
+// Intelligence Worker
+export type IntelligenceReply = {
+  reply: string;
+  intent: string;
+  conversation_id: string;
+  sources: string[];
+  passages_used: number;
+};
+export const askIntelligence = (conversation_id: string, question: string, agent_id: string) =>
+  request<IntelligenceReply>(`/intelligence/agents/${encodeURIComponent(agent_id)}/chat/ask`, {
+    method: "POST",
+    body: JSON.stringify({ conversation_id, question }),
+  });
+export type Discrepancy = {
+  class: string;
+  ref: string | null;
+  title: string;
+  summary: string;
+  claimed_at: string | null;
+  evidence_at: string | null;
+  sources: { source: string; external_id: string; url: string | null; actor: string; occurred_at: string | null }[];
+};
+export const getDiscrepancies = (agentId: string) => request<Discrepancy[]>(`/intelligence/agents/${encodeURIComponent(agentId)}/discrepancies`);
 
 // Grounded batch answering (confidence + citations + human-review gate) + xlsx export
 export type BatchAnswer = { id: string; question: string; answer: string; confidence: number; decision: string; citations: string[] };
