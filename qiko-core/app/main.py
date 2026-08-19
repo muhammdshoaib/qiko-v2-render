@@ -426,7 +426,9 @@ def create_app() -> FastAPI:
                                     "/api/v1/auth/reset-password", "/api/v1/consent",
                                     # unauthenticated and sends mail to a human inbox: 120/min/IP
                                     # was enough to flood it and burn sending reputation.
-                                    "/api/v1/marketing/labs-contact"))
+                                    "/api/v1/marketing/labs-contact",
+                                    # money endpoint: a dedicated tighter per-IP budget stops abuse.
+                                    "/api/v1/billing/checkout"))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_allow_origins,
