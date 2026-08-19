@@ -62,6 +62,16 @@ class StripeClient:
         r.raise_for_status()
         return r.json()["url"]
 
+    def cancel_subscription(self, *, stripe_subscription_id: str) -> None:
+        r = self._c.post(f"/subscriptions/{stripe_subscription_id}",
+                         data={"cancel_at_period_end": "true"})
+        r.raise_for_status()
+
+    def resume_subscription(self, *, stripe_subscription_id: str) -> None:
+        r = self._c.post(f"/subscriptions/{stripe_subscription_id}",
+                         data={"cancel_at_period_end": "false"})
+        r.raise_for_status()
+
 
 class WhatsAppClient:
     """Implements WhatsAppGateway via the Meta Graph API."""

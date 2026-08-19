@@ -15,6 +15,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.db.base import Base
 from app.db.sync_stores import (
+    SqlIdempotencyGuard,
     SqlInvoiceStore,
     SqlPaymentLinkStore,
     SqlSubscriptionStore,
@@ -26,11 +27,21 @@ from app.modules.email.sender import ConsoleEmailSender
 
 
 class _FakeStripe:
+    def __init__(self):
+        self.canceled: list[str] = []
+        self.resumed: list[str] = []
+
     def create_checkout_session(self, *, customer_id, price_id, promo, client_reference_id=None, plan=None):
         return f"https://checkout.stripe/{customer_id}/{price_id}"
 
     def billing_portal_url(self, *, customer_id):
         return f"https://portal.stripe/{customer_id}"
+
+    def cancel_subscription(self, *, stripe_subscription_id):
+        self.canceled.append(stripe_subscription_id)
+
+    def resume_subscription(self, *, stripe_subscription_id):
+        self.resumed.append(stripe_subscription_id)
 
 
 class _FakeLinkGateway:
@@ -164,3 +175,95 @@ def test_payment_link_update_rejects_invalid_status(tmp_path, bad_status):
     log = svc.create("c@x.com", 1000)
     with pytest.raises(ValueError):
         svc.update_status(log.session_id, bad_status)
+
+
+def test_webhook_idempotency_is_durable_across_restart(tmp_path):
+    path = tmp_path / "idemp.db"
+    sm1, e1 = _sessionmaker(path)
+    guard1 = SqlIdempotencyGuard(sm1, source="stripe")
+    assert guard1.is_duplicate("evt_1") is False
+    assert guard1.is_duplicate("evt_1") is True
+    e1.dispose()
+
+    guard2 = SqlIdempotencyGuard(_reopen(path), source="stripe")
+    assert guard2.is_duplicate("evt_1") is True
+    assert guard2.is_duplicate("evt_2") is False
+
+
+def test_customer_subscription_event_syncs_stripe_id_and_period(tmp_path):
+    path = tmp_path / "sub_evt.db"
+    sm, _ = _sessionmaker(path)
+    subs = SubscriptionService(_FakeStripe(), store=SqlSubscriptionStore(sm))
+    subs.link_customer("acme", "cus_123")
+
+    handler = StripeWebhookHandler(
+        invoices=SqlInvoiceStore(sm), subscriptions=subs,
+        idempotency=SqlIdempotencyGuard(sm, source="stripe"))
+
+    assert handler.handle({"id": "evt_sub_1", "type": "customer.subscription.created",
+                           "data": {"object": {
+                               "id": "sub_1", "customer": "cus_123",
+                               "status": "active", "cancel_at_period_end": False,
+                               "current_period_end": 1759000000,
+                               "metadata": {"plan": "pro"}}}}) == "subscription_synced"
+    sub = SqlSubscriptionStore(sm).get("acme")
+    assert sub.stripe_subscription_id == "sub_1"
+    assert sub.current_period_end is not None
+    assert sub.plan == "pro"
+    assert sub.status == "active"
+
+    # Updating Stripe-side cancel-at-period-end is reflected.
+    assert handler.handle({"id": "evt_sub_2", "type": "customer.subscription.updated",
+                           "data": {"object": {
+                               "id": "sub_1", "customer": "cus_123",
+                               "status": "active", "cancel_at_period_end": True,
+                               "current_period_end": 1759000000,
+                               "metadata": {}}}}) == "subscription_synced"
+    assert SqlSubscriptionStore(sm).get("acme").cancel_at_period_end is True
+
+    # Deleted subscription flips status locally.
+    assert handler.handle({"id": "evt_sub_3", "type": "customer.subscription.deleted",
+                           "data": {"object": {
+                               "id": "sub_1", "customer": "cus_123",
+                               "status": "canceled", "cancel_at_period_end": False,
+                               "current_period_end": None}}}) == "subscription_deleted"
+    assert SqlSubscriptionStore(sm).get("acme").status == "canceled"
+
+
+def test_cancel_and_resume_call_stripe_when_subscription_id_known(tmp_path):
+    path = tmp_path / "call.db"
+    sm, _ = _sessionmaker(path)
+    gateway = _FakeStripe()
+    subs = SubscriptionService(gateway, store=SqlSubscriptionStore(sm))
+    subs.link_customer("acme", "cus_123")
+    subs.activate("acme", "pro")
+    # Simulate a Stripe subscription id arriving via webhook.
+    sub = subs.status("acme")
+    sub.stripe_subscription_id = "sub_42"
+    subs.store.put(sub)
+
+    subs.cancel("acme")
+    assert gateway.canceled == ["sub_42"]
+    assert SqlSubscriptionStore(sm).get("acme").cancel_at_period_end is True
+
+    subs.resume("acme")
+    assert gateway.resumed == ["sub_42"]
+    assert SqlSubscriptionStore(sm).get("acme").cancel_at_period_end is False
+
+
+def test_migration_0043_creates_webhook_events_table(tmp_path):
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+    from sqlalchemy import inspect
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'm.db'}")
+    path = (Path(__file__).resolve().parent.parent / "alembic" / "versions"
+            / "0044_webhook_idempotency.py")
+    spec = importlib.util.spec_from_file_location("mig_0044", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    with engine.begin() as conn:
+        ctx = MigrationContext.configure(conn)
+        with Operations.context(ctx):
+            mod.upgrade()
+    assert "webhook_events" in inspect(engine).get_table_names()

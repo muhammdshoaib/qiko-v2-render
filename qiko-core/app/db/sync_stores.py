@@ -17,6 +17,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db.models import AdminCustomerFlag as FlagRow
@@ -28,6 +29,7 @@ from app.db.models import BillingSubscription as SubscriptionRow
 from app.db.models import SlackInstallation as SlackInstallationRow
 from app.db.models import Tenant as TenantRow
 from app.db.models import User as UserRow
+from app.db.models import WebhookEvent as WebhookEventRow
 from app.core.crypto import decrypt, encrypt
 from app.modules.admin.customers import CustomerRecord
 from app.modules.channels.slack_oauth import SlackInstallation
@@ -42,8 +44,12 @@ _OWNER_ROLES = {"owner", "admin"}
 
 
 def _subscription_from_row(r: SubscriptionRow) -> Subscription:
-    return Subscription(customer_id=r.subject, plan=r.plan, status=r.status,
-                        cancel_at_period_end=r.cancel_at_period_end)
+    return Subscription(
+        customer_id=r.subject, plan=r.plan, status=r.status,
+        cancel_at_period_end=r.cancel_at_period_end,
+        stripe_subscription_id=r.stripe_subscription_id,
+        current_period_end=r.current_period_end,
+    )
 
 
 @dataclass
@@ -62,12 +68,20 @@ class SqlSubscriptionStore:
         with self.sessionmaker() as s, s.begin():
             row = s.get(SubscriptionRow, sub.customer_id)
             if row is None:
-                s.add(SubscriptionRow(subject=sub.customer_id, plan=sub.plan, status=sub.status,
-                                      cancel_at_period_end=sub.cancel_at_period_end))
+                s.add(SubscriptionRow(
+                    subject=sub.customer_id, plan=sub.plan, status=sub.status,
+                    cancel_at_period_end=sub.cancel_at_period_end,
+                    stripe_subscription_id=sub.stripe_subscription_id,
+                    current_period_end=sub.current_period_end,
+                ))
             else:
                 row.plan = sub.plan
                 row.status = sub.status
                 row.cancel_at_period_end = sub.cancel_at_period_end
+                if sub.stripe_subscription_id is not None:
+                    row.stripe_subscription_id = sub.stripe_subscription_id
+                if sub.current_period_end is not None:
+                    row.current_period_end = sub.current_period_end
 
     def all(self) -> list[Subscription]:
         with self.sessionmaker() as s:
@@ -86,6 +100,32 @@ class SqlSubscriptionStore:
                 s.add(StripeCustomerRow(tenant_id=tenant, stripe_customer_id=stripe_customer_id))
             else:
                 row.stripe_customer_id = stripe_customer_id
+
+    def get_tenant_by_customer(self, stripe_customer_id: str) -> str | None:
+        with self.sessionmaker() as s:
+            row = s.execute(
+                select(StripeCustomerRow.tenant_id).where(
+                    StripeCustomerRow.stripe_customer_id == stripe_customer_id)
+            ).scalar_one_or_none()
+            return row
+
+
+@dataclass
+class SqlIdempotencyGuard:
+    """Durable, cross-process duplicate webhook event idempotency.
+
+    Uses a composite primary key (source, event_id) so concurrent deliveries race to INSERT and
+    only one wins; the loser is reported as a duplicate."""
+    sessionmaker: sessionmaker[Session]
+    source: str = "webhook"
+
+    def is_duplicate(self, event_id: str) -> bool:
+        try:
+            with self.sessionmaker() as s, s.begin():
+                s.add(WebhookEventRow(source=self.source, event_id=event_id))
+                return False
+        except IntegrityError:
+            return True
 
 
 def _invoice_from_row(r: InvoiceRow) -> Invoice:
