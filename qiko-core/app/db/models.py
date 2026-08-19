@@ -837,6 +837,30 @@ class IntelligenceDocument(Base):
     )
 
 
+class IntelligencePipelineRun(Base):
+    """A single orchestrated agentic pipeline run for the Intelligence Worker.
+
+    Stages write their progress into `status` so a poller can observe the run without
+    re-executing it. Cost and verdict are recorded when the magistrate stage finishes.
+    """
+    __tablename__ = "intelligence_pipeline_runs"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    agent_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    subject: Mapped[str] = mapped_column(String(512), nullable=False)
+    facets: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    cost: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "agent_id", "run_id", name="uq_intelligence_pipeline_run"),
+        Index("ix_intelligence_pipeline_runs_worker", "tenant_id", "agent_id", "updated_at"),
+    )
+
+
 class SlackChannelMessage(Base):
     """One captured Slack message for the AI heads-up assistant (app.modules.channels.slack_events)."""
     __tablename__ = "slack_channel_messages"

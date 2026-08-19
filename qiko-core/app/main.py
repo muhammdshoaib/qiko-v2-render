@@ -162,6 +162,7 @@ async def lifespan(app: FastAPI):
             SqlAuditStore,
             SqlCostCapStore,
             SqlDocumentStore,
+            SqlPipelineRunStore,
             SqlUsageStore,
             SqlUserStore,
             SqlVectorStore,
@@ -233,6 +234,7 @@ async def lifespan(app: FastAPI):
             app.state.slack_digest_scheduler.message_store = app.state.slack_messages
         app.state.intelligence_signal_store = SqlSignalStore(sm)
         app.state.intelligence_document_store = SqlDocumentStore(sm)
+        app.state.pipeline_run_store = SqlPipelineRunStore(sm)
         app.state.document_service = DocumentService_(
             document_store=app.state.intelligence_document_store,
             knowledge=app.state.knowledge,
@@ -514,7 +516,9 @@ def create_app() -> FastAPI:
     app.state.slack_messages.knowledge = app.state.knowledge
     app.state.intelligence_signal_store = InMemorySignalStore()
     from app.modules.intelligence.documents import DocumentService as DocumentService_, InMemoryDocumentStore
+    from app.modules.intelligence.orchestration import InMemoryPipelineRunStore
     app.state.intelligence_document_store = InMemoryDocumentStore()
+    app.state.pipeline_run_store = InMemoryPipelineRunStore()
     # file_generator is built below; document_service is wired after it.
     app.state.intelligence_catalog = _build_intelligence_catalog()
     # S3 when configured, the dev dict otherwise. The guard in assert_secrets_set means a non-dev

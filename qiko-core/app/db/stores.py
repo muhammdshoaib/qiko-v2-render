@@ -59,6 +59,7 @@ from app.modules.channels.slack_store import (
 )
 from app.modules.intelligence.documents import Document, DocumentNotFound
 from app.modules.intelligence.models import DEFAULT_SIGNAL_LIMIT, Signal
+from app.modules.intelligence.orchestration import PipelineRun
 from app.db.models import SalesIntelActivityLog as SalesIntelActivityLogRow
 from app.db.models import SalesIntelIngestionSource as SalesIntelIngestionSourceRow
 from app.db.models import SalesIntelOpportunity as SalesIntelOpportunityRow
@@ -71,6 +72,7 @@ from app.db.models import TeamsWebhook as TeamsWebhookRow
 from app.db.models import User as UserRow
 from app.db.models import VerifiedAnswer
 from app.db.models import IntelligenceDocument as IntelligenceDocumentRow
+from app.db.models import IntelligencePipelineRun as IntelligencePipelineRunRow
 from app.db.models import IntelligenceSignal as IntelligenceSignalRow
 from app.modules.agents.service import (
     Agent,
@@ -3021,3 +3023,78 @@ class SqlDocumentStore:
                     IntelligenceDocumentRow.agent_id == agent_id,
                     IntelligenceDocumentRow.doc_id == doc_id))
             return (result.rowcount or 0) > 0
+
+
+@dataclass
+class SqlPipelineRunStore:
+    """Postgres-backed pipeline run metadata for the Intelligence Worker."""
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    @staticmethod
+    def _to_domain(row: IntelligencePipelineRunRow) -> PipelineRun:
+        return PipelineRun(
+            run_id=row.run_id,
+            tenant=row.tenant_id,
+            agent_id=row.agent_id,
+            subject=row.subject,
+            facets=list(row.facets or []),
+            status=row.status,
+            verdict=row.verdict,
+            cost=row.cost,
+            created_at=_as_utc(row.created_at),
+            updated_at=_as_utc(row.updated_at),
+        )
+
+    @staticmethod
+    def _row(run: PipelineRun) -> IntelligencePipelineRunRow:
+        return IntelligencePipelineRunRow(
+            run_id=run.run_id,
+            tenant_id=run.tenant,
+            agent_id=run.agent_id,
+            subject=run.subject,
+            facets=list(run.facets or []),
+            status=run.status,
+            verdict=run.verdict,
+            cost=run.cost,
+            created_at=run.created_at,
+            updated_at=run.updated_at,
+        )
+
+    async def add(self, run: PipelineRun) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(self._row(run))
+
+    async def get(self, tenant: str, agent_id: str, run_id: str) -> PipelineRun | None:
+        async with self.sessionmaker() as s:
+            row = (await s.execute(
+                select(IntelligencePipelineRunRow).where(
+                    IntelligencePipelineRunRow.tenant_id == tenant,
+                    IntelligencePipelineRunRow.agent_id == agent_id,
+                    IntelligencePipelineRunRow.run_id == run_id))).scalar_one_or_none()
+            return self._to_domain(row) if row else None
+
+    async def list(self, tenant: str, agent_id: str) -> list[PipelineRun]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(IntelligencePipelineRunRow).where(
+                    IntelligencePipelineRunRow.tenant_id == tenant,
+                    IntelligencePipelineRunRow.agent_id == agent_id)
+                .order_by(IntelligencePipelineRunRow.updated_at.desc()))).scalars().all()
+            return [self._to_domain(r) for r in rows]
+
+    async def update(self, run: PipelineRun) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            existing = (await s.execute(
+                select(IntelligencePipelineRunRow).where(
+                    IntelligencePipelineRunRow.tenant_id == run.tenant,
+                    IntelligencePipelineRunRow.agent_id == run.agent_id,
+                    IntelligencePipelineRunRow.run_id == run.run_id))).scalar_one_or_none()
+            if existing is None:
+                raise KeyError(run.run_id)
+            existing.subject = run.subject
+            existing.facets = list(run.facets or [])
+            existing.status = run.status
+            existing.verdict = run.verdict
+            existing.cost = run.cost
+            existing.updated_at = run.updated_at or datetime.now(timezone.utc)

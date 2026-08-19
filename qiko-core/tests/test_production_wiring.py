@@ -32,6 +32,7 @@ DURABLE_STORES = (
     # worker could never resolve a bot token and the digest was undeliverable in production.
     "slack_messages", "slack_oauth",
     "intelligence_signal_store", "intelligence_document_store",
+    "pipeline_run_store",
 )
 
 # Known, deliberate exceptions with a recorded reason. Shrinking this list is the goal.
