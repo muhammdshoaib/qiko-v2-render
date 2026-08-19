@@ -296,3 +296,15 @@ def test_create_invoice_rejects_tenant_without_stripe_customer(client):
                       json={"customer_id": "unknown_tenant", "amount_cents": 1000},
                       cookies=admin_cookies, headers=headers)
     assert res.status_code == 400
+
+
+def test_reconcile_invoices_endpoint_requires_manage_billing_and_csrf(client):
+    assert client.post("/api/v1/billing/invoices/reconcile", cookies=C).status_code == 403
+
+    admin = _admin_cookies(client)
+    assert client.post("/api/v1/billing/invoices/reconcile", cookies=admin).status_code == 403  # CSRF
+
+    cookies, headers = _with_csrf(admin)
+    res = client.post("/api/v1/billing/invoices/reconcile", cookies=cookies, headers=headers)
+    assert res.status_code == 200
+    assert res.json() == {"open": 0, "recent": 0}

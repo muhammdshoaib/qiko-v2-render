@@ -46,6 +46,26 @@ class Invoice:
     period_start: datetime | None = None
     period_end: datetime | None = None
 
+    @classmethod
+    def from_stripe_object(cls, obj: dict) -> "Invoice":
+        """Build an Invoice from a Stripe invoice object (webhook payload or list API row)."""
+        def _ts(name: str) -> datetime | None:
+            ts = obj.get(name)
+            return datetime.fromtimestamp(int(ts), tz=timezone.utc) if ts else None
+        amount = (obj.get("amount_paid") if obj.get("status") == "paid"
+                  else obj.get("amount_due")) or 0
+        return cls(
+            stripe_invoice_id=obj.get("id", ""),
+            customer_id=obj.get("customer") or "",
+            amount_cents=int(amount or 0),
+            status=obj.get("status", "open"),
+            currency=obj.get("currency"),
+            number=obj.get("number"),
+            hosted_invoice_url=obj.get("hosted_invoice_url"),
+            invoice_pdf=obj.get("invoice_pdf"),
+            period_start=_ts("period_start"),
+            period_end=_ts("period_end"))
+
 
 @dataclass
 class InvoiceStore:
@@ -111,25 +131,7 @@ class StripeWebhookHandler:
         etype = event.get("type", "")
         obj = event.get("data", {}).get("object", {})
         if etype.startswith("invoice."):
-            period_start = None
-            ts = obj.get("period_start")
-            if ts:
-                period_start = datetime.fromtimestamp(int(ts), tz=timezone.utc)
-            period_end = None
-            ts = obj.get("period_end")
-            if ts:
-                period_end = datetime.fromtimestamp(int(ts), tz=timezone.utc)
-            self.invoices.upsert(Invoice(
-                stripe_invoice_id=obj.get("id", ""),
-                customer_id=obj.get("customer", ""),
-                amount_cents=int(obj.get("amount_paid", obj.get("amount_due", 0)) or 0),
-                status=obj.get("status", "open"),
-                currency=obj.get("currency"),
-                number=obj.get("number"),
-                hosted_invoice_url=obj.get("hosted_invoice_url"),
-                invoice_pdf=obj.get("invoice_pdf"),
-                period_start=period_start,
-                period_end=period_end))
+            self.invoices.upsert(Invoice.from_stripe_object(obj))
             return "invoice_synced"
         if etype == "checkout.session.completed":
             # Payment-link checkouts carry the Qiko session id in metadata so we can flip the link

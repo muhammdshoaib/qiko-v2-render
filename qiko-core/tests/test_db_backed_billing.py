@@ -351,3 +351,37 @@ def test_migration_0045_adds_invoice_columns(tmp_path):
     cols = {c["name"] for c in inspect(engine).get_columns("billing_invoices")}
     assert {"currency", "number", "hosted_invoice_url", "invoice_pdf",
             "period_start", "period_end"} <= cols
+
+
+def test_invoice_reconciliation_service_upserts_paid_and_open(tmp_path):
+    from app.modules.billing.reconciliation import InvoiceReconciliationService
+    from app.modules.billing.webhook import InvoiceStore
+
+    class _FakeGateway:
+        def list_invoices(self, *, status=None, created_after=None):
+            if status == "open":
+                return [{"id": "in_open", "customer": "cus_1", "amount_due": 5000,
+                         "status": "open", "currency": "usd"}]
+            return [{"id": "in_paid", "customer": "cus_2", "amount_paid": 10000,
+                     "status": "paid", "currency": "usd"}]
+
+    store = InvoiceStore()
+    svc = InvoiceReconciliationService(invoices=store, gateway=_FakeGateway())
+    result = svc.reconcile()
+    assert result == {"open": 1, "recent": 1}
+    assert store.get("in_open").amount_cents == 5000
+    assert store.get("in_paid").amount_cents == 10000
+
+
+def test_invoice_from_stripe_object_uses_amount_due_when_not_paid():
+    inv = Invoice.from_stripe_object({
+        "id": "in_1", "customer": "cus_1", "amount_due": 2500,
+        "amount_paid": 0, "status": "open", "currency": "usd"})
+    assert inv.amount_cents == 2500
+
+
+def test_invoice_from_stripe_object_uses_amount_paid_when_paid():
+    inv = Invoice.from_stripe_object({
+        "id": "in_1", "customer": "cus_1", "amount_due": 2500,
+        "amount_paid": 2500, "status": "paid", "currency": "usd"})
+    assert inv.amount_cents == 2500
