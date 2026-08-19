@@ -69,6 +69,8 @@ export const logout = () => request("/auth/logout", { method: "POST" });
 export const authMe = () => request<{ user: { id: string; email: string; role: string; twofa_enabled: boolean } }>("/auth/me");
 export const forgotPassword = (email: string) =>
   request("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) });
+export const resetPassword = (email: string, otp: string, new_password: string) =>
+  request("/auth/reset-password", { method: "POST", body: JSON.stringify({ email, otp, new_password }) });
 
 /** A sort the SERVER understands. The key is validated against a per-endpoint allowlist and an unknown
  *  one is a 422, not a silent fallback, so this type exists to keep the client honest about which keys
