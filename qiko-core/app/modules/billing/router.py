@@ -96,7 +96,9 @@ def plans() -> list[dict]:
     for i, p in enumerate(list_plans(), start=1):
         is_custom = p.price_cents < 0
         out.append({
-            "id": i, "name": p.display_name, "price_id": f"price_{p.name}",
+            "key": p.name,
+            "id": i, "name": p.display_name, "display_name": p.display_name,
+            "price_id": f"price_{p.name}",
             "amount": 0 if is_custom else p.price_cents, "interval": "month",
             "display_price": "Custom Pricing" if is_custom else f"${p.price_cents // 100}",
             "worker_limit": p.worker_limit,

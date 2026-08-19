@@ -19,8 +19,10 @@ async function req<T = unknown>(path: string, opts: RequestInit = {}): Promise<T
 }
 
 export interface SubscriptionPlan {
+  key: string;
   id: number;
   name: string;
+  display_name: string;
   price_id: string;
   amount: number;
   display_price?: string | number;

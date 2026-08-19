@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { toast } from "sonner";
 import { buildOnboardingWorkerDraft } from "@/lib/onboarding-worker";
+import { startCheckout } from "@/lib/api";
 import {
   ArrowRight,
   ArrowLeft,
@@ -278,6 +279,7 @@ export default function Onboarding() {
   });
   const [accountFieldErrors, setAccountFieldErrors] = useState<AccountFieldErrors>({});
   const [selectedPlan, setSelectedPlan] = useState<SubscriptionType | null>(null);
+  const [selectedPlanDetails, setSelectedPlanDetails] = useState<SubscriptionPlan | null>(null);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     tone: false,
     background: false,
@@ -384,8 +386,9 @@ export default function Onboarding() {
     setStep((prev) => Math.max(prev - 1, 1));
   }
 
-  const handleSelectPlan = async (plan: SubscriptionType) => {
+  const handleSelectPlan = async (plan: SubscriptionType, planDetails: SubscriptionPlan) => {
     setSelectedPlan(plan);
+    setSelectedPlanDetails(planDetails);
 
     // Wait for the session to resolve before deciding; otherwise an already authenticated user could
     // be wrongly sent to the email/password step while GET /auth/me is still in flight (QIK-305).
@@ -508,6 +511,18 @@ export default function Onboarding() {
         privacy_release_id: PRIVACY_RELEASE_ID,
         cookies_release_id: COOKIES_RELEASE_ID,
       });
+      if (selectedPlanDetails && selectedPlanDetails.key && selectedPlanDetails.price_id && selectedPlanDetails.amount > 0) {
+        try {
+          const checkout = await startCheckout(selectedPlanDetails.key, selectedPlanDetails.price_id);
+          if (checkout?.url) {
+            window.location.href = checkout.url;
+            return;
+          }
+        } catch (checkoutErr) {
+          const msg = checkoutErr instanceof Error ? checkoutErr.message : "Checkout unavailable";
+          toast.error(`${msg}. You can complete payment from Billing after verifying your email.`);
+        }
+      }
       setLocation(`/verify-email?email=${encodeURIComponent(account.email)}`);
       return;
     } catch (err: unknown) {
@@ -1074,6 +1089,7 @@ export default function Onboarding() {
             setAccount={setAccount}
             accountFieldErrors={accountFieldErrors}
             selectedPlan={selectedPlan}
+            selectedPlanDetails={selectedPlanDetails}
             isSubmitting={isSubmitting}
             handleCreateAccount={handleCreateAccount}
             handleBack={handleBack}
@@ -1113,6 +1129,41 @@ export default function Onboarding() {
 
 // ─── Sub-components ───────────────────────────────────────────────────
 
+function Step6PlanSummary({
+  selectedPlan,
+  selectedPlanDetails,
+}: {
+  selectedPlan: SubscriptionType;
+  selectedPlanDetails: SubscriptionPlan | null;
+}) {
+  const fallbackName = selectedPlan === "gpt_wrapper" ? "Basic AI Model" : "Premium";
+  const fallbackPrice = selectedPlan === "gpt_wrapper" ? "$20/month" : "$49/month";
+
+  const name = selectedPlanDetails?.name || fallbackName;
+  const amount = selectedPlanDetails?.amount;
+  const display = typeof selectedPlanDetails?.display_price === "string" ? selectedPlanDetails.display_price.trim() : "";
+  const price = display
+    ? (display === "Custom Pricing" ? display : `${display}/month`)
+    : typeof amount === "number" && Number.isFinite(amount) && amount > 0
+      ? `$${(amount / 100).toFixed(amount % 100 === 0 ? 0 : 2)}/month`
+      : fallbackPrice;
+
+  const isCustomModel = selectedPlan === "custom_model";
+  const isPremium = selectedPlan === "premium";
+  return (
+    <div className="p-4 rounded-xl bg-[#6366F1]/10 border border-[#6366F1]/30 flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: isCustomModel ? "rgba(34,211,238,0.2)" : isPremium ? "rgba(245,158,11,0.2)" : "rgba(99,102,241,0.2)" }}>
+          {isCustomModel ? <Brain className="h-5 w-5 text-[#22D3EE]" /> : isPremium ? <Crown className="h-5 w-5 text-amber-400" /> : <Zap className="h-5 w-5 text-[#6366F1]" />}
+        </div>
+        <div>
+          <p className="text-white font-medium">{name}</p>
+          <p className="text-sm text-slate-400">{price}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function Step6AccountCreation({
   effectiveTotal,
@@ -1120,6 +1171,7 @@ function Step6AccountCreation({
   setAccount,
   accountFieldErrors,
   selectedPlan,
+  selectedPlanDetails,
   isSubmitting,
   handleCreateAccount,
   handleBack,
@@ -1131,6 +1183,7 @@ function Step6AccountCreation({
   setAccount: React.Dispatch<React.SetStateAction<AccountData>>;
   accountFieldErrors: AccountFieldErrors;
   selectedPlan: SubscriptionType | null;
+  selectedPlanDetails: SubscriptionPlan | null;
   isSubmitting: boolean;
   handleCreateAccount: () => void;
   handleBack: () => void;
@@ -1148,18 +1201,7 @@ function Step6AccountCreation({
       </div>
       {/* {JSON.stringify(selectedPlan)} */}
       {selectedPlan && (
-        <div className="p-4 rounded-xl bg-[#6366F1]/10 border border-[#6366F1]/30 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: selectedPlan === "custom_model" ? "rgba(34,211,238,0.2)" : selectedPlan === "premium" ? "rgba(245,158,11,0.2)" : "rgba(99,102,241,0.2)" }}>
-              {selectedPlan === "custom_model" ? <Brain className="h-5 w-5 text-[#22D3EE]" /> : selectedPlan === "premium" ? <Crown className="h-5 w-5 text-amber-400" /> : <Zap className="h-5 w-5 text-[#6366F1]" />}
-            </div>
-            <div>
-              <p className="text-white font-medium">{selectedPlan === "custom_model" ? "Premium" : selectedPlan === "premium" ? "Premium" : "Basic AI Model"}</p>
-              <p className="text-sm text-slate-400">{selectedPlan === "custom_model" ? "$ 49/month" : selectedPlan === "premium" ? "$ 79/month" : "$ 20/month"}</p>
-            </div>
-          </div>
-          {/* <Button variant="ghost" size="sm" onClick={() => setStep(5)} className="text-[#22D3EE] hover:text-[#22D3EE]/80">Change</Button> */}
-        </div>
+        <Step6PlanSummary selectedPlan={selectedPlan} selectedPlanDetails={selectedPlanDetails} />
       )}
       <div className="space-y-5">
         <div className="space-y-2">

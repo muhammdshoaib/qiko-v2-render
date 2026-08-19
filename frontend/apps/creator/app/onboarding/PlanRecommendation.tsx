@@ -45,7 +45,7 @@ interface PlanRecommendationProps {
   plansLoading: boolean;
   checkoutLoading: SubscriptionType | null;
   isSubmitting: boolean;
-  handleSelectPlan: (plan: SubscriptionType) => void;
+  handleSelectPlan: (type: SubscriptionType, plan: SubscriptionPlan) => void;
   handleDemoMode: (plan: SubscriptionType) => void;
   handleBack: () => void;
 }
@@ -67,11 +67,20 @@ export default function PlanRecommendation({
   const planPrimary = plans[RECOMMENDED_PLAN_INDEX];
   const pricePrimary = planPrimary?.amount;
   const namePrimary = planPrimary?.name;
+  const keyPrimary = planPrimary?.key;
   const hasPrimaryPlanDetails =
-    typeof pricePrimary === "number" &&
-    Number.isFinite(pricePrimary) &&
+    typeof keyPrimary === "string" &&
+    keyPrimary.trim().length > 0 &&
     typeof namePrimary === "string" &&
     namePrimary.trim().length > 0;
+
+  const priceDisplay = (() => {
+    const display = typeof planPrimary?.display_price === "string" ? planPrimary.display_price.trim() : "";
+    if (display) return display === "Custom Pricing" ? display : `${display}/month`;
+    if (typeof pricePrimary !== "number" || !Number.isFinite(pricePrimary)) return "";
+    if (pricePrimary <= 0) return "Custom Pricing";
+    return `$${(pricePrimary / 100).toFixed(pricePrimary % 100 === 0 ? 0 : 2)}/month`;
+  })();
 
   const recommendedFeatureReasons: string[] = Array.isArray((planPrimary as any)?.features)
     ? (planPrimary as any).features.filter(
@@ -143,8 +152,7 @@ export default function PlanRecommendation({
             </CardHeader>
             <CardContent className="space-y-6">
               <div className="text-4xl font-bold" style={{ background: "linear-gradient(135deg, #ffffff, #22D3EE)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-                {`$ ${pricePrimary}`}
-                <span className="text-lg font-normal text-slate-500">/month</span>
+                {priceDisplay || "Custom Pricing"}
               </div>
               <div className="space-y-3">
                 <p className="text-sm text-slate-400 font-medium">Why we recommend this:</p>
@@ -159,7 +167,7 @@ export default function PlanRecommendation({
                   ))}
                 </ul>
               </div>
-              <Button onClick={() => handleSelectPlan(recommendation.type)} disabled={checkoutLoading !== null || isSubmitting} className="w-full h-14 bg-gradient-to-r from-[#6366F1] via-[#A855F7] to-[#22D3EE] text-white font-semibold text-lg rounded-xl shadow-lg shadow-[#6366F1]/30" style={{ backgroundSize: "200% 200%", animation: "gradient-shift 3s ease infinite" }}>
+              <Button onClick={() => planPrimary && handleSelectPlan(recommendation.type, planPrimary)} disabled={!planPrimary || checkoutLoading !== null || isSubmitting} className="w-full h-14 bg-gradient-to-r from-[#6366F1] via-[#A855F7] to-[#22D3EE] text-white font-semibold text-lg rounded-xl shadow-lg shadow-[#6366F1]/30" style={{ backgroundSize: "200% 200%", animation: "gradient-shift 3s ease infinite" }}>
                 {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <CreditCard className="mr-2 h-5 w-5" />}
                 {isSubmitting ? "Creating..." : "Subscribe Now"}
               </Button>

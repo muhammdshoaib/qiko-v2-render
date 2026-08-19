@@ -1063,7 +1063,7 @@ export const submitLabsContact = (body: LabsContactBody) =>
 // BOLA); `customer_id` in the response is the caller's own tenant, kept for shape continuity.
 export type Subscription = { customer_id: string; plan?: string; status: string; cancel_at_period_end?: boolean };
 export const subscriptionStatus = () => request<Subscription>("/billing/subscription");
-export type BillingPlan = { id: number; name: string; price_id: string; amount: number; interval: string; display_price: string; worker_limit: number; features: string[] };
+export type BillingPlan = { key: string; id: number; name: string; display_name: string; price_id: string; amount: number; interval: string; display_price: string; worker_limit: number; features: string[] };
 export const listPlans = () => request<BillingPlan[]>("/billing/plans");
 export const startCheckout = (plan: string, priceId: string) =>
   request<{ url: string }>("/billing/checkout", { method: "POST", body: JSON.stringify({ plan, price_id: priceId }) });
