@@ -226,8 +226,45 @@ class CalendlyClient:
         # Required on purpose: there is no Qiko-owned Calendly account to silently fall back to.
         self._c = _client("https://api.calendly.com", {"Authorization": f"Bearer {token}"}, client)
 
+    def _resolve_event_type(self, event_type: str) -> str:
+        """Map a public Calendly scheduling URL to the API event type URI.
+
+        Calendly's scheduling endpoints expect the API URI, but the UI stores the human scheduling
+        URL. If the input already is an API event type URI, return it unchanged. If it is not a
+        Calendly URL at all, return it as-is (tests and direct callers can pass an opaque id).
+        """
+        if event_type.startswith("https://api.calendly.com/event_types/"):
+            return event_type
+        if "calendly.com/" not in event_type:
+            return event_type
+
+        r = self._c.get("/users/me")
+        try:
+            r.raise_for_status()
+            user_uri = (r.json() or {}).get("resource", {}).get("uri") or ""
+        except (httpx.HTTPError, ValueError, KeyError) as exc:
+            raise CalendlyAuthError("Calendly connection failed") from exc
+
+        params = {"count": 100}
+        if user_uri:
+            params["user"] = user_uri
+
+        r = self._c.get("/event_types", params=params)
+        try:
+            r.raise_for_status()
+        except httpx.HTTPError as exc:
+            raise CalendlyAuthError("Calendly connection failed") from exc
+
+        normalized = event_type.split("?")[0].rstrip("/")
+        for et in r.json().get("collection", []):
+            scheduling = (et.get("scheduling_url") or "").split("?")[0].rstrip("/")
+            if scheduling and scheduling == normalized:
+                return et["uri"]
+        raise CalendlyAuthError(f"Calendly event type not found for {event_type}")
+
     def available_slots(self, event_type: str) -> list[str]:
-        r = self._c.get("/event_type_available_times", params={"event_type": event_type})
+        r = self._c.get("/event_type_available_times",
+                         params={"event_type": self._resolve_event_type(event_type)})
         r.raise_for_status()
         return [s["start_time"] for s in r.json().get("collection", [])]
 
@@ -244,8 +281,11 @@ class CalendlyClient:
         return {"ok": True, "user": resource.get("name") or resource.get("email") or ""}
 
     def create_booking(self, event_type: str, invitee_email: str, start: str) -> dict:
-        r = self._c.post("/scheduled_events",
-                         json={"event_type": event_type, "invitee": {"email": invitee_email}, "start_time": start})
+        r = self._c.post("/invitees", json={
+            "event_type": self._resolve_event_type(event_type),
+            "start_time": start,
+            "invitee": {"email": invitee_email, "name": invitee_email},
+        })
         r.raise_for_status()
         return r.json()
 
