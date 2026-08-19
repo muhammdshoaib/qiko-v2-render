@@ -6,11 +6,12 @@ in them. This is a typed layer over KnowledgeService (agentic-first: sources fee
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.core.deps import authed_tenant, get_sources, require_role
 from app.modules.identity.rbac import Role
+from app.modules.knowledge.sources import WebsiteFetchError
 
 router = APIRouter(prefix="/agents/{agent_id}/sources", tags=["knowledge-sources"])
 _editor = Depends(require_role(Role.editor))
@@ -36,7 +37,7 @@ class PolicyBody(BaseModel):
 class WebsiteBody(BaseModel):
     source_id: str = Field(min_length=1)
     name: str = Field(min_length=1)
-    url: str = Field(min_length=1)
+    url: str = Field(min_length=1, pattern=r"^https?://")
     details: str = ""
 
 
@@ -65,7 +66,11 @@ async def add_policy(agent_id: str, body: PolicyBody, tenant: str = Depends(auth
 @router.post("/websites")
 async def add_website(agent_id: str, body: WebsiteBody, tenant: str = Depends(authed_tenant),
                       _r: dict = _editor, svc=Depends(get_sources)) -> dict:
-    return {"doc_id": await svc.add_website(tenant, agent_id, body.source_id, body.name, body.url, body.details)}
+    try:
+        doc_id = await svc.add_website(tenant, agent_id, body.source_id, body.name, body.url, body.details)
+    except WebsiteFetchError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return {"doc_id": doc_id}
 
 
 @router.put("/persona")

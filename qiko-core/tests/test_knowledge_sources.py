@@ -2,8 +2,12 @@ from app.modules.knowledge.service import KnowledgeService
 from app.modules.knowledge.sources import KnowledgeSources
 
 
+async def _fake_fetch(url: str) -> str:
+    return "Fetched website content."
+
+
 def _sources():
-    return KnowledgeSources(KnowledgeService())
+    return KnowledgeSources(KnowledgeService(), fetch_url=_fake_fetch)
 
 
 async def test_sources_are_ingested_and_retrievable():
@@ -18,6 +22,15 @@ async def test_sources_are_ingested_and_retrievable():
     assert any("Refund" in p.text for p in await s.knowledge.retrieve("t", "refund policy"))
     assert {d["doc_id"] for d in await s.knowledge.list_documents("t")} == {
         "ag-behavior-1", "ag-faq-1", "ag-policy-1", "ag-website-1", "ag-persona-core"}
+
+
+async def test_website_source_fetches_and_ingests_content():
+    async def fake_fetch(url: str) -> str:
+        return "We provide ISO 9001 certified quality audits."
+
+    s = KnowledgeSources(KnowledgeService(), fetch_url=fake_fetch)
+    await s.add_website("t", "ag", "1", "IDG", "https://idg.example", "Leading provider.")
+    assert "ISO 9001" in (await s.knowledge.retrieve("t", "ISO 9001"))[0].text
 
 
 async def test_update_reingests_same_doc_id_no_duplicates():
