@@ -20,7 +20,7 @@ from app.core.deps import (
 )
 from app.modules.billing.subscriptions import AlreadySubscribedError, CheckoutUnavailableError
 from app.modules.billing.team_billing import team_plan
-from app.modules.billing.webhook import verify_stripe_signature
+from app.modules.billing.webhook import Invoice, verify_stripe_signature
 from app.modules.audit import registry as audit_actions
 from app.modules.audit import service as audit
 from app.modules.identity import csrf
@@ -293,3 +293,37 @@ def invoices(_tenant: str = Depends(authed_tenant),
     result = paginate(rows, page=page, page_size=page_size)
     return {"total": result["total"], "page": result["page"], "page_size": page_size,
             "items": result["items"]}
+
+
+class CreateInvoiceBody(BaseModel):
+    customer_id: str = Field(min_length=1, max_length=255)
+    amount_cents: int = Field(gt=0, le=100_000_000)
+    currency: str = Field(default="usd", max_length=3)
+    description: str = Field(default="", max_length=500)
+    send: bool = False
+
+
+@router.post("/invoices")
+def create_invoice(request: Request, body: CreateInvoiceBody,
+                   _identity=Depends(require_platform_capability(Capability.manage_billing)),
+                   subs=Depends(get_subscriptions), handler=Depends(get_stripe_webhook)) -> dict:
+    csrf.require_csrf(request)
+    # customer_id may be a Stripe customer id or a tenant id with a linked Stripe customer.
+    customer = body.customer_id
+    if not customer.startswith("cus_"):
+        customer = subs.stripe_customer_ref(customer)
+    if not customer.startswith("cus_"):
+        raise HTTPException(status_code=400, detail="no Stripe customer id for this tenant")
+    try:
+        inv = subs.gateway.create_invoice(
+            customer_id=customer, amount_cents=body.amount_cents, currency=body.currency,
+            description=body.description, send=body.send)
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail="payment provider error") from e
+    stored = Invoice(
+        stripe_invoice_id=inv["id"], customer_id=customer,
+        amount_cents=inv.get("amount_due", body.amount_cents), status=inv.get("status", "open"),
+        currency=inv.get("currency"), number=inv.get("number"),
+        hosted_invoice_url=inv.get("hosted_invoice_url"), invoice_pdf=inv.get("invoice_pdf"))
+    handler.invoices.upsert(stored)
+    return asdict(stored)

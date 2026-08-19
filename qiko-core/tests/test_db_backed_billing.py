@@ -30,12 +30,21 @@ class _FakeStripe:
     def __init__(self):
         self.canceled: list[str] = []
         self.resumed: list[str] = []
+        self.invoices: list[dict] = []
 
     def create_checkout_session(self, *, customer_id, price_id, promo, client_reference_id=None, plan=None):
         return f"https://checkout.stripe/{customer_id}/{price_id}"
 
     def billing_portal_url(self, *, customer_id):
         return f"https://portal.stripe/{customer_id}"
+
+    def create_invoice(self, *, customer_id, amount_cents, currency="usd", description="", send=False):
+        inv = {"id": f"in_{customer_id}_{len(self.invoices)}", "number": f"INV-{len(self.invoices)}",
+               "amount_due": amount_cents, "currency": currency, "status": "open",
+               "hosted_invoice_url": f"https://invoice/{customer_id}",
+               "invoice_pdf": f"https://invoice/{customer_id}/pdf"}
+        self.invoices.append(inv)
+        return inv
 
     def cancel_subscription(self, *, stripe_subscription_id):
         self.canceled.append(stripe_subscription_id)

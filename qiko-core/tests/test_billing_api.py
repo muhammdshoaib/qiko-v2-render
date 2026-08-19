@@ -271,3 +271,28 @@ def test_the_invoice_list_still_needs_manage_billing(client):
     """Pagination must not have widened who can read it."""
     _seed_invoices(client, 2)
     assert client.get("/api/v1/billing/invoices", cookies=C).status_code == 403
+
+
+def test_create_invoice_requires_manage_billing_and_csrf(client):
+    body = {"customer_id": "cus_test", "amount_cents": 5000, "description": "Manual invoice"}
+    # Regular tenant admin lacks platform manage_billing.
+    assert client.post("/api/v1/billing/invoices", json=body, cookies=C).status_code == 403
+
+    admin = _admin_cookies(client)
+    assert client.post("/api/v1/billing/invoices", json=body, cookies=admin).status_code == 403  # CSRF
+
+    cookies, headers = _with_csrf(admin)
+    res = client.post("/api/v1/billing/invoices", json=body, cookies=cookies, headers=headers)
+    assert res.status_code == 200
+    inv = res.json()
+    assert inv["stripe_invoice_id"].startswith("in_")
+    assert inv["amount_cents"] == 5000
+    assert inv["status"] == "open"
+
+
+def test_create_invoice_rejects_tenant_without_stripe_customer(client):
+    admin_cookies, headers = _with_csrf(_admin_cookies(client))
+    res = client.post("/api/v1/billing/invoices",
+                      json={"customer_id": "unknown_tenant", "amount_cents": 1000},
+                      cookies=admin_cookies, headers=headers)
+    assert res.status_code == 400

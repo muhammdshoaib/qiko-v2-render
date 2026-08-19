@@ -326,6 +326,8 @@ export type Invoice = {
  *  one customer and unusable after a year of monthly invoices across a hundred accounts. */
 export const listInvoices = (search = "", page = 1, sort?: ListSort, status?: string) =>
   request<Paged<Invoice>>(`/billing/invoices?${paged(page, { search, status }, sort)}`);
+export const createInvoice = (body: { customer_id: string; amount_cents: number; currency?: string; description?: string; send?: boolean }) =>
+  request<Invoice>("/billing/invoices", { method: "POST", body: JSON.stringify(body) });
 export type PaymentLink = { session_id: string; customer_email: string; amount_cents: number; url: string; status: string };
 export const listPaymentLinks = (email: string) => request<PaymentLink[]>(`/billing/payment-links?email=${encodeURIComponent(email)}`);
 export const createPaymentLink = (customerEmail: string, amountCents: number) =>

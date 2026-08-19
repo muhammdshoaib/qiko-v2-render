@@ -61,6 +61,46 @@ def test_stripe_checkout_omits_customer_when_not_real_and_links_via_reference():
     assert "customer=cus_real123" in seen["body"]
 
 
+def test_stripe_payment_link_enables_invoice_creation():
+    seen = {}
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        seen["body"] = req.content.decode()
+        return httpx.Response(200, json={"url": "https://pay.stripe.test/x"})
+
+    c = StripeClient(client=_client("https://api.stripe.com/v1", handler))
+    url = c.create_payment_link(amount_cents=4900, session_id="sess_1", recurring=False)
+    assert url == "https://pay.stripe.test/x"
+    body = seen["body"]
+    assert "mode=payment" in body
+    assert "invoice_creation%5Benabled%5D=true" in body or "invoice_creation[enabled]=true" in body
+    assert "metadata%5Bqiko_session_id%5D=sess_1" in body or "metadata[qiko_session_id]=sess_1" in body
+
+
+def test_stripe_invoice_create_finalize_and_send():
+    calls = []
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        calls.append((str(req.url), req.content.decode()))
+        if "/invoiceitems" in str(req.url):
+            return httpx.Response(200, json={"id": "ii_1"})
+        if str(req.url).endswith("/invoices"):
+            return httpx.Response(200, json={"id": "in_1", "status": "draft"})
+        if str(req.url).endswith("/in_1/finalize"):
+            return httpx.Response(200, json={"id": "in_1", "status": "open",
+                                            "hosted_invoice_url": "https://invoice/1",
+                                            "invoice_pdf": "https://invoice/1/pdf"})
+        if str(req.url).endswith("/in_1/send"):
+            return httpx.Response(200, json={"id": "in_1", "status": "open"})
+        return httpx.Response(404)
+
+    c = StripeClient(client=_client("https://api.stripe.com/v1", handler))
+    inv = c.create_invoice(customer_id="cus_1", amount_cents=5000, currency="usd",
+                           description="Services", send=True)
+    assert inv["id"] == "in_1"
+    assert len(calls) == 4  # invoiceitem, invoice, finalize, send
+
+
 def test_whatsapp_send_text_meta_shape():
     seen = {}
 
