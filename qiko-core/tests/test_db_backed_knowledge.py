@@ -30,3 +30,12 @@ async def test_db_backed_ingest_retrieve_delete(tmp_path):
     assert [d["doc_id"] for d in await svc.list_documents("acme")] == ["iso"]
     assert await svc.delete_document("acme", "iso") == 1
     assert await svc.list_documents("acme") == []
+
+
+async def test_db_backed_tenant_wide_visible_to_worker(tmp_path):
+    svc = await _db_knowledge(tmp_path / "k.db")
+    await svc.ingest("acme", "shared-policy", "Shared policy covers ISO 9001.")
+
+    top = await svc.retrieve("acme", "ISO 9001", k=1, agent_id="worker-1")
+    assert top and "Shared policy" in top[0].text
+

@@ -32,8 +32,9 @@ def test_chat_ask_is_grounded_and_records(client):
     _seed_agent(client, "chat-agent")
     client.post("/api/v1/knowledge/ingest", json={"doc_id": "iso", "text": ISO}, cookies=_cookies())
     r = client.post("/api/v1/chat/ask", json={"conversation_id": "c1", "agent_id": "chat-agent",
-                    "question": "Describe your ISO 9001 certification.", "topic": "qms"}, cookies=_cookies())
-    assert r.status_code == 200 and r.json()["role"] == "assistant" and "ISO 9001" in r.json()["text"]
+                    "question": "Describe your certification.", "topic": "qms"}, cookies=_cookies())
+    assert r.status_code == 200 and r.json()["role"] == "assistant"
+    assert "ISO 9001" in r.json()["text"]
     hist = client.get("/api/v1/chat/history/c1", cookies=_cookies()).json()
     assert [m["role"] for m in hist] == ["user", "assistant"]
 

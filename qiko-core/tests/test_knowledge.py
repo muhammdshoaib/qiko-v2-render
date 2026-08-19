@@ -127,3 +127,21 @@ async def test_delete_is_agent_scoped():
     assert removed >= 1
     assert {d["doc_id"] for d in await svc.list_documents("acme", agent_id="a2")} == {"shared-name"}
     assert await svc.list_documents("acme", agent_id="a1") == []
+
+
+async def test_tenant_wide_knowledge_is_visible_to_all_workers():
+    """Legacy/internal documents ingested without an agent_id are shared across the tenant and
+    must be retrievable by every worker; per-worker listings still hide them from the library view."""
+    svc = KnowledgeService(store=InMemoryVectorStore())
+    await svc.ingest("acme", "company-policy", "Company policy covers ISO 9001 compliance.")
+
+    hits = [p.doc_id for p in await svc.retrieve("acme", "ISO 9001 compliance", agent_id="worker-1")]
+    assert "company-policy" in hits
+
+    hits = [p.doc_id for p in await svc.retrieve("acme", "ISO 9001 compliance", agent_id="worker-2")]
+    assert "company-policy" in hits
+
+    assert await svc.list_documents("acme", agent_id="worker-1") == []
+    assert {d["doc_id"] for d in await svc.list_documents("acme")} == {"company-policy"}
+
+

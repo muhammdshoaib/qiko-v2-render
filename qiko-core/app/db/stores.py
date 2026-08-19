@@ -338,7 +338,9 @@ class SqlVectorStore:
         async with self.sessionmaker() as s:
             stmt = select(PassageRow).where(PassageRow.tenant_id == tenant)
             if agent_id is not None:
-                stmt = stmt.where(PassageRow.agent_id == agent_id)
+                # Worker-scoped retrieval includes legacy tenant-wide (agent_id=None) passages
+                # so shared knowledge is not orphaned by per-worker scoping.
+                stmt = stmt.where(or_(PassageRow.agent_id == agent_id, PassageRow.agent_id.is_(None)))
             rows = (await s.execute(stmt)).scalars().all()
             return [Passage(id=r.id, tenant=r.tenant_id, doc_id=r.doc_id, text=r.text,
                             embedding=list(r.embedding or []), agent_id=r.agent_id) for r in rows]

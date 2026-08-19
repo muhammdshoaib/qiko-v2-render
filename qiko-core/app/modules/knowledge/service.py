@@ -42,9 +42,14 @@ class KnowledgeService:
         return await self.ingest(tenant, doc_id, extract_text(filename, data), agent_id=agent_id)
 
     async def list_documents(self, tenant: str, *, agent_id: str | None = None) -> list[dict]:
-        """Distinct documents for a tenant (optionally scoped to one worker) with chunk counts."""
+        """Distinct documents for a tenant (optionally scoped to one worker) with chunk counts.
+
+        Per-worker listings show only that worker's own documents; the tenant-wide view (no
+        agent_id) includes shared/legacy documents as well."""
         counts: dict[str, int] = {}
         for p in await self.store.get(tenant, agent_id):
+            if agent_id is not None and p.agent_id is None:
+                continue
             counts[p.doc_id] = counts.get(p.doc_id, 0) + 1
         return [{"doc_id": d, "chunks": c} for d, c in sorted(counts.items())]
 
