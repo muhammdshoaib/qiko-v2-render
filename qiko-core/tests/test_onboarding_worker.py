@@ -170,7 +170,11 @@ def test_public_signup_materializes_one_tenant_scoped_training_worker_after_veri
     assert len(agents.json()) == 1
     documents = client.get(f"/api/v1/knowledge/documents?agent_id={worker_id}")
     assert documents.status_code == 200, documents.text
-    assert documents.json() == [{"doc_id": worker_id, "chunks": 1}]
+    assert documents.json() == [{
+        "doc_id": worker_id,
+        "name": "Additional guidance: Explain trade-offs before making a recommendation.",
+        "chunks": 1,
+    }]
     usage = client.get("/api/v1/agents/usage")
     assert usage.status_code == 200, usage.text
     assert usage.json() == {"used_count": 1, "worker_limit": 1}
