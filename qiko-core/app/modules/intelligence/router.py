@@ -20,6 +20,7 @@ from app.modules.agents.service import AgentService
 from app.modules.identity.rbac import Role
 from app.modules.intelligence.catalog import SourceCatalog, UnknownSource
 from app.modules.intelligence.chat import IntelligenceChat
+from app.modules.intelligence.discrepancies import DiscrepancyEngine
 from app.modules.intelligence.ingest import ingest_source
 from app.modules.chat.service import ChatService
 
@@ -546,3 +547,17 @@ async def list_slack_channels(
         "watched_channels": cfg.get("slack_watched_channels") or [],
         "channels": [],
     }
+
+
+@router.get("/agents/{agent_id}/discrepancies")
+async def list_discrepancies(
+    agent_id: str, request: Request,
+    tenant: str = Depends(authed_tenant),
+    _claims: dict = Depends(require_role(Role.admin)),
+) -> list[dict]:
+    """Surface claim-vs-evidence discrepancies for this worker. Owner/admin only."""
+    _worker, recheck = await _resolve_worker(request, tenant, agent_id)
+    engine = DiscrepancyEngine(request.app.state.intelligence_signal_store)
+    discrepancies = await engine.analyze(tenant, agent_id)
+    await recheck()
+    return [d.to_dict() for d in discrepancies]

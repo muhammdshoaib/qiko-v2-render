@@ -2732,6 +2732,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/intelligence/agents/{agent_id}/discrepancies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Discrepancies
+         * @description Surface claim-vs-evidence discrepancies for this worker. Owner/admin only.
+         */
+        get: operations["list_discrepancies_api_v1_intelligence_agents__agent_id__discrepancies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/intelligence/agents/{agent_id}/sources": {
         parameters: {
             query?: never;
@@ -11605,6 +11625,39 @@ export interface operations {
         };
     };
     list_conversations_api_v1_intelligence_agents__agent_id__conversations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_discrepancies_api_v1_intelligence_agents__agent_id__discrepancies_get: {
         parameters: {
             query?: never;
             header?: never;
