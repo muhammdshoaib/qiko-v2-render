@@ -20,8 +20,8 @@ import { WorkerVoiceCall } from "@/components/worker-voice-call";
 import {
   addFaq, addPolicy, addWebsite, ask, connectTeamsWebhook, disconnectCalendly, disconnectClickUp,
   disconnectGmail, disconnectSlack,
-  deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, getCalendlyCredentials,
-  getClickUpCredentials, getGmailCredentials, getSalesforceCredentials, getSlackCredentials,
+  deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, financeChat, getCalendlyCredentials,
+  getClickUpCredentials, getFinanceHistory, getGmailCredentials, getSalesforceCredentials, getSlackCredentials,
   getTeamsWebhookStatus, getVapiCredentials, ingest, ingestFile, listAgents, listDocuments, markReady, me,
   saveCalendlyCredentials, saveClickUpCredentials, saveGmailCredentials, saveSalesforceCredentials,
   saveSlackCredentials, saveVapiCredentials,
@@ -1358,6 +1358,22 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
   // (config.quick_prompts) so any specialised worker (pre-sales writer, tender assistant, ...)
   // can offer its own starting points instead of a blank "ask anything" box.
   const quickPrompts = (worker?.config?.quick_prompts as string[] | undefined) ?? [];
+  // Finance workers answer from computed analytics, not the generic knowledge base, so they need
+  // their own endpoint here too (EL-1010: this tab used to always call the generic `ask()`, which
+  // has no access to that analytics, so finance questions never worked from the worker screen the
+  // way they do from the Studio finance cockpit).
+  const isFinance = worker?.atype === "finance";
+
+  // The finance chat is the same persisted conversation as the Studio cockpit: seed the
+  // transcript from it instead of always starting blank.
+  useEffect(() => {
+    if (!isFinance) return;
+    let cancelled = false;
+    getFinanceHistory(id)
+      .then((res) => { if (!cancelled) setMessages(res.history.map((h) => ({ role: h.role, text: h.content }))); })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [id, isFinance]);
 
   async function sendText(q: string) {
     if (!q || busy) return;
@@ -1365,7 +1381,9 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
     setMessages((m) => [...m, { role: "user", text: q }]);
     setBusy(true);
     try {
-      const reply = await ask(conversationId, q, id);
+      const reply = isFinance
+        ? { role: "assistant", text: (await financeChat(id, q)).reply }
+        : await ask(conversationId, q, id);
       setMessages((m) => [...m, reply]);
     } catch {
       setMessages((m) => [...m, { role: "assistant", text: "Sorry, I couldn't answer that just now. Please try again in a moment." }]);
