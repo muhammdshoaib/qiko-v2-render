@@ -17,8 +17,8 @@ def test_registry_exposes_expected_tools():
 
 async def test_ingest_then_search_via_tools():
     reg = _registry()
-    assert await reg.invoke("knowledge_ingest", {"doc_id": "iso", "text": ISO}) == 1
-    hits = await reg.invoke("knowledge_search", {"query": "ISO 9001 certification", "k": 3})
+    assert await reg.invoke("knowledge_ingest", {"doc_id": "iso", "text": ISO, "agent_id": "a1"}) == 1
+    hits = await reg.invoke("knowledge_search", {"query": "ISO 9001 certification", "k": 3, "agent_id": "a1"})
     assert any("ISO 9001" in h for h in hits)
 
 
@@ -34,7 +34,7 @@ async def test_tool_args_are_validated():
 
 async def test_tools_are_tenant_scoped():
     reg = _registry()
-    await reg.invoke("knowledge_ingest", {"doc_id": "iso", "text": ISO})
+    await reg.invoke("knowledge_ingest", {"doc_id": "iso", "text": ISO, "agent_id": "a1"})
     # a registry for another tenant sees nothing from 'idg'
     other = build_registry(KnowledgeService(), tenant="idg")  # fresh service = empty
-    assert await other.invoke("knowledge_search", {"query": "ISO 9001"}) == []
+    assert await other.invoke("knowledge_search", {"query": "ISO 9001", "agent_id": "a1"}) == []
