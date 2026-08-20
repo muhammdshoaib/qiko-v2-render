@@ -39,3 +39,8 @@ def test_strict_mode_no_shift_back():
 
 def test_top_by():
     assert top_by(ROWS, "pagePath", "sessions", n=1) == [{"pagePath": "/", "sessions": 100}]
+
+
+def test_top_by_casts_string_metric_to_float():
+    rows = [{"pagePath": "/", "sessions": "80"}, {"pagePath": "/pricing", "sessions": "40"}]
+    assert top_by(rows, "pagePath", "sessions", n=1) == [{"pagePath": "/", "sessions": 80.0}]
