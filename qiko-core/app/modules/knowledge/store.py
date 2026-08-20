@@ -32,7 +32,6 @@ class InMemoryVectorStore:
 
     async def delete_doc(self, tenant: str, doc_id: str, agent_id: str | None = None) -> int:
         current = self._by_tenant.get(tenant, [])
-        kept = [p for p in current
-                if p.doc_id != doc_id or (agent_id is not None and p.agent_id != agent_id)]
+        kept = [p for p in current if not (p.doc_id == doc_id and p.agent_id == agent_id)]
         self._by_tenant[tenant] = kept
         return len(current) - len(kept)

@@ -39,3 +39,24 @@ async def test_db_backed_tenant_wide_visible_to_worker(tmp_path):
     top = await svc.retrieve("acme", "ISO 9001", k=1, agent_id="worker-1")
     assert top and "Shared policy" in top[0].text
 
+
+async def test_db_backed_agent_scoped_doc_id(tmp_path):
+    svc = await _db_knowledge(tmp_path / "k.db")
+    await svc.ingest("acme", "shared-name", ISO, agent_id="a1")
+    await svc.ingest("acme", "shared-name", "Beta confidential pricing.", agent_id="a2")
+
+    # Each worker sees only its own copy of the same user-visible doc_id.
+    assert {d["doc_id"] for d in await svc.list_documents("acme", agent_id="a1")} == {"shared-name"}
+    assert {d["doc_id"] for d in await svc.list_documents("acme", agent_id="a2")} == {"shared-name"}
+    assert {d["agent_id"] for d in await svc.list_documents("acme")} == {"a1", "a2"}
+
+    # Deleting one worker's copy leaves the other intact.
+    assert await svc.delete_document("acme", "shared-name", agent_id="a1") >= 1
+    assert {d["agent_id"] for d in await svc.list_documents("acme")} == {"a2"}
+
+    # Tenant-wide deletion only removes shared (agent_id=None) documents.
+    await svc.ingest("acme", "tenant-policy", "Tenant-wide policy.")
+    await svc.ingest("acme", "tenant-policy", "Worker override.", agent_id="a2")
+    assert await svc.delete_document("acme", "tenant-policy") == 1
+    assert {d["doc_id"] for d in await svc.list_documents("acme", agent_id="a2")} == {"shared-name", "tenant-policy"}
+

@@ -52,15 +52,24 @@ class KnowledgeService:
         """Distinct documents for a tenant (optionally scoped to one worker) with chunk counts.
 
         Per-worker listings show only that worker's own documents; the tenant-wide view (no
-        agent_id) includes shared/legacy documents as well."""
-        counts: dict[str, int] = {}
-        sample: dict[str, Passage] = {}
+        agent_id) includes every document, disambiguated by agent_id when the passage is
+        worker-scoped. Grouping by (doc_id, agent_id) prevents two workers from colliding on
+        the same user-visible doc_id."""
+        counts: dict[tuple[str, str | None], int] = {}
+        sample: dict[tuple[str, str | None], Passage] = {}
         for p in await self.store.get(tenant, agent_id):
             if agent_id is not None and p.agent_id is None:
                 continue
-            counts[p.doc_id] = counts.get(p.doc_id, 0) + 1
-            sample.setdefault(p.doc_id, p)
-        return [{"doc_id": d, "name": _doc_name(sample.get(d), d), "chunks": c} for d, c in sorted(counts.items())]
+            key = (p.doc_id, p.agent_id)
+            counts[key] = counts.get(key, 0) + 1
+            sample.setdefault(key, p)
+        result = []
+        for (doc_id, doc_agent_id), c in sorted(counts.items()):
+            item: dict = {"doc_id": doc_id, "name": _doc_name(sample.get((doc_id, doc_agent_id)), doc_id), "chunks": c}
+            if doc_agent_id is not None:
+                item["agent_id"] = doc_agent_id
+            result.append(item)
+        return result
 
     async def delete_document(self, tenant: str, doc_id: str, *, agent_id: str | None = None) -> int:
         """Remove a document's vectors (cascade), scoped to one worker when agent_id is given.

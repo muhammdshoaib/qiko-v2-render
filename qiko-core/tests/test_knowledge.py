@@ -137,6 +137,22 @@ async def test_delete_is_agent_scoped():
     assert await svc.list_documents("acme", agent_id="a1") == []
 
 
+async def test_list_documents_scopes_same_doc_id_by_agent():
+    svc = KnowledgeService(store=InMemoryVectorStore())
+    await svc.ingest("acme", "shared-name", ISO, agent_id="a1")
+    await svc.ingest("acme", "shared-name", HSE, agent_id="a2")
+
+    # The tenant-wide view must not merge the two workers into a single doc entry.
+    all_docs = await svc.list_documents("acme")
+    assert len(all_docs) == 2
+    assert all(d["doc_id"] == "shared-name" for d in all_docs)
+    assert {d["agent_id"] for d in all_docs} == {"a1", "a2"}
+
+    # Per-worker listings still return exactly one entry for the caller's copy.
+    assert [d["agent_id"] for d in await svc.list_documents("acme", agent_id="a1")] == ["a1"]
+    assert [d["agent_id"] for d in await svc.list_documents("acme", agent_id="a2")] == ["a2"]
+
+
 async def test_tenant_wide_knowledge_is_visible_to_all_workers():
     """Legacy/internal documents ingested without an agent_id are shared across the tenant and
     must be retrievable by every worker; per-worker listings still hide them from the library view."""
