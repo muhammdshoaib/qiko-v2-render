@@ -152,6 +152,8 @@ PACK_STAGE_CHANGED = "data.pack_stage_changed"
 PACK_OUTCOME_RECORDED = "data.pack_outcome_recorded"
 PIPELINE_RUN_STARTED = "data.pipeline_run_started"
 PIPELINE_RUN_RESUMED = "data.pipeline_run_resumed"
+RESEARCH_BRIEF_ACCEPTED = "data.research_brief_accepted"
+BACKLOG_CREATED = "data.backlog_created"
 
 # --- privacy -----------------------------------------------------------------------------------------
 SUBJECT_ERASED = "privacy.subject_erased"
@@ -321,6 +323,10 @@ _SPECS: tuple[ActionSpec, ...] = (
           template="{actor} started an intelligence pipeline run for {target}"),
     _spec(PIPELINE_RUN_RESUMED, DATA, "pipeline_run", diff_fields=("resumed",),
           template="{actor} resumed an intelligence pipeline run for {target}"),
+    _spec(RESEARCH_BRIEF_ACCEPTED, DATA, "pipeline_run", diff_fields=("accepted",),
+          template="{actor} accepted the research brief for {target}"),
+    _spec(BACKLOG_CREATED, DATA, "pipeline_run", diff_fields=("created", "project_key"),
+          template="{actor} created {created} Qiko Track tickets from a research backlog for {target}"),
     _spec(SUBJECT_ERASED, PRIVACY, "subject", durability=CRITICAL,
           diff_fields=("rows_pseudonymised", "request_ref"),
           template="{actor} erased subject data"),

@@ -2935,6 +2935,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/intelligence/agents/{agent_id}/research/runs/{run_id}/backlog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Backlog Proposal
+         * @description Generate a reviewable Qiko Track backlog draft from an accepted research brief.
+         */
+        get: operations["get_backlog_proposal_api_v1_intelligence_agents__agent_id__research_runs__run_id__backlog_get"];
+        put?: never;
+        /**
+         * Create Backlog Tickets
+         * @description Create the approved subset of proposed tickets in Qiko Track.
+         *
+         *     Each creation is idempotent; resubmitting the same approval cannot duplicate tickets.
+         */
+        post: operations["create_backlog_tickets_api_v1_intelligence_agents__agent_id__research_runs__run_id__backlog_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/intelligence/agents/{agent_id}/sources": {
         parameters: {
             query?: never;
@@ -5020,6 +5046,20 @@ export interface components {
             /** User Id */
             user_id?: string | null;
         };
+        /** BacklogCreateBody */
+        BacklogCreateBody: {
+            /** Items */
+            items: components["schemas"]["ProposedTicketIn"][];
+            /** Project Key */
+            project_key?: string | null;
+        };
+        /** BacklogProposalOut */
+        BacklogProposalOut: {
+            /** Items */
+            items: components["schemas"]["ProposedTicketOut"][];
+            /** Project Key */
+            project_key: string;
+        };
         /** BatchAnswer */
         BatchAnswer: {
             /** Answer */
@@ -5875,6 +5915,67 @@ export interface components {
         ProfileUpdate: {
             /** Name */
             name?: string | null;
+        };
+        /** ProposedTicketIn */
+        ProposedTicketIn: {
+            /**
+             * Description Md
+             * @default
+             */
+            description_md: string;
+            /** Estimate Points */
+            estimate_points?: number | null;
+            /**
+             * Evidence Refs
+             * @default []
+             */
+            evidence_refs: string[];
+            /** Finding Index */
+            finding_index?: number | null;
+            /** Parent Index */
+            parent_index?: number | null;
+            /**
+             * Priority
+             * @default NONE
+             * @enum {string}
+             */
+            priority: "URGENT" | "HIGH" | "MEDIUM" | "LOW" | "NONE";
+            /** Title */
+            title: string;
+            /**
+             * Type
+             * @default FEATURE
+             * @enum {string}
+             */
+            type: "FEATURE" | "BUG" | "CHORE" | "SPIKE" | "FINDING" | "EPIC";
+        };
+        /** ProposedTicketOut */
+        ProposedTicketOut: {
+            /** Description Md */
+            description_md: string;
+            /** Estimate Points */
+            estimate_points?: number | null;
+            /**
+             * Evidence Refs
+             * @default []
+             */
+            evidence_refs: string[];
+            /** Finding Index */
+            finding_index?: number | null;
+            /** Parent Index */
+            parent_index?: number | null;
+            /**
+             * Priority
+             * @enum {string}
+             */
+            priority: "URGENT" | "HIGH" | "MEDIUM" | "LOW" | "NONE";
+            /** Title */
+            title: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "FEATURE" | "BUG" | "CHORE" | "SPIKE" | "FINDING" | "EPIC";
         };
         /** PublicChatBody */
         PublicChatBody: {
@@ -12370,6 +12471,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResearchRunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_backlog_proposal_api_v1_intelligence_agents__agent_id__research_runs__run_id__backlog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BacklogProposalOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_backlog_tickets_api_v1_intelligence_agents__agent_id__research_runs__run_id__backlog_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BacklogCreateBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

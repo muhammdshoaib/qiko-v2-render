@@ -1,10 +1,12 @@
 """Thin async client for the Qiko Track v1 REST API.
 
-Read-only: this module only issues GET requests. The connector is the only caller.
+Read-only calls back the connector; the human-approved backlog proposal path uses
+`create_ticket` directly.
 """
 from __future__ import annotations
 
 import json
+import socket
 from typing import Any
 from urllib.parse import urlparse
 
@@ -26,7 +28,7 @@ class QikoTrackClient:
         self.base_url = base_url.rstrip("/")
         self.token = token
         self._transport = transport
-        self._resolver = resolver
+        self._resolver = resolver or socket.getaddrinfo
         self._validate_url()
 
     def _validate_url(self) -> None:
@@ -50,15 +52,25 @@ class QikoTrackClient:
     async def get_ticket(self, key: str) -> dict:
         return await self._request("GET", f"/api/v1/tickets/{key}")
 
-    async def _request(self, method: str, path: str, params: dict | None = None) -> dict:
-        headers = {"Accept": "application/json", "Authorization": f"Bearer {self.token}"}
+    async def create_ticket(self, payload: dict, *, idempotency_key: str | None = None) -> dict:
+        headers: dict[str, str] = {"Accept": "application/json", "Authorization": f"Bearer {self.token}"}
+        if idempotency_key:
+            headers["Idempotency-Key"] = idempotency_key
+        return await self._request("POST", "/api/v1/tickets", json_payload=payload, headers=headers)
+
+    async def _request(self, method: str, path: str, params: dict | None = None,
+                       json_payload: dict | None = None, headers: dict[str, str] | None = None) -> dict:
+        default_headers = {"Accept": "application/json", "Authorization": f"Bearer {self.token}"}
+        if headers:
+            default_headers.update(headers)
         async with httpx.AsyncClient(
             base_url=self.base_url,
             transport=self._transport,
             timeout=15.0,
         ) as client:
             try:
-                response = await client.request(method, path, params=params, headers=headers)
+                response = await client.request(
+                    method, path, params=params, json=json_payload, headers=default_headers)
             except httpx.HTTPError as exc:
                 raise QikoTrackClientError(f"could not reach Qiko Track: {exc}") from exc
         try:

@@ -2,12 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Check, Loader2, Search } from "lucide-react";
-import { Badge, Button } from "@qiko/ui";
+import { AlertTriangle, Check, ListChecks, Loader2, Plus, Search } from "lucide-react";
+import { Badge, Button, cn } from "@qiko/ui";
 import {
   acceptResearchRun,
+  createBacklogTickets,
   createResearchRun,
+  getBacklogProposal,
   getResearchRun,
+  type BacklogProposal,
   type BriefOut,
   type ResearchRunOut,
 } from "@/lib/api";
@@ -168,6 +171,9 @@ export function ResearchTab({ agentId }: { agentId: string }) {
                   accepting={accept.isPending}
                 />
               )}
+              {run.data.brief && run.data.brief.status === "accepted" && runId && (
+                <BacklogPanel agentId={agentId} runId={runId} />
+              )}
             </div>
           )}
         </div>
@@ -243,6 +249,116 @@ function BriefCard({
               {c}
             </span>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BacklogPanel({ agentId, runId }: { agentId: string; runId: string }) {
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const proposal = useQuery<BacklogProposal>({
+    queryKey: ["backlog-proposal", agentId, runId],
+    queryFn: () => getBacklogProposal(agentId, runId),
+    enabled: !!runId,
+  });
+
+  useEffect(() => {
+    if (proposal.data?.items.length) {
+      setSelected(new Set(proposal.data.items.map((_, i) => i)));
+    }
+  }, [proposal.data?.items.length]);
+
+  const create = useMutation({
+    mutationFn: () => {
+      if (!proposal.data) return Promise.reject(new Error("no proposal"));
+      const items = proposal.data.items.filter((_, i) => selected.has(i));
+      return createBacklogTickets(agentId, runId, { project_key: proposal.data.project_key, items });
+    },
+  });
+
+  const toggle = (index: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) next.delete(index);
+      else next.add(index);
+      return next;
+    });
+  };
+
+  const created = create.data?.created || [];
+
+  return (
+    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+          <ListChecks className="size-4 text-primary" /> Proposed backlog
+        </h3>
+        {proposal.isRefetching && <Loader2 className="size-4 animate-spin text-white/50" />}
+      </div>
+
+      {proposal.isLoading && (
+        <div className="flex items-center gap-2 text-sm text-white/50">
+          <Loader2 className="size-4 animate-spin" /> Building backlog...
+        </div>
+      )}
+      {proposal.isError && <p className="text-sm text-rose-400">Could not build backlog. Connect Qiko Track first.</p>}
+      {proposal.data && (
+        <div className="space-y-3">
+          <p className="text-xs text-white/50">Project {proposal.data.project_key}</p>
+          {proposal.data.items.map((item, idx) => (
+            <label
+              key={idx}
+              className={cn(
+                "flex cursor-pointer items-start gap-3 rounded-lg border p-3",
+                selected.has(idx)
+                  ? "border-primary/40 bg-primary/5"
+                  : "border-white/[0.06] bg-white/[0.02] opacity-60",
+              )}
+            >
+              <input
+                type="checkbox"
+                checked={selected.has(idx)}
+                onChange={() => toggle(idx)}
+                className="mt-1"
+              />
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-medium text-white">{item.title}</span>
+                  <Badge variant="muted" className="text-[10px] uppercase">{item.type}</Badge>
+                  {item.priority !== "NONE" && (
+                    <Badge variant="warning" className="text-[10px] uppercase">{item.priority}</Badge>
+                  )}
+                </div>
+                <p className="mt-1 line-clamp-2 text-xs text-white/60">{item.description_md}</p>
+                {item.estimate_points !== null && (
+                  <p className="mt-1 text-xs text-white/40">{item.estimate_points} points</p>
+                )}
+              </div>
+            </label>
+          ))}
+          <Button
+            onClick={() => create.mutate()}
+            disabled={selected.size === 0 || create.isPending || proposal.isLoading}
+            className="w-full sm:w-auto"
+          >
+            {create.isPending && <Loader2 className="size-4 animate-spin" />}
+            <Plus className="size-4" />
+            Create {selected.size} ticket{selected.size === 1 ? "" : "s"}
+          </Button>
+          {create.isError && <p className="text-sm text-rose-400">Could not create tickets.</p>}
+          {created.length > 0 && (
+            <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3">
+              <p className="text-sm font-medium text-emerald-300">Created tickets</p>
+              <ul className="mt-1 space-y-1">
+                {created.map((c) => (
+                  <li key={c.index} className="text-xs text-emerald-100/80">
+                    {c.key}: {c.title}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>

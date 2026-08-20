@@ -37,6 +37,7 @@ from app.modules.intelligence.orchestration import (
     Specialist,
     Synthesizer,
 )
+from app.modules.intelligence.backlog import BacklogCreateError, BacklogProposal, BacklogService, ProposedTicket
 from app.modules.intelligence.research import Brief, ResearchService
 from app.modules.knowledge.parsing import MAX_UPLOAD_BYTES
 from app.modules.chat.service import ChatService
@@ -125,6 +126,38 @@ class BriefOut(BaseModel):
 
 class ResearchRunOut(PipelineRunOut):
     brief: BriefOut | None = None
+
+
+class ProposedTicketOut(BaseModel):
+    title: str
+    description_md: str
+    type: Literal["FEATURE", "BUG", "CHORE", "SPIKE", "FINDING", "EPIC"]
+    priority: Literal["URGENT", "HIGH", "MEDIUM", "LOW", "NONE"]
+    estimate_points: int | None = None
+    parent_index: int | None = None
+    finding_index: int | None = None
+    evidence_refs: list[str] = []
+
+
+class ProposedTicketIn(BaseModel):
+    title: str = Field(min_length=3, max_length=300)
+    description_md: str = Field(default="", max_length=50_000)
+    type: Literal["FEATURE", "BUG", "CHORE", "SPIKE", "FINDING", "EPIC"] = "FEATURE"
+    priority: Literal["URGENT", "HIGH", "MEDIUM", "LOW", "NONE"] = "NONE"
+    estimate_points: int | None = Field(default=None, ge=0, le=100)
+    parent_index: int | None = None
+    finding_index: int | None = None
+    evidence_refs: list[str] = []
+
+
+class BacklogProposalOut(BaseModel):
+    project_key: str
+    items: list[ProposedTicketOut]
+
+
+class BacklogCreateBody(BaseModel):
+    project_key: str | None = None
+    items: list[ProposedTicketIn] = Field(min_length=1)
 
 
 class DocumentOut(BaseModel):
@@ -986,6 +1019,24 @@ def _research_service_for_request(
     )
 
 
+def _backlog_service_for_agent(agent) -> BacklogService | None:
+    """Return a BacklogService for the agent's Qiko Track connection, or None."""
+    if agent is None:
+        return None
+    cfg = agent.config or {}
+    project_keys = cfg.get("qiko_track_project_keys") or []
+    base_url = cfg.get("qiko_track_base_url") or ""
+    if not project_keys or not base_url:
+        return None
+    try:
+        token = stored_credential(
+            cfg, flag="qiko_track_credentials_added",
+            key="qiko_track_token_encrypted", label="Qiko Track")
+    except HTTPException:
+        return None
+    return BacklogService(base_url=base_url, token=token)
+
+
 def _is_research_run(run) -> bool:
     return (run.status or {}).get("config", {}).get("kind") == "research"
 
@@ -1090,6 +1141,133 @@ async def accept_research_run(
     if brief is None:
         raise HTTPException(status_code=404, detail="research run not found")
 
+    await audit.record(
+        request.app.state.audit,
+        audit.AuditEvent(
+            action=audit_actions.RESEARCH_BRIEF_ACCEPTED,
+            target_id=run_id,
+            target_label=run.subject,
+            tenant_id=tenant,
+            actor_type=audit.USER,
+            actor_id=str(claims.get("sub") or ""),
+            actor_label=str(claims.get("email") or claims.get("sub") or ""),
+            changes=audit.diff(audit_actions.RESEARCH_BRIEF_ACCEPTED, {}, {"accepted": True}),
+            metadata={"agent_id": agent_id, "run_id": run_id},
+        ),
+        request=request,
+    )
+
     out = ResearchRunOut.model_validate(run)
     out.brief = _brief_out(brief)
     return out
+
+
+@router.get("/agents/{agent_id}/research/runs/{run_id}/backlog")
+async def get_backlog_proposal(
+    agent_id: str,
+    run_id: str,
+    request: Request,
+    tenant: str = Depends(authed_tenant),
+    _claims: dict = Depends(require_role(Role.viewer)),
+    agents: AgentService = Depends(get_agents),
+) -> BacklogProposalOut:
+    """Generate a reviewable Qiko Track backlog draft from an accepted research brief."""
+    _worker, recheck = await _resolve_worker(request, tenant, agent_id)
+    try:
+        run = await request.app.state.pipeline_run_store.get(tenant, agent_id, run_id)
+        if run is None or not _is_research_run(run):
+            raise HTTPException(status_code=404, detail="research run not found")
+
+        agent = await agents.get(tenant, agent_id)
+        service = _backlog_service_for_agent(agent)
+        if service is None:
+            raise HTTPException(status_code=422, detail="this worker has no Qiko Track connection")
+
+        project_keys = (agent.config or {}).get("qiko_track_project_keys") or []
+        project_key = project_keys[0]
+
+        svc = _research_service_for_request(request)
+        brief = await svc.get_brief(tenant, agent_id, run_id)
+        if brief is None:
+            raise HTTPException(status_code=404, detail="research run not found")
+
+        proposal = service.propose(brief, project_key)
+    finally:
+        await recheck()
+    return BacklogProposalOut(project_key=proposal.project_key, items=[
+        ProposedTicketOut(**item.to_dict()) for item in proposal.items
+    ])
+
+
+@router.post("/agents/{agent_id}/research/runs/{run_id}/backlog")
+async def create_backlog_tickets(
+    agent_id: str,
+    run_id: str,
+    body: BacklogCreateBody,
+    request: Request,
+    tenant: str = Depends(authed_tenant),
+    claims: dict = Depends(require_role(Role.editor)),
+    agents: AgentService = Depends(get_agents),
+) -> dict:
+    """Create the approved subset of proposed tickets in Qiko Track.
+
+    Each creation is idempotent; resubmitting the same approval cannot duplicate tickets.
+    """
+    _worker, recheck = await _resolve_worker(request, tenant, agent_id)
+    try:
+        run = await request.app.state.pipeline_run_store.get(tenant, agent_id, run_id)
+        if run is None or not _is_research_run(run):
+            raise HTTPException(status_code=404, detail="research run not found")
+
+        agent = await agents.get(tenant, agent_id)
+        service = _backlog_service_for_agent(agent)
+        if service is None:
+            raise HTTPException(status_code=422, detail="this worker has no Qiko Track connection")
+
+        cfg = agent.config or {}
+        project_keys = cfg.get("qiko_track_project_keys") or []
+        project_key = body.project_key or (project_keys[0] if project_keys else "")
+        if not project_key:
+            raise HTTPException(status_code=422, detail="no project key available")
+
+        proposal = BacklogProposal(
+            project_key=project_key,
+            items=[
+                ProposedTicket(
+                    title=item.title,
+                    description_md=item.description_md,
+                    type=item.type,
+                    priority=item.priority,
+                    estimate_points=item.estimate_points,
+                    parent_index=item.parent_index,
+                    finding_index=item.finding_index,
+                    evidence_refs=list(item.evidence_refs),
+                )
+                for item in body.items
+            ],
+        )
+        try:
+            created = await service.create_approved(proposal, set(range(len(proposal.items))))
+        except BacklogCreateError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+        await audit.record(
+            request.app.state.audit,
+            audit.AuditEvent(
+                action=audit_actions.BACKLOG_CREATED,
+                target_id=run_id,
+                target_label=run.subject,
+                tenant_id=tenant,
+                actor_type=audit.USER,
+                actor_id=str(claims.get("sub") or ""),
+                actor_label=str(claims.get("email") or claims.get("sub") or ""),
+                changes=audit.diff(
+                    audit_actions.BACKLOG_CREATED, {},
+                    {"created": len(created), "project_key": project_key}),
+                metadata={"agent_id": agent_id, "run_id": run_id, "created_keys": [c["key"] for c in created]},
+            ),
+            request=request,
+        )
+    finally:
+        await recheck()
+    return {"created": created}

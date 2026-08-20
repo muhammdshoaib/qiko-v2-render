@@ -93,7 +93,7 @@ AUDIT_WRITERS: dict[str, int] = {
     "chat/router.py": 1,
     "rfp/router.py": 7,
     "finance/router.py": 1,
-    "intelligence/router.py": 9,
+    "intelligence/router.py": 12,
     "agentcore/batch_router.py": 1,
     # One route each, though login writes three different events (success, bad password, bad 2FA).
     "identity/router.py": 1,
@@ -377,6 +377,9 @@ INSTRUMENTED: set[tuple[str, str]] = {
     ("POST", "/api/v1/intelligence/agents/{agent_id}/sources/slack/channels"),
     ("POST", "/api/v1/intelligence/agents/{agent_id}/pipeline/runs"),
     ("POST", "/api/v1/intelligence/agents/{agent_id}/pipeline/runs/{run_id}/resume"),
+    ("POST", "/api/v1/intelligence/agents/{agent_id}/research/runs"),
+    ("POST", "/api/v1/intelligence/agents/{agent_id}/research/runs/{run_id}/accept"),
+    ("POST", "/api/v1/intelligence/agents/{agent_id}/research/runs/{run_id}/backlog"),
     ("PUT", "/api/v1/agents/{agent_id}/config"),
     ("POST", "/api/v1/rfp/packs/{pack_id}/questions/{question_id}/lock"),
     ("POST", "/api/v1/rfp/packs/{pack_id}/questions/{question_id}/unlock"),

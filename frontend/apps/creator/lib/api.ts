@@ -322,6 +322,27 @@ export const getResearchRun = (agentId: string, runId: string) =>
 export const acceptResearchRun = (agentId: string, runId: string) =>
   request<ResearchRunOut>(`/intelligence/agents/${encodeURIComponent(agentId)}/research/runs/${encodeURIComponent(runId)}/accept`, { method: "POST" });
 
+// Backlog proposals from research
+export type ProposedTicket = {
+  title: string;
+  description_md: string;
+  type: "FEATURE" | "BUG" | "CHORE" | "SPIKE" | "FINDING" | "EPIC";
+  priority: "URGENT" | "HIGH" | "MEDIUM" | "LOW" | "NONE";
+  estimate_points: number | null;
+  parent_index: number | null;
+  finding_index: number | null;
+  evidence_refs: string[];
+};
+export type BacklogProposal = {
+  project_key: string;
+  items: ProposedTicket[];
+};
+export type BacklogCreateResult = { created: { index: number; key: string; title: string }[] };
+export const getBacklogProposal = (agentId: string, runId: string) =>
+  request<BacklogProposal>(`/intelligence/agents/${encodeURIComponent(agentId)}/research/runs/${encodeURIComponent(runId)}/backlog`);
+export const createBacklogTickets = (agentId: string, runId: string, body: BacklogProposal) =>
+  request<BacklogCreateResult>(`/intelligence/agents/${encodeURIComponent(agentId)}/research/runs/${encodeURIComponent(runId)}/backlog`, { method: "POST", body: JSON.stringify(body) });
+
 // Grounded batch answering (confidence + citations + human-review gate) + xlsx export
 export type BatchAnswer = { id: string; question: string; answer: string; confidence: number; decision: string; citations: string[] };
 export const batchAnswer = (questions: string[], agent_id: string) =>
