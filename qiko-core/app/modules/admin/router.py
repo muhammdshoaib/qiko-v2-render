@@ -79,13 +79,16 @@ class WorkerStateAuditOut(BaseModel):
     created_at: datetime
 
 
-class CustomerDetailOut(BaseModel):
+class CustomerOut(BaseModel):
     user_id: str
     email: str
     plan: str
     earnings_cents: int
     is_studio: bool
     deleted: bool
+
+
+class CustomerDetailOut(CustomerOut):
     workers: list[AdminWorkerOut]
     worker_state_audit: list[WorkerStateAuditOut]
 
@@ -227,7 +230,7 @@ class StudioBody(BaseModel):
     enabled: bool
 
 
-@router.post("/customers/{user_id}/studio", openapi_extra=_CSRF_OPENAPI)
+@router.post("/customers/{user_id}/studio", response_model=CustomerOut, openapi_extra=_CSRF_OPENAPI)
 async def customer_studio(user_id: str, body: StudioBody, request: Request,
                           claims: dict = Depends(current_claims),
                           _tenant: str = Depends(authed_tenant),
@@ -253,7 +256,7 @@ async def customer_studio(user_id: str, body: StudioBody, request: Request,
         raise HTTPException(status_code=404, detail="customer not found") from exc
 
 
-@router.delete("/customers/{user_id}", openapi_extra=_CSRF_OPENAPI)
+@router.delete("/customers/{user_id}", response_model=CustomerOut, openapi_extra=_CSRF_OPENAPI)
 async def customer_delete(user_id: str, request: Request,
                           claims: dict = Depends(current_claims),
                           _tenant: str = Depends(authed_tenant),
