@@ -454,10 +454,6 @@ AUDIT_BACKLOG: dict[tuple[str, str], str] = {
         "CRITICAL deletion: leg E2 wave 5. Destroys customer data with no record of who or why."),
     ("POST", "/api/v1/billing/checkout"): (
         "CRITICAL money: leg E2 wave 1. Nothing records who moved or claimed money."),
-    ("POST", "/api/v1/billing/invoices"): (
-        "CRITICAL money: leg E2 wave 1. Creates an invoice with no record of who or why."),
-    ("POST", "/api/v1/billing/invoices/reconcile"): (
-        "CRITICAL money: leg E2 wave 1. Triggers reconciliation with no record of who or why."),
     ("POST", "/api/v1/billing/subscription/activate"): (
         "CRITICAL money: leg E2 wave 1. Nothing records who moved or claimed money."),
     ("POST", "/api/v1/billing/subscription/cancel"): (
