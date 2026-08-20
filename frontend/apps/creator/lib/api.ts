@@ -289,6 +289,39 @@ export type Discrepancy = {
 };
 export const getDiscrepancies = (agentId: string) => request<Discrepancy[]>(`/intelligence/agents/${encodeURIComponent(agentId)}/discrepancies`);
 
+// Research briefs
+export type FindingOut = {
+  text: string;
+  confidence: number | null;
+  evidence_refs: string[];
+  gaps: string;
+};
+export type BriefOut = {
+  status: "in_progress" | "draft" | "accepted";
+  summary: string;
+  findings: FindingOut[];
+  gaps: string;
+  citations: string[];
+  accepted_at: string | null;
+};
+export type ResearchRunOut = {
+  run_id: string;
+  tenant: string;
+  agent_id: string;
+  subject: string;
+  facets: string[];
+  status: Record<string, unknown>;
+  verdict: string | null;
+  cost: Record<string, unknown> | null;
+  brief: BriefOut | null;
+};
+export const createResearchRun = (agentId: string, body: { subject: string; facets: string[] }) =>
+  request<ResearchRunOut>(`/intelligence/agents/${encodeURIComponent(agentId)}/research/runs`, { method: "POST", body: JSON.stringify(body) });
+export const getResearchRun = (agentId: string, runId: string) =>
+  request<ResearchRunOut>(`/intelligence/agents/${encodeURIComponent(agentId)}/research/runs/${encodeURIComponent(runId)}`);
+export const acceptResearchRun = (agentId: string, runId: string) =>
+  request<ResearchRunOut>(`/intelligence/agents/${encodeURIComponent(agentId)}/research/runs/${encodeURIComponent(runId)}/accept`, { method: "POST" });
+
 // Grounded batch answering (confidence + citations + human-review gate) + xlsx export
 export type BatchAnswer = { id: string; question: string; answer: string; confidence: number; decision: string; citations: string[] };
 export const batchAnswer = (questions: string[], agent_id: string) =>
