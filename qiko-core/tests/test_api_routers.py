@@ -74,6 +74,12 @@ def test_knowledge_ingest_file_enforces_upload_cap(client, monkeypatch):
     assert r.status_code == 413
 
 
+def test_knowledge_ingest_file_rejects_unsupported_document_type(client):
+    r = client.post("/api/v1/knowledge/ingest-file", data={"doc_id": "bad"},
+                    files={"file": ("bad.exe", b"data", "application/octet-stream")}, cookies=_cookies())
+    assert r.status_code == 422
+
+
 def test_knowledge_search_requires_agent_id(client):
     # agent_id is required on the public search endpoint so the caller can never read across
     # worker corpora without explicitly scoping to one worker (plus its inherited shared corpus).

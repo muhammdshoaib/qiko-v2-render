@@ -36,12 +36,16 @@ class KnowledgeService:
         # Embedding can be a blocking network call (e.g. Titan via boto3) or CPU-bound; run it off
         # the event loop so one ingest can't freeze every other request this process is handling.
         embeddings = await asyncio.to_thread(lambda: [self.embeddings.embed(c) for c in chunks])
-        for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-            # Include agent_id in the id seed so the same doc ingested for two workers doesn't collide.
-            pid = hashlib.sha1(f"{tenant}:{agent_id or ''}:{doc_id}:{i}".encode()).hexdigest()[:16]
-            await self.store.add(Passage(id=pid, tenant=tenant, doc_id=doc_id, text=chunk,
-                                         embedding=embedding, agent_id=agent_id))
-        return len(chunks)
+        passages = [
+            Passage(
+                # Include agent_id in the id seed so the same doc ingested for two workers doesn't collide.
+                id=hashlib.sha1(f"{tenant}:{agent_id or ''}:{doc_id}:{i}".encode()).hexdigest()[:16],
+                tenant=tenant, doc_id=doc_id, text=chunk, embedding=embedding, agent_id=agent_id,
+            )
+            for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
+        ]
+        await self.store.add_all(passages)
+        return len(passages)
 
     async def ingest_file(self, tenant: str, doc_id: str, filename: str, data: bytes,
                           *, agent_id: str | None = None) -> int:

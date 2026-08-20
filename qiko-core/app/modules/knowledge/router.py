@@ -9,7 +9,7 @@ from app.modules.audit import service as audit
 from app.core.deps import current_claims, authed_tenant, get_knowledge, require_role, resolve_tenant_worker
 from app.modules.identity.rbac import Role
 from app.modules.knowledge.evaluation import RFP_CRITERIA, evaluate_document
-from app.modules.knowledge.parsing import MAX_UPLOAD_BYTES
+from app.modules.knowledge.parsing import MAX_UPLOAD_BYTES, UnsupportedDocumentError
 from app.modules.workers.worker import StubProviderUnavailable
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
@@ -89,7 +89,10 @@ async def ingest_file(file: UploadFile = File(...), doc_id: str = Form(...),
     data = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="file exceeds the 10MB limit")
-    chunks = await svc.ingest_file(tenant, doc_id, file.filename or doc_id, data, agent_id=agent_id)
+    try:
+        chunks = await svc.ingest_file(tenant, doc_id, file.filename or doc_id, data, agent_id=agent_id)
+    except UnsupportedDocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"doc_id": doc_id, "chunks": chunks}
 
 
