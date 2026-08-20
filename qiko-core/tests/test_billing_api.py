@@ -88,8 +88,11 @@ def test_billing_lifecycle_requires_tenant_admin_or_owner(client):
         cookies = auth_cookies("bill", role)
         assert client.get("/api/v1/billing/subscription", cookies=cookies).status_code == 403
         assert client.get("/api/v1/billing/portal", cookies=cookies).status_code == 403
-        assert client.post("/api/v1/billing/subscription/cancel", cookies=cookies).status_code == 403
-        assert client.post("/api/v1/billing/subscription/resume", cookies=cookies).status_code == 403
+        csrf_cookies, headers = _with_csrf(cookies)
+        assert client.post("/api/v1/billing/checkout", json={"plan": "pro"},
+                           cookies=csrf_cookies, headers=headers).status_code == 403
+        assert client.post("/api/v1/billing/subscription/cancel", cookies=csrf_cookies, headers=headers).status_code == 403
+        assert client.post("/api/v1/billing/subscription/resume", cookies=csrf_cookies, headers=headers).status_code == 403
 
 
 def test_plans_match_the_real_product(client):
@@ -115,8 +118,11 @@ def test_subscription_cancel_resume(client):
     # Lifecycle acts on the caller's own tenant (derived from auth), never a path/body id.
     client.post("/api/v1/billing/subscription/activate", json={"plan": "pro"}, cookies=C)
     assert client.get("/api/v1/billing/subscription", cookies=C).json()["status"] == "active"
-    assert client.post("/api/v1/billing/subscription/cancel", cookies=C).json()["cancel_at_period_end"] is True
-    assert client.post("/api/v1/billing/subscription/resume", cookies=C).json()["cancel_at_period_end"] is False
+    cookies, headers = _with_csrf(C)
+    assert client.post("/api/v1/billing/subscription/cancel",
+                       cookies=cookies, headers=headers).json()["cancel_at_period_end"] is True
+    assert client.post("/api/v1/billing/subscription/resume",
+                       cookies=cookies, headers=headers).json()["cancel_at_period_end"] is False
 
 
 def test_subscription_is_tenant_scoped_no_cross_tenant_bola(client):
@@ -142,8 +148,9 @@ def test_subscription_is_tenant_scoped_no_cross_tenant_bola(client):
 
     # B cannot cancel/resume A's subscription: the endpoints only ever target B's own subject,
     # which doesn't exist -> 404 (cancel) / 400 (resume). No path or body lets B name "bill".
-    assert client.post("/api/v1/billing/subscription/cancel", cookies=tenant_b).status_code == 404
-    assert client.post("/api/v1/billing/subscription/resume", cookies=tenant_b).status_code == 400
+    b_cookies, b_headers = _with_csrf(tenant_b)
+    assert client.post("/api/v1/billing/subscription/cancel", cookies=b_cookies, headers=b_headers).status_code == 404
+    assert client.post("/api/v1/billing/subscription/resume", cookies=b_cookies, headers=b_headers).status_code == 400
 
     # A's subscription is still active and untouched by B's attempts.
     a_view = client.get("/api/v1/billing/subscription", cookies=C).json()

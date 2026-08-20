@@ -6,6 +6,7 @@ import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Inpu
 import { forgotPassword } from "@/lib/api";
 
 export default function ForgotPasswordPage() {
+  const creatorBaseUrl = process.env.NEXT_PUBLIC_CREATOR_BASE_URL || "/";
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -29,13 +30,15 @@ export default function ForgotPasswordPage() {
     <div className="flex min-h-screen items-center justify-center px-4 bg-background">
       <Card className="w-full max-w-md bg-card/90 border-border/50">
         <CardHeader className="text-center">
-          <img
-            src="/qiko-logo.webp"
-            alt="Qiko"
-            width={120}
-            height={48}
-            className="mx-auto mb-3 h-12 w-[120px] object-contain"
-          />
+          <Link href={creatorBaseUrl}>
+            <img
+              src="/qiko-logo.webp"
+              alt="Qiko"
+              width={120}
+              height={48}
+              className="mx-auto mb-3 h-12 w-[120px] object-contain"
+            />
+          </Link>
           <CardTitle>Forgot Password</CardTitle>
           <CardDescription>Enter your admin email to receive a one-time code.</CardDescription>
         </CardHeader>

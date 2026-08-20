@@ -164,7 +164,7 @@ const paged = (page: number, extra: Record<string, string | undefined> = {}, sor
  *  operator a control that returns a 422. */
 export const SORTABLE = {
   customers: ["email", "plan", "earnings"],
-  invoices: ["invoice", "customer", "status", "amount"],
+  invoices: ["invoice", "customer", "status", "amount", "number", "period"],
   // The same endpoint, so the same allowlist. Listed separately because the test resolves the key from
   // the page's directory name.
   subscriptions: ["email", "plan", "earnings"],

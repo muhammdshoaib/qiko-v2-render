@@ -397,12 +397,13 @@ def compute_analytics(expenses: list[ExpenseRow], incomes: list[IncomeRow], *,
         if i.property_ref in real_refs:
             inc_by_prop.setdefault(i.property_ref, []).append(i)
 
-    total_income = _round2(sum(i.amount for i in f_inc))
     real_exp = [e for e in f_exp if e.property_ref in real_refs]
+    real_inc = [i for i in f_inc if i.property_ref in real_refs]
+    total_income = _round2(sum(i.amount for i in real_inc))
     total_expenses = _round2(sum(e.gross for e in real_exp))
     total_nett = _round2(sum(e.nett for e in real_exp))
     total_vat = _round2(sum(e.vat for e in real_exp))
-    total_outstanding = _round2(sum(i.income_receivable for i in f_inc))
+    total_outstanding = _round2(sum(i.income_receivable for i in real_inc))
     net_profit = _round2(total_income - total_expenses)
 
     distinct_vendors = {e.vendor for e in real_exp if e.vendor}
@@ -418,12 +419,12 @@ def compute_analytics(expenses: list[ExpenseRow], incomes: list[IncomeRow], *,
         risk_counts[p["riskLevel"]] += 1
 
     charts = _build_charts(raw_props, real_exp, total_expenses)
-    charts["monthlyTrends"] = _monthly_trends(real_exp, f_inc)
+    charts["monthlyTrends"] = _monthly_trends(real_exp, real_inc)
     insights = _build_insights(raw_props, charts, total_income, total_expenses, net_profit,
                                total_outstanding, len(distinct_vendors), risk_counts)
     trends = _build_trends(raw_props, real_exp, total_income, total_outstanding)
 
-    summary = _build_summary(raw_props, f_exp, f_inc, total_income, total_expenses, total_nett,
+    summary = _build_summary(raw_props, real_exp, real_inc, total_income, total_expenses, total_nett,
                              total_vat, total_outstanding, net_profit, len(real_refs))
 
     return {

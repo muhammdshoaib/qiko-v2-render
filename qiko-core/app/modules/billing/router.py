@@ -109,6 +109,7 @@ def plans() -> list[dict]:
 
 @router.post("/checkout")
 def checkout(request: Request, body: CheckoutBody, tenant: str = Depends(authed_tenant),
+             _role: dict = Depends(require_role(Role.admin)),
              subs=Depends(get_subscriptions)) -> dict:
     # State-changing request from the creator UI: require the double-submit CSRF token.
     csrf.require_csrf(request)
@@ -136,24 +137,30 @@ def portal(tenant: str = Depends(authed_tenant),
 
 
 @router.post("/subscription/cancel")
-def cancel(tenant: str = Depends(authed_tenant),
+def cancel(request: Request, tenant: str = Depends(authed_tenant),
            _role: dict = Depends(require_role(Role.admin)),
            subs=Depends(get_subscriptions)) -> dict:
+    csrf.require_csrf(request)
     try:
         sub = subs.cancel(tenant)
     except KeyError as e:
         raise HTTPException(status_code=404, detail="no subscription") from e
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail="payment provider error") from e
     return {"customer_id": tenant, "status": sub.status, "cancel_at_period_end": sub.cancel_at_period_end}
 
 
 @router.post("/subscription/resume")
-def resume(tenant: str = Depends(authed_tenant),
+def resume(request: Request, tenant: str = Depends(authed_tenant),
            _role: dict = Depends(require_role(Role.admin)),
            subs=Depends(get_subscriptions)) -> dict:
+    csrf.require_csrf(request)
     try:
         sub = subs.resume(tenant)
     except (KeyError, ValueError) as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail="payment provider error") from e
     return {"customer_id": tenant, "status": sub.status, "cancel_at_period_end": sub.cancel_at_period_end}
 
 
@@ -344,7 +351,10 @@ def reconcile_invoices_route(request: Request, claims: dict = Depends(current_cl
                              _identity=Depends(require_platform_capability(Capability.manage_billing))) -> dict:
     csrf.require_csrf(request)
     actor = str(claims.get("email") or "")
-    result = request.app.state.invoice_reconciliation.reconcile()
+    try:
+        result = request.app.state.invoice_reconciliation.reconcile()
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail="payment provider error") from e
     audit.record_sync(request.app.state.audit, audit.AuditEvent(
         action=audit_actions.INVOICE_RECONCILED, target_id="billing",
         actor_type=audit.PLATFORM_ADMIN, actor_id=actor, actor_label=actor,

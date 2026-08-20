@@ -24,9 +24,19 @@ def _parse_sig_header(header: str) -> tuple[str, str]:
     return parts.get("t", ""), parts.get("v1", "")
 
 
+WEBHOOK_TOLERANCE_SECONDS = 300
+
+
 def verify_stripe_signature(secret: str, payload: bytes, sig_header: str) -> bool:
     t, v1 = _parse_sig_header(sig_header)
     if not secret or not t or not v1:
+        return False
+    try:
+        ts = int(t)
+    except ValueError:
+        return False
+    now = datetime.now(timezone.utc).timestamp()
+    if abs(now - ts) > WEBHOOK_TOLERANCE_SECONDS:
         return False
     signed = f"{t}.".encode() + payload
     expected = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()

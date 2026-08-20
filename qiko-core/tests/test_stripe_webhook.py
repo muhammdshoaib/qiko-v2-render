@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import time
 
 from app.modules.billing.webhook import (
     StripeWebhookHandler,
@@ -9,7 +10,9 @@ from app.modules.billing.webhook import (
 SECRET = "whsec_test"
 
 
-def _sig(payload: bytes, t: str = "1700000000") -> str:
+def _sig(payload: bytes, t: str | None = None) -> str:
+    if t is None:
+        t = str(int(time.time()))
     mac = hmac.new(SECRET.encode(), f"{t}.".encode() + payload, hashlib.sha256).hexdigest()
     return f"t={t},v1={mac}"
 
@@ -19,6 +22,11 @@ def test_stripe_signature_verify():
     assert verify_stripe_signature(SECRET, payload, _sig(payload)) is True
     assert verify_stripe_signature(SECRET, b'{"id":"tampered"}', _sig(payload)) is False
     assert verify_stripe_signature(SECRET, payload, "garbage") is False
+
+
+def test_stripe_signature_rejects_stale_timestamps():
+    payload = b'{"id":"evt_1"}'
+    assert verify_stripe_signature(SECRET, payload, _sig(payload, t="1700000000")) is False
 
 
 def _invoice_event(eid: str, inv_id: str, amount: int, status: str = "paid") -> dict:

@@ -2,6 +2,7 @@
 import hashlib
 import hmac
 import json
+import time
 
 _PAYLOAD = {"entry": [{"changes": [{"value": {"messages": [
     {"id": "wamid.1", "from": "155", "type": "text", "text": {"body": "hi"}}]}}]}]}
@@ -37,7 +38,7 @@ def test_stripe_webhook_verifies_signature(client, monkeypatch):
     monkeypatch.setattr(config.get_settings(), "stripe_webhook_secret", "sk-whsec")
     body = json.dumps({"id": "evt1", "type": "invoice.paid",
                        "data": {"object": {"id": "in1", "customer": "c", "amount_paid": 100, "status": "paid"}}}).encode()
-    t = "1720000000"
+    t = str(int(time.time()))
     v1 = hmac.new(b"sk-whsec", f"{t}.".encode() + body, hashlib.sha256).hexdigest()
     ok = client.post("/api/v1/billing/webhook/stripe", content=body,
                      headers={"Stripe-Signature": f"t={t},v1={v1}", "Content-Type": "application/json"})

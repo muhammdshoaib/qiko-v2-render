@@ -221,6 +221,43 @@ def test_analytics_empty_portfolio_is_safe():
     assert len(result["trends"]) == 4
 
 
+def _workbook_with_owner_expenditure() -> bytes:
+    """PROP-A is normal; PROP-OWNER is flagged as owner expenditure and should be excluded."""
+    wb = Workbook()
+    exp = wb.active
+    exp.title = "Exp YTD"
+    exp.append(_EXPENSE_HEADER)
+    exp.append(["A001", "12 High Street", "A001/1", "Flat 1, 12 High Street", "Repairs",
+                "Acme Maintenance", 100.0, 20.0, 120.0, "01/03/2024"])
+    exp.append(["OWN1", "owner expenditure property", "OWN1/1", "Owner Expenditure", "Maintenance",
+                "Owner Vendor", 500.0, 100.0, 600.0, "02/03/2024"])
+
+    inc = wb.create_sheet("Income Receivable YTD")
+    inc.append(_INCOME_HEADER)
+    inc.append(["A001", "A001/1", "Flat 1, 12 High Street", 1000.0, 0.0, "01/03/2024"])
+    inc.append(["OWN1", "OWN1/1", "Owner Expenditure", 300.0, 50.0, "02/03/2024"])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def test_analytics_excludes_owner_expenditure_rows():
+    expenses, incomes = parse_workbook(_workbook_with_owner_expenditure())
+    result = compute_analytics(expenses, incomes)
+    s = result["summary"]
+
+    assert s["propertyCount"] == 1
+    assert s["totalIncome"] == 1000.0
+    assert s["totalExpenses"] == 120.0
+    assert s["outstanding"] == 0.0
+    assert s["vendorCount"] == 1
+    assert s["totalExpensesTopVendor"] == "Acme Maintenance"
+    assert s["totalInvoices"] == 1
+    assert len(result["properties"]) == 1
+    assert result["properties"][0]["propertyRef"] == "A001"
+
+
 def _two_month_workbook() -> bytes:
     """One property with income + expenses split across Feb and Mar 2024, so a month filter can be
     shown to narrow the totals to a single month."""
