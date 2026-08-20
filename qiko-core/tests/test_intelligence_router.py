@@ -246,3 +246,41 @@ def test_upload_document_and_delete(client):
 
     r = client.get("/api/v1/intelligence/agents/w1/documents", cookies=C)
     assert not any(d["doc_id"] == doc_id for d in r.json())
+
+
+def test_get_metrics_returns_qiko_track_project_metrics(client, monkeypatch):
+    def _fake_for_projects(self, project_keys, *, window="30d", sprint=None):
+        return {
+            "QIW": {
+                "available": True,
+                "window": {"key": "14d", "from": "2026-08-01T00:00:00Z", "to": "2026-08-15T00:00:00Z"},
+                "throughput": {"tickets": 3, "points": 8, "unestimated": 0, "ticketsPerWeek": 1.5, "pointsPerWeek": 4.0, "completeWeeks": 2},
+            },
+        }
+
+    class FakeMetricsService:
+        def __init__(self, base_url: str, token: str, ttl_seconds: float = 60.0):
+            pass
+        async def for_projects(self, project_keys, *, window="30d", sprint=None):
+            return _fake_for_projects(self, project_keys, window=window, sprint=sprint)
+
+    monkeypatch.setattr("app.modules.intelligence.router.MetricsService", FakeMetricsService)
+
+    r = client.post(
+        "/api/v1/intelligence/agents/w1/sources/qiko_track",
+        json={"token": "qt-token", "project_keys": ["QIW"], "base_url": "https://track.qiko.ai"},
+        cookies=C,
+    )
+    assert r.status_code == 200
+
+    r = client.get("/api/v1/intelligence/agents/w1/metrics", cookies=C)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["projects"]["QIW"]["available"] is True
+    assert body["projects"]["QIW"]["throughput"]["tickets"] == 3
+
+
+def test_get_metrics_returns_empty_when_qiko_track_not_connected(client):
+    r = client.get("/api/v1/intelligence/agents/w1/metrics", cookies=C)
+    assert r.status_code == 200
+    assert r.json()["projects"] == {}

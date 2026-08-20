@@ -52,6 +52,14 @@ class QikoTrackClient:
     async def get_ticket(self, key: str) -> dict:
         return await self._request("GET", f"/api/v1/tickets/{key}")
 
+    async def get_metrics(self, project_key: str, *, window: str = "30d",
+                          sprint: int | None = None) -> dict:
+        params: dict[str, Any] = {"window": window}
+        if sprint is not None:
+            params["sprint"] = sprint
+        return await self._request(
+            "GET", f"/api/v1/projects/{project_key}/metrics", params=params)
+
     async def create_ticket(self, payload: dict, *, idempotency_key: str | None = None) -> dict:
         headers: dict[str, str] = {"Accept": "application/json", "Authorization": f"Bearer {self.token}"}
         if idempotency_key:

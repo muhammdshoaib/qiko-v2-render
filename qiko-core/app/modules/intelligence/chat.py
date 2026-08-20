@@ -7,12 +7,25 @@ from __future__ import annotations
 
 import uuid
 
+from collections.abc import Awaitable, Callable
+
 from app.modules.agentcore.models import AgentResult
 from app.modules.chat.service import ChatService
 from app.modules.workers.worker import StubProviderUnavailable, Worker
 
 _GREETINGS = ("hi", "hello", "hey", "good morning", "good afternoon", "good evening", "greetings")
 _CAPABILITY = ("what can you do", "help", "capabilities", "what do you do", "how can you help")
+_SPRINT_LANDING_QUESTIONS = (
+    "is this sprint going to land",
+    "will this sprint land",
+    "is the sprint going to land",
+    "will the sprint land",
+    "sprint going to land",
+    "sprint on track",
+    "is the sprint on track",
+    "will the sprint finish",
+    "is the sprint going to finish",
+)
 
 _INTELLIGENCE_PROMPT = (
     "You are a Qiko Intelligence Worker. Answer ONLY using the signals in the CONTEXT below. "
@@ -33,7 +46,57 @@ def _classify_intent(message: str) -> str:
         return "greeting"
     if any(phrase in m for phrase in _CAPABILITY):
         return "capability"
+    if any(phrase in m for phrase in _SPRINT_LANDING_QUESTIONS):
+        return "sprint_landing"
     return "data"
+
+
+def _format_sprint_answer(projects: dict[str, dict]) -> str:
+    """Build a grounded, non-opinionated answer to "is this sprint going to land?".
+
+    Uses committed-versus-done from the active sprint. If there is no active
+    sprint or the sprint lacks the end date needed for remaining days, decline
+    honestly instead of guessing.
+    """
+    active: tuple[str, dict] | None = None
+    for key, data in projects.items():
+        sprint = data.get("sprint") or {}
+        if sprint.get("state") == "active" and data.get("available") is True:
+            active = (key, data)
+            break
+
+    if active is None:
+        # No active sprint at all; look for any sprint data to report.
+        for key, data in projects.items():
+            if data.get("available") is True and data.get("sprint"):
+                active = (key, data)
+                break
+
+    if active is None:
+        return _NO_DATA_REPLY
+
+    project_key, data = active
+    sprint = data["sprint"]
+    committed = sprint.get("committed") or {}
+    done = sprint.get("done") or {}
+    carry = sprint.get("projectedCarryOver") or {}
+
+    committed_tickets = committed.get("tickets", 0)
+    done_tickets = done.get("tickets", 0)
+    carry_tickets = carry.get("tickets", 0)
+
+    if committed_tickets == 0:
+        return f"{project_key} sprint '{sprint.get('name')}' has no committed tickets."
+
+    # The Qiko Track metrics endpoint does not expose a sprint end date, so we
+    # cannot compute remaining days. Degrade honestly rather than inventing a
+    # landing prediction.
+    return (
+        f"{project_key} sprint '{sprint.get('name')}' has "
+        f"{done_tickets} of {committed_tickets} committed tickets done; "
+        f"{carry_tickets} are projected to carry over. "
+        "I don't have the sprint end date, so I can't say if it will land."
+    )
 
 
 def _format_sources(result: AgentResult, passages: list) -> list[str]:
@@ -63,6 +126,7 @@ class IntelligenceChat:
     async def answer(
         self, question: str, *, conversation_id: str | None = None,
         chat: ChatService | None = None, user_id: str = "public",
+        metrics_provider: Callable[[], Awaitable[dict[str, dict]]] | None = None,
     ) -> dict:
         """Answer a question, record the exchange, and return sources.
 
@@ -84,6 +148,15 @@ class IntelligenceChat:
             reply = ("I answer questions grounded in the signals your worker has captured. "
                      "I can quote messages, cite the original source link, and tell you when I "
                      "don't have supporting data.")
+            return await self._record_and_return(
+                chat, tenant, conversation_id, user_id, agent_id, question, reply, intent)
+
+        if intent == "sprint_landing":
+            if metrics_provider is None:
+                reply = _NO_DATA_REPLY
+            else:
+                projects = await metrics_provider()
+                reply = _format_sprint_answer(projects)
             return await self._record_and_return(
                 chat, tenant, conversation_id, user_id, agent_id, question, reply, intent)
 

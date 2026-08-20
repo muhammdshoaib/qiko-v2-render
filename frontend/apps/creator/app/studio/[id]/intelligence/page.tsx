@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Bot, FileText, Link as LinkIcon, MessageSquare, RefreshCw, Search, SendHorizonal, ShieldAlert, Database } from "lucide-react";
+import { ArrowLeft, BarChart3, Bot, FileText, Link as LinkIcon, MessageSquare, RefreshCw, Search, SendHorizonal, ShieldAlert, Database } from "lucide-react";
 import { Badge, Button, cn } from "@qiko/ui";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import { SourcesTab } from "@/components/sources-tab";
@@ -11,7 +11,7 @@ import { DocumentsTab } from "@/components/documents-tab";
 import { ResearchTab } from "@/components/research-tab";
 import { WorkerAvatar } from "@/components/worker-avatar";
 import {
-  askIntelligence, getDiscrepancies, listAgents, listIntelligenceSources, type Discrepancy, type IntelligenceSource,
+  askIntelligence, getDiscrepancies, getIntelligenceMetrics, listAgents, listIntelligenceSources, type Discrepancy, type IntelligenceMetrics, type IntelligenceSource, type ProjectMetrics,
 } from "@/lib/api";
 import { workerTypeLabel } from "@/lib/stringUtils";
 
@@ -30,6 +30,10 @@ export default function IntelligenceWorkerPage() {
   const sources = useQuery({
     queryKey: ["intelligence-sources", agentId],
     queryFn: () => listIntelligenceSources(agentId),
+  });
+  const metrics = useQuery({
+    queryKey: ["intelligence-metrics", agentId],
+    queryFn: () => getIntelligenceMetrics(agentId),
   });
 
   const byClass = useMemo(() => {
@@ -91,6 +95,7 @@ export default function IntelligenceWorkerPage() {
 
         {tab === "discrepancies" && (
           <section className="space-y-4">
+            <MetricsPanel metrics={metrics.data} loading={metrics.isLoading} onRefetch={() => metrics.refetch()} />
             <div className="flex items-center justify-between">
               <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
                 <ShieldAlert className="size-4 text-amber-400" /> Open discrepancies
@@ -219,6 +224,75 @@ function IntelligenceChat({ agentId }: { agentId: string }) {
           <SendHorizonal className="size-4" />
         </Button>
       </form>
+    </div>
+  );
+}
+
+function MetricsPanel({ metrics, loading, onRefetch }: { metrics: IntelligenceMetrics | undefined; loading: boolean; onRefetch: () => void }) {
+  const keys = metrics ? Object.keys(metrics.projects) : [];
+  return (
+    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4 text-white">
+      <div className="mb-3 flex items-center justify-between">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+          <BarChart3 className="size-4 text-primary" /> Delivery metrics
+        </h2>
+        <button onClick={onRefetch} className="text-white/50 hover:text-white" aria-label="Refresh metrics">
+          <RefreshCw className={cn("size-4", loading && "animate-spin")} />
+        </button>
+      </div>
+      {loading && !metrics && <PageSkeleton />}
+      {!loading && keys.length === 0 && (
+        <p className="text-sm text-white/50">Connect Qiko Track to see delivery metrics.</p>
+      )}
+      {metrics && keys.length > 0 && (
+        <div className="space-y-4">
+          {keys.map((key) => {
+            const project = metrics.projects[key];
+            if (!project || project.available === false) {
+              return (
+                <div key={key} className="text-sm text-white/70">
+                  <span className="font-medium text-white">{key}</span>: {project?.error ?? "metrics unavailable"}
+                </div>
+              );
+            }
+            const dist = (d: ProjectMetrics["cycleTime"]["hours"]) =>
+              d ? `${d.count} samples, median ${d.medianHours}h, p85 ${d.p85Hours}h` : "no samples";
+            const sprint = project.sprint;
+            return (
+              <div key={key} className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-white">{key}</span>
+                  <span className="text-xs text-white/40">window {project.window.key}</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <Metric label="Throughput" value={`${project.throughput.tickets} tickets (${project.throughput.points} pts)`} />
+                  <Metric label="WIP" value={`${project.wip.total} (${project.wip.blocked} blocked)`} />
+                  <Metric label="Review queue" value={`${project.review.openCount} open${project.review.oldestOpen ? `, oldest ${Math.round(project.review.oldestOpen.hours)}h` : ""}`} />
+                  <Metric label="Blocked spells" value={`${project.blocked.openSpells}${project.blocked.oldestOpenHours ? `, oldest ${Math.round(project.blocked.oldestOpenHours)}h` : ""}`} />
+                  <Metric label="Cycle time" value={dist(project.cycleTime.hours)} />
+                  <Metric label="Lead time" value={dist(project.leadTime.hours)} />
+                  <Metric label="Deploys" value={`${project.leadTime.deploys}${project.leadTime.deploysPerWeek ? ` (${project.leadTime.deploysPerWeek}/wk)` : ""}`} />
+                  {sprint && (
+                    <Metric
+                      label="Sprint"
+                      value={`${sprint.done.tickets} of ${sprint.committed.tickets} done, ${sprint.projectedCarryOver.tickets} carry-over`}
+                    />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-white/[0.04] p-2">
+      <p className="text-xs text-white/40">{label}</p>
+      <p className="text-sm font-medium text-white">{value}</p>
     </div>
   );
 }

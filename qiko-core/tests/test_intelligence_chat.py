@@ -174,3 +174,57 @@ def test_intelligence_chat_unit_honours_no_data_for_missing_signals():
     assert result["passages_used"] == 0
     assert result["sources"] == []
     assert result["intent"] == "data"
+
+
+def test_intelligence_chat_unit_answers_sprint_landing_from_metrics():
+    from app.modules.intelligence.chat import IntelligenceChat
+    from app.modules.knowledge.service import KnowledgeService
+    from app.modules.knowledge.store import InMemoryVectorStore
+
+    knowledge = KnowledgeService(store=InMemoryVectorStore())
+    worker = build_worker(
+        WorkerConfig(name="w1", tenant="intelco", agent_id="w1"),
+        provider=_Provider(), knowledge=knowledge,
+    )
+
+    async def _metrics():
+        return {
+            "QIW": {
+                "available": True,
+                "window": {"key": "14d", "from": "2026-08-01T00:00:00Z", "to": "2026-08-15T00:00:00Z"},
+                "sprint": {
+                    "number": 2,
+                    "name": "Sprint 2",
+                    "state": "active",
+                    "committed": {"tickets": 10, "points": 20},
+                    "done": {"tickets": 5, "points": 10},
+                    "projectedCarryOver": {"tickets": 2, "points": 4},
+                },
+            },
+        }
+
+    chat = IntelligenceChat(worker)
+    result = asyncio.run(chat.answer(
+        "is this sprint going to land?", metrics_provider=_metrics))
+    assert result["intent"] == "sprint_landing"
+    assert "5 of 10" in result["reply"]
+    assert "2 are projected to carry over" in result["reply"]
+    assert result["passages_used"] == 0
+    assert result["sources"] == []
+
+
+def test_intelligence_chat_unit_declines_sprint_landing_without_metrics():
+    from app.modules.intelligence.chat import IntelligenceChat
+    from app.modules.knowledge.service import KnowledgeService
+    from app.modules.knowledge.store import InMemoryVectorStore
+
+    knowledge = KnowledgeService(store=InMemoryVectorStore())
+    worker = build_worker(
+        WorkerConfig(name="w1", tenant="intelco", agent_id="w1"),
+        provider=_Provider(), knowledge=knowledge,
+    )
+    chat = IntelligenceChat(worker)
+    result = asyncio.run(chat.answer("is this sprint going to land?"))
+    assert result["intent"] == "sprint_landing"
+    assert result["reply"] == "I don't have that data."
+    assert result["passages_used"] == 0

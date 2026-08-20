@@ -2814,6 +2814,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/intelligence/agents/{agent_id}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Agent Metrics
+         * @description Read Qiko Track delivery metrics for the projects connected to this worker.
+         */
+        get: operations["get_agent_metrics_api_v1_intelligence_agents__agent_id__metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/intelligence/agents/{agent_id}/pipeline/runs": {
         parameters: {
             query?: never;
@@ -12272,6 +12292,41 @@ export interface operations {
                 content: {
                     "application/json": {
                         [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_agent_metrics_api_v1_intelligence_agents__agent_id__metrics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: {
+                            [key: string]: unknown;
+                        };
                     };
                 };
             };

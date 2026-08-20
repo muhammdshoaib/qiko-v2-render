@@ -289,6 +289,30 @@ export type Discrepancy = {
 };
 export const getDiscrepancies = (agentId: string) => request<Discrepancy[]>(`/intelligence/agents/${encodeURIComponent(agentId)}/discrepancies`);
 
+export type Distribution = { count: number; medianHours: number; p85Hours: number; minHours: number; maxHours: number } | null;
+export type SprintMetrics = {
+  number: number;
+  name: string;
+  state: string;
+  committed: { tickets: number; points: number };
+  done: { tickets: number; points: number };
+  projectedCarryOver: { tickets: number; points: number };
+} | null;
+export type ProjectMetrics = {
+  available: boolean;
+  error?: string;
+  window: { key: string; from: string; to: string };
+  throughput: { tickets: number; points: number; unestimated: number; ticketsPerWeek: number | null; pointsPerWeek: number | null; completeWeeks: number };
+  cycleTime: { hours: Distribution; inFlight: number; deliveredWithoutStart: number; abandoned: number };
+  leadTime: { hours: Distribution; ticketsShipped: number; ticketsWithoutLeadTime: number; deploys: number; deploysPerWeek: number | null; lastDeployAt: string | null };
+  wip: { total: number; points: number; blocked: number; byStatus: { status: string; count: number; points: number }[]; medianInFlightHours: number | null; oldest: { ticketKey: string; inFlightHours: number } | null };
+  review: { openCount: number; oldestOpen: { ticketKey: string; hours: number } | null; hours: Distribution };
+  blocked: { openSpells: number; oldestOpenHours: number | null; ticketsAffected: number; reasons: { reason: string | null; spells: number; tickets: number; hours: number }[] };
+  sprint?: SprintMetrics;
+};
+export type IntelligenceMetrics = { projects: Record<string, ProjectMetrics> };
+export const getIntelligenceMetrics = (agentId: string) => request<IntelligenceMetrics>(`/intelligence/agents/${encodeURIComponent(agentId)}/metrics`);
+
 // Research briefs
 export type FindingOut = {
   text: string;

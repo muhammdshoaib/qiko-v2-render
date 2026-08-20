@@ -4,6 +4,7 @@ and grounded chat over captured signals.
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Literal
 
@@ -38,6 +39,7 @@ from app.modules.intelligence.orchestration import (
     Synthesizer,
 )
 from app.modules.intelligence.backlog import BacklogCreateError, BacklogProposal, BacklogService, ProposedTicket
+from app.modules.intelligence.qiko_track_metrics import MetricsService
 from app.modules.intelligence.research import Brief, ResearchService
 from app.modules.knowledge.parsing import MAX_UPLOAD_BYTES
 from app.modules.chat.service import ChatService
@@ -310,21 +312,43 @@ async def verify_source(agent_id: str, key: str, body: VerifySourceBody, request
     return result
 
 
+def _metrics_provider_for_agent(agent) -> Callable[[], Awaitable[dict[str, dict]]] | None:
+    """Return a cached metrics loader for the agent's Qiko Track connection, or None."""
+    if agent is None:
+        return None
+    cfg = agent.config or {}
+    project_keys = cfg.get("qiko_track_project_keys") or []
+    base_url = cfg.get("qiko_track_base_url") or ""
+    if not project_keys or not base_url:
+        return None
+    try:
+        token = stored_credential(
+            cfg, flag="qiko_track_credentials_added",
+            key="qiko_track_token_encrypted", label="Qiko Track")
+    except HTTPException:
+        return None
+    service = MetricsService(base_url=base_url, token=token)
+    return lambda: service.for_projects(project_keys)
+
+
 @router.post("/agents/{agent_id}/chat/ask")
 async def ask(
     agent_id: str, body: AskBody, request: Request,
     tenant: str = Depends(authed_tenant),
     claims: dict = Depends(require_role(Role.editor)),
     chat: ChatService = Depends(get_chat),
+    agents: AgentService = Depends(get_agents),
 ) -> dict:
     """Ask the intelligence worker a question grounded in its captured signals."""
     user_id = claims.get("sub", "public")
     worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+    agent = await agents.get(tenant, agent_id)
+    metrics_provider = _metrics_provider_for_agent(agent)
     intelligence = IntelligenceChat(worker)
     try:
         result = await intelligence.answer(
             body.question, conversation_id=body.conversation_id or None,
-            chat=chat, user_id=user_id)
+            chat=chat, user_id=user_id, metrics_provider=metrics_provider)
     finally:
         await recheck()
     return result
@@ -764,6 +788,38 @@ async def list_discrepancies(
     discrepancies = await engine.analyze(tenant, agent_id)
     await recheck()
     return [d.to_dict() for d in discrepancies]
+
+
+@router.get("/agents/{agent_id}/metrics")
+async def get_agent_metrics(
+    agent_id: str, request: Request,
+    tenant: str = Depends(authed_tenant),
+    _claims: dict = Depends(require_role(Role.viewer)),
+    agents: AgentService = Depends(get_agents),
+) -> dict[str, dict]:
+    """Read Qiko Track delivery metrics for the projects connected to this worker."""
+    _worker, recheck = await _resolve_worker(request, tenant, agent_id)
+    agent = await agents.get(tenant, agent_id)
+    if agent is None:
+        await recheck()
+        raise HTTPException(status_code=404, detail="agent not found")
+
+    cfg = agent.config or {}
+    project_keys = cfg.get("qiko_track_project_keys") or []
+    base_url = cfg.get("qiko_track_base_url") or ""
+    if not project_keys or not base_url:
+        await recheck()
+        return {"projects": {}}
+
+    token = stored_credential(
+        cfg, flag="qiko_track_credentials_added",
+        key="qiko_track_token_encrypted", label="Qiko Track")
+    service = MetricsService(base_url=base_url, token=token)
+    try:
+        metrics = await service.for_projects(project_keys)
+    finally:
+        await recheck()
+    return {"projects": metrics}
 
 
 @router.post("/agents/{agent_id}/documents")
