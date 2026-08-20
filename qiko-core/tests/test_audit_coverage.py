@@ -19,8 +19,6 @@ MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
 # Routes that deliberately write no audit event, each with the reason. Keep the reason specific: "not
 # needed" is not a reason, and the next person cannot tell an omission from a decision.
 NOT_AUDITED: dict[tuple[str, str], str] = {
-    # Stateless: a read dressed as a POST.
-    ("POST", "/api/v1/admin/revenue"): "pure calculator over the request body, writes nothing",
     ("POST", "/api/v1/knowledge/search"): "read, persists nothing",
     ("POST", "/api/v1/excel/search"): "read, persists nothing",
     ("POST", "/api/v1/excel/analytics"): "read, persists nothing",
@@ -87,7 +85,7 @@ AUDIT_WRITERS: dict[str, int] = {
     # These three are written inside the STORE transaction rather than by a router call, which is the
     # property that made them worth folding in rather than re-instrumenting at the call site.
     "identity/admin_org_router.py": 2,
-    "billing/router.py": 2,
+    "billing/router.py": 4,
     "agents/router.py": 17,
     "identity/users_router.py": 3,
     "teams/router.py": 3,
@@ -346,6 +344,8 @@ INSTRUMENTED: set[tuple[str, str]] = {
     ("PUT", "/api/v1/admin/workers/{tenant_id}/{agent_id}/status"),
     ("POST", "/api/v1/billing/payment-links"),
     ("POST", "/api/v1/billing/payment-links/mark-paid"),
+    ("POST", "/api/v1/billing/invoices"),
+    ("POST", "/api/v1/billing/invoices/reconcile"),
     ("POST", "/api/v1/agents/{agent_id}/vapi-credentials"),
     ("POST", "/api/v1/agents/{agent_id}/salesforce-credentials"),
     ("DELETE", "/api/v1/agents/{agent_id}/salesforce-credentials"),

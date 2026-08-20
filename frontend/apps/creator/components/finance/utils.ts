@@ -234,8 +234,12 @@ export function propertyBars(analytics: FinanceAnalytics | undefined): PropertyB
 export type DonutSlice = { key: string; name: string; value: number; color: string };
 
 export function classificationDonut(analytics: FinanceAnalytics | undefined): DonutSlice[] {
+  // Classify every property the backend counted in Total Properties (summary.propertyCount),
+  // not just the ones with non-zero activity this period - mapClassification always returns a
+  // safe default, so there's no reason to silently drop a property here (EL-1005: doing so made
+  // the donut's slices undercount vs the KPI card whenever a property had a zero-value period).
   const counts: Record<string, number> = {};
-  for (const p of activeProperties(analytics)) {
+  for (const p of analytics?.properties ?? []) {
     const cls = mapClassification(p.profitabilityClass);
     counts[cls] = (counts[cls] || 0) + 1;
   }

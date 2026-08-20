@@ -487,10 +487,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
-        put?: never;
         /** Revenue */
-        post: operations["revenue_api_v1_admin_revenue_post"];
+        get: operations["revenue_api_v1_admin_revenue_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6191,25 +6191,6 @@ export interface components {
             /** Enabled */
             enabled: boolean;
         };
-        /** SubscriptionIn */
-        SubscriptionIn: {
-            /** Customer Id */
-            customer_id: string;
-            /**
-             * Interval
-             * @default month
-             */
-            interval: string;
-            /** Plan */
-            plan: string;
-            /** Price Cents */
-            price_cents: number;
-            /**
-             * Status
-             * @default active
-             */
-            status: string;
-        };
         /** TeamsWebhookBody */
         TeamsWebhookBody: {
             /** Webhook Url */
@@ -7381,18 +7362,14 @@ export interface operations {
             };
         };
     };
-    revenue_api_v1_admin_revenue_post: {
+    revenue_api_v1_admin_revenue_get: {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SubscriptionIn"][];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -7403,15 +7380,6 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

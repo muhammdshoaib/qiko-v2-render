@@ -385,3 +385,47 @@ def test_invoice_from_stripe_object_uses_amount_paid_when_paid():
         "id": "in_1", "customer": "cus_1", "amount_due": 2500,
         "amount_paid": 2500, "status": "paid", "currency": "usd"})
     assert inv.amount_cents == 2500
+
+
+def test_revenue_report_combines_paid_invoices_and_active_subscriptions(tmp_path):
+    from app.modules.admin.revenue import revenue_report
+    from app.modules.billing.webhook import Invoice, InvoiceStore
+    from app.modules.billing.subscriptions import InMemorySubscriptionStore, Subscription
+
+    invoices = InvoiceStore()
+    invoices.upsert(Invoice(
+        stripe_invoice_id="in_paid", customer_id="cus_1", amount_cents=10000,
+        status="paid", currency="usd"))
+    invoices.upsert(Invoice(
+        stripe_invoice_id="in_open", customer_id="cus_1", amount_cents=5000,
+        status="open", currency="usd"))
+
+    subs = InMemorySubscriptionStore()
+    subs.put(Subscription(customer_id="t1", plan="pro", status="active"))
+    subs.put(Subscription(customer_id="t2", plan="free", status="active"))
+
+    report = revenue_report(invoices, subs)
+    assert report.total_paid_cents == 10000
+    assert report.outstanding_cents == 5000
+    assert report.mrr_cents == 4900
+    assert report.arr_cents == 58800
+    assert report.active_subscriptions == 2
+    assert report.by_plan == {"pro": 1, "free": 1}
+
+
+def test_revenue_report_monthly_uses_period_start():
+    from datetime import datetime, timezone
+    from app.modules.admin.revenue import revenue_report
+    from app.modules.billing.webhook import Invoice, InvoiceStore
+    from app.modules.billing.subscriptions import InMemorySubscriptionStore
+
+    invoices = InvoiceStore()
+    invoices.upsert(Invoice(
+        stripe_invoice_id="in_1", customer_id="cus_1", amount_cents=10000,
+        status="paid", period_start=datetime(2026, 1, 15, tzinfo=timezone.utc)))
+    invoices.upsert(Invoice(
+        stripe_invoice_id="in_2", customer_id="cus_1", amount_cents=5000,
+        status="paid", period_start=datetime(2026, 1, 20, tzinfo=timezone.utc)))
+
+    report = revenue_report(invoices, InMemorySubscriptionStore())
+    assert report.monthly == [{"month": "2026-01", "paid_cents": 15000}]
