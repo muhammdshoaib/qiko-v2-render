@@ -5146,6 +5146,8 @@ export interface components {
         };
         /** Body_upload_api_v1_excel_upload_post */
         Body_upload_api_v1_excel_upload_post: {
+            /** Agent Id */
+            agent_id?: string | null;
             /**
              * File
              * Format: binary
@@ -5575,6 +5577,8 @@ export interface components {
         };
         /** ExcelSearchBody */
         ExcelSearchBody: {
+            /** Agent Id */
+            agent_id?: string | null;
             /**
              * K
              * @default 5
@@ -7224,7 +7228,7 @@ export interface components {
         /** SearchBody */
         SearchBody: {
             /** Agent Id */
-            agent_id?: string | null;
+            agent_id: string;
             /**
              * K
              * @default 5

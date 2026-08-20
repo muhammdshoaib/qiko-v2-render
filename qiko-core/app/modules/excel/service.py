@@ -37,23 +37,27 @@ def workbook_to_records(data: bytes) -> list[str]:
 class ExcelService:
     knowledge: KnowledgeService
 
-    async def store_workbook(self, tenant: str, source_name: str, data: bytes) -> int:
+    async def store_workbook(self, tenant: str, source_name: str, data: bytes, *,
+                             agent_id: str | None = None) -> int:
         records = workbook_to_records(data)
         for i, rec in enumerate(records):
-            await self.knowledge.ingest(tenant, f"excel-{source_name}-{i}", rec)
+            await self.knowledge.ingest(tenant, f"excel-{source_name}-{i}", rec, agent_id=agent_id)
         return len(records)
 
-    async def search(self, tenant: str, query: str, *, k: int = 5) -> list[str]:
-        return [p.text for p in await self.knowledge.retrieve(tenant, query, k=k)]
+    async def search(self, tenant: str, query: str, *, k: int = 5,
+                     agent_id: str | None = None) -> list[str]:
+        return [p.text for p in await self.knowledge.retrieve(tenant, query, k=k, agent_id=agent_id)]
 
 
 class StoreArgs(BaseModel):
     source_name: str = Field(min_length=1)
+    agent_id: str | None = Field(default=None, min_length=1)
 
 
 class SearchArgs(BaseModel):
     query: str = Field(min_length=1)
     k: int = Field(default=5, ge=1, le=50)
+    agent_id: str | None = Field(default=None, min_length=1)
 
 
 def build_excel_tools(service: ExcelService, tenant: str, workbook: bytes) -> ToolRegistry:
@@ -61,10 +65,10 @@ def build_excel_tools(service: ExcelService, tenant: str, workbook: bytes) -> To
 
     @reg.register("store_excel_data", StoreArgs)
     async def _store(a: StoreArgs) -> int:
-        return await service.store_workbook(tenant, a.source_name, workbook)
+        return await service.store_workbook(tenant, a.source_name, workbook, agent_id=a.agent_id)
 
     @reg.register("search_data", SearchArgs)
     async def _search(a: SearchArgs) -> list[str]:
-        return await service.search(tenant, a.query, k=a.k)
+        return await service.search(tenant, a.query, k=a.k, agent_id=a.agent_id)
 
     return reg

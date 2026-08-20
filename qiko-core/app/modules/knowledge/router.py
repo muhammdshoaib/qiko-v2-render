@@ -18,9 +18,9 @@ router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 _MAX_INGEST_TEXT = 2 * 1024 * 1024  # 2 MB of text
 
 
-# agent_id scopes knowledge to a single worker (QIK-315). Optional for backward-compat: when a
-# caller omits it the behaviour is the legacy tenant-wide corpus. It is always within the authed
-# tenant (team-shared), so it is a sub-partition, never a cross-tenant control.
+# agent_id scopes knowledge to a single worker (QIK-315). For ingest it remains optional so
+# callers can still create shared tenant-wide knowledge; search requires it so the endpoint can
+# never read across worker corpora. Both are always within the authed tenant (team-shared).
 class IngestBody(BaseModel):
     doc_id: str = Field(min_length=1)
     text: str = Field(min_length=1, max_length=_MAX_INGEST_TEXT)
@@ -30,7 +30,7 @@ class IngestBody(BaseModel):
 class SearchBody(BaseModel):
     query: str = Field(min_length=1)
     k: int = Field(default=5, ge=1, le=50)
-    agent_id: str | None = Field(default=None, min_length=1, max_length=64)
+    agent_id: str = Field(min_length=1, max_length=64)
 
 
 @router.post("/ingest")
