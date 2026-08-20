@@ -148,6 +148,8 @@ ANSWER_UNLOCKED = "data.answer_unlocked"
 SECTION_LOCKED = "data.section_locked"
 PACK_STAGE_CHANGED = "data.pack_stage_changed"
 PACK_OUTCOME_RECORDED = "data.pack_outcome_recorded"
+PIPELINE_RUN_STARTED = "data.pipeline_run_started"
+PIPELINE_RUN_RESUMED = "data.pipeline_run_resumed"
 
 # --- privacy -----------------------------------------------------------------------------------------
 SUBJECT_ERASED = "privacy.subject_erased"
@@ -309,6 +311,10 @@ _SPECS: tuple[ActionSpec, ...] = (
           # Feeds the win/loss statistics a bid team reports on, so its integrity is commercial rather
           # than merely operational.
           template="{actor} recorded the outcome of tender pack {target}"),
+    _spec(PIPELINE_RUN_STARTED, DATA, "pipeline_run", diff_fields=("subject", "facets"),
+          template="{actor} started an intelligence pipeline run for {target}"),
+    _spec(PIPELINE_RUN_RESUMED, DATA, "pipeline_run", diff_fields=("resumed",),
+          template="{actor} resumed an intelligence pipeline run for {target}"),
     _spec(SUBJECT_ERASED, PRIVACY, "subject", durability=CRITICAL,
           diff_fields=("rows_pseudonymised", "request_ref"),
           template="{actor} erased subject data"),

@@ -104,8 +104,12 @@ def test_checkout_and_portal_convert_gateway_failures_to_502():
                                         response=httpx.Response(400))
 
     subs = SubscriptionService(FailingGateway())
+    request = type("Request", (), {
+        "cookies": {"qiko_csrf": "tok"},
+        "headers": {"x-csrf-token": "tok"},
+    })()
     with pytest.raises(HTTPException) as e1:
-        checkout(CheckoutBody(plan="pro"), tenant="t", subs=subs)
+        checkout(request, CheckoutBody(plan="pro"), tenant="t", subs=subs)
     assert e1.value.status_code == 502
 
     with pytest.raises(HTTPException) as e2:

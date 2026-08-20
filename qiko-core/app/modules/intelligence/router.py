@@ -821,7 +821,7 @@ async def create_pipeline_run(
     body: PipelineRunCreate,
     request: Request,
     tenant: str = Depends(authed_tenant),
-    _claims: dict = Depends(require_role(Role.editor)),
+    claims: dict = Depends(require_role(Role.editor)),
     agents: AgentService = Depends(get_agents),
 ) -> PipelineRunOut:
     """Start a new intelligence pipeline run. The run is persisted immediately and the heavy
@@ -834,6 +834,24 @@ async def create_pipeline_run(
         tenant=tenant, agent_id=agent_id, subject=body.subject, facets=body.facets)
     run = Pipeline.new_run(config)
     await request.app.state.pipeline_run_store.add(run)
+
+    await audit.record(
+        request.app.state.audit,
+        audit.AuditEvent(
+            action=audit_actions.PIPELINE_RUN_STARTED,
+            target_id=run.run_id,
+            target_label=run.subject,
+            tenant_id=tenant,
+            actor_type=audit.USER,
+            actor_id=str(claims.get("sub") or ""),
+            actor_label=str(claims.get("email") or claims.get("sub") or ""),
+            changes=audit.diff(
+                audit_actions.PIPELINE_RUN_STARTED, {},
+                {"subject": run.subject, "facets": run.facets}),
+            metadata={"agent_id": agent_id},
+        ),
+        request=request,
+    )
 
     task_queue = request.app.state.task_queue
     if isinstance(task_queue, EagerTaskQueue):
@@ -873,12 +891,28 @@ async def resume_pipeline_run(
     run_id: str,
     request: Request,
     tenant: str = Depends(authed_tenant),
-    _claims: dict = Depends(require_role(Role.editor)),
+    claims: dict = Depends(require_role(Role.editor)),
 ) -> PipelineRunOut:
     """Resume an existing pipeline run (e.g. after a retry or an explicit re-run request)."""
     run = await request.app.state.pipeline_run_store.get(tenant, agent_id, run_id)
     if run is None:
         raise HTTPException(status_code=404, detail="pipeline run not found")
+
+    await audit.record(
+        request.app.state.audit,
+        audit.AuditEvent(
+            action=audit_actions.PIPELINE_RUN_RESUMED,
+            target_id=run.run_id,
+            target_label=run.subject,
+            tenant_id=tenant,
+            actor_type=audit.USER,
+            actor_id=str(claims.get("sub") or ""),
+            actor_label=str(claims.get("email") or claims.get("sub") or ""),
+            changes=audit.diff(audit_actions.PIPELINE_RUN_RESUMED, {}, {"resumed": True}),
+            metadata={"agent_id": agent_id},
+        ),
+        request=request,
+    )
 
     task_queue = request.app.state.task_queue
     if isinstance(task_queue, EagerTaskQueue):

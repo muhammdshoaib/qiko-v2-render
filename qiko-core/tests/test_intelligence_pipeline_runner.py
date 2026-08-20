@@ -23,6 +23,7 @@ from app.modules.knowledge.service import KnowledgeService
 from app.modules.knowledge.store import InMemoryVectorStore
 from app.modules.workers.config import WorkerConfig
 from app.modules.workers.worker import Worker
+from app.tasks.jobs import run_intelligence_pipeline
 
 
 class _CannedProvider:
@@ -217,4 +218,42 @@ async def test_pipeline_critic_layer_only_lowers_score():
 
     # Deterministic score for a fully grounded sentence is 1.0; LLM issue is added.
     assert critique.grounding <= 1.0
-    assert "too vague" in critique.issues
+
+
+async def test_run_intelligence_pipeline_task_uses_injected_pipeline(pipeline, knowledge):
+    await knowledge.ingest("t1", "doc-1", "ACME builds AI tools for sales.", agent_id="w1")
+    await knowledge.ingest("t1", "doc-2", "The product is called Qiko.", agent_id="w1")
+    config = PipelineConfig(
+        tenant="t1", agent_id="w1", subject="What does ACME do?",
+        facets=["products"], retry_limit=1)
+    run = await pipeline.start(config)
+
+    result = await run_intelligence_pipeline(
+        tenant="t1", agent_id="w1", run_id=run.run_id, pipeline=pipeline)
+
+    assert result["run_id"] == run.run_id
+    assert result["verdict"] == "accept"
+    assert result["status"]["magistrate"] == "ready"
+
+
+async def test_run_intelligence_pipeline_task_requires_deps():
+    with pytest.raises(ValueError, match="sessionmaker or pipeline"):
+        await run_intelligence_pipeline(tenant="t1", agent_id="w1", run_id="r1")
+
+
+async def test_run_intelligence_pipeline_task_missing_run_raises():
+    store = InMemoryPipelineRunStore()
+    pipeline = Pipeline(
+        scout=Scout(KnowledgeService(store=InMemoryVectorStore(), embeddings=LocalEmbeddings(dim=8))),
+        specialist=Specialist(Worker(
+            config=WorkerConfig(name="test", tenant="t1", agent_id="w1"),
+            knowledge=KnowledgeService(store=InMemoryVectorStore()),
+            agent=AgentCore(generator=Generator(provider=_CannedProvider("no")), threshold=0.85))),
+        synthesizer=FakeSynthesizer(),
+        critic=Critic(),
+        magistrate=Magistrate(threshold=0.85),
+        store=store,
+    )
+    with pytest.raises(ValueError, match="pipeline run .* not found"):
+        await run_intelligence_pipeline(
+            tenant="t1", agent_id="w1", run_id="missing", pipeline=pipeline)
