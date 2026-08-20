@@ -167,6 +167,73 @@ async def generate_tender_artifacts(*, tenant: str, pack_id: str, agent_id: str 
         reset_tenant(tenant_token)
 
 
+async def _build_pipeline_deps(sessionmaker, tenant: str, agent_id: str):
+    """Build a Postgres-backed Pipeline for the arq worker tier, mirroring the in-memory wiring
+    in app.main."""
+    from app.core.deps import resolve_available_worker
+    from app.db.stores import (
+        SqlAgentStore,
+        SqlDocumentStore,
+        SqlPipelineRunStore,
+        SqlSignalStore,
+        SqlVectorStore,
+    )
+    from app.modules.agents.service import AgentService
+    from app.modules.intelligence.orchestration import (
+        Critic,
+        Magistrate,
+        Pipeline,
+        Scout,
+        Specialist,
+        Synthesizer,
+    )
+    from app.modules.knowledge.service import KnowledgeService
+
+    knowledge = KnowledgeService(store=SqlVectorStore(sessionmaker))
+    agents = AgentService(store=SqlAgentStore(sessionmaker))
+    worker, _ = await resolve_available_worker(
+        sessionmaker=sessionmaker, agents=agents, knowledge=knowledge,
+        tenant=tenant, agent_id=agent_id)
+    return Pipeline(
+        scout=Scout(
+            knowledge,
+            signal_store=SqlSignalStore(sessionmaker),
+            document_store=SqlDocumentStore(sessionmaker),
+        ),
+        specialist=Specialist(worker),
+        synthesizer=Synthesizer(worker.agent.generator),
+        critic=Critic(),
+        magistrate=Magistrate(threshold=worker.agent.threshold),
+        store=SqlPipelineRunStore(sessionmaker),
+    )
+
+
+@registry.register("run_intelligence_pipeline")
+async def run_intelligence_pipeline(
+    *,
+    tenant: str,
+    agent_id: str,
+    run_id: str,
+    pipeline: object | None = None,
+    sessionmaker=None,
+) -> dict:
+    """Background job: execute or resume an intelligence pipeline run.
+
+    The eager dev/test path passes a pre-built `Pipeline`; the arq worker tier passes only
+    `sessionmaker` and the ids, and this function rebuilds the Pipeline from the worker's own
+    DB connection."""
+    if pipeline is not None:
+        run = await pipeline.resume(tenant, agent_id, run_id)
+    else:
+        if sessionmaker is None:
+            raise ValueError("run_intelligence_pipeline requires sessionmaker or pipeline")
+        pipeline = await _build_pipeline_deps(sessionmaker, tenant, agent_id)
+        run = await pipeline.resume(tenant, agent_id, run_id)
+    if run is None:
+        raise ValueError(f"pipeline run {run_id} not found")
+    return {"run_id": run.run_id, "verdict": run.verdict, "status": run.status}
+
+
 async def apply_audit_retention(store) -> dict:
     """Enforce the audit trail's retention policy.
 

@@ -16,6 +16,7 @@ from app.core.deps import (
     authed_tenant, current_claims, get_agents, get_chat, get_slack_oauth,
     require_role, resolve_tenant_worker, stored_credential,
 )
+from app.tasks.queue import EagerTaskQueue
 from app.modules.audit import credentials as audit_credentials
 from app.modules.audit import registry as audit_actions
 from app.modules.audit import service as audit
@@ -26,6 +27,15 @@ from app.modules.intelligence.chat import IntelligenceChat
 from app.modules.intelligence.discrepancies import DiscrepancyEngine
 from app.modules.intelligence.documents import SUPPORTED_DOCUMENT_EXTENSIONS, UnsupportedDocumentError
 from app.modules.intelligence.ingest import ingest_source
+from app.modules.intelligence.orchestration import (
+    Critic,
+    Magistrate,
+    Pipeline,
+    PipelineConfig,
+    Scout,
+    Specialist,
+    Synthesizer,
+)
 from app.modules.knowledge.parsing import MAX_UPLOAD_BYTES
 from app.modules.chat.service import ChatService
 
@@ -64,6 +74,34 @@ class ConnectSourceBody(BaseModel):
 
 class SlackWatchChannelsBody(BaseModel):
     channel_ids: list[str] = Field(default_factory=list)
+
+
+class PipelineRunCreate(BaseModel):
+    subject: str = Field(min_length=1)
+    facets: list[str] = Field(min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def _dedupe_and_cap_facets(self):
+        seen: set[str] = set()
+        unique: list[str] = []
+        for facet in self.facets:
+            if facet not in seen:
+                seen.add(facet)
+                unique.append(facet)
+        self.facets = unique[:5]
+        return self
+
+
+class PipelineRunOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    run_id: str
+    tenant: str
+    agent_id: str
+    subject: str
+    facets: list[str]
+    status: dict
+    verdict: str | None = None
 
 
 class DocumentOut(BaseModel):
@@ -759,3 +797,101 @@ async def delete_document(
     )
     await recheck()
     return {"deleted": True}
+
+
+def _build_pipeline_for_request(request: Request, worker: object) -> Pipeline:
+    """Assemble a Pipeline from request-scoped services and a resolved worker."""
+    return Pipeline(
+        scout=Scout(
+            request.app.state.knowledge,
+            signal_store=request.app.state.intelligence_signal_store,
+            document_store=request.app.state.intelligence_document_store,
+        ),
+        specialist=Specialist(worker),
+        synthesizer=Synthesizer(worker.agent.generator),
+        critic=Critic(),
+        magistrate=Magistrate(threshold=worker.agent.threshold),
+        store=request.app.state.pipeline_run_store,
+    )
+
+
+@router.post("/agents/{agent_id}/pipeline/runs")
+async def create_pipeline_run(
+    agent_id: str,
+    body: PipelineRunCreate,
+    request: Request,
+    tenant: str = Depends(authed_tenant),
+    _claims: dict = Depends(require_role(Role.editor)),
+    agents: AgentService = Depends(get_agents),
+) -> PipelineRunOut:
+    """Start a new intelligence pipeline run. The run is persisted immediately and the heavy
+    work is executed by the task queue so the API returns without blocking."""
+    agent = await agents.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+
+    config = PipelineConfig(
+        tenant=tenant, agent_id=agent_id, subject=body.subject, facets=body.facets)
+    run = Pipeline.new_run(config)
+    await request.app.state.pipeline_run_store.add(run)
+
+    task_queue = request.app.state.task_queue
+    if isinstance(task_queue, EagerTaskQueue):
+        worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+        try:
+            pipeline = _build_pipeline_for_request(request, worker)
+            await task_queue.enqueue(
+                "run_intelligence_pipeline",
+                tenant=tenant, agent_id=agent_id, run_id=run.run_id, pipeline=pipeline)
+        finally:
+            await recheck()
+    else:  # pragma: no cover - arq prod path (Redis carries only the serialisable ids)
+        await task_queue.enqueue(
+            "run_intelligence_pipeline", tenant=tenant, agent_id=agent_id, run_id=run.run_id)
+
+    return PipelineRunOut.model_validate(run)
+
+
+@router.get("/agents/{agent_id}/pipeline/runs/{run_id}")
+async def get_pipeline_run(
+    agent_id: str,
+    run_id: str,
+    request: Request,
+    tenant: str = Depends(authed_tenant),
+    _claims: dict = Depends(require_role(Role.viewer)),
+) -> PipelineRunOut:
+    """Read the current status of a pipeline run."""
+    run = await request.app.state.pipeline_run_store.get(tenant, agent_id, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="pipeline run not found")
+    return PipelineRunOut.model_validate(run)
+
+
+@router.post("/agents/{agent_id}/pipeline/runs/{run_id}/resume")
+async def resume_pipeline_run(
+    agent_id: str,
+    run_id: str,
+    request: Request,
+    tenant: str = Depends(authed_tenant),
+    _claims: dict = Depends(require_role(Role.editor)),
+) -> PipelineRunOut:
+    """Resume an existing pipeline run (e.g. after a retry or an explicit re-run request)."""
+    run = await request.app.state.pipeline_run_store.get(tenant, agent_id, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="pipeline run not found")
+
+    task_queue = request.app.state.task_queue
+    if isinstance(task_queue, EagerTaskQueue):
+        worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+        try:
+            pipeline = _build_pipeline_for_request(request, worker)
+            await task_queue.enqueue(
+                "run_intelligence_pipeline",
+                tenant=tenant, agent_id=agent_id, run_id=run_id, pipeline=pipeline)
+        finally:
+            await recheck()
+    else:  # pragma: no cover - arq prod path
+        await task_queue.enqueue(
+            "run_intelligence_pipeline", tenant=tenant, agent_id=agent_id, run_id=run_id)
+
+    return PipelineRunOut.model_validate(run)

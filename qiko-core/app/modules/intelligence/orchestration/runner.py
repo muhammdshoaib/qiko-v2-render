@@ -102,16 +102,20 @@ class Pipeline:
         self.magistrate = magistrate
         self.store = store
 
-    async def start(self, config: PipelineConfig) -> PipelineRun:
-        run_id = uuid.uuid4().hex
-        run = PipelineRun(
-            run_id=run_id,
+    @staticmethod
+    def new_run(config: PipelineConfig, run_id: str | None = None) -> PipelineRun:
+        """Create a `PipelineRun` with the initial pending status. The caller must add it to a store."""
+        return PipelineRun(
+            run_id=run_id or uuid.uuid4().hex,
             tenant=config.tenant,
             agent_id=config.agent_id,
             subject=config.subject,
             facets=list(config.facets),
             status=_initial_status(config),
         )
+
+    async def start(self, config: PipelineConfig) -> PipelineRun:
+        run = self.new_run(config)
         await self.store.add(run)
         await self._execute(run)
         return run

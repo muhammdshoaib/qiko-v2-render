@@ -2814,6 +2814,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/intelligence/agents/{agent_id}/pipeline/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Pipeline Run
+         * @description Start a new intelligence pipeline run. The run is persisted immediately and the heavy
+         *     work is executed by the task queue so the API returns without blocking.
+         */
+        post: operations["create_pipeline_run_api_v1_intelligence_agents__agent_id__pipeline_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/intelligence/agents/{agent_id}/pipeline/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Pipeline Run
+         * @description Read the current status of a pipeline run.
+         */
+        get: operations["get_pipeline_run_api_v1_intelligence_agents__agent_id__pipeline_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/intelligence/agents/{agent_id}/pipeline/runs/{run_id}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resume Pipeline Run
+         * @description Resume an existing pipeline run (e.g. after a retry or an explicit re-run request).
+         */
+        post: operations["resume_pipeline_run_api_v1_intelligence_agents__agent_id__pipeline_runs__run_id__resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/intelligence/agents/{agent_id}/sources": {
         parameters: {
             query?: never;
@@ -5675,6 +5736,32 @@ export interface components {
             fields: {
                 [key: string]: unknown;
             };
+        };
+        /** PipelineRunCreate */
+        PipelineRunCreate: {
+            /** Facets */
+            facets: string[];
+            /** Subject */
+            subject: string;
+        };
+        /** PipelineRunOut */
+        PipelineRunOut: {
+            /** Agent Id */
+            agent_id: string;
+            /** Facets */
+            facets: string[];
+            /** Run Id */
+            run_id: string;
+            /** Status */
+            status: {
+                [key: string]: unknown;
+            };
+            /** Subject */
+            subject: string;
+            /** Tenant */
+            tenant: string;
+            /** Verdict */
+            verdict?: string | null;
         };
         /** PolicyBody */
         PolicyBody: {
@@ -11994,6 +12081,105 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_pipeline_run_api_v1_intelligence_agents__agent_id__pipeline_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PipelineRunCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineRunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_pipeline_run_api_v1_intelligence_agents__agent_id__pipeline_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineRunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resume_pipeline_run_api_v1_intelligence_agents__agent_id__pipeline_runs__run_id__resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PipelineRunOut"];
                 };
             };
             /** @description Validation Error */
