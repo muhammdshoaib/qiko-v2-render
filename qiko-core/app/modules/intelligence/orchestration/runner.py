@@ -69,6 +69,7 @@ class PipelineConfig:
     agent_id: str
     subject: str
     facets: list[str]
+    kind: str = "pipeline"
     max_facets: int = 5
     retry_limit: int = 1
     specialist_concurrency: int = 5

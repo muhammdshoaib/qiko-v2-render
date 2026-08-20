@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from typing import Literal
 
 import jwt
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile
@@ -36,6 +37,7 @@ from app.modules.intelligence.orchestration import (
     Specialist,
     Synthesizer,
 )
+from app.modules.intelligence.research import Brief, ResearchService
 from app.modules.knowledge.parsing import MAX_UPLOAD_BYTES
 from app.modules.chat.service import ChatService
 
@@ -102,6 +104,27 @@ class PipelineRunOut(BaseModel):
     facets: list[str]
     status: dict
     verdict: str | None = None
+    cost: dict | None = None
+
+
+class FindingOut(BaseModel):
+    text: str
+    confidence: float | None = None
+    evidence_refs: list[str] = []
+    gaps: str = ""
+
+
+class BriefOut(BaseModel):
+    status: Literal["in_progress", "draft", "accepted"]
+    summary: str
+    findings: list[FindingOut]
+    gaps: str
+    citations: list[str]
+    accepted_at: datetime | None = None
+
+
+class ResearchRunOut(PipelineRunOut):
+    brief: BriefOut | None = None
 
 
 class DocumentOut(BaseModel):
@@ -929,3 +952,144 @@ async def resume_pipeline_run(
             "run_intelligence_pipeline", tenant=tenant, agent_id=agent_id, run_id=run_id)
 
     return PipelineRunOut.model_validate(run)
+
+
+def _brief_out(brief: Brief | None) -> BriefOut | None:
+    if brief is None:
+        return None
+    return BriefOut(
+        status=brief.status,
+        summary=brief.summary,
+        findings=[
+            FindingOut(
+                text=f.text,
+                confidence=f.confidence,
+                evidence_refs=list(f.evidence_refs),
+                gaps=f.gaps,
+            )
+            for f in brief.findings
+        ],
+        gaps=brief.gaps,
+        citations=list(brief.citations),
+        accepted_at=brief.accepted_at,
+    )
+
+
+def _research_service_for_request(
+    request: Request, *, worker: object | None = None,
+) -> ResearchService:
+    return ResearchService(
+        store=request.app.state.pipeline_run_store,
+        knowledge=request.app.state.knowledge,
+        signal_store=request.app.state.intelligence_signal_store,
+        worker=worker,
+    )
+
+
+def _is_research_run(run) -> bool:
+    return (run.status or {}).get("config", {}).get("kind") == "research"
+
+
+@router.post("/agents/{agent_id}/research/runs")
+async def create_research_run(
+    agent_id: str,
+    body: PipelineRunCreate,
+    request: Request,
+    tenant: str = Depends(authed_tenant),
+    claims: dict = Depends(require_role(Role.editor)),
+    agents: AgentService = Depends(get_agents),
+) -> ResearchRunOut:
+    """Start a research run for a subject. The run is persisted and executed by the task queue."""
+    agent = await agents.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+
+    svc = _research_service_for_request(request)
+    run = await svc.start(tenant, agent_id, body.subject, body.facets)
+
+    await audit.record(
+        request.app.state.audit,
+        audit.AuditEvent(
+            action=audit_actions.PIPELINE_RUN_STARTED,
+            target_id=run.run_id,
+            target_label=run.subject,
+            tenant_id=tenant,
+            actor_type=audit.USER,
+            actor_id=str(claims.get("sub") or ""),
+            actor_label=str(claims.get("email") or claims.get("sub") or ""),
+            changes=audit.diff(
+                audit_actions.PIPELINE_RUN_STARTED, {},
+                {"subject": run.subject, "facets": run.facets, "kind": "research"}),
+            metadata={"agent_id": agent_id, "kind": "research"},
+        ),
+        request=request,
+    )
+
+    task_queue = request.app.state.task_queue
+    if isinstance(task_queue, EagerTaskQueue):
+        worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+        try:
+            pipeline = _build_pipeline_for_request(request, worker)
+            await task_queue.enqueue(
+                "run_intelligence_pipeline",
+                tenant=tenant, agent_id=agent_id, run_id=run.run_id, pipeline=pipeline)
+        finally:
+            await recheck()
+    else:  # pragma: no cover - arq prod path
+        await task_queue.enqueue(
+            "run_intelligence_pipeline", tenant=tenant, agent_id=agent_id, run_id=run.run_id)
+
+    out = ResearchRunOut.model_validate(run)
+    out.brief = _brief_out(await svc.get_brief(tenant, agent_id, run.run_id))
+    return out
+
+
+@router.get("/agents/{agent_id}/research/runs/{run_id}")
+async def get_research_run(
+    agent_id: str,
+    run_id: str,
+    request: Request,
+    tenant: str = Depends(authed_tenant),
+    _claims: dict = Depends(require_role(Role.viewer)),
+) -> ResearchRunOut:
+    """Read a research run and its current brief."""
+    run = await request.app.state.pipeline_run_store.get(tenant, agent_id, run_id)
+    if run is None or not _is_research_run(run):
+        raise HTTPException(status_code=404, detail="research run not found")
+
+    svc = _research_service_for_request(request)
+    brief = await svc.get_brief(tenant, agent_id, run_id)
+    out = ResearchRunOut.model_validate(run)
+    out.brief = _brief_out(brief)
+    return out
+
+
+@router.post("/agents/{agent_id}/research/runs/{run_id}/accept")
+async def accept_research_run(
+    agent_id: str,
+    run_id: str,
+    request: Request,
+    tenant: str = Depends(authed_tenant),
+    claims: dict = Depends(require_role(Role.editor)),
+) -> ResearchRunOut:
+    """Accept the brief from a completed research run and make it ground truth."""
+    run = await request.app.state.pipeline_run_store.get(tenant, agent_id, run_id)
+    if run is None or not _is_research_run(run):
+        raise HTTPException(status_code=404, detail="research run not found")
+
+    worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+    try:
+        svc = _research_service_for_request(request, worker=worker)
+        brief = await svc.accept_brief(
+            tenant, agent_id, run_id, actor=str(claims.get("sub") or ""))
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    finally:
+        await recheck()
+
+    if brief is None:
+        raise HTTPException(status_code=404, detail="research run not found")
+
+    out = ResearchRunOut.model_validate(run)
+    out.brief = _brief_out(brief)
+    return out

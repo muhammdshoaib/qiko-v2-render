@@ -40,7 +40,8 @@ _SYNTHESIZER_SYSTEM = (
     "Use ONLY the evidence supplied in the CONTEXT. "
     "Return a single JSON object with keys: "
     '"summary" (a short prose summary), '
-    '"findings" (a list of objects each with "text" and optionally "gaps"), '
+    '"findings" (a list of objects each with "text", optionally "gaps", '
+    'and "evidence_refs" listing the source labels that support it), '
     '"citations" (a list of source labels). '
     "Do not invent facts, dates, names or figures. "
     "If the context contains no relevant evidence, set summary to "
@@ -287,9 +288,13 @@ def _parse_synthesis(text: str) -> ConsolidatedOutput | None:
     if isinstance(findings_data, list):
         for item in findings_data:
             if isinstance(item, dict):
+                refs = item.get("evidence_refs") or []
+                if not isinstance(refs, list):
+                    refs = []
                 findings.append(Finding(
                     text=str(item.get("text") or ""),
                     gaps=str(item.get("gaps") or ""),
+                    evidence_refs=[str(r) for r in refs if r],
                 ))
     citations = [str(c) for c in data.get("citations") or [] if c]
     return ConsolidatedOutput(

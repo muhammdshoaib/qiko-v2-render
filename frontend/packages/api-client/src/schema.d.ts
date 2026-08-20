@@ -2875,6 +2875,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/intelligence/agents/{agent_id}/research/runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Research Run
+         * @description Start a research run for a subject. The run is persisted and executed by the task queue.
+         */
+        post: operations["create_research_run_api_v1_intelligence_agents__agent_id__research_runs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/intelligence/agents/{agent_id}/research/runs/{run_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Research Run
+         * @description Read a research run and its current brief.
+         */
+        get: operations["get_research_run_api_v1_intelligence_agents__agent_id__research_runs__run_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/intelligence/agents/{agent_id}/research/runs/{run_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept Research Run
+         * @description Accept the brief from a completed research run and make it ground truth.
+         */
+        post: operations["accept_research_run_api_v1_intelligence_agents__agent_id__research_runs__run_id__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/intelligence/agents/{agent_id}/sources": {
         parameters: {
             query?: never;
@@ -5054,6 +5114,24 @@ export interface components {
              */
             file: string;
         };
+        /** BriefOut */
+        BriefOut: {
+            /** Accepted At */
+            accepted_at?: string | null;
+            /** Citations */
+            citations: string[];
+            /** Findings */
+            findings: components["schemas"]["FindingOut"][];
+            /** Gaps */
+            gaps: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "in_progress" | "draft" | "accepted";
+            /** Summary */
+            summary: string;
+        };
         /** BulkAssignBody */
         BulkAssignBody: {
             /** Agent Id */
@@ -5484,6 +5562,23 @@ export interface components {
              */
             title: string;
         };
+        /** FindingOut */
+        FindingOut: {
+            /** Confidence */
+            confidence?: number | null;
+            /**
+             * Evidence Refs
+             * @default []
+             */
+            evidence_refs: string[];
+            /**
+             * Gaps
+             * @default
+             */
+            gaps: string;
+            /** Text */
+            text: string;
+        };
         /** ForgotBody */
         ForgotBody: {
             /** Email */
@@ -5748,6 +5843,10 @@ export interface components {
         PipelineRunOut: {
             /** Agent Id */
             agent_id: string;
+            /** Cost */
+            cost?: {
+                [key: string]: unknown;
+            } | null;
             /** Facets */
             facets: string[];
             /** Run Id */
@@ -5878,6 +5977,30 @@ export interface components {
             fmt: string;
             /** Source */
             source: string;
+        };
+        /** ResearchRunOut */
+        ResearchRunOut: {
+            /** Agent Id */
+            agent_id: string;
+            brief?: components["schemas"]["BriefOut"] | null;
+            /** Cost */
+            cost?: {
+                [key: string]: unknown;
+            } | null;
+            /** Facets */
+            facets: string[];
+            /** Run Id */
+            run_id: string;
+            /** Status */
+            status: {
+                [key: string]: unknown;
+            };
+            /** Subject */
+            subject: string;
+            /** Tenant */
+            tenant: string;
+            /** Verdict */
+            verdict?: string | null;
         };
         /** ResetBody */
         ResetBody: {
@@ -12148,6 +12271,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PipelineRunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_research_run_api_v1_intelligence_agents__agent_id__research_runs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PipelineRunCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchRunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_research_run_api_v1_intelligence_agents__agent_id__research_runs__run_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchRunOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_research_run_api_v1_intelligence_agents__agent_id__research_runs__run_id__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchRunOut"];
                 };
             };
             /** @description Validation Error */
