@@ -7833,9 +7833,9 @@ export interface operations {
     analytics_api_v1_admin_analytics_get: {
         parameters: {
             query?: {
-                start?: string;
-                end?: string;
-                fallback_start?: string;
+                start?: string | null;
+                end?: string | null;
+                fallback_start?: string | null;
             };
             header?: never;
             path?: never;

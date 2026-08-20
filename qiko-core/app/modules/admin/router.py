@@ -293,12 +293,26 @@ def overview(request: Request, _tenant: str = Depends(authed_tenant),
     return {"customers_total": customers_total, **subs}
 
 
+def _default_analytics_range() -> tuple[str, str, str]:
+    """Default to the last 30 days; fallback_start is two years before start for resilience."""
+    today = datetime.now(timezone.utc).date()
+    start = today - timedelta(days=30)
+    fallback = start - timedelta(days=730)
+    return start.isoformat(), today.isoformat(), fallback.isoformat()
+
+
 @router.get("/analytics")
 def analytics(request: Request, _tenant: str = Depends(authed_tenant),
               _identity=Depends(require_platform_capability(Capability.view_customers)),
-              start: str = "2026-01-01", end: str = "2026-12-31",
-              fallback_start: str = "2020-01-01") -> dict:
+              start: str | None = Query(default=None, max_length=10),
+              end: str | None = Query(default=None, max_length=10),
+              fallback_start: str | None = Query(default=None, max_length=10)) -> dict:
     from app.modules.admin.ga4 import GA4Analytics
+
+    default_start, default_end, default_fallback = _default_analytics_range()
+    start = start or default_start
+    end = end or default_end
+    fallback_start = fallback_start or default_fallback
 
     empty = {"sessions": 0, "active_users": 0, "top_pages": [], "had_data": False}
     try:
