@@ -3,11 +3,12 @@
 import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Bot, FileText, Link as LinkIcon, MessageSquare, RefreshCw, SendHorizonal, ShieldAlert, Database } from "lucide-react";
+import { ArrowLeft, Bot, FileText, Link as LinkIcon, MessageSquare, RefreshCw, Search, SendHorizonal, ShieldAlert, Database } from "lucide-react";
 import { Badge, Button, cn } from "@qiko/ui";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import { SourcesTab } from "@/components/sources-tab";
 import { DocumentsTab } from "@/components/documents-tab";
+import { ResearchTab } from "@/components/research-tab";
 import { WorkerAvatar } from "@/components/worker-avatar";
 import {
   askIntelligence, getDiscrepancies, listAgents, listIntelligenceSources, type Discrepancy, type IntelligenceSource,
@@ -39,7 +40,7 @@ export default function IntelligenceWorkerPage() {
     return map;
   }, [discrepancies.data]);
 
-  const [tab, setTab] = useState<"discrepancies" | "chat" | "sources" | "documents">("discrepancies");
+  const [tab, setTab] = useState<"discrepancies" | "chat" | "sources" | "documents" | "research">("discrepancies");
 
   if (agents.isLoading) return <PageSkeleton />;
   if (!worker) return <UnavailableState onBack={() => router.push("/studio")} />;
@@ -70,6 +71,7 @@ export default function IntelligenceWorkerPage() {
               { key: "chat", label: "Chat", icon: MessageSquare },
               { key: "sources", label: "Sources", icon: Database },
               { key: "documents", label: "Documents", icon: FileText },
+              { key: "research", label: "Research", icon: Search },
             ] as const).map(({ key, label, icon: Icon }) => (
               <button
                 key={key}
@@ -130,6 +132,12 @@ export default function IntelligenceWorkerPage() {
         {tab === "documents" && (
           <section className="text-white">
             <DocumentsTab agentId={agentId} />
+          </section>
+        )}
+
+        {tab === "research" && (
+          <section className="text-white">
+            <ResearchTab agentId={agentId} />
           </section>
         )}
       </main>
