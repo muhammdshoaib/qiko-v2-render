@@ -134,6 +134,27 @@ async def test_synthesizer_parses_json_summary_and_findings():
     assert result.citations == ["doc-1"]
 
 
+async def test_synthesizer_parses_evidence_refs_per_finding():
+    payload = json.dumps({
+        "summary": "ACME builds AI-powered sales tools.",
+        "findings": [
+            {
+                "text": "AI tools",
+                "evidence_refs": ["doc-1", "doc-2"],
+                "gaps": "",
+            },
+        ],
+        "citations": ["doc-1", "doc-2"],
+    })
+    synthesizer = Synthesizer(Generator(provider=_CannedProvider(payload)))
+    outputs = [
+        SpecialistOutput(facet="products", answer="AI tools", confidence=0.9, gaps=""),
+    ]
+    result = await synthesizer.consolidate(outputs)
+
+    assert result.findings[0].evidence_refs == ["doc-1", "doc-2"]
+
+
 async def test_synthesizer_returns_raw_text_when_not_json():
     synthesizer = Synthesizer(Generator(provider=_CannedProvider("plain summary")))
     outputs = [SpecialistOutput(facet="x", answer="y", confidence=None, gaps="")]

@@ -5,10 +5,12 @@ is identical whether run eagerly (dev) or on a worker (prod).
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 
 from app.core.tenancy import reset_tenant, set_tenant
+from app.modules.ai import usage
 from app.modules.audit import registry as audit_actions
 from app.modules.audit import service as audit
 from app.modules.intelligence.documents import DocumentService
@@ -222,16 +224,29 @@ async def run_intelligence_pipeline(
     The eager dev/test path passes a pre-built `Pipeline`; the arq worker tier passes only
     `sessionmaker` and the ids, and this function rebuilds the Pipeline from the worker's own
     DB connection."""
-    if pipeline is not None:
-        run = await pipeline.resume(tenant, agent_id, run_id)
-    else:
-        if sessionmaker is None:
-            raise ValueError("run_intelligence_pipeline requires sessionmaker or pipeline")
-        pipeline = await _build_pipeline_deps(sessionmaker, tenant, agent_id)
-        run = await pipeline.resume(tenant, agent_id, run_id)
+    run = None
+    events: list = []
+    agent_token = usage.set_agent(agent_id)
+    tenant_token = set_tenant(tenant)
+    try:
+        with usage.scope() as events:
+            if pipeline is not None:
+                run = await pipeline.resume(tenant, agent_id, run_id)
+            else:
+                if sessionmaker is None:
+                    raise ValueError("run_intelligence_pipeline requires sessionmaker or pipeline")
+                pipeline = await _build_pipeline_deps(sessionmaker, tenant, agent_id)
+                run = await pipeline.resume(tenant, agent_id, run_id)
+    finally:
+        if run is not None and pipeline is not None:
+            run.cost = dataclasses.asdict(usage.accumulate(events))
+            await pipeline.store.update(run)
+        await usage.flush(_usage_store(sessionmaker), events)
+        usage.reset_agent(agent_token)
+        reset_tenant(tenant_token)
     if run is None:
         raise ValueError(f"pipeline run {run_id} not found")
-    return {"run_id": run.run_id, "verdict": run.verdict, "status": run.status}
+    return {"run_id": run.run_id, "verdict": run.verdict, "status": run.status, "cost": run.cost}
 
 
 async def apply_audit_retention(store) -> dict:
