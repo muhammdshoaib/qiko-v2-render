@@ -211,12 +211,12 @@ async def set_worker_enabled(customer_id: str, agent_id: str, body: WorkerEnable
                              request: Request, _tenant: str = Depends(authed_tenant),
                              claims: dict = Depends(current_claims),
                              _identity=Depends(require_platform_capability(Capability.manage_workers))) -> dict:
+    _require_csrf(request)
     if await run_in_threadpool(request.app.state.customers.details, customer_id) is None:
         raise HTTPException(status_code=404, detail="worker not found")
     agent = await request.app.state.agents.get(customer_id, agent_id)
     if agent is None:
         raise HTTPException(status_code=404, detail="worker not found")
-    _require_csrf(request)
     changed = await request.app.state.agents.set_enabled(
         customer_id, agent_id, body.enabled,
         changed_by_email=str(claims["email"]), reason=body.reason)
@@ -232,10 +232,10 @@ async def customer_studio(user_id: str, body: StudioBody, request: Request,
                           claims: dict = Depends(current_claims),
                           _tenant: str = Depends(authed_tenant),
                           _identity=Depends(require_platform_capability(Capability.manage_customers))) -> dict:
+    _require_csrf(request)
     before = await run_in_threadpool(request.app.state.customers.details, user_id)
     if before is None:
         raise HTTPException(status_code=404, detail="customer not found")
-    _require_csrf(request)
     try:
         record = await run_in_threadpool(
             request.app.state.customers.set_studio, user_id, body.enabled
@@ -258,10 +258,10 @@ async def customer_delete(user_id: str, request: Request,
                           claims: dict = Depends(current_claims),
                           _tenant: str = Depends(authed_tenant),
                           _identity=Depends(require_platform_capability(Capability.manage_customers))) -> dict:
+    _require_csrf(request)
     before = await run_in_threadpool(request.app.state.customers.details, user_id)
     if before is None:
         raise HTTPException(status_code=404, detail="customer not found")
-    _require_csrf(request)
     try:
         record = await run_in_threadpool(request.app.state.customers.soft_delete, user_id)
         # This hides a tenant platform-wide, anonymises its email and has no reversal endpoint, and it
