@@ -49,6 +49,14 @@ export function StudioWorkerRouteGuard({ children }: { children: ReactNode }) {
 
   const segment = worker ? TYPE_SEGMENTS[worker.atype] : undefined;
   const expectedPath = segment === null ? `/studio/${id}` : segment ? `/studio/${id}/${segment}` : null;
+
+  // A bare /studio/:id URL is valid for the generic worker page, but verticals must
+  // redirect to their cockpit so the Studio grid can link to /studio/:id for all workers.
+  if (worker && worker.enabled !== false && worker.status === "ready" && segment && expectedPath && pathname === `/studio/${id}`) {
+    router.replace(expectedPath);
+    return null;
+  }
+
   const typeMatches = expectedPath !== null
     && (segment === null ? pathname === expectedPath : pathname.startsWith(expectedPath));
 

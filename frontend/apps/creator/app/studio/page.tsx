@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { ArrowRight, BarChart3, FileText, MessageSquare, Plus, Radar } from "lucide-react";
+import { ArrowRight, BarChart3, FileText, MessageSquare, Plus, Radar, Search } from "lucide-react";
 import { Button } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -132,6 +132,7 @@ export default function StudioPage() {
                     const salesIntel = isSalesIntelligenceWorker(a);
                     const finance = isFinanceWorker(a);
                     const preSales = a.atype === "pre_sales_writer";
+                    const intelligence = a.atype === "intelligence";
 
                     let metrics: { label: string; value: string; description?: string }[];
                     let useCaseCount: number;
@@ -186,6 +187,16 @@ export default function StudioPage() {
                       ];
                       useCaseCount = 6;
                       href = `/studio/${a.id}/pre-sales`;
+                    } else if (intelligence) {
+                      // Intelligence worker cockpit: research, sources, chat and backlog creation.
+                      metrics = [
+                        { label: "Status", value: a.status === "ready" ? "Ready" : "Training" },
+                        { label: "Knowledge", value: `${dataVolume} chunks` },
+                        { label: "Grounding", value: "Critic + gate" },
+                        { label: "Capabilities", value: "Chat · Research" },
+                      ];
+                      useCaseCount = 4;
+                      href = `/studio/${a.id}/intelligence`;
                     } else {
                       // Generic worker boilerplate: domain-neutral knowledge/grounding metrics.
                       metrics = [
@@ -228,6 +239,10 @@ export default function StudioPage() {
                               ) : preSales ? (
                                 <span className="flex size-11 shrink-0 items-center justify-center rounded-xl" style={{ background: "rgba(168,85,247,0.08)", border: "1px solid rgba(168,85,247,0.18)" }}>
                                   <FileText className="size-5 text-purple-400" />
+                                </span>
+                              ) : intelligence ? (
+                                <span className="flex size-11 shrink-0 items-center justify-center rounded-xl" style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.15)" }}>
+                                  <Search className="size-5 text-indigo-400" />
                                 </span>
                               ) : (
                                 <span className="flex size-11 shrink-0 items-center justify-center rounded-xl" style={{ background: "rgba(99,102,241,0.08)", border: "1px solid rgba(99,102,241,0.15)" }}>
