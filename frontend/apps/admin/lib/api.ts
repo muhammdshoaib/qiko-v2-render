@@ -93,6 +93,7 @@ const applySort = (params: URLSearchParams, sort?: ListSort) => {
 };
 
 export type Customer = { user_id: string; email: string; plan: string; earnings_cents: number };
+export type CustomerOut = Customer & { is_studio: boolean; deleted: boolean };
 export const listCustomers = (search = "", page = 1, sort?: ListSort, plan?: string) => {
   const params = new URLSearchParams({ page: String(page), page_size: String(DIRECTORY_PAGE_SIZE) });
   if (search) params.set("search", search);
@@ -302,7 +303,7 @@ export const removePlatformAdmin = (email: string, reason?: string) => {
 };
 export const customerDetail = (userId: string) => request<CustomerDetail>(`/admin/customers/${encodeURIComponent(userId)}`);
 export const setCustomerStudio = (customerId: string, enabled: boolean) =>
-  request<CustomerDetail>(`/admin/customers/${encodeURIComponent(customerId)}/studio`, {
+  request<CustomerOut>(`/admin/customers/${encodeURIComponent(customerId)}/studio`, {
     method: "POST", body: JSON.stringify({ enabled }),
   });
 export const setWorkerEnabled = (customerId: string, workerId: string, enabled: boolean, reason: string) =>

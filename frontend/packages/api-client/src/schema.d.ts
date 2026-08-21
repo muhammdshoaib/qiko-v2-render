@@ -5502,6 +5502,21 @@ export interface components {
             /** Workers */
             workers: components["schemas"]["AdminWorkerOut"][];
         };
+        /** CustomerOut */
+        CustomerOut: {
+            /** Deleted */
+            deleted: boolean;
+            /** Earnings Cents */
+            earnings_cents: number;
+            /** Email */
+            email: string;
+            /** Is Studio */
+            is_studio: boolean;
+            /** Plan */
+            plan: string;
+            /** User Id */
+            user_id: string;
+        };
         /** DeleteFilesBody */
         DeleteFilesBody: {
             /** Ids */
@@ -7237,9 +7252,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["CustomerOut"];
                 };
             };
             /** @description Validation Error */
@@ -7280,9 +7293,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["CustomerOut"];
                 };
             };
             /** @description Validation Error */
