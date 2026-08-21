@@ -303,7 +303,8 @@ def test_preview_qiko_track_reports_service_token_unconfigured(client, monkeypat
 def test_qiko_track_auto_connect_creates_project(client, monkeypatch):
     from app.core.config import get_settings
     monkeypatch.setattr(get_settings(), "qiko_track_service_token", "qt-service-token")
-    monkeypatch.setattr(get_settings(), "qiko_track_api_allowlist", ["http://example.com"])
+    monkeypatch.setattr(get_settings(), "qiko_track_api_allowlist", ["http://testserver"])
+    monkeypatch.setattr(QikoTrackClient, "_validate_url", lambda self: None)
 
     calls: list = []
 
@@ -326,7 +327,7 @@ def test_qiko_track_auto_connect_creates_project(client, monkeypatch):
             "project_key": "ACME1",
             "project_name": "ACME One",
             "project_kind": "INTERNAL",
-            "base_url": "http://example.com",
+            "base_url": "http://testserver",
         },
     )
     assert r.status_code == 200
@@ -337,7 +338,8 @@ def test_qiko_track_auto_connect_creates_project(client, monkeypatch):
 def test_qiko_track_auto_connect_reuses_existing_project(client, monkeypatch):
     from app.core.config import get_settings
     monkeypatch.setattr(get_settings(), "qiko_track_service_token", "qt-service-token")
-    monkeypatch.setattr(get_settings(), "qiko_track_api_allowlist", ["http://example.com"])
+    monkeypatch.setattr(get_settings(), "qiko_track_api_allowlist", ["http://testserver"])
+    monkeypatch.setattr(QikoTrackClient, "_validate_url", lambda self: None)
 
     async def fake_list_projects(self):
         return [{"key": "ACME1", "name": "Existing", "kind": "INTERNAL"}]
@@ -354,7 +356,7 @@ def test_qiko_track_auto_connect_reuses_existing_project(client, monkeypatch):
     r = client.post(
         "/api/v1/intelligence/agents/w1/sources/qiko_track",
         cookies=C,
-        json={"auto": True, "project_key": "ACME1", "project_name": "ACME One", "project_kind": "INTERNAL", "base_url": "http://example.com"},
+        json={"auto": True, "project_key": "ACME1", "project_name": "ACME One", "project_kind": "INTERNAL", "base_url": "http://testserver"},
     )
     assert r.status_code == 200
     assert r.json()["connected"] is True
