@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { Button, Input, Label, cn } from "@qiko/ui";
+import { Button, Dialog, Input, Label, Select, cn } from "@qiko/ui";
 import {
   type IntelligenceSourceConnection,
+  type QikoTrackPreview,
   connectIntelligenceSource,
   disconnectIntelligenceSource,
   getGitHubAppInstallUrl,
+  getIntelligenceQikoTrackPreview,
   getIntelligenceSourceConnection,
   listSlackWatchedChannels,
   setSlackWatchedChannels,
@@ -169,19 +171,44 @@ export function QikoTrackForm({
   connection: IntelligenceSourceConnection | undefined;
   onChange: OnChange;
 }) {
+  const c = connection?.key === "qiko_track" ? connection : undefined;
+  const [message, setMessage] = useState<string | null>(null);
+
   const [token, setToken] = useState("");
   const [projectKeys, setProjectKeys] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
-  const c = connection?.key === "qiko_track" ? connection : undefined;
 
-  const connect = useMutation({
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [projectKey, setProjectKey] = useState("");
+  const [projectName, setProjectName] = useState("");
+  const [projectKind, setProjectKind] = useState<"INTERNAL" | "PRODUCT" | "CLIENT">("INTERNAL");
+  const [existingKey, setExistingKey] = useState("");
+
+  const preview = useQuery<QikoTrackPreview>({
+    queryKey: ["qiko-track-preview", agentId],
+    queryFn: () => getIntelligenceQikoTrackPreview(agentId),
+    enabled: !c?.connected,
+  });
+
+  const connectManual = useMutation({
     mutationFn: () => connectIntelligenceSource(agentId, "qiko_track", {
       token,
       project_keys: parseList(projectKeys),
       base_url: baseUrl || undefined,
     }),
     onSuccess: () => { setToken(""); setMessage(null); onChange(); },
+    onError: (e: Error) => setMessage(e.message),
+  });
+
+  const connectAuto = useMutation({
+    mutationFn: () => connectIntelligenceSource(agentId, "qiko_track", {
+      auto: true,
+      project_key: existingKey || projectKey,
+      project_name: projectName,
+      project_kind: projectKind,
+      base_url: baseUrl || undefined,
+    }),
+    onSuccess: () => { setDialogOpen(false); setMessage(null); onChange(); },
     onError: (e: Error) => setMessage(e.message),
   });
 
@@ -212,7 +239,65 @@ export function QikoTrackForm({
     }
   }, [c]);
 
-  if (!c?.connected) {
+  useEffect(() => {
+    if (preview.data?.suggested) {
+      setProjectKey(preview.data.suggested.key);
+      setProjectName(preview.data.suggested.name);
+      setProjectKind(preview.data.suggested.kind);
+    }
+  }, [preview.data]);
+
+  useEffect(() => {
+    if (existingKey && preview.data?.existing_projects) {
+      const selected = preview.data.existing_projects.find((p) => p.key === existingKey);
+      if (selected) {
+        setProjectKey(selected.key);
+        setProjectName(selected.name);
+        setProjectKind(selected.kind);
+      }
+    }
+  }, [existingKey, preview.data]);
+
+  if (c?.connected) {
+    return (
+      <div className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          {c.service_token_used ? "Connected via service token" : `Token: ${c.token_masked || "saved"}`}
+        </p>
+        <p className="text-xs text-muted-foreground">Project keys: {c.project_keys.join(", ")}</p>
+        <div className="space-y-1">
+          <Label className="text-xs">Base URL</Label>
+          <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://track.qiko.ai" />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Project keys</Label>
+          <Input value={projectKeys} onChange={(e) => setProjectKeys(e.target.value)} placeholder="QIW, PROJ-1" />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
+            {save.isPending && <Loader2 className="size-4 animate-spin" />} Save
+          </Button>
+          <Button variant="outline" size="sm" disabled={test.isPending} onClick={() => test.mutate()}>
+            {test.isPending && <Loader2 className="size-4 animate-spin" />} Test
+          </Button>
+          <Button variant="outline" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
+            Disconnect
+          </Button>
+        </div>
+        {message && <p className={cn("text-xs", message.includes("failed") || message.includes("error") ? "text-destructive" : "text-emerald-400")}>{message}</p>}
+      </div>
+    );
+  }
+
+  if (preview.isLoading) {
+    return <p className="text-sm text-muted-foreground">Loading Qiko Track preview...</p>;
+  }
+
+  if (preview.isError || !preview.data) {
+    return <p className="text-sm text-destructive">Could not load Qiko Track preview.</p>;
+  }
+
+  if (!preview.data.service_token_configured) {
     return (
       <div className="space-y-3">
         <div className="space-y-1">
@@ -227,37 +312,73 @@ export function QikoTrackForm({
           <Label className="text-xs">Project keys (comma separated)</Label>
           <Input value={projectKeys} onChange={(e) => setProjectKeys(e.target.value)} placeholder="QIW, PROJ-1" />
         </div>
-        <Button disabled={!token || !projectKeys || connect.isPending} onClick={() => connect.mutate()} className="w-full">
-          {connect.isPending && <Loader2 className="size-4 animate-spin" />} Connect
+        <Button disabled={!token || !projectKeys || connectManual.isPending} onClick={() => connectManual.mutate()} className="w-full">
+          {connectManual.isPending && <Loader2 className="size-4 animate-spin" />} Connect
         </Button>
         {message && <p className="text-xs text-muted-foreground">{message}</p>}
       </div>
     );
   }
 
+  const existing = preview.data.existing_projects;
+  const selectedKey = existingKey || projectKey;
+
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">Token: {c.token_masked || "saved"}</p>
-      <div className="space-y-1">
-        <Label className="text-xs">Base URL</Label>
-        <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://track.qiko.ai" />
-      </div>
-      <div className="space-y-1">
-        <Label className="text-xs">Project keys</Label>
-        <Input value={projectKeys} onChange={(e) => setProjectKeys(e.target.value)} placeholder="QIW, PROJ-1" />
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
-          {save.isPending && <Loader2 className="size-4 animate-spin" />} Save
-        </Button>
-        <Button variant="outline" size="sm" disabled={test.isPending} onClick={() => test.mutate()}>
-          {test.isPending && <Loader2 className="size-4 animate-spin" />} Test
-        </Button>
-        <Button variant="outline" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
-          Disconnect
-        </Button>
-      </div>
-      {message && <p className={cn("text-xs", message.includes("failed") || message.includes("error") ? "text-destructive" : "text-emerald-400")}>{message}</p>}
+      <Button disabled={connectAuto.isPending} onClick={() => setDialogOpen(true)} className="w-full">
+        {connectAuto.isPending && <Loader2 className="size-4 animate-spin" />} Connect Qiko Track
+      </Button>
+      {message && <p className="text-xs text-destructive">{message}</p>}
+
+      <Dialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        labelledBy="qiko-track-connect-title"
+        busy={connectAuto.isPending}
+      >
+        <div className="space-y-4">
+          <h2 id="qiko-track-connect-title" className="text-lg font-semibold">Connect Qiko Track</h2>
+          <p className="text-sm text-muted-foreground">A new project will be created with the key below. You can edit it.</p>
+
+          {existing.length > 0 && (
+            <div className="space-y-1">
+              <Label className="text-xs">Project</Label>
+              <Select value={existingKey} onChange={(e) => setExistingKey(e.target.value)}>
+                <option value="">Create new</option>
+                {existing.map((p) => (
+                  <option key={p.key} value={p.key}>{p.name} ({p.key})</option>
+                ))}
+              </Select>
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <Label className="text-xs">Project key</Label>
+            <Input value={projectKey} onChange={(e) => setProjectKey(e.target.value.toUpperCase())} placeholder="QIW" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Project name</Label>
+            <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="Qiko Intelligence Worker" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Kind</Label>
+            <Select value={projectKind} onChange={(e) => setProjectKind(e.target.value as typeof projectKind)}>
+              <option value="INTERNAL">Internal</option>
+              <option value="PRODUCT">Product</option>
+              <option value="CLIENT">Client</option>
+            </Select>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" disabled={!selectedKey || connectAuto.isPending} onClick={() => connectAuto.mutate()}>
+              {connectAuto.isPending && <Loader2 className="size-4 animate-spin" />} Connect
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => setDialogOpen(false)}>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Dialog>
     </div>
   );
 }

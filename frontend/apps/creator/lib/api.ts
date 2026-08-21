@@ -1220,8 +1220,14 @@ export const clearFinanceHistory = (agentId: string) =>
 export type IntelligenceSource = { key: string; name: string; description: string; pollable: boolean; connected: boolean };
 export type IntelligenceSourceConnection =
   | { key: "github"; connected: boolean; token_masked: string; repo_allowlist: string[]; watched_branches: string[] }
-  | { key: "qiko_track"; connected: boolean; token_masked: string; project_keys: string[]; base_url: string }
+  | { key: "qiko_track"; connected: boolean; service_token_used?: boolean; token_masked: string; project_keys: string[]; base_url: string }
   | { key: "slack"; connected: boolean; team_id: string | null; watched_channels: string[]; channels: { id: string; name: string }[] };
+
+export type QikoTrackPreview = {
+  service_token_configured: boolean;
+  suggested?: { key: string; name: string; kind: "PRODUCT" | "CLIENT" | "INTERNAL" };
+  existing_projects: { key: string; name: string; kind: "PRODUCT" | "CLIENT" | "INTERNAL" }[];
+};
 
 export const listIntelligenceSources = (agentId: string) =>
   request<IntelligenceSource[]>(`/intelligence/agents/${agentId}/sources`);
@@ -1231,6 +1237,9 @@ export const getIntelligenceSource = (agentId: string, sourceKey: string) =>
 
 export const getIntelligenceSourceConnection = (agentId: string, sourceKey: string) =>
   request<IntelligenceSourceConnection>(`/intelligence/agents/${agentId}/sources/${sourceKey}/connection`);
+
+export const getIntelligenceQikoTrackPreview = (agentId: string) =>
+  request<QikoTrackPreview>(`/intelligence/agents/${agentId}/sources/qiko_track/preview`);
 
 export const getGitHubAppInstallUrl = (agentId: string) =>
   request<{ url: string }>(`/intelligence/agents/${agentId}/sources/github/install`);
