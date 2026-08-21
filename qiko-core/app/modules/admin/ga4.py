@@ -21,7 +21,7 @@ def _sum(rows: list[dict], metric: str) -> float:
 
 def top_by(rows: list[dict], dimension: str, metric: str, *, n: int = 5) -> list[dict]:
     ranked = sorted(rows, key=lambda r: float(r.get(metric, 0) or 0), reverse=True)
-    return [{dimension: r.get(dimension), metric: r.get(metric)} for r in ranked[:n]]
+    return [{dimension: r.get(dimension), metric: float(r.get(metric, 0) or 0)} for r in ranked[:n]]
 
 
 @dataclass
