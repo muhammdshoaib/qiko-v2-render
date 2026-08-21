@@ -11,6 +11,7 @@ from app.main import create_app
 from app.modules.agents.service import Agent
 from app.modules.intelligence.catalog import SourceCatalog
 from app.modules.intelligence.connectors import GitHubConnector, QikoTrackConnector
+from app.modules.intelligence.qiko_track_client import QikoTrackClient
 from tests.helpers import auth_cookies
 
 
@@ -284,3 +285,77 @@ def test_get_metrics_returns_empty_when_qiko_track_not_connected(client):
     r = client.get("/api/v1/intelligence/agents/w1/metrics", cookies=C)
     assert r.status_code == 200
     assert r.json()["projects"] == {}
+
+
+def test_preview_qiko_track_requires_editor(client):
+    r = client.get("/api/v1/intelligence/agents/w1/sources/qiko_track/preview", cookies=auth_cookies("intelco", "viewer"))
+    assert r.status_code == 403
+
+
+def test_preview_qiko_track_reports_service_token_unconfigured(client, monkeypatch):
+    from app.core.config import get_settings
+    monkeypatch.setattr(get_settings(), "qiko_track_service_token", "")
+    r = client.get("/api/v1/intelligence/agents/w1/sources/qiko_track/preview", cookies=C)
+    assert r.status_code == 200
+    assert r.json()["service_token_configured"] is False
+
+
+def test_qiko_track_auto_connect_creates_project(client, monkeypatch):
+    from app.core.config import get_settings
+    monkeypatch.setattr(get_settings(), "qiko_track_service_token", "qt-service-token")
+    monkeypatch.setattr(get_settings(), "qiko_track_api_allowlist", ["http://example.com"])
+
+    calls: list = []
+
+    async def fake_list_projects(self):
+        calls.append("list")
+        return []
+
+    async def fake_create_project(self, payload, *, idempotency_key=None):
+        calls.append(("create", payload, idempotency_key))
+        return {"id": "p1", "key": payload["key"], "name": payload["name"]}
+
+    monkeypatch.setattr(QikoTrackClient, "list_projects", fake_list_projects)
+    monkeypatch.setattr(QikoTrackClient, "create_project", fake_create_project)
+
+    r = client.post(
+        "/api/v1/intelligence/agents/w1/sources/qiko_track",
+        cookies=C,
+        json={
+            "auto": True,
+            "project_key": "ACME1",
+            "project_name": "ACME One",
+            "project_kind": "INTERNAL",
+            "base_url": "http://example.com",
+        },
+    )
+    assert r.status_code == 200
+    assert r.json()["connected"] is True
+    assert any(call[0] == "create" and call[1]["key"] == "ACME1" for call in calls)
+
+
+def test_qiko_track_auto_connect_reuses_existing_project(client, monkeypatch):
+    from app.core.config import get_settings
+    monkeypatch.setattr(get_settings(), "qiko_track_service_token", "qt-service-token")
+    monkeypatch.setattr(get_settings(), "qiko_track_api_allowlist", ["http://example.com"])
+
+    async def fake_list_projects(self):
+        return [{"key": "ACME1", "name": "Existing", "kind": "INTERNAL"}]
+
+    created = []
+
+    async def fake_create_project(self, payload, *, idempotency_key=None):
+        created.append(payload)
+        return {"id": "p1", "key": payload["key"], "name": payload["name"]}
+
+    monkeypatch.setattr(QikoTrackClient, "list_projects", fake_list_projects)
+    monkeypatch.setattr(QikoTrackClient, "create_project", fake_create_project)
+
+    r = client.post(
+        "/api/v1/intelligence/agents/w1/sources/qiko_track",
+        cookies=C,
+        json={"auto": True, "project_key": "ACME1", "project_name": "ACME One", "project_kind": "INTERNAL", "base_url": "http://example.com"},
+    )
+    assert r.status_code == 200
+    assert r.json()["connected"] is True
+    assert created == []
