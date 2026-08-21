@@ -217,3 +217,9 @@ def test_json_logs_keep_the_diagnostic_context_passed_via_extra():
     # LogRecord internals must not leak into the log line.
     for noisy in ("args", "pathname", "levelno", "msecs", "exc_text", "stack_info"):
         assert noisy not in payload
+
+
+def test_qiko_track_service_token_is_optional():
+    settings = Settings()
+    assert settings.qiko_track_service_token == ""
+    assert "QIKO_TRACK_SERVICE_TOKEN" not in settings.model_dump()

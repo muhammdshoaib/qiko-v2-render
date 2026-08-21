@@ -3018,6 +3018,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/intelligence/agents/{agent_id}/sources/qiko_track/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Preview Qiko Track Source
+         * @description Return whether auto-connect is available and a suggested project.
+         */
+        get: operations["preview_qiko_track_source_api_v1_intelligence_agents__agent_id__sources_qiko_track_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/intelligence/agents/{agent_id}/sources/slack/channels": {
         parameters: {
             query?: never;
@@ -5281,6 +5301,11 @@ export interface components {
          */
         ConnectSourceBody: {
             /**
+             * Auto
+             * @default false
+             */
+            auto: boolean;
+            /**
              * Base Url
              * @default
              */
@@ -5292,6 +5317,16 @@ export interface components {
             project_key: string;
             /** Project Keys */
             project_keys?: string[];
+            /**
+             * Project Kind
+             * @default
+             */
+            project_kind: string;
+            /**
+             * Project Name
+             * @default
+             */
+            project_name: string;
             /** Repo Allowlist */
             repo_allowlist?: string[];
             /**
@@ -13627,6 +13662,39 @@ export interface operations {
         };
     };
     github_app_install_api_v1_intelligence_agents__agent_id__sources_github_install_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_qiko_track_source_api_v1_intelligence_agents__agent_id__sources_qiko_track_preview_get: {
         parameters: {
             query?: never;
             header?: never;

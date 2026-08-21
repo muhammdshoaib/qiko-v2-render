@@ -39,7 +39,9 @@ from app.modules.intelligence.orchestration import (
     Synthesizer,
 )
 from app.modules.intelligence.backlog import BacklogCreateError, BacklogProposal, BacklogService, ProposedTicket
+from app.modules.intelligence.qiko_track_client import QikoTrackClient, QikoTrackClientError
 from app.modules.intelligence.qiko_track_metrics import MetricsService
+from app.modules.sales_intelligence.ssrf import SsrfError
 from app.modules.intelligence.research import Brief, ResearchService
 from app.modules.knowledge.parsing import MAX_UPLOAD_BYTES
 from app.modules.chat.service import ChatService
@@ -67,7 +69,10 @@ class ConnectSourceBody(BaseModel):
     watched_branches: list[str] = Field(default_factory=list)
     project_keys: list[str] = Field(default_factory=list)
     project_key: str = Field(default="")
+    project_name: str = Field(default="")
+    project_kind: str = Field(default="")
     base_url: str = Field(default="")
+    auto: bool = Field(default=False)
 
     @model_validator(mode="before")
     @classmethod
@@ -186,6 +191,7 @@ _SOURCE_CONFIG = {
     "qiko_track": {
         "added": "qiko_track_credentials_added",
         "token": "qiko_track_token_encrypted",
+        "service_token": "qiko_track_service_token",
         "project_keys": "qiko_track_project_keys",
         "base_url": "qiko_track_base_url",
         "label": "Qiko Track",
@@ -199,6 +205,25 @@ _SOURCE_CONFIG = {
 
 def _mask(secret: str) -> str:
     return f"{secret[:4]}{'*' * max(len(secret) - 4, 4)}" if secret else ""
+
+
+def _qiko_track_credential(cfg: dict) -> str | None:
+    """Resolve the effective Qiko Track token for this worker.
+
+    Service-token mode reads from global settings at runtime so a rotation
+    does not require reconnecting every worker. Manual mode decrypts the
+    per-worker token stored by the user.
+    """
+    if cfg.get("qiko_track_service_token"):
+        token = get_settings().qiko_track_service_token
+        if token:
+            return token
+    try:
+        return stored_credential(
+            cfg, flag="qiko_track_credentials_added",
+            key="qiko_track_token_encrypted", label="Qiko Track")
+    except HTTPException:
+        return None
 
 
 def _plaintext_of_config(config: dict, key: str) -> str | None:
@@ -247,7 +272,7 @@ async def _connected_keys(agent, installation_store) -> set[str]:
     cfg = agent.config or {}
     if cfg.get("github_credentials_added") and cfg.get("github_token_encrypted"):
         connected.add("github")
-    if cfg.get("qiko_track_credentials_added") and cfg.get("qiko_track_token_encrypted"):
+    if cfg.get("qiko_track_credentials_added") and (cfg.get("qiko_track_token_encrypted") or cfg.get("qiko_track_service_token")):
         connected.add("qiko_track")
     if cfg.get("slack_watched_channels"):
         try:
@@ -270,6 +295,65 @@ async def list_sources(agent_id: str, request: Request,
     connected = await _connected_keys(agent, slack_oauth.store)
     await recheck()
     return catalog.items(connected=connected)
+
+
+@router.get("/agents/{agent_id}/sources/qiko_track/preview")
+async def preview_qiko_track_source(
+    agent_id: str, request: Request,
+    tenant: str = Depends(authed_tenant),
+    claims: dict = Depends(require_role(Role.editor)),
+    agents: AgentService = Depends(get_agents),
+) -> dict:
+    """Return whether auto-connect is available and a suggested project."""
+    _worker, recheck = await _resolve_worker(request, tenant, agent_id)
+    agent = await agents.get(tenant, agent_id)
+    if agent is None:
+        await recheck()
+        raise HTTPException(status_code=404, detail="agent not found")
+
+    service_token = get_settings().qiko_track_service_token
+    if not service_token:
+        await recheck()
+        return {"service_token_configured": False}
+
+    base_url = get_settings().qiko_track_api_base
+    client = QikoTrackClient(base_url, service_token)
+    try:
+        existing = await client.list_projects()
+    except (QikoTrackClientError, SsrfError) as exc:
+        await recheck()
+        raise HTTPException(status_code=503, detail=f"could not reach Qiko Track: {exc}") from exc
+
+    suggestion = _suggest_qiko_track_project(agent, existing)
+    await recheck()
+    return {
+        "service_token_configured": True,
+        "suggested": suggestion,
+        "existing_projects": [{"key": p["key"], "name": p["name"], "kind": p.get("kind", "INTERNAL")} for p in existing],
+    }
+
+
+def _suggest_qiko_track_project(agent, existing_projects: list[dict]) -> dict:
+    """Suggest a unique project key and name for this worker."""
+    tenant = (getattr(agent, "tenant", "") or "").upper()
+    name = (getattr(agent, "name", "") or "project").upper()
+    prefix = "".join(ch for ch in (tenant + name) if ch.isalnum())[:6]
+    if len(prefix) < 2:
+        prefix = "QIW"
+    existing_keys = {p["key"].upper() for p in existing_projects}
+    counter = 1
+    key = prefix
+    while key in existing_keys and counter < 1000:
+        suffix = str(counter)
+        key = (prefix[:10 - len(suffix)] + suffix)[:10]
+        counter += 1
+    if key in existing_keys:
+        key = prefix[:6] + "X"
+    return {
+        "key": key,
+        "name": f"{agent.name} - Qiko Track",
+        "kind": "INTERNAL",
+    }
 
 
 @router.get("/agents/{agent_id}/sources/{key}")
@@ -321,11 +405,8 @@ def _metrics_provider_for_agent(agent) -> Callable[[], Awaitable[dict[str, dict]
     base_url = cfg.get("qiko_track_base_url") or ""
     if not project_keys or not base_url:
         return None
-    try:
-        token = stored_credential(
-            cfg, flag="qiko_track_credentials_added",
-            key="qiko_track_token_encrypted", label="Qiko Track")
-    except HTTPException:
+    token = _qiko_track_credential(cfg)
+    if not token:
         return None
     service = MetricsService(base_url=base_url, token=token)
     return lambda: service.for_projects(project_keys)
@@ -428,22 +509,68 @@ async def connect_source(
         }
     elif key == "qiko_track":
         meta = _SOURCE_CONFIG["qiko_track"]
-        if body.token:
-            secret = body.token
+        base_url = body.base_url or get_settings().qiko_track_api_base
+        if body.auto:
+            service_token = get_settings().qiko_track_service_token
+            if not service_token:
+                raise HTTPException(status_code=503, detail="Qiko Track auto-connect is not configured")
+            secret = service_token
+            client = QikoTrackClient(base_url, service_token)
+            try:
+                existing = await client.list_projects()
+            except (QikoTrackClientError, SsrfError) as exc:
+                raise HTTPException(status_code=503, detail=f"could not reach Qiko Track: {exc}") from exc
+
+            project_key = (body.project_key or "").strip().upper()
+            project_name = (body.project_name or "").strip()
+            project_kind = (body.project_kind or "INTERNAL").upper()
+            if project_kind not in ("PRODUCT", "CLIENT", "INTERNAL"):
+                project_kind = "INTERNAL"
+
+            if not project_key:
+                suggestion = _suggest_qiko_track_project(agent, existing)
+                project_key = suggestion["key"]
+                project_name = project_name or suggestion["name"]
+
+            existing_keys = {p["key"].upper() for p in existing}
+            if project_key not in existing_keys:
+                if not project_name:
+                    project_name = f"{agent.name} - Qiko Track"
+                idempotency_key = f"qiko-v2:{tenant}:{agent_id}:{project_key}"
+                try:
+                    await client.create_project(
+                        {"key": project_key, "name": project_name, "kind": project_kind},
+                        idempotency_key=idempotency_key,
+                    )
+                except (QikoTrackClientError, SsrfError) as exc:
+                    raise HTTPException(status_code=502, detail=f"Qiko Track project creation failed: {exc}") from exc
+
+            project_keys = [project_key]
+            patch = {
+                meta["added"]: True,
+                meta["service_token"]: True,
+                meta["token"]: "",
+                meta["project_keys"]: project_keys,
+                meta["base_url"]: base_url,
+            }
         else:
-            secret = stored_credential(
-                agent.config or {}, flag=meta["added"], key=meta["token"], label=meta["label"])
-        project_keys = body.project_keys
-        if not project_keys:
-            project_keys = agent.config.get(meta["project_keys"]) or [] if agent.config else []
-        if not project_keys:
-            raise HTTPException(status_code=422, detail="at least one project key is required")
-        patch = {
-            meta["added"]: True,
-            meta["token"]: encrypt(secret),
-            meta["project_keys"]: project_keys,
-            meta["base_url"]: body.base_url,
-        }
+            if body.token:
+                secret = body.token
+            else:
+                secret = stored_credential(
+                    agent.config or {}, flag=meta["added"], key=meta["token"], label=meta["label"])
+            project_keys = body.project_keys
+            if not project_keys:
+                project_keys = agent.config.get(meta["project_keys"]) or [] if agent.config else []
+            if not project_keys:
+                raise HTTPException(status_code=422, detail="at least one project key is required")
+            patch = {
+                meta["added"]: True,
+                meta["service_token"]: False,
+                meta["token"]: encrypt(secret),
+                meta["project_keys"]: project_keys,
+                meta["base_url"]: body.base_url,
+            }
     else:
         raise HTTPException(status_code=404, detail="source not found")
 
@@ -460,8 +587,8 @@ async def connect_source(
         try:
             if key == "qiko_track":
                 ingest_config = {
-                    "project_keys": body.project_keys,
-                    "base_url": body.base_url,
+                    "project_keys": project_keys,
+                    "base_url": base_url,
                 }
             else:
                 ingest_config = {
@@ -582,9 +709,12 @@ async def get_source_connection(
         }
     if key == "qiko_track":
         plaintext = _plaintext_of_config(cfg, _SOURCE_CONFIG["qiko_track"]["token"])
+        service_token_used = bool(cfg.get("qiko_track_service_token"))
+        token_available = cfg.get("qiko_track_token_encrypted") or service_token_used
         return {
             "key": key,
-            "connected": bool(cfg.get("qiko_track_credentials_added") and cfg.get("qiko_track_token_encrypted")),
+            "connected": bool(cfg.get("qiko_track_credentials_added") and token_available),
+            "service_token_used": service_token_used,
             "token_masked": _mask(plaintext or ""),
             "project_keys": cfg.get("qiko_track_project_keys") or [],
             "base_url": cfg.get("qiko_track_base_url") or "",
@@ -811,9 +941,10 @@ async def get_agent_metrics(
         await recheck()
         return {"projects": {}}
 
-    token = stored_credential(
-        cfg, flag="qiko_track_credentials_added",
-        key="qiko_track_token_encrypted", label="Qiko Track")
+    token = _qiko_track_credential(cfg)
+    if not token:
+        await recheck()
+        return {"projects": {}}
     service = MetricsService(base_url=base_url, token=token)
     try:
         metrics = await service.for_projects(project_keys)
@@ -1084,11 +1215,8 @@ def _backlog_service_for_agent(agent) -> BacklogService | None:
     base_url = cfg.get("qiko_track_base_url") or ""
     if not project_keys or not base_url:
         return None
-    try:
-        token = stored_credential(
-            cfg, flag="qiko_track_credentials_added",
-            key="qiko_track_token_encrypted", label="Qiko Track")
-    except HTTPException:
+    token = _qiko_track_credential(cfg)
+    if not token:
         return None
     return BacklogService(base_url=base_url, token=token)
 

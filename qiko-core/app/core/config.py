@@ -101,6 +101,8 @@ class Settings(BaseSettings):
     # Qiko Track integration. Base URL is per-worker and is allowlisted for SSRF/API7 protection.
     qiko_track_api_base: str = "https://track.qiko.ai"
     qiko_track_api_allowlist: list[str] = ["https://track.qiko.ai"]
+    # Service token for one-click Qiko Track auto-connect. Empty keeps the manual token form.
+    qiko_track_service_token: str = ""
 
     # GitHub App (read-only connector). Empty means GitHub App install flow is unavailable.
     github_app_id: str = ""
