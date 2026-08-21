@@ -4,7 +4,7 @@
 // backend `charts`/`insights`/`trends` shapes may firm up later (see TODO(finance-backend) in api.ts),
 // so the dashboard derives everything it can from `properties[]` when a chart block is absent.
 import type {
-  FinanceAnalytics, FinanceProperty, FinanceSummary, FinanceSummaryMetric, FinanceSummaryObject, FinanceTrends,
+  FinanceAnalytics, FinanceProperty, FinanceSummary, FinanceTrends,
   FinanceUnitExpense, FinanceUnitLedger, FinanceMonthlyTrend, FinanceFile,
 } from "@/lib/api";
 
@@ -72,13 +72,13 @@ export function formatHistoryTime(timestamp: number): string {
   return d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 }
 
-// ── Summary normalization (supports the keyed `summary: [...]` array and legacy flat object) ──────
+// ── Summary normalization (summary is the typed FinanceSummaryOut object from the backend) ───────
 export type NormalizedSummary = {
   totalIncome: number; totalExpenses: number; netProfit: number; outstanding: number;
   propertyCount: number; vendorCount: number;
   formatted: Partial<Record<"totalIncome" | "totalExpenses" | "netProfit" | "outstanding", string>>;
   subtitle: Partial<Record<"totalIncome" | "totalExpenses" | "netProfit" | "outstanding", string>>;
-  details?: FinanceSummaryObject;
+  details?: FinanceSummary;
 };
 
 export function normalizeFinanceSummary(summary: FinanceSummary | undefined): NormalizedSummary {
@@ -87,25 +87,6 @@ export function normalizeFinanceSummary(summary: FinanceSummary | undefined): No
     propertyCount: 0, vendorCount: 0, formatted: {}, subtitle: {},
   };
   if (!summary) return out;
-
-  if (Array.isArray(summary)) {
-    const byKey = new Map<string, FinanceSummaryMetric>();
-    for (const row of summary) if (row && typeof row.key === "string") byKey.set(row.key, row);
-    const num = (k: string) => Number(byKey.get(k)?.value ?? 0) || 0;
-    out.totalIncome = num("totalIncome");
-    out.totalExpenses = num("totalExpenses");
-    out.netProfit = byKey.has("netProfit") ? num("netProfit") : out.totalIncome - out.totalExpenses;
-    out.outstanding = num("outstanding");
-    out.propertyCount = num("propertyCount");
-    out.vendorCount = num("vendorCount");
-    out.details = Object.fromEntries([...byKey.entries()].map(([k, v]) => [k, v.value])) as FinanceSummaryObject;
-    (["totalIncome", "totalExpenses", "netProfit", "outstanding"] as const).forEach((k) => {
-      const row = byKey.get(k);
-      if (row?.formatted) out.formatted[k] = row.formatted;
-      if (row?.subtitle) out.subtitle[k] = row.subtitle;
-    });
-    return out;
-  }
 
   out.totalIncome = Number(summary.totalIncome ?? 0);
   out.totalExpenses = Number(summary.totalExpenses ?? 0);
@@ -139,23 +120,7 @@ export function kpiMetricDrilldown(summary: FinanceSummary | undefined, key: Kpi
       : key === "totalExpenses" ? normalized.totalExpenses
         : normalized.netProfit;
 
-  if (Array.isArray(summary)) {
-    const row = summary.find((r) => r && r.key === key) as Record<string, unknown> | undefined;
-    if (row) {
-      return {
-        title: String(row.label || KPI_TITLES[key]),
-        formatted: String(row.formatted || (row.value != null ? row.value : formatCurrency(fallback))),
-        details: Object.entries(row).filter(([k, value]) => {
-          if (KPI_DRILLDOWN_HIDDEN.has(k)) return false;
-          if (value == null) return false;
-          if (typeof value === "string" && value.trim() === "") return false;
-          return true;
-        }),
-      };
-    }
-  }
-
-  const source = (!Array.isArray(summary) && summary ? summary : normalized.details) as Record<string, unknown> | undefined;
+  const source = (summary ?? normalized.details) as Record<string, unknown> | undefined;
   const details: Array<[string, unknown]> = [];
   if (source) {
     for (const [k, value] of Object.entries(source)) {

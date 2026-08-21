@@ -1153,124 +1153,31 @@ export const resumeSubscription = () =>
   request<Subscription>("/billing/subscription/resume", { method: "POST" });
 
 // ── Finance (Financial Analyst) ──────────────────────────────────────────────
-// Excel portfolio-analytics worker. The backend `finance` module is being built in parallel in
-// qiko-core (app/modules/finance/router.py) under `/finance/{agentId}/...` on the `/api/v1` prefix,
-// mirroring the existing per-agent module convention (app.modules.crm / app.modules.sales_intelligence:
-// tenant-scoped via authed_tenant, plain camelCase resource dicts). These types/functions encode the
-// *assumed* contract, taken 1:1 from the original Excel-Agent data shape (qiko-frontend `lib/ELApi.ts`:
-// ELUserAnalyticsResponse / ELUserProperty / ELUserFinanceFile / ELChatResponse / ELHistoryResponse),
-// pending the real router. TODO(finance-backend): reconcile field names once router.py exists --
-// likely divergences flagged inline below.
+// Types are generated from the qiko-core OpenAPI spec via @qiko/api-client.
+import type { components, paths } from "@qiko/api-client";
 
-/** One row from the `summary: [...]` array of keyed metrics (mirrors ELUserAnalyticsSummaryMetric).
- * The backend may instead return a flat object (legacy ELUserAnalyticsSummary); the client normalizes
- * both -- see components/finance/utils.ts:normalizeFinanceSummary. */
-export type FinanceSummaryMetric = { key: string; label?: string; value?: number | string; formatted?: string; subtitle?: string };
-export type FinanceSummaryObject = {
-  propertyCount?: number; vendorCount?: number; totalIncome?: number; totalExpenses?: number;
-  netProfit?: number; outstanding?: number; expenseBreakdown?: { net?: number; vat?: number };
+export type FinanceUploadResponse = paths["/api/v1/finance/{agent_id}/upload"]["post"]["responses"][201]["content"]["application/json"];
+export type FinanceFilesResponse = paths["/api/v1/finance/{agent_id}/files"]["get"]["responses"][200]["content"]["application/json"];
+export type FinanceDeleteResponse = paths["/api/v1/finance/{agent_id}/files"]["delete"]["responses"][200]["content"]["application/json"];
+export type FinanceAnalytics = paths["/api/v1/finance/{agent_id}/analytics"]["get"]["responses"][200]["content"]["application/json"];
+export type FinanceChatResponse = paths["/api/v1/finance/{agent_id}/chat"]["post"]["responses"][200]["content"]["application/json"];
+export type FinanceHistoryResponse = paths["/api/v1/finance/{agent_id}/history"]["get"]["responses"][200]["content"]["application/json"];
+export type FinanceClearHistoryResponse = paths["/api/v1/finance/{agent_id}/history"]["delete"]["responses"][200]["content"]["application/json"];
 
-  // totalIncome section
-  totalIncomeUnitCount?: number; totalIncomeAveragePerProperty?: number;
-  totalIncomeTopProperty?: string; totalIncomeTopPropertyRef?: string; totalIncomeTopPropertyIncome?: number;
-
-  // totalExpenses section
-  totalExpensesNet?: number; totalExpensesVat?: number; totalExpensesPropertyCount?: number;
-  totalExpensesInvoiceCount?: number; totalExpensesAveragePerProperty?: number;
-  totalExpensesTopVendor?: string; totalExpensesTopVendorAmount?: number;
-  totalExpensesTopCategory?: string; totalExpensesTopCategoryAmount?: number;
-
-  // netProfit section
-  netProfitMarginPercent?: number; netProfitAverageMargin?: number;
-  netProfitTopProperty?: string; netProfitTopPropertyRef?: string; netProfitTopPropertyProfit?: number;
-  netProfitLowestPerformanceProperty?: string; netProfitLowestPerformancePropertyRef?: string;
-  netProfitLowestPerformancePropertyProfit?: number; netProfitCostToIncomeRatio?: number;
-  netProfitPropertyCount?: number;
-
-  // outstanding section
-  outstandingPropertyCount?: number; outstandingPositiveTotal?: number; outstandingNegativeTotal?: number;
-  outstandingTopProperty?: string; outstandingTopPropertyRef?: string; outstandingTopPropertyOutstanding?: number;
-  outstandingAveragePerProperty?: number; outstandingAsPercentOfIncome?: number; outstandingIncomeReceivableCount?: number;
-
-  // propertyCount / portfolio section
-  highPerforming?: number; averagePerforming?: number; underPerforming?: number;
-  highRisk?: number; mediumRisk?: number; lowRisk?: number;
-  totalUnits?: number; totalInvoices?: number;
-  averageIncomePerProperty?: number; averageExpensePerProperty?: number;
-  topProperty?: string; topPropertyRef?: string; worstProperty?: string; worstPropertyRef?: string;
-};
-
-export type FinanceSummary = FinanceSummaryMetric[] | FinanceSummaryObject;
-
-export type FinanceExpenseCategory = { category: string; amount: number };
-export type FinanceTopVendor = { vendorName: string; amount: number };
-
-export type FinanceMonthlyTrend = { month: string; income: number; expenses: number; netProfit: number };
-
-export type FinanceUnitExpense = {
-  propertyRef?: string; propertyName?: string;
-  unitRef?: string; unitDescription?: string;
-  heading?: string; expenditureDescription?: string;
-  supplierName?: string; supplierRef?: string; fixFloRef?: string;
-  nett?: number; vat?: number; gross?: number;
-  settled?: string; invoiceDate?: string; periodFrom?: string; periodTo?: string;
-};
-
-export type FinanceUnitLedger = {
-  unitRef?: string; unitDescription?: string;
-  propertyRef?: string; propertyName?: string;
-  income?: number; outstanding?: number; totalGross?: number; totalNett?: number; totalVat?: number;
-  netProfit?: number; invoiceCount?: number; vendorCount?: number; topVendor?: string;
-  expenses?: FinanceUnitExpense[];
-};
-
-/** Per-property analytics row (mirrors ELUserProperty). */
-export type FinanceProperty = {
-  propertyId?: string; propertyRef?: string; name?: string; income?: number; expenses?: number; netProfit?: number;
-  marginPercent?: number; outstanding?: number; costToIncomeRatio?: number; riskScore?: number;
-  riskLevel?: string; profitabilityClass?: string;
-  invoiceCount?: number; vendorCount?: number; unitCount?: number;
-  expenseCategories?: FinanceExpenseCategory[]; topVendors?: FinanceTopVendor[];
-  unitLedger?: FinanceUnitLedger[]; monthlyTrends?: FinanceMonthlyTrend[];
-};
-
-export type FinanceChartVendor = { vendorName: string; amount: number; sharePercent?: number };
-export type FinanceChartIncomeExpense = { propertyId?: string; propertyRef?: string; propertyName: string; income: number; expenses: number; netProfit?: number };
-export type FinanceCharts = {
-  incomeVsExpensesByProperty?: FinanceChartIncomeExpense[];
-  topVendorsBySpend?: FinanceChartVendor[];
-  monthlyTrends?: FinanceMonthlyTrend[];
-  // Some fields (profitabilityClassification, expenseCategories drilldown details) are optional/richer
-  // in the original; the dashboard derives its donuts from properties[] when absent.
-  [key: string]: unknown;
-};
-
-/** One insight inside a trend section (mirrors the { title, insightText } shape). */
-export type FinanceTrendInsight = { title?: string; text?: string; insightText?: string };
-export type FinanceTrendSection = { section?: string; title?: string; insights?: FinanceTrendInsight[] };
-/** trends is typically `{ trends: FinanceTrendSection[] }` or `FinanceTrendSection[]`. */
-export type FinanceTrends = { trends?: FinanceTrendSection[] } | FinanceTrendSection[] | Record<string, unknown>;
-
-export type FinanceAnalytics = {
-  status?: string;
-  files?: { label: string; namespace: string; rowCount: number }[];
-  totalFiles?: number;
-  totalRows?: number;
-  currency?: string;
-  dateRange?: { from?: string; to?: string; label?: string };
-  summary?: FinanceSummary;
-  properties?: FinanceProperty[];
-  charts?: FinanceCharts;
-  insights?: Record<string, unknown> | unknown[];
-  trends?: FinanceTrends;
-};
-
-export type FinanceFile = { id: string; label: string; namespace: string; rowCount: number; uploadedAt: string };
-export type FinanceFilesResponse = { files: FinanceFile[]; totalFiles: number; totalRows: number };
-export type FinanceChatMessage = { role: "user" | "assistant"; text: string };
-export type FinanceChatResponse = { reply: string; sourcesUsed?: string[]; rowsRetrieved?: number };
-export type FinanceHistoryItem = { role: "user" | "assistant"; content: string; timestamp: number };
-export type FinanceHistoryResponse = { count: number; history: FinanceHistoryItem[] };
+export type FinanceFile = components["schemas"]["FinanceFileRef"];
+export type FinanceHistoryItem = components["schemas"]["FinanceHistoryMessage"];
+export type FinanceSummary = components["schemas"]["FinanceSummaryOut"];
+export type FinanceExpenseCategory = components["schemas"]["FinanceExpenseCategory"];
+export type FinanceTopVendor = components["schemas"]["FinanceTopVendor"];
+export type FinanceMonthlyTrend = components["schemas"]["FinanceMonthlyTrend"];
+export type FinanceUnitExpense = components["schemas"]["FinanceUnitExpense"];
+export type FinanceUnitLedger = components["schemas"]["FinanceUnitLedger"];
+export type FinanceProperty = components["schemas"]["FinancePropertyOut"];
+export type FinanceChartVendor = components["schemas"]["FinanceChartVendor"];
+export type FinanceChartIncomeExpense = components["schemas"]["FinanceChartIncomeExpense"];
+export type FinanceCharts = components["schemas"]["FinanceChartsOut"];
+export type FinanceTrendSection = components["schemas"]["FinanceTrendSectionOut"];
+export type FinanceTrends = FinanceTrendSection[];
 
 export const getFinanceAnalytics = (agentId: string, query: { from?: string; to?: string; month?: string } = {}) => {
   const q = new URLSearchParams();
@@ -1283,14 +1190,12 @@ export const getFinanceAnalytics = (agentId: string, query: { from?: string; to?
 
 export const listFinanceFiles = (agentId: string) => request<FinanceFilesResponse>(`/finance/${agentId}/files`);
 
-// Deletes the given uploaded workbook namespaces. TODO(finance-backend): confirm whether DELETE
-// carries a body (ids) or uses per-id path params -- assumed body { ids } here, echoing ELApi.
 export const deleteFinanceFiles = (agentId: string, ids: string[]) =>
-  request<{ success: boolean; deleted: string[]; deletedCount: number }>(`/finance/${agentId}/files`, {
+  request<FinanceDeleteResponse>(`/finance/${agentId}/files`, {
     method: "DELETE", body: JSON.stringify({ ids }),
   });
 
-export async function uploadFinanceFile(agentId: string, file: File): Promise<{ fileName: string; namespace?: string; totalRows?: number }> {
+export async function uploadFinanceFile(agentId: string, file: File): Promise<FinanceUploadResponse> {
   const csrf = csrfToken();
   const form = new FormData();
   form.append("file", file);
@@ -1309,7 +1214,7 @@ export const getFinanceHistory = (agentId: string, limit = 100) =>
   request<FinanceHistoryResponse>(`/finance/${agentId}/history?limit=${limit}`);
 
 export const clearFinanceHistory = (agentId: string) =>
-  request<{ success: boolean }>(`/finance/${agentId}/history`, { method: "DELETE" });
+  request<FinanceClearHistoryResponse>(`/finance/${agentId}/history`, { method: "DELETE" });
 
 // Intelligence Worker sources (Slack capture, GitHub, Qiko Track).
 export type IntelligenceSource = { key: string; name: string; description: string; pollable: boolean; connected: boolean };

@@ -60,6 +60,9 @@ importers:
 
   apps/creator:
     dependencies:
+      '@qiko/api-client':
+        specifier: workspace:*
+        version: link:../../packages/api-client
       '@qiko/ui':
         specifier: workspace:*
         version: link:../../packages/ui
