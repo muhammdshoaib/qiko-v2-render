@@ -26,11 +26,11 @@ def test_tenant_comes_from_token_not_header(client):
     # even if a caller spoofs a header, the tenant is the token's; ingest under token tenant (acme)
     client.post("/api/v1/knowledge/ingest", json={"doc_id": "iso", "text": ISO},
                 headers={"X-Tenant-Id": "attacker"}, cookies=_cookies())
-    hits = client.post("/api/v1/knowledge/search", json={"query": "ISO 9001"},
+    hits = client.post("/api/v1/knowledge/search", json={"query": "ISO 9001", "agent_id": "any"},
                        headers={"X-Tenant-Id": "attacker"}, cookies=_cookies()).json()["results"]
     assert any("ISO 9001" in h for h in hits)
     # a token for a different tenant sees nothing
-    other = client.post("/api/v1/knowledge/search", json={"query": "ISO 9001"},
+    other = client.post("/api/v1/knowledge/search", json={"query": "ISO 9001", "agent_id": "any"},
                         cookies=auth_cookies("beta")).json()["results"]
     assert other == []
 
@@ -54,7 +54,7 @@ def test_knowledge_mutations_require_editor_role(client):
     # an editor can ingest, read, and delete
     assert client.post("/api/v1/knowledge/ingest", json={"doc_id": "iso", "text": ISO},
                        cookies=editor).status_code == 200
-    assert client.post("/api/v1/knowledge/search", json={"query": "ISO 9001"}, cookies=viewer).status_code == 200
+    assert client.post("/api/v1/knowledge/search", json={"query": "ISO 9001", "agent_id": "any"}, cookies=viewer).status_code == 200
     assert client.delete("/api/v1/knowledge/documents/iso", cookies=editor).status_code == 200
 
 
@@ -72,6 +72,18 @@ def test_knowledge_ingest_file_enforces_upload_cap(client, monkeypatch):
     r = client.post("/api/v1/knowledge/ingest-file", data={"doc_id": "big"},
                     files={"file": ("big.txt", b"x" * 64, "text/plain")}, cookies=_cookies())
     assert r.status_code == 413
+
+
+def test_knowledge_ingest_file_rejects_unsupported_document_type(client):
+    r = client.post("/api/v1/knowledge/ingest-file", data={"doc_id": "bad"},
+                    files={"file": ("bad.exe", b"data", "application/octet-stream")}, cookies=_cookies())
+    assert r.status_code == 422
+
+
+def test_knowledge_search_requires_agent_id(client):
+    # agent_id is required on the public search endpoint so the caller can never read across
+    # worker corpora without explicitly scoping to one worker (plus its inherited shared corpus).
+    assert client.post("/api/v1/knowledge/search", json={"query": "ISO"}, cookies=_cookies()).status_code == 422
 
 
 def test_agents_lifecycle_and_plan_gate(client):

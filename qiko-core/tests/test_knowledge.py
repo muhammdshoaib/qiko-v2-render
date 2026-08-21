@@ -153,6 +153,19 @@ async def test_list_documents_scopes_same_doc_id_by_agent():
     assert [d["agent_id"] for d in await svc.list_documents("acme", agent_id="a2")] == ["a2"]
 
 
+async def test_unscoped_retrieve_returns_all_worker_corpora():
+    """A retrieve call with no agent_id is the intentional tenant-wide view: it sees every
+    worker's corpus (plus shared tenant-wide passages) so admin/internal callers can search
+    the whole tenant."""
+    svc = KnowledgeService(store=InMemoryVectorStore())
+    await svc.ingest("acme", "w1-doc", "Worker one knows alpha.", agent_id="w1")
+    await svc.ingest("acme", "w2-doc", "Worker two knows beta.", agent_id="w2")
+    await svc.ingest("acme", "shared-doc", "Shared knowledge covers gamma.")
+
+    hits = {p.doc_id for p in await svc.retrieve("acme", "alpha beta gamma", k=10)}
+    assert hits == {"w1-doc", "w2-doc", "shared-doc"}
+
+
 async def test_tenant_wide_knowledge_is_visible_to_all_workers():
     """Legacy/internal documents ingested without an agent_id are shared across the tenant and
     must be retrievable by every worker; per-worker listings still hide them from the library view."""

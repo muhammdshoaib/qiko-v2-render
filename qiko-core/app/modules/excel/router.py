@@ -13,17 +13,19 @@ router = APIRouter(prefix="/excel", tags=["excel"])
 class ExcelSearchBody(BaseModel):
     query: str = Field(min_length=1)
     k: int = Field(default=5, ge=1, le=50)
+    agent_id: str | None = Field(default=None, min_length=1, max_length=64)
 
 
 @router.post("/search")
 async def search(body: ExcelSearchBody, tenant: str = Depends(authed_tenant), svc=Depends(get_excel)) -> dict:
-    return {"results": await svc.search(tenant, body.query, k=body.k)}
+    return {"results": await svc.search(tenant, body.query, k=body.k, agent_id=body.agent_id)}
 
 
 @router.post("/upload")
 async def upload(file: UploadFile = File(...), source_name: str = Form(...),
+                 agent_id: str | None = Form(None),
                  tenant: str = Depends(authed_tenant), svc=Depends(get_excel)) -> dict:
-    records = await svc.store_workbook(tenant, source_name, await file.read())
+    records = await svc.store_workbook(tenant, source_name, await file.read(), agent_id=agent_id)
     return {"source_name": source_name, "records": records}
 
 

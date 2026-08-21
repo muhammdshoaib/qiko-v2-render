@@ -9,7 +9,7 @@ from app.modules.audit import service as audit
 from app.core.deps import current_claims, authed_tenant, get_knowledge, require_role, resolve_tenant_worker
 from app.modules.identity.rbac import Role
 from app.modules.knowledge.evaluation import RFP_CRITERIA, evaluate_document
-from app.modules.knowledge.parsing import MAX_UPLOAD_BYTES
+from app.modules.knowledge.parsing import MAX_UPLOAD_BYTES, UnsupportedDocumentError
 from app.modules.workers.worker import StubProviderUnavailable
 
 router = APIRouter(prefix="/knowledge", tags=["knowledge"])
@@ -18,9 +18,9 @@ router = APIRouter(prefix="/knowledge", tags=["knowledge"])
 _MAX_INGEST_TEXT = 2 * 1024 * 1024  # 2 MB of text
 
 
-# agent_id scopes knowledge to a single worker (QIK-315). Optional for backward-compat: when a
-# caller omits it the behaviour is the legacy tenant-wide corpus. It is always within the authed
-# tenant (team-shared), so it is a sub-partition, never a cross-tenant control.
+# agent_id scopes knowledge to a single worker (QIK-315). For ingest it remains optional so
+# callers can still create shared tenant-wide knowledge; search requires it so the endpoint can
+# never read across worker corpora. Both are always within the authed tenant (team-shared).
 class IngestBody(BaseModel):
     doc_id: str = Field(min_length=1)
     text: str = Field(min_length=1, max_length=_MAX_INGEST_TEXT)
@@ -30,7 +30,7 @@ class IngestBody(BaseModel):
 class SearchBody(BaseModel):
     query: str = Field(min_length=1)
     k: int = Field(default=5, ge=1, le=50)
-    agent_id: str | None = Field(default=None, min_length=1, max_length=64)
+    agent_id: str = Field(min_length=1, max_length=64)
 
 
 @router.post("/ingest")
@@ -89,7 +89,10 @@ async def ingest_file(file: UploadFile = File(...), doc_id: str = Form(...),
     data = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(data) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="file exceeds the 10MB limit")
-    chunks = await svc.ingest_file(tenant, doc_id, file.filename or doc_id, data, agent_id=agent_id)
+    try:
+        chunks = await svc.ingest_file(tenant, doc_id, file.filename or doc_id, data, agent_id=agent_id)
+    except UnsupportedDocumentError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"doc_id": doc_id, "chunks": chunks}
 
 

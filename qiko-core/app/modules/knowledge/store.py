@@ -10,6 +10,7 @@ from app.modules.knowledge.models import Passage
 
 class VectorStore(Protocol):
     async def add(self, passage: Passage) -> None: ...
+    async def add_all(self, passages: list[Passage]) -> None: ...
     async def get(self, tenant: str, agent_id: str | None = None) -> list[Passage]: ...
     async def delete_doc(self, tenant: str, doc_id: str, agent_id: str | None = None) -> int: ...
 
@@ -20,6 +21,10 @@ class InMemoryVectorStore:
 
     async def add(self, passage: Passage) -> None:
         self._by_tenant.setdefault(passage.tenant, []).append(passage)
+
+    async def add_all(self, passages: list[Passage]) -> None:
+        for p in passages:
+            self._by_tenant.setdefault(p.tenant, []).append(p)
 
     async def get(self, tenant: str, agent_id: str | None = None) -> list[Passage]:
         # Only ever returns the caller tenant's passages; cross-tenant reads are impossible. When an

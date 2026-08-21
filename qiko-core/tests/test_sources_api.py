@@ -18,7 +18,7 @@ def test_add_sources_and_they_are_searchable(client):
     client.put(f"{base}/persona", json={"fields": {"full_name": "IDG Assistant"}}, cookies=C)
 
     # the sources are ingested into knowledge and searchable
-    hits = client.post("/api/v1/knowledge/search", json={"query": "ISO 9001"}, cookies=C).json()["results"]
+    hits = client.post("/api/v1/knowledge/search", json={"query": "ISO 9001", "agent_id": "ag1"}, cookies=C).json()["results"]
     assert any("ISO 9001" in h for h in hits)
     docs = {d["doc_id"] for d in client.get("/api/v1/knowledge/documents", cookies=C).json()}
     assert "ag1-behavior-1" in docs and "ag1-faq-1" in docs and "ag1-website-1" in docs and "ag1-persona-core" in docs

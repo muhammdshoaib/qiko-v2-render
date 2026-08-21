@@ -335,9 +335,12 @@ class SqlVectorStore:
     sessionmaker: async_sessionmaker[AsyncSession]
 
     async def add(self, passage: Passage) -> None:
+        await self.add_all([passage])
+
+    async def add_all(self, passages: list[Passage]) -> None:
         async with self.sessionmaker() as s, s.begin():
-            s.add(PassageRow(id=passage.id, tenant_id=passage.tenant, agent_id=passage.agent_id,
-                             doc_id=passage.doc_id, text=passage.text, embedding=passage.embedding))
+            s.add_all([PassageRow(id=p.id, tenant_id=p.tenant, agent_id=p.agent_id,
+                                   doc_id=p.doc_id, text=p.text, embedding=p.embedding) for p in passages])
 
     async def get(self, tenant: str, agent_id: str | None = None) -> list[Passage]:
         async with self.sessionmaker() as s:
