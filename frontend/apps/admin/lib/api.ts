@@ -320,7 +320,12 @@ export type Analytics = {
   top_pages: { pagePath: string; sessions: number }[];
   had_data: boolean;
 };
-export const analytics = () => request<Analytics>("/admin/analytics");
+export const analytics = (params?: { start?: string; end?: string }) => {
+  const search = params
+    ? "?" + new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined) as [string, string][]).toString()
+    : "";
+  return request<Analytics>(`/admin/analytics${search}`);
+};
 
 export type Invoice = {
   stripe_invoice_id: string;

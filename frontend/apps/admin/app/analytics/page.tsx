@@ -7,7 +7,7 @@ import { AppShell } from "@/components/app-shell";
 import { analytics } from "@/lib/api";
 
 export default function AnalyticsPage() {
-  const a = useQuery({ queryKey: ["analytics"], queryFn: analytics });
+  const a = useQuery({ queryKey: ["analytics"], queryFn: () => analytics() });
 
   return (
     <AppShell title="Analytics">
