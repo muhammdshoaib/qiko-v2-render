@@ -260,6 +260,23 @@ def test_invoices_sort_only_by_keys_the_allowlist_names(client):
                       cookies=admin).status_code == 422
 
 
+def test_invoices_sort_by_period_handles_missing_dates(client):
+    """Manually created invoices have no period; sorting the Period column must not mix datetimes and strings."""
+    from datetime import datetime, timezone
+    from app.modules.billing.webhook import Invoice
+
+    store = client.app.state.stripe_webhook.invoices
+    store.upsert(Invoice(stripe_invoice_id="in_a", customer_id="cus_1", amount_cents=100, status="open",
+                         period_start=datetime(2026, 1, 1, tzinfo=timezone.utc)))
+    store.upsert(Invoice(stripe_invoice_id="in_b", customer_id="cus_2", amount_cents=200, status="open",
+                         period_start=datetime(2026, 2, 1, tzinfo=timezone.utc)))
+    store.upsert(Invoice(stripe_invoice_id="in_c", customer_id="cus_3", amount_cents=300, status="open"))
+    admin = _admin_cookies(client)
+
+    by_period = client.get("/api/v1/billing/invoices?sort=period", cookies=admin).json()
+    assert [i["stripe_invoice_id"] for i in by_period["items"]] == ["in_c", "in_a", "in_b"]
+
+
 def test_invoices_can_be_searched_and_filtered(client):
     _seed_invoices(client)
     admin = _admin_cookies(client)

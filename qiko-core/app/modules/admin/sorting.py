@@ -65,7 +65,10 @@ INVOICE_SORTS: SortSpec = {
     "status": lambda row: _text(row["status"]),
     "amount": lambda row: row["amount_cents"],
     "number": lambda row: _text(row["number"]),
-    "period": lambda row: (row["period_start"] or "", row["period_end"] or ""),
+    "period": lambda row: (
+        (row["period_start"].isoformat() if row["period_start"] else ""),
+        (row["period_end"].isoformat() if row["period_end"] else ""),
+    ),
 }
 
 WORKER_SORTS: SortSpec = {
