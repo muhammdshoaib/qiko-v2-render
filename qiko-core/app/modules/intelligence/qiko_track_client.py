@@ -42,6 +42,16 @@ class QikoTrackClient:
     async def get_context(self) -> dict:
         return await self._request("GET", "/api/v1/context")
 
+    async def list_projects(self) -> list[dict]:
+        body = await self._request("GET", "/api/v1/projects")
+        return body.get("projects") or []
+
+    async def create_project(self, payload: dict, *, idempotency_key: str | None = None) -> dict:
+        headers: dict[str, str] = {"Accept": "application/json", "Authorization": f"Bearer {self.token}"}
+        if idempotency_key:
+            headers["Idempotency-Key"] = idempotency_key
+        return await self._request("POST", "/api/v1/projects", json_payload=payload, headers=headers)
+
     async def list_tickets(self, *, project: str | None = None, limit: int = 200) -> list[dict]:
         params: dict[str, Any] = {"limit": min(max(1, limit), 200)}
         if project:

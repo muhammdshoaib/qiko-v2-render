@@ -7,9 +7,12 @@ from datetime import datetime, timezone
 import httpx
 import pytest
 
+import json
+
 from app.core.config import get_settings
 from app.modules.intelligence.connectors import QikoTrackConnector
 from app.modules.intelligence.models import InMemorySignalStore
+from app.modules.intelligence.qiko_track_client import QikoTrackClient
 
 
 def _public_resolver(host: str, port: int, *args, **kwargs):
@@ -257,3 +260,35 @@ def _qiko_track_signal(*, ref: str, kind: str, occurred_at: datetime, meta: dict
         container="QIW", actor="", title="", body="",
         occurred_at=occurred_at, ref=ref, meta=meta,
     )
+
+
+@pytest.mark.asyncio
+async def test_list_projects_parses_projects():
+    def handler(request: httpx.Request):
+        if request.url.path == "/api/v1/projects":
+            return httpx.Response(200, json={"projects": [
+                {"key": "QIW", "name": "Qiko Intelligence Worker", "kind": "INTERNAL"},
+            ]})
+        return httpx.Response(404)
+
+    client = QikoTrackClient("http://testserver", "qt-valid", transport=_transport(handler), resolver=_public_resolver)
+    projects = await client.list_projects()
+    assert projects == [{"key": "QIW", "name": "Qiko Intelligence Worker", "kind": "INTERNAL"}]
+
+
+@pytest.mark.asyncio
+async def test_create_project_sends_idempotency_key_and_payload():
+    captured: dict = {}
+
+    def handler(request: httpx.Request):
+        if request.url.path == "/api/v1/projects" and request.method == "POST":
+            captured["headers"] = dict(request.headers)
+            captured["body"] = json.loads(request.content)
+            return httpx.Response(201, json={"id": "p1", "key": "QIW", "name": "QIW"})
+        return httpx.Response(404)
+
+    client = QikoTrackClient("http://testserver", "qt-valid", transport=_transport(handler), resolver=_public_resolver)
+    result = await client.create_project({"key": "QIW", "name": "QIW", "kind": "INTERNAL"}, idempotency_key="abc")
+    assert result["key"] == "QIW"
+    assert captured["headers"].get("idempotency-key") == "abc"
+    assert captured["body"]["kind"] == "INTERNAL"
