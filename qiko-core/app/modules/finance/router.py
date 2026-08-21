@@ -17,6 +17,10 @@ from pydantic import BaseModel, Field
 from app.core.deps import current_claims, authed_tenant, require_role, resolve_tenant_worker
 from app.modules.audit import registry as audit_actions
 from app.modules.audit import service as audit
+from app.modules.finance.schemas import (
+    FinanceAnalyticsResponse, FinanceChatResponse, FinanceClearHistoryResponse,
+    FinanceDeleteResponse, FinanceFilesResponse, FinanceHistoryResponse, FinanceUploadResponse,
+)
 from app.modules.finance.service import MAX_UPLOAD_BYTES, FinanceError, FinanceUploadError
 from app.modules.identity.rbac import Role
 
@@ -32,7 +36,7 @@ async def _resolve_worker(request: Request, tenant: str, agent_id: str):
     return recheck
 
 
-@router.post("/{agent_id}/upload", status_code=201)
+@router.post("/{agent_id}/upload", status_code=201, response_model=FinanceUploadResponse)
 async def upload(agent_id: str, request: Request, file: UploadFile = File(...),
                  title: str | None = Form(default=None),
                  description: str | None = Form(default=None),  # noqa: ARG001 -- accepted, not stored as data
@@ -57,7 +61,7 @@ async def upload(agent_id: str, request: Request, file: UploadFile = File(...),
     }
 
 
-@router.get("/{agent_id}/files")
+@router.get("/{agent_id}/files", response_model=FinanceFilesResponse)
 async def files(agent_id: str, tenant: str = Depends(authed_tenant), svc=Depends(get_finance)) -> dict:
     return await svc.list_files(tenant, agent_id)
 
@@ -66,7 +70,7 @@ class DeleteFilesBody(BaseModel):
     ids: list[str] | str = Field(...)
 
 
-@router.delete("/{agent_id}/files")
+@router.delete("/{agent_id}/files", response_model=FinanceDeleteResponse)
 async def delete_files(agent_id: str, body: DeleteFilesBody, request: Request,
                        claims: dict = Depends(current_claims),
                        tenant: str = Depends(authed_tenant),
@@ -89,7 +93,7 @@ async def delete_files(agent_id: str, body: DeleteFilesBody, request: Request,
     return result
 
 
-@router.get("/{agent_id}/analytics")
+@router.get("/{agent_id}/analytics", response_model=FinanceAnalyticsResponse)
 async def analytics(agent_id: str, request: Request, tenant: str = Depends(authed_tenant),
                     svc=Depends(get_finance)) -> dict:
     frm = request.query_params.get("from")
@@ -104,7 +108,7 @@ class ChatBody(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
 
 
-@router.post("/{agent_id}/chat")
+@router.post("/{agent_id}/chat", response_model=FinanceChatResponse)
 async def chat(agent_id: str, body: ChatBody, request: Request,
                tenant: str = Depends(authed_tenant),
                _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_finance)) -> dict:
@@ -118,13 +122,13 @@ async def chat(agent_id: str, body: ChatBody, request: Request,
         raise HTTPException(status_code=422, detail=str(e)) from e
 
 
-@router.get("/{agent_id}/history")
+@router.get("/{agent_id}/history", response_model=FinanceHistoryResponse)
 async def history(agent_id: str, limit: int = 100, tenant: str = Depends(authed_tenant),
                   svc=Depends(get_finance)) -> dict:
     return await svc.history(tenant, agent_id, limit=max(1, min(200, limit)))
 
 
-@router.delete("/{agent_id}/history")
+@router.delete("/{agent_id}/history", response_model=FinanceClearHistoryResponse)
 async def clear_history(agent_id: str, request: Request,
                         tenant: str = Depends(authed_tenant),
                         _role: dict = Depends(require_role(Role.editor)), svc=Depends(get_finance)) -> dict:

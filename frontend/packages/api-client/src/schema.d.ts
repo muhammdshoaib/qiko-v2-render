@@ -5637,6 +5637,989 @@ export interface components {
              */
             title: string;
         };
+        /** FinanceAnalyticsResponse */
+        FinanceAnalyticsResponse: {
+            charts: components["schemas"]["FinanceChartsOut"];
+            /** Currency */
+            currency: string;
+            dateRange: components["schemas"]["FinanceDateRange"];
+            /** Files */
+            files: components["schemas"]["FinanceFileRef"][];
+            insights: components["schemas"]["FinanceInsightsOut"];
+            /** Properties */
+            properties: components["schemas"]["FinancePropertyOut"][];
+            /** Status */
+            status: string;
+            summary: components["schemas"]["FinanceSummaryOut"];
+            /** Totalfiles */
+            totalFiles: number;
+            /** Totalrows */
+            totalRows: number;
+            /** Trends */
+            trends: components["schemas"]["FinanceTrendSectionOut"][];
+        };
+        /** FinanceChartCategory */
+        FinanceChartCategory: {
+            /**
+             * Amount
+             * @default 0
+             */
+            amount: number;
+            /**
+             * Categoryid
+             * @default
+             */
+            categoryId: string;
+            /**
+             * Categoryname
+             * @default
+             */
+            categoryName: string;
+            /**
+             * Invoicecount
+             * @default 0
+             */
+            invoiceCount: number;
+            /**
+             * Sharepercent
+             * @default 0
+             */
+            sharePercent: number;
+        };
+        /** FinanceChartClassification */
+        FinanceChartClassification: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * Value
+             * @default 0
+             */
+            value: number;
+        };
+        /** FinanceChartIncomeExpense */
+        FinanceChartIncomeExpense: {
+            /**
+             * Costtoincomeratio
+             * @default 0
+             */
+            costToIncomeRatio: number;
+            /**
+             * Expenses
+             * @default 0
+             */
+            expenses: number;
+            /**
+             * Income
+             * @default 0
+             */
+            income: number;
+            /**
+             * Marginpercent
+             * @default 0
+             */
+            marginPercent: number;
+            /**
+             * Netprofit
+             * @default 0
+             */
+            netProfit: number;
+            /**
+             * Outstanding
+             * @default 0
+             */
+            outstanding: number;
+            /**
+             * Profitabilityclass
+             * @default
+             */
+            profitabilityClass: string;
+            /**
+             * Propertyid
+             * @default
+             */
+            propertyId: string;
+            /**
+             * Propertyname
+             * @default
+             */
+            propertyName: string;
+            /**
+             * Propertyref
+             * @default
+             */
+            propertyRef: string;
+            /**
+             * Risklevel
+             * @default
+             */
+            riskLevel: string;
+            /**
+             * Riskscore
+             * @default 0
+             */
+            riskScore: number;
+        };
+        /** FinanceChartRanking */
+        FinanceChartRanking: {
+            /**
+             * Expenses
+             * @default 0
+             */
+            expenses: number;
+            /**
+             * Income
+             * @default 0
+             */
+            income: number;
+            /**
+             * Marginpercent
+             * @default 0
+             */
+            marginPercent: number;
+            /**
+             * Netprofit
+             * @default 0
+             */
+            netProfit: number;
+            /**
+             * Propertyid
+             * @default
+             */
+            propertyId: string;
+            /**
+             * Propertyname
+             * @default
+             */
+            propertyName: string;
+            /**
+             * Propertyref
+             * @default
+             */
+            propertyRef: string;
+            /**
+             * Rank
+             * @default 0
+             */
+            rank: number;
+            /**
+             * Risklevel
+             * @default
+             */
+            riskLevel: string;
+            /**
+             * Riskscore
+             * @default 0
+             */
+            riskScore: number;
+        };
+        /** FinanceChartRisk */
+        FinanceChartRisk: {
+            /**
+             * Propertyid
+             * @default
+             */
+            propertyId: string;
+            /**
+             * Propertyname
+             * @default
+             */
+            propertyName: string;
+            /**
+             * Propertyref
+             * @default
+             */
+            propertyRef: string;
+            /**
+             * Risklevel
+             * @default
+             */
+            riskLevel: string;
+            /**
+             * Riskscore
+             * @default 0
+             */
+            riskScore: number;
+        };
+        /** FinanceChartVendor */
+        FinanceChartVendor: {
+            /**
+             * Amount
+             * @default 0
+             */
+            amount: number;
+            /**
+             * Invoicecount
+             * @default 0
+             */
+            invoiceCount: number;
+            /**
+             * Propertycount
+             * @default 0
+             */
+            propertyCount: number;
+            /**
+             * Sharepercent
+             * @default 0
+             */
+            sharePercent: number;
+            /**
+             * Vendorid
+             * @default
+             */
+            vendorId: string;
+            /**
+             * Vendorname
+             * @default
+             */
+            vendorName: string;
+        };
+        /** FinanceChartsOut */
+        FinanceChartsOut: {
+            /** Expensecategories */
+            expenseCategories?: components["schemas"]["FinanceChartCategory"][];
+            /** Incomevsexpensesbyproperty */
+            incomeVsExpensesByProperty?: components["schemas"]["FinanceChartIncomeExpense"][];
+            /** Monthlytrends */
+            monthlyTrends?: components["schemas"]["FinanceMonthlyTrend"][];
+            /** Profitabilityclassification */
+            profitabilityClassification?: components["schemas"]["FinanceChartClassification"][];
+            /** Propertyprofitabilityranking */
+            propertyProfitabilityRanking?: components["schemas"]["FinanceChartRanking"][];
+            /** Riskscorebyproperty */
+            riskScoreByProperty?: components["schemas"]["FinanceChartRisk"][];
+            /** Topvendorsbyspend */
+            topVendorsBySpend?: components["schemas"]["FinanceChartVendor"][];
+        };
+        /** FinanceChatResponse */
+        FinanceChatResponse: {
+            /** Intent */
+            intent: string;
+            /** Reply */
+            reply: string;
+            /** Rowsretrieved */
+            rowsRetrieved: number;
+            /** Sourcesused */
+            sourcesUsed: string[];
+            /** Summariesused */
+            summariesUsed: number;
+        };
+        /** FinanceClearHistoryResponse */
+        FinanceClearHistoryResponse: {
+            /** Id */
+            id: string;
+            /** Message */
+            message: string;
+            /** Success */
+            success: boolean;
+        };
+        /** FinanceDateRange */
+        FinanceDateRange: {
+            /**
+             * From
+             * @default
+             */
+            from: string;
+            /**
+             * Label
+             * @default
+             */
+            label: string;
+            /**
+             * To
+             * @default
+             */
+            to: string;
+        };
+        /** FinanceDeleteResponse */
+        FinanceDeleteResponse: {
+            /** Deleted */
+            deleted: string[];
+            /** Deletedcount */
+            deletedCount: number;
+            /** Message */
+            message: string;
+            /** Success */
+            success: boolean;
+        };
+        /** FinanceExpenseBreakdown */
+        FinanceExpenseBreakdown: {
+            /**
+             * Net
+             * @default 0
+             */
+            net: number;
+            /**
+             * Vat
+             * @default 0
+             */
+            vat: number;
+        };
+        /** FinanceExpenseCategory */
+        FinanceExpenseCategory: {
+            /**
+             * Amount
+             * @default 0
+             */
+            amount: number;
+            /**
+             * Category
+             * @default
+             */
+            category: string;
+        };
+        /** FinanceFileRef */
+        FinanceFileRef: {
+            /**
+             * Id
+             * @default
+             */
+            id: string;
+            /** Label */
+            label: string;
+            /** Namespace */
+            namespace: string;
+            /** Rowcount */
+            rowCount: number;
+            /**
+             * Uploadedat
+             * Format: date-time
+             */
+            uploadedAt?: string;
+        };
+        /** FinanceFilesResponse */
+        FinanceFilesResponse: {
+            /** Files */
+            files: components["schemas"]["FinanceFileRef"][];
+            /** Id */
+            id: string;
+            /** Totalfiles */
+            totalFiles: number;
+            /** Totalrows */
+            totalRows: number;
+        };
+        /** FinanceHistoryMessage */
+        FinanceHistoryMessage: {
+            /** Content */
+            content: string;
+            /** Role */
+            role: string;
+            /** Timestamp */
+            timestamp: number;
+        };
+        /** FinanceHistoryResponse */
+        FinanceHistoryResponse: {
+            /** Count */
+            count: number;
+            /** History */
+            history: components["schemas"]["FinanceHistoryMessage"][];
+            /** Id */
+            id: string;
+        };
+        /** FinanceInsightsOut */
+        FinanceInsightsOut: {
+            /** Financialsummary */
+            financialSummary?: {
+                [key: string]: unknown;
+            };
+            /** Propertyinsights */
+            propertyInsights?: {
+                [key: string]: unknown;
+            };
+            /** Riskandcashflow */
+            riskAndCashFlow?: {
+                [key: string]: unknown;
+            };
+            /** Vendorinsights */
+            vendorInsights?: {
+                [key: string]: unknown;
+            };
+        };
+        /** FinanceMonthlyTrend */
+        FinanceMonthlyTrend: {
+            /**
+             * Expenses
+             * @default 0
+             */
+            expenses: number;
+            /**
+             * Income
+             * @default 0
+             */
+            income: number;
+            /**
+             * Month
+             * @default
+             */
+            month: string;
+            /**
+             * Netprofit
+             * @default 0
+             */
+            netProfit: number;
+        };
+        /** FinancePropertyOut */
+        FinancePropertyOut: {
+            /**
+             * Costtoincomeratio
+             * @default 0
+             */
+            costToIncomeRatio: number;
+            /** Expensecategories */
+            expenseCategories?: components["schemas"]["FinanceExpenseCategory"][];
+            /**
+             * Expenses
+             * @default 0
+             */
+            expenses: number;
+            /**
+             * Income
+             * @default 0
+             */
+            income: number;
+            /**
+             * Invoicecount
+             * @default 0
+             */
+            invoiceCount: number;
+            /**
+             * Marginpercent
+             * @default 0
+             */
+            marginPercent: number;
+            /** Monthlytrends */
+            monthlyTrends?: components["schemas"]["FinanceMonthlyTrend"][];
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Netprofit
+             * @default 0
+             */
+            netProfit: number;
+            /**
+             * Outstanding
+             * @default 0
+             */
+            outstanding: number;
+            /**
+             * Profitabilityclass
+             * @default
+             */
+            profitabilityClass: string;
+            /**
+             * Propertyid
+             * @default
+             */
+            propertyId: string;
+            /**
+             * Propertyref
+             * @default
+             */
+            propertyRef: string;
+            /**
+             * Risklevel
+             * @default
+             */
+            riskLevel: string;
+            /**
+             * Riskscore
+             * @default 0
+             */
+            riskScore: number;
+            /** Topvendors */
+            topVendors?: components["schemas"]["FinanceTopVendor"][];
+            /**
+             * Unitcount
+             * @default 0
+             */
+            unitCount: number;
+            /** Unitledger */
+            unitLedger?: components["schemas"]["FinanceUnitLedger"][];
+            /**
+             * Vendorcount
+             * @default 0
+             */
+            vendorCount: number;
+        };
+        /** FinanceSummaryOut */
+        FinanceSummaryOut: {
+            /**
+             * Averageexpenseperproperty
+             * @default 0
+             */
+            averageExpensePerProperty: number;
+            /**
+             * Averageincomeperproperty
+             * @default 0
+             */
+            averageIncomePerProperty: number;
+            /**
+             * Averageperforming
+             * @default 0
+             */
+            averagePerforming: number;
+            expenseBreakdown?: components["schemas"]["FinanceExpenseBreakdown"];
+            /**
+             * Highperforming
+             * @default 0
+             */
+            highPerforming: number;
+            /**
+             * Highrisk
+             * @default 0
+             */
+            highRisk: number;
+            /**
+             * Lowrisk
+             * @default 0
+             */
+            lowRisk: number;
+            /**
+             * Mediumrisk
+             * @default 0
+             */
+            mediumRisk: number;
+            /**
+             * Netprofit
+             * @default 0
+             */
+            netProfit: number;
+            /**
+             * Netprofitaveragemargin
+             * @default 0
+             */
+            netProfitAverageMargin: number;
+            /**
+             * Netprofitcosttoincomeratio
+             * @default 0
+             */
+            netProfitCostToIncomeRatio: number;
+            /**
+             * Netprofitlowestperformanceproperty
+             * @default
+             */
+            netProfitLowestPerformanceProperty: string;
+            /**
+             * Netprofitlowestperformancepropertyprofit
+             * @default 0
+             */
+            netProfitLowestPerformancePropertyProfit: number;
+            /**
+             * Netprofitlowestperformancepropertyref
+             * @default
+             */
+            netProfitLowestPerformancePropertyRef: string;
+            /**
+             * Netprofitmarginpercent
+             * @default 0
+             */
+            netProfitMarginPercent: number;
+            /**
+             * Netprofitpropertycount
+             * @default 0
+             */
+            netProfitPropertyCount: number;
+            /**
+             * Netprofittopproperty
+             * @default
+             */
+            netProfitTopProperty: string;
+            /**
+             * Netprofittoppropertyprofit
+             * @default 0
+             */
+            netProfitTopPropertyProfit: number;
+            /**
+             * Netprofittoppropertyref
+             * @default
+             */
+            netProfitTopPropertyRef: string;
+            /**
+             * Outstanding
+             * @default 0
+             */
+            outstanding: number;
+            /**
+             * Outstandingaspercentofincome
+             * @default 0
+             */
+            outstandingAsPercentOfIncome: number;
+            /**
+             * Outstandingaverageperproperty
+             * @default 0
+             */
+            outstandingAveragePerProperty: number;
+            /**
+             * Outstandingincomereceivablecount
+             * @default 0
+             */
+            outstandingIncomeReceivableCount: number;
+            /**
+             * Outstandingnegativetotal
+             * @default 0
+             */
+            outstandingNegativeTotal: number;
+            /**
+             * Outstandingpositivetotal
+             * @default 0
+             */
+            outstandingPositiveTotal: number;
+            /**
+             * Outstandingpropertycount
+             * @default 0
+             */
+            outstandingPropertyCount: number;
+            /**
+             * Outstandingtopproperty
+             * @default
+             */
+            outstandingTopProperty: string;
+            /**
+             * Outstandingtoppropertyoutstanding
+             * @default 0
+             */
+            outstandingTopPropertyOutstanding: number;
+            /**
+             * Outstandingtoppropertyref
+             * @default
+             */
+            outstandingTopPropertyRef: string;
+            /**
+             * Propertycount
+             * @default 0
+             */
+            propertyCount: number;
+            /**
+             * Topproperty
+             * @default
+             */
+            topProperty: string;
+            /**
+             * Toppropertyref
+             * @default
+             */
+            topPropertyRef: string;
+            /**
+             * Totalexpenses
+             * @default 0
+             */
+            totalExpenses: number;
+            /**
+             * Totalexpensesaverageperproperty
+             * @default 0
+             */
+            totalExpensesAveragePerProperty: number;
+            /**
+             * Totalexpensesinvoicecount
+             * @default 0
+             */
+            totalExpensesInvoiceCount: number;
+            /**
+             * Totalexpensesnet
+             * @default 0
+             */
+            totalExpensesNet: number;
+            /**
+             * Totalexpensespropertycount
+             * @default 0
+             */
+            totalExpensesPropertyCount: number;
+            /**
+             * Totalexpensestopcategory
+             * @default
+             */
+            totalExpensesTopCategory: string;
+            /**
+             * Totalexpensestopcategoryamount
+             * @default 0
+             */
+            totalExpensesTopCategoryAmount: number;
+            /**
+             * Totalexpensestopvendor
+             * @default
+             */
+            totalExpensesTopVendor: string;
+            /**
+             * Totalexpensestopvendoramount
+             * @default 0
+             */
+            totalExpensesTopVendorAmount: number;
+            /**
+             * Totalexpensesvat
+             * @default 0
+             */
+            totalExpensesVat: number;
+            /**
+             * Totalincome
+             * @default 0
+             */
+            totalIncome: number;
+            /**
+             * Totalincomeaverageperproperty
+             * @default 0
+             */
+            totalIncomeAveragePerProperty: number;
+            /**
+             * Totalincometopproperty
+             * @default
+             */
+            totalIncomeTopProperty: string;
+            /**
+             * Totalincometoppropertyincome
+             * @default 0
+             */
+            totalIncomeTopPropertyIncome: number;
+            /**
+             * Totalincometoppropertyref
+             * @default
+             */
+            totalIncomeTopPropertyRef: string;
+            /**
+             * Totalincomeunitcount
+             * @default 0
+             */
+            totalIncomeUnitCount: number;
+            /**
+             * Totalinvoices
+             * @default 0
+             */
+            totalInvoices: number;
+            /**
+             * Totalunits
+             * @default 0
+             */
+            totalUnits: number;
+            /**
+             * Underperforming
+             * @default 0
+             */
+            underPerforming: number;
+            /**
+             * Vendorcount
+             * @default 0
+             */
+            vendorCount: number;
+            /**
+             * Worstproperty
+             * @default
+             */
+            worstProperty: string;
+            /**
+             * Worstpropertyref
+             * @default
+             */
+            worstPropertyRef: string;
+        };
+        /** FinanceTopVendor */
+        FinanceTopVendor: {
+            /**
+             * Amount
+             * @default 0
+             */
+            amount: number;
+            /**
+             * Vendorname
+             * @default
+             */
+            vendorName: string;
+        };
+        /** FinanceTrendSectionOut */
+        FinanceTrendSectionOut: {
+            /**
+             * Insightcount
+             * @default 0
+             */
+            insightCount: number;
+            /** Insights */
+            insights?: {
+                [key: string]: unknown;
+            }[];
+            /**
+             * Section
+             * @default
+             */
+            section: string;
+        };
+        /** FinanceUnitExpense */
+        FinanceUnitExpense: {
+            /**
+             * Expendituredescription
+             * @default
+             */
+            expenditureDescription: string;
+            /**
+             * Fixfloref
+             * @default
+             */
+            fixFloRef: string;
+            /**
+             * Gross
+             * @default 0
+             */
+            gross: number;
+            /**
+             * Heading
+             * @default
+             */
+            heading: string;
+            /**
+             * Invoicedate
+             * @default
+             */
+            invoiceDate: string;
+            /**
+             * Nett
+             * @default 0
+             */
+            nett: number;
+            /**
+             * Periodfrom
+             * @default
+             */
+            periodFrom: string;
+            /**
+             * Periodto
+             * @default
+             */
+            periodTo: string;
+            /**
+             * Propertyname
+             * @default
+             */
+            propertyName: string;
+            /**
+             * Propertyref
+             * @default
+             */
+            propertyRef: string;
+            /**
+             * Settled
+             * @default
+             */
+            settled: string;
+            /**
+             * Suppliername
+             * @default
+             */
+            supplierName: string;
+            /**
+             * Supplierref
+             * @default
+             */
+            supplierRef: string;
+            /**
+             * Unitdescription
+             * @default
+             */
+            unitDescription: string;
+            /**
+             * Unitref
+             * @default
+             */
+            unitRef: string;
+            /**
+             * Vat
+             * @default 0
+             */
+            vat: number;
+        };
+        /** FinanceUnitLedger */
+        FinanceUnitLedger: {
+            /** Expenses */
+            expenses?: components["schemas"]["FinanceUnitExpense"][];
+            /**
+             * Income
+             * @default 0
+             */
+            income: number;
+            /**
+             * Invoicecount
+             * @default 0
+             */
+            invoiceCount: number;
+            /**
+             * Netprofit
+             * @default 0
+             */
+            netProfit: number;
+            /**
+             * Outstanding
+             * @default 0
+             */
+            outstanding: number;
+            /**
+             * Propertyname
+             * @default
+             */
+            propertyName: string;
+            /**
+             * Propertyref
+             * @default
+             */
+            propertyRef: string;
+            /**
+             * Topvendor
+             * @default
+             */
+            topVendor: string;
+            /**
+             * Totalgross
+             * @default 0
+             */
+            totalGross: number;
+            /**
+             * Totalnett
+             * @default 0
+             */
+            totalNett: number;
+            /**
+             * Totalvat
+             * @default 0
+             */
+            totalVat: number;
+            /**
+             * Unitdescription
+             * @default
+             */
+            unitDescription: string;
+            /**
+             * Unitref
+             * @default
+             */
+            unitRef: string;
+            /**
+             * Vendorcount
+             * @default 0
+             */
+            vendorCount: number;
+        };
+        /** FinanceUploadResponse */
+        FinanceUploadResponse: {
+            /** Filename */
+            fileName: string;
+            /** Indexed */
+            indexed: boolean;
+            /** Namespace */
+            namespace: string;
+            /** Recordsstored */
+            recordsStored: number;
+            /** Size */
+            size: number;
+            /** Sourcename */
+            sourceName: string;
+            /** Totalrows */
+            totalRows: number;
+        };
         /** FindingOut */
         FindingOut: {
             /** Confidence */
@@ -11622,9 +12605,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FinanceAnalyticsResponse"];
                 };
             };
             /** @description Validation Error */
@@ -11659,9 +12640,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FinanceChatResponse"];
                 };
             };
             /** @description Validation Error */
@@ -11692,9 +12671,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FinanceFilesResponse"];
                 };
             };
             /** @description Validation Error */
@@ -11729,9 +12706,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FinanceDeleteResponse"];
                 };
             };
             /** @description Validation Error */
@@ -11764,9 +12739,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FinanceHistoryResponse"];
                 };
             };
             /** @description Validation Error */
@@ -11797,9 +12770,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FinanceClearHistoryResponse"];
                 };
             };
             /** @description Validation Error */
@@ -11834,9 +12805,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["FinanceUploadResponse"];
                 };
             };
             /** @description Validation Error */

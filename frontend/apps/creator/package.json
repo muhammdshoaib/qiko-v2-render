@@ -10,6 +10,7 @@
     "test": "node scripts/run-node-tests.cjs"
   },
   "dependencies": {
+    "@qiko/api-client": "workspace:*",
     "@qiko/ui": "workspace:*",
     "@radix-ui/react-checkbox": "^1.3.3",
     "@radix-ui/react-dialog": "^1.1.15",
