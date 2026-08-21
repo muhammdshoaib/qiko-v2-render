@@ -18,7 +18,7 @@ export function PropertyList({
   actions?: (p: FinanceProperty) => React.ReactNode;
   title?: string;
 }) {
-  const { agentId, analytics } = useFinance();
+  const { agentId, analytics, currency } = useFinance();
   const router = useRouter();
   const [sort, setSort] = useState<string>(sortBy);
   const [order, setOrder] = useState<SortOrder>("desc");
@@ -50,13 +50,13 @@ export function PropertyList({
         </button>
       ),
     },
-    { id: "income", header: "Income", numeric: true, sortable: true, cell: (p) => formatCurrency(p.income) },
-    { id: "expenses", header: "Expenses", numeric: true, sortable: true, cell: (p) => formatCurrency(p.expenses) },
-    { id: "netProfit", header: "Net Profit", numeric: true, sortable: true, cell: (p) => formatCurrency(p.netProfit) },
+    { id: "income", header: "Income", numeric: true, sortable: true, cell: (p) => formatCurrency(p.income, currency) },
+    { id: "expenses", header: "Expenses", numeric: true, sortable: true, cell: (p) => formatCurrency(p.expenses, currency) },
+    { id: "netProfit", header: "Net Profit", numeric: true, sortable: true, cell: (p) => formatCurrency(p.netProfit, currency) },
     { id: "marginPercent", header: "Margin", numeric: true, sortable: true, cell: (p) => `${p.marginPercent ?? 0}%` },
-    { id: "outstanding", header: "Outstanding", numeric: true, sortable: true, cell: (p) => formatCurrency(p.outstanding) },
+    { id: "outstanding", header: "Outstanding", numeric: true, sortable: true, cell: (p) => formatCurrency(p.outstanding, currency) },
     { id: "riskScore", header: "Risk", numeric: true, sortable: true, cell: (p) => `${p.riskScore ?? 0}` },
-  ], [onSelect]);
+  ], [onSelect, currency]);
 
   return (
     <div className="space-y-3">

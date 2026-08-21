@@ -1,9 +1,12 @@
 {
   "compilerOptions": {
+    "baseUrl": "..",
     "esModuleInterop": true,
+    "lib": ["ES2020", "DOM"],
     "module": "CommonJS",
     "moduleResolution": "Node",
     "outDir": "../.node-test-build",
+    "paths": { "@/*": ["./*"] },
     "resolveJsonModule": true,
     "rootDir": "..",
     "skipLibCheck": true,
@@ -16,6 +19,7 @@
     "../components/pre-sales/metrics.ts",
     "../components/pre-sales/outcome-utils.ts",
     "../components/pre-sales/section-assignment-utils.ts",
+    "../components/finance/utils.ts",
     "../lib/password-reset-session.ts",
     "../lib/consent/**/*.ts"
   ]

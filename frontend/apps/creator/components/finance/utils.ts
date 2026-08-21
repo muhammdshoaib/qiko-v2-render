@@ -43,11 +43,12 @@ export function riskLevelHex(level: string | undefined): string {
 
 // ── Formatting ────────────────────────────────────────────────────────────────────────────────
 export function formatCurrency(value: number | null | undefined, currency = "GBP"): string {
-  const n = Number(value ?? 0);
+  if (value == null || !Number.isFinite(Number(value))) return "-";
+  const n = Number(value);
   try {
     return new Intl.NumberFormat("en-GB", { style: "currency", currency, maximumFractionDigits: 2 }).format(n);
   } catch {
-    return `£${n.toLocaleString()}`;
+    return `£${n.toLocaleString("en-GB")}`;
   }
 }
 
@@ -72,30 +73,52 @@ export function formatHistoryTime(timestamp: number): string {
   return d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" });
 }
 
+export function readableLabel(key: string): string {
+  return key
+    .replace(/([A-Z])/g, " $1")
+    .replace(/\./g, " ")
+    .trim()
+    .replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
+function isPercentKey(key: string): boolean {
+  return /(Percent|Ratio|AsPercent|Margin)/.test(key);
+}
+
+function isCountKey(key: string): boolean {
+  return /(Count|Performing|Risk|Units|Invoices|Score)$/.test(key);
+}
+
+function formatField(key: string, value: unknown, currency = "GBP"): string {
+  if (value == null) return "-";
+  if (typeof value === "string") return value.trim() || "-";
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return "-";
+    if (isPercentKey(key)) return `${value}%`;
+    if (isCountKey(key)) return String(value);
+    return formatCurrency(value, currency);
+  }
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return "-";
+}
+
 // ── Summary normalization (summary is the typed FinanceSummaryOut object from the backend) ───────
 export type NormalizedSummary = {
   totalIncome: number; totalExpenses: number; netProfit: number; outstanding: number;
   propertyCount: number; vendorCount: number;
-  formatted: Partial<Record<"totalIncome" | "totalExpenses" | "netProfit" | "outstanding", string>>;
-  subtitle: Partial<Record<"totalIncome" | "totalExpenses" | "netProfit" | "outstanding", string>>;
-  details?: FinanceSummary;
 };
 
 export function normalizeFinanceSummary(summary: FinanceSummary | undefined): NormalizedSummary {
-  const out: NormalizedSummary = {
-    totalIncome: 0, totalExpenses: 0, netProfit: 0, outstanding: 0,
-    propertyCount: 0, vendorCount: 0, formatted: {}, subtitle: {},
+  const totalIncome = Number(summary?.totalIncome ?? 0);
+  const totalExpenses = Number(summary?.totalExpenses ?? 0);
+  return {
+    totalIncome,
+    totalExpenses,
+    netProfit: Number(summary?.netProfit ?? totalIncome - totalExpenses),
+    outstanding: Number(summary?.outstanding ?? 0),
+    propertyCount: Number(summary?.propertyCount ?? 0),
+    vendorCount: Number(summary?.vendorCount ?? 0),
   };
-  if (!summary) return out;
-
-  out.totalIncome = Number(summary.totalIncome ?? 0);
-  out.totalExpenses = Number(summary.totalExpenses ?? 0);
-  out.netProfit = Number(summary.netProfit ?? out.totalIncome - out.totalExpenses);
-  out.outstanding = Number(summary.outstanding ?? 0);
-  out.propertyCount = Number(summary.propertyCount ?? 0);
-  out.vendorCount = Number(summary.vendorCount ?? 0);
-  out.details = summary;
-  return out;
 }
 
 export type KpiMetricKey = "totalIncome" | "totalExpenses" | "netProfit";
@@ -106,36 +129,32 @@ const KPI_TITLES: Record<KpiMetricKey, string> = {
   netProfit: "Net Profit",
 };
 
-const KPI_DRILLDOWN_HIDDEN = new Set(["key", "label", "value", "formatted"]);
-
 /** Extra fields shown on the KPI click screen (same filtering as V1 userDashboard). */
-export function kpiMetricDrilldown(summary: FinanceSummary | undefined, key: KpiMetricKey): {
+export function kpiMetricDrilldown(summary: FinanceSummary | undefined, key: KpiMetricKey, currency = "GBP"): {
   title: string;
   formatted: string;
-  details: Array<[string, unknown]>;
+  details: Array<[string, string]>;
 } {
-  const normalized = normalizeFinanceSummary(summary);
-  const fallback =
-    key === "totalIncome" ? normalized.totalIncome
-      : key === "totalExpenses" ? normalized.totalExpenses
-        : normalized.netProfit;
+  const source = summary ?? {} as Record<string, unknown>;
+  const total = Number((source as Record<string, unknown>)[key] ?? 0);
 
-  const source = (summary ?? normalized.details) as Record<string, unknown> | undefined;
-  const details: Array<[string, unknown]> = [];
-  if (source) {
-    for (const [k, value] of Object.entries(source)) {
-      if (k === key) continue;
-      if (!k.startsWith(key) && !(key === "totalExpenses" && k === "expenseBreakdown")) continue;
-      if (value == null) continue;
-      if (typeof value === "string" && value.trim() === "") continue;
-      details.push([k, value]);
+  const details: Array<[string, string]> = [];
+  if (key === "totalExpenses" && source.expenseBreakdown && typeof source.expenseBreakdown === "object") {
+    for (const [subKey, subValue] of Object.entries(source.expenseBreakdown)) {
+      details.push([readableLabel(`expenseBreakdown.${subKey}`), formatField(subKey, subValue, currency)]);
     }
   }
-  if (normalized.subtitle[key]) details.unshift(["subtitle", normalized.subtitle[key]]);
+
+  for (const [k, value] of Object.entries(source)) {
+    if (k === key) continue;
+    if (k === "expenseBreakdown") continue;
+    if (!k.startsWith(key)) continue;
+    details.push([readableLabel(k), formatField(k, value, currency)]);
+  }
 
   return {
     title: KPI_TITLES[key],
-    formatted: normalized.formatted[key] ?? formatCurrency(fallback),
+    formatted: formatCurrency(total, currency),
     details,
   };
 }
