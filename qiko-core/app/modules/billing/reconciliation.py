@@ -57,8 +57,8 @@ class InvoiceReconciliationService:
                 if not inv.stripe_invoice_id or not inv.customer_id:
                     logger.warning("skipping Stripe invoice row with missing id/customer: %s", row.get("id"))
                     continue
-                self.invoices.upsert(inv)
-                counts[label] += 1
+                is_new = self.invoices.upsert(inv)
+                counts[label] += 1 if is_new else 0
 
         logger.info("invoice reconciliation complete", extra=counts)
         return counts

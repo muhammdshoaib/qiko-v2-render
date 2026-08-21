@@ -373,6 +373,30 @@ def test_invoice_reconciliation_service_upserts_paid_and_open(tmp_path):
     assert store.get("in_paid").amount_cents == 10000
 
 
+def test_invoice_reconciliation_does_not_double_count_open_invoices_in_recent(tmp_path):
+    from app.modules.billing.reconciliation import InvoiceReconciliationService
+    from app.modules.billing.webhook import InvoiceStore
+
+    class _FakeGateway:
+        def list_invoices(self, *, status=None, created_after=None):
+            if status == "open":
+                return [{"id": "in_open", "customer": "cus_1", "amount_due": 5000,
+                         "status": "open", "currency": "usd"}]
+            # The recent window also contains the open invoice plus a newly paid one.
+            return [
+                {"id": "in_open", "customer": "cus_1", "amount_due": 5000,
+                 "status": "open", "currency": "usd"},
+                {"id": "in_paid", "customer": "cus_2", "amount_paid": 10000,
+                 "status": "paid", "currency": "usd"},
+            ]
+
+    store = InvoiceStore()
+    svc = InvoiceReconciliationService(invoices=store, gateway=_FakeGateway())
+    result = svc.reconcile()
+    assert result == {"open": 1, "recent": 1}
+    assert store.count() == 2
+
+
 def test_invoice_from_stripe_object_uses_amount_due_when_not_paid():
     inv = Invoice.from_stripe_object({
         "id": "in_1", "customer": "cus_1", "amount_due": 2500,
