@@ -174,6 +174,7 @@ def test_public_signup_materializes_one_tenant_scoped_training_worker_after_veri
         "doc_id": worker_id,
         "name": "Additional guidance: Explain trade-offs before making a recommendation.",
         "chunks": 1,
+        "agent_id": worker_id,
     }]
     usage = client.get("/api/v1/agents/usage")
     assert usage.status_code == 200, usage.text

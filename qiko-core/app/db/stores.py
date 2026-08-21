@@ -353,7 +353,9 @@ class SqlVectorStore:
     async def delete_doc(self, tenant: str, doc_id: str, agent_id: str | None = None) -> int:
         async with self.sessionmaker() as s, s.begin():
             stmt = delete(PassageRow).where(PassageRow.tenant_id == tenant, PassageRow.doc_id == doc_id)
-            if agent_id is not None:
+            if agent_id is None:
+                stmt = stmt.where(PassageRow.agent_id.is_(None))
+            else:
                 stmt = stmt.where(PassageRow.agent_id == agent_id)
             result = await s.execute(stmt)
             return result.rowcount or 0
