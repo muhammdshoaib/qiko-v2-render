@@ -71,7 +71,7 @@ function SourceCard({ agentId, source }: { agentId: string; source: Intelligence
             </span>
             <div>
               <h3 className="font-semibold text-foreground">{source.name}</h3>
-              <p className="text-xs text-muted-foreground">{source.description}</p>
+              {!source.connected && <p className="text-xs text-muted-foreground">{source.description}</p>}
             </div>
           </div>
           <Badge variant={source.connected ? "success" : "muted"} className="shrink-0">

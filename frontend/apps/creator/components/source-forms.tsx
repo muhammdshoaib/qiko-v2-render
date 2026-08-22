@@ -36,22 +36,11 @@ export function GithubForm({
   connection: IntelligenceSourceConnection | undefined;
   onChange: OnChange;
 }) {
-  const [token, setToken] = useState("");
   const [repos, setRepos] = useState("");
   const [branches, setBranches] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [polling, setPolling] = useState(false);
   const c = connection?.key === "github" ? connection : undefined;
-
-  const connect = useMutation({
-    mutationFn: () => connectIntelligenceSource(agentId, "github", {
-      token,
-      repo_allowlist: parseList(repos),
-      watched_branches: parseList(branches),
-    }),
-    onSuccess: () => { setToken(""); setMessage(null); onChange(); },
-    onError: (e: Error) => setMessage(e.message),
-  });
 
   const save = useMutation({
     mutationFn: () => connectIntelligenceSource(agentId, "github", {
@@ -108,22 +97,6 @@ export function GithubForm({
       <div className="space-y-3">
         <Button variant="outline" className="w-full" disabled={install.isPending} onClick={() => install.mutate()}>
           {install.isPending && <Loader2 className="size-4 animate-spin" />} Connect GitHub App
-        </Button>
-        <p className="text-xs text-muted-foreground text-center">or use a personal access token</p>
-        <div className="space-y-1">
-          <Label className="text-xs">Personal access token</Label>
-          <Input type="password" value={token} onChange={(e) => setToken(e.target.value)} placeholder="ghp_..." />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Repo allowlist (owner/repo, comma separated)</Label>
-          <Input value={repos} onChange={(e) => setRepos(e.target.value)} placeholder="acme/api, acme/web" />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Watched branches (comma separated, optional)</Label>
-          <Input value={branches} onChange={(e) => setBranches(e.target.value)} placeholder="main, develop" />
-        </div>
-        <Button disabled={!token || connect.isPending} onClick={() => connect.mutate()} className="w-full">
-          {connect.isPending && <Loader2 className="size-4 animate-spin" />} Connect
         </Button>
         {polling && <p className="text-xs text-muted-foreground">Waiting for GitHub App authorization...</p>}
         {message && <p className="text-xs text-destructive">{message}</p>}
@@ -267,18 +240,24 @@ export function QikoTrackForm({
         <p className="text-xs text-muted-foreground">
           {c.project_keys.length > 1 ? `All Qiko Track projects (${c.project_keys.length})` : `Project key: ${c.project_keys.join(", ")}`}
         </p>
-        <div className="space-y-1">
-          <Label className="text-xs">Base URL</Label>
-          <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://track.qiko.ai" />
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Project keys</Label>
-          <Input value={projectKeys} onChange={(e) => setProjectKeys(e.target.value)} placeholder="QIW, PROJ-1" />
-        </div>
+        {!c.service_token_used && (
+          <>
+            <div className="space-y-1">
+              <Label className="text-xs">Base URL</Label>
+              <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://track.qiko.ai" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Project keys</Label>
+              <Input value={projectKeys} onChange={(e) => setProjectKeys(e.target.value)} placeholder="QIW, PROJ-1" />
+            </div>
+          </>
+        )}
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
-            {save.isPending && <Loader2 className="size-4 animate-spin" />} Save
-          </Button>
+          {!c.service_token_used && (
+            <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
+              {save.isPending && <Loader2 className="size-4 animate-spin" />} Save
+            </Button>
+          )}
           <Button variant="outline" size="sm" disabled={test.isPending} onClick={() => test.mutate()}>
             {test.isPending && <Loader2 className="size-4 animate-spin" />} Test
           </Button>

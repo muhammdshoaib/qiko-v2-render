@@ -10,6 +10,7 @@ from typing import Literal
 
 import jwt
 from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.core.config import get_settings
@@ -490,6 +491,9 @@ async def connect_source(
         raise HTTPException(status_code=404, detail="agent not found")
 
     if key == "slack":
+        s = get_settings()
+        if not s.slack_client_id or not s.slack_client_secret or not s.slack_redirect_uri:
+            raise HTTPException(status_code=503, detail="Slack integration is not configured")
         result = slack_oauth.create_install(tenant, agent_id, claims.get("sub"))
         await recheck()
         return result
@@ -648,8 +652,12 @@ async def github_app_callback(
     claims: dict = Depends(current_claims),
     _role: dict = Depends(require_role(Role.editor)),
     agents: AgentService = Depends(get_agents),
-) -> dict:
-    """Store a GitHub App installation id after the user installs the app."""
+) -> HTMLResponse:
+    """Store a GitHub App installation id after the user installs the app.
+
+    Returns a small HTML page that closes the popup (so the parent window can
+    refresh the connection state) or redirects if the page was opened directly.
+    """
     settings = get_settings()
     if not state:
         raise HTTPException(status_code=422, detail="missing state")
@@ -681,7 +689,17 @@ async def github_app_callback(
             provider="github", secret=secret, encrypted_key=meta["token"],
             tenant=tenant, agent_id=agent_id, agent_name=agent.name,
             action=audit_actions.CREDENTIAL_SET, claims=claims, request=request))
-    return {"connected": True}
+    redirect_url = f"{settings.frontend_url.rstrip('/')}/workers/{agent_id}?tab=Sources"
+    html = (
+        "<html><head><title>GitHub connected</title></head><body>"
+        "<p>GitHub connected. You can close this window.</p>"
+        "<script>"
+        "if (window.opener) { window.opener.postMessage({ type: 'github-connected' }, '*'); window.close(); }"
+        f"else {{ window.location.href = '{redirect_url}'; }}"
+        "</script>"
+        "</body></html>"
+    )
+    return HTMLResponse(content=html)
 
 
 @router.get("/agents/{agent_id}/sources/{key}/connection")
