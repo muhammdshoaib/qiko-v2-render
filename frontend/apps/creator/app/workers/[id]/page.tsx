@@ -18,7 +18,7 @@ import { CrmPipeline } from "@/components/crm-pipeline";
 import { SourcesTab } from "@/components/sources-tab";
 import { WorkerVoiceCall } from "@/components/worker-voice-call";
 import {
-  addFaq, addPolicy, addWebsite, ask, connectTeamsWebhook, disconnectCalendly, disconnectClickUp,
+  addFaq, addPolicy, addWebsite, ask, askIntelligence, connectTeamsWebhook, disconnectCalendly, disconnectClickUp,
   disconnectGmail, disconnectSlack,
   deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, financeChat, getCalendlyCredentials,
   getClickUpCredentials, getFinanceHistory, getGmailCredentials, getSalesforceCredentials, getSlackCredentials,
@@ -1363,6 +1363,7 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
   // has no access to that analytics, so finance questions never worked from the worker screen the
   // way they do from the Studio finance cockpit).
   const isFinance = worker?.atype === "finance";
+  const isIntelligence = worker?.atype === "worker" || worker?.atype === "intelligence";
 
   // The finance chat is the same persisted conversation as the Studio cockpit: seed the
   // transcript from it instead of always starting blank.
@@ -1381,9 +1382,14 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
     setMessages((m) => [...m, { role: "user", text: q }]);
     setBusy(true);
     try {
-      const reply = isFinance
-        ? { role: "assistant", text: (await financeChat(id, q)).reply }
-        : await ask(conversationId, q, id);
+      let reply: { role: string; text: string };
+      if (isFinance) {
+        reply = { role: "assistant", text: (await financeChat(id, q)).reply };
+      } else if (isIntelligence) {
+        reply = { role: "assistant", text: (await askIntelligence(conversationId, q, id)).reply };
+      } else {
+        reply = await ask(conversationId, q, id);
+      }
       setMessages((m) => [...m, reply]);
     } catch {
       setMessages((m) => [...m, { role: "assistant", text: "Sorry, I couldn't answer that just now. Please try again in a moment." }]);
