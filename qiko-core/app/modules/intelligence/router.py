@@ -285,6 +285,15 @@ async def _connected_keys(agent, installation_store) -> set[str]:
     return connected
 
 
+def _globally_configured_keys() -> set[str]:
+    """Return source keys the tenant has set up globally (not per-worker)."""
+    s = get_settings()
+    configured: set[str] = {"github", "qiko_track", "generic"}
+    if s.slack_client_id and s.slack_client_secret and s.slack_redirect_uri:
+        configured.add("slack")
+    return configured
+
+
 @router.get("/agents/{agent_id}/sources")
 async def list_sources(agent_id: str, request: Request,
                        tenant: str = Depends(authed_tenant),
@@ -295,7 +304,7 @@ async def list_sources(agent_id: str, request: Request,
     agent = await agents.get(tenant, agent_id)
     connected = await _connected_keys(agent, slack_oauth.store)
     await recheck()
-    return catalog.items(connected=connected)
+    return catalog.items(connected=connected, configured=_globally_configured_keys())
 
 
 @router.get("/agents/{agent_id}/sources/qiko_track/preview")
@@ -370,12 +379,14 @@ async def get_source(agent_id: str, key: str, request: Request,
     if definition is None:
         raise HTTPException(status_code=404, detail="source not found")
     await recheck()
+    configured = _globally_configured_keys()
     return {
         "key": definition.key,
         "name": definition.name,
         "description": definition.description,
         "pollable": definition.pollable,
         "connected": key in connected,
+        "configured": key in configured,
     }
 
 
@@ -831,12 +842,18 @@ async def test_source(
 
     if key in ("github", "qiko_track"):
         meta = _SOURCE_CONFIG[key]
-        try:
-            credential = stored_credential(
-                cfg, flag=meta["added"], key=meta["token"], label=meta["label"])
-        except HTTPException:
-            await recheck()
-            raise
+        if key == "qiko_track":
+            credential = _qiko_track_credential(cfg)
+            if not credential:
+                await recheck()
+                raise HTTPException(status_code=422, detail="this worker has no Qiko Track connection configured")
+        else:
+            try:
+                credential = stored_credential(
+                    cfg, flag=meta["added"], key=meta["token"], label=meta["label"])
+            except HTTPException:
+                await recheck()
+                raise
         connector = catalog.connector_for(key)
         if key == "github":
             config = {

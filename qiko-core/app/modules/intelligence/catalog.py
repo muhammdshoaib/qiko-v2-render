@@ -99,10 +99,14 @@ class SourceCatalog:
             raise UnknownSource(key)
         return definition.connector
 
-    def items(self, *, connected: set[str] | None = None) -> list[dict]:
+    def items(self, *, connected: set[str] | None = None,
+              configured: set[str] | None = None) -> list[dict]:
         """Serialise for the frontend. `connected` is the set of keys this worker has configured,
-        so one call renders both what is available and what is already set up."""
+        and `configured` is the set of keys the tenant has globally set up, so one call renders
+        what is available, ready, and already attached."""
         attached = connected or set()
+        ready = configured or set(self._definitions.keys())
         return [{"key": d.key, "name": d.name, "description": d.description,
-                 "pollable": d.pollable, "connected": d.key in attached}
+                 "pollable": d.pollable, "connected": d.key in attached,
+                 "configured": d.key in ready}
                 for d in self._definitions.values()]

@@ -74,7 +74,7 @@ def test_get_source(client):
     assert r.json() == {
         "key": "slack", "name": "Slack",
         "description": "Slack workspace messages via the Events API (push).",
-        "pollable": False, "connected": False,
+        "pollable": False, "connected": False, "configured": True,
     }
 
 

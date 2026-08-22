@@ -1233,7 +1233,7 @@ export const clearFinanceHistory = (agentId: string) =>
   request<FinanceClearHistoryResponse>(`/finance/${agentId}/history`, { method: "DELETE" });
 
 // Intelligence Worker sources (Slack capture, GitHub, Qiko Track).
-export type IntelligenceSource = { key: string; name: string; description: string; pollable: boolean; connected: boolean };
+export type IntelligenceSource = { key: string; name: string; description: string; pollable: boolean; connected: boolean; configured: boolean };
 export type IntelligenceSourceConnection =
   | { key: "github"; connected: boolean; token_masked: string; repo_allowlist: string[]; watched_branches: string[] }
   | { key: "qiko_track"; connected: boolean; service_token_used?: boolean; token_masked: string; project_keys: string[]; base_url: string }

@@ -32,8 +32,9 @@ def _ip_is_blocked(ip: ipaddress._BaseAddress) -> bool:
 
 
 def _resolve(host: str, port: int, resolver) -> set[str]:
+    resolve = resolver or socket.getaddrinfo
     try:
-        infos = resolver(host, port, type=socket.SOCK_STREAM)
+        infos = resolve(host, port, type=socket.SOCK_STREAM)
     except socket.gaierror as e:  # unresolvable host
         raise SsrfError(f"could not resolve host: {host}") from e
     return {info[4][0] for info in infos}

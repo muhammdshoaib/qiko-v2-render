@@ -100,9 +100,12 @@ function SourceCard({ agentId, source }: { agentId: string; source: Intelligence
               {!source.connected && <p className="text-xs text-muted-foreground">{source.description}</p>}
             </div>
           </div>
-          <Badge variant={source.connected ? "success" : "muted"} className="shrink-0">
-            {source.connected ? "Connected" : "Not connected"}
-          </Badge>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <Badge variant={source.connected ? "success" : "muted"}>
+              {source.connected ? "Connected" : "Not connected"}
+            </Badge>
+            {!source.configured && <Badge variant="warning">Not configured</Badge>}
+          </div>
         </div>
 
         {source.key === "github" && (
@@ -112,7 +115,7 @@ function SourceCard({ agentId, source }: { agentId: string; source: Intelligence
           <QikoTrackForm agentId={agentId} connection={connection.data} onChange={invalidate} />
         )}
         {source.key === "slack" && (
-          <SlackForm agentId={agentId} connection={connection.data} onChange={invalidate} />
+          <SlackForm agentId={agentId} connection={connection.data} onChange={invalidate} configured={source.configured} />
         )}
       </CardContent>
     </Card>

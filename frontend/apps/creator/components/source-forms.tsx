@@ -332,10 +332,12 @@ export function SlackForm({
   agentId,
   connection,
   onChange,
+  configured = true,
 }: {
   agentId: string;
   connection: IntelligenceSourceConnection | undefined;
   onChange: OnChange;
+  configured?: boolean;
 }) {
   const [message, setMessage] = useState<string | null>(null);
   const [polling, setPolling] = useState(false);
@@ -395,11 +397,15 @@ export function SlackForm({
   if (!c?.team_id) {
     return (
       <div className="space-y-3">
-        <p className="text-xs text-muted-foreground">Authorize the Qiko Slack app for this worker.</p>
-        <Button disabled={connect.isPending} onClick={() => connect.mutate()} className="w-full">
+        <p className="text-xs text-muted-foreground">
+          {configured
+            ? "Authorize the Qiko Slack app for this worker."
+            : "Slack app is not configured. Ask an admin to add the client credentials before connecting."}
+        </p>
+        <Button disabled={!configured || connect.isPending} onClick={() => connect.mutate()} className="w-full">
           {connect.isPending && <Loader2 className="size-4 animate-spin" />} Connect Slack
         </Button>
-        {polling && <p className="text-xs text-muted-foreground">Waiting for Slack authorization...</p>}
+        {configured && polling && <p className="text-xs text-muted-foreground">Waiting for Slack authorization...</p>}
         {message && <p className="text-xs text-destructive">{message}</p>}
       </div>
     );

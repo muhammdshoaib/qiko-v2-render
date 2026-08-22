@@ -264,7 +264,7 @@ def test_the_catalog_serialises_for_the_frontend():
                      description="A fake source")
     [item] = catalog.items()
     assert item == {"key": "fake", "name": "Fake", "description": "A fake source",
-                    "pollable": True, "connected": False}
+                    "pollable": True, "connected": False, "configured": True}
 
 
 def test_the_catalog_reports_which_sources_this_worker_has_connected():
