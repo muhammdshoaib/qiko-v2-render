@@ -3154,6 +3154,9 @@ export interface paths {
         /**
          * Github App Callback
          * @description Store a GitHub App installation id after the user installs the app.
+         *
+         *     Returns a small HTML page that closes the popup (so the parent window can
+         *     refresh the connection state) or redirects if the page was opened directly.
          */
         get: operations["github_app_callback_api_v1_intelligence_sources_github_callback_get"];
         put?: never;
@@ -14028,9 +14031,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

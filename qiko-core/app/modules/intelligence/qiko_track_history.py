@@ -42,11 +42,21 @@ class PollAndDiff:
 
         try:
             client = QikoTrackClient(base_url, token, transport=transport, resolver=resolver)
-            tickets = await client.list_tickets()
+            tickets: list[dict] = []
+            seen: set[str] = set()
+            project_set = set(project_keys)
+            for project in project_set:
+                try:
+                    for ticket in await client.list_tickets(project=project):
+                        key = ticket.get("key") or ""
+                        if key and key not in seen:
+                            seen.add(key)
+                            tickets.append(ticket)
+                except (QikoTrackClientError, SsrfError):
+                    continue
         except (QikoTrackClientError, SsrfError):
             return []
 
-        project_set = set(project_keys)
         filtered = [t for t in tickets if (t.get("project") or "") in project_set]
 
         signals: list[Signal] = []
