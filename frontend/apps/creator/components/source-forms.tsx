@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { Button, Dialog, Input, Label, Select, cn } from "@qiko/ui";
 import {
   type IntelligenceSourceConnection,
@@ -23,8 +23,31 @@ function parseList(value: string) {
   return value.split(",").map((s) => s.trim()).filter(Boolean);
 }
 
-function formatList(items: string[]) {
-  return items.join(", ");
+type TestDialogState = {
+  open: boolean;
+  title: string;
+  message: string;
+  success: boolean;
+};
+
+function TestResultDialog({ state, onClose }: { state: TestDialogState; onClose: () => void }) {
+  const titleId = "test-result-title";
+  return (
+    <Dialog open={state.open} onClose={onClose} labelledBy={titleId} className="w-[min(94vw,24rem)]">
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          {state.success ? (
+            <CheckCircle2 className="size-5 text-emerald-400" aria-hidden="true" />
+          ) : (
+            <AlertTriangle className="size-5 text-amber-400" aria-hidden="true" />
+          )}
+          <h2 id={titleId} className="text-base font-semibold text-white">{state.title}</h2>
+        </div>
+        <p className="whitespace-pre-wrap text-sm text-white/70">{state.message}</p>
+        <Button onClick={onClose} className="w-full">Close</Button>
+      </div>
+    </Dialog>
+  );
 }
 
 export function GithubForm({
@@ -36,30 +59,26 @@ export function GithubForm({
   connection: IntelligenceSourceConnection | undefined;
   onChange: OnChange;
 }) {
-  const [repos, setRepos] = useState("");
-  const [branches, setBranches] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [testDialog, setTestDialog] = useState<TestDialogState>({ open: false, title: "", message: "", success: false });
   const [polling, setPolling] = useState(false);
   const c = connection?.key === "github" ? connection : undefined;
 
-  const save = useMutation({
-    mutationFn: () => connectIntelligenceSource(agentId, "github", {
-      repo_allowlist: parseList(repos),
-      watched_branches: parseList(branches),
-    }),
-    onSuccess: () => { setMessage(null); onChange(); },
-    onError: (e: Error) => setMessage(e.message),
-  });
+  const showTest = (title: string, text: string, success: boolean) =>
+    setTestDialog({ open: true, title, message: text, success });
 
   const disconnect = useMutation({
     mutationFn: () => disconnectIntelligenceSource(agentId, "github"),
-    onSuccess: () => { setMessage(null); onChange(); },
+    onSuccess: () => { setMessage(""); onChange(); },
   });
 
   const test = useMutation({
     mutationFn: () => testIntelligenceSource(agentId, "github"),
-    onSuccess: (res) => setMessage(res.ok ? `Connected as ${res.user}` : (res.error ?? "Test failed")),
-    onError: (e: Error) => setMessage(e.message),
+    onSuccess: (res) => {
+      if (res.ok) showTest("Connection test passed", `Connected as ${res.user}.`, true);
+      else showTest("Connection test failed", res.error ?? "Could not reach GitHub.", false);
+    },
+    onError: (e: Error) => showTest("Connection test failed", e.message, false),
   });
 
   const install = useMutation({
@@ -85,13 +104,6 @@ export function GithubForm({
     return () => clearInterval(interval);
   }, [polling, agentId, onChange]);
 
-  useEffect(() => {
-    if (c) {
-      setRepos(formatList(c.repo_allowlist ?? []));
-      setBranches(formatList(c.watched_branches ?? []));
-    }
-  }, [c]);
-
   if (!c?.connected) {
     return (
       <div className="space-y-3">
@@ -106,31 +118,15 @@ export function GithubForm({
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-muted-foreground">Token: {c.token_masked || "saved"}</p>
-      <div className="space-y-1">
-        <Label className="text-xs">Repo allowlist</Label>
-        <Input value={repos} onChange={(e) => setRepos(e.target.value)} placeholder="acme/api, acme/web" />
-      </div>
-      <div className="space-y-1">
-        <Label className="text-xs">Watched branches</Label>
-        <Input value={branches} onChange={(e) => setBranches(e.target.value)} placeholder="main, develop" />
-      </div>
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
-          {save.isPending && <Loader2 className="size-4 animate-spin" />} Save
-        </Button>
         <Button variant="outline" size="sm" disabled={test.isPending} onClick={() => test.mutate()}>
           {test.isPending && <Loader2 className="size-4 animate-spin" />} Test
         </Button>
-        <Button variant="outline" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
-          Disconnect
+        <Button variant="destructive" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
+          {disconnect.isPending && <Loader2 className="size-4 animate-spin" />} Disconnect
         </Button>
       </div>
-      {message && (
-        <p className={cn("text-xs", message.includes("failed") || message.includes("error") ? "text-destructive" : "text-emerald-400")}>
-          {message}
-        </p>
-      )}
+      <TestResultDialog state={testDialog} onClose={() => setTestDialog((s) => ({ ...s, open: false }))} />
     </div>
   );
 }
@@ -146,6 +142,10 @@ export function QikoTrackForm({
 }) {
   const c = connection?.key === "qiko_track" ? connection : undefined;
   const [message, setMessage] = useState<string | null>(null);
+  const [testDialog, setTestDialog] = useState<TestDialogState>({ open: false, title: "", message: "", success: false });
+
+  const showTest = (title: string, text: string, success: boolean) =>
+    setTestDialog({ open: true, title, message: text, success });
 
   const [token, setToken] = useState("");
   const [projectKeys, setProjectKeys] = useState("");
@@ -185,15 +185,6 @@ export function QikoTrackForm({
     onError: (e: Error) => setMessage(e.message),
   });
 
-  const save = useMutation({
-    mutationFn: () => connectIntelligenceSource(agentId, "qiko_track", {
-      project_keys: parseList(projectKeys),
-      base_url: baseUrl || undefined,
-    }),
-    onSuccess: () => { setMessage(null); onChange(); },
-    onError: (e: Error) => setMessage(e.message),
-  });
-
   const disconnect = useMutation({
     mutationFn: () => disconnectIntelligenceSource(agentId, "qiko_track"),
     onSuccess: () => { setMessage(null); onChange(); },
@@ -201,16 +192,12 @@ export function QikoTrackForm({
 
   const test = useMutation({
     mutationFn: () => testIntelligenceSource(agentId, "qiko_track"),
-    onSuccess: (res) => setMessage(res.ok ? "Test passed" : (res.error ?? "Test failed")),
-    onError: (e: Error) => setMessage(e.message),
+    onSuccess: (res) => {
+      if (res.ok) showTest("Connection test passed", "Qiko Track is reachable.", true);
+      else showTest("Connection test failed", res.error ?? "Could not reach Qiko Track.", false);
+    },
+    onError: (e: Error) => showTest("Connection test failed", e.message, false),
   });
-
-  useEffect(() => {
-    if (c) {
-      setProjectKeys(formatList(c.project_keys ?? []));
-      setBaseUrl(c.base_url ?? "");
-    }
-  }, [c]);
 
   useEffect(() => {
     if (preview.data?.suggested) {
@@ -234,38 +221,15 @@ export function QikoTrackForm({
   if (c?.connected) {
     return (
       <div className="space-y-3">
-        <p className="text-xs text-muted-foreground">
-          {c.service_token_used ? "Connected via service token" : `Token: ${c.token_masked || "saved"}`}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {c.project_keys.length > 1 ? `All Qiko Track projects (${c.project_keys.length})` : `Project key: ${c.project_keys.join(", ")}`}
-        </p>
-        {!c.service_token_used && (
-          <>
-            <div className="space-y-1">
-              <Label className="text-xs">Base URL</Label>
-              <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://track.qiko.ai" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Project keys</Label>
-              <Input value={projectKeys} onChange={(e) => setProjectKeys(e.target.value)} placeholder="QIW, PROJ-1" />
-            </div>
-          </>
-        )}
         <div className="flex flex-wrap gap-2">
-          {!c.service_token_used && (
-            <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
-              {save.isPending && <Loader2 className="size-4 animate-spin" />} Save
-            </Button>
-          )}
           <Button variant="outline" size="sm" disabled={test.isPending} onClick={() => test.mutate()}>
             {test.isPending && <Loader2 className="size-4 animate-spin" />} Test
           </Button>
-          <Button variant="outline" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
-            Disconnect
+          <Button variant="destructive" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
+            {disconnect.isPending && <Loader2 className="size-4 animate-spin" />} Disconnect
           </Button>
         </div>
-        {message && <p className={cn("text-xs", message.includes("failed") || message.includes("error") ? "text-destructive" : "text-emerald-400")}>{message}</p>}
+        <TestResultDialog state={testDialog} onClose={() => setTestDialog((s) => ({ ...s, open: false }))} />
       </div>
     );
   }
@@ -469,8 +433,8 @@ export function SlackForm({
         <Button size="sm" disabled={saveChannels.isPending} onClick={() => saveChannels.mutate()}>
           {saveChannels.isPending && <Loader2 className="size-4 animate-spin" />} Save channels
         </Button>
-        <Button variant="outline" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
-          Disconnect
+        <Button variant="destructive" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
+          {disconnect.isPending && <Loader2 className="size-4 animate-spin" />} Disconnect
         </Button>
       </div>
       {message && <p className="text-xs text-emerald-400">{message}</p>}

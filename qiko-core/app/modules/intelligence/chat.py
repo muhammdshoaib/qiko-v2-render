@@ -26,6 +26,16 @@ _SPRINT_LANDING_QUESTIONS = (
     "will the sprint finish",
     "is the sprint going to finish",
 )
+_PROJECT_ACTIVITY_QUESTIONS = (
+    "most active project",
+    "most active",
+    "active project",
+    "busiest project",
+    "cel mai activ proiect",
+    "activ proiect",
+    "proiect activ",
+    "cel mai ocupat",
+)
 
 _INTELLIGENCE_PROMPT = (
     "You are a Qiko Intelligence Worker. Answer ONLY using the signals in the CONTEXT below. "
@@ -48,6 +58,8 @@ def _classify_intent(message: str) -> str:
         return "capability"
     if any(phrase in m for phrase in _SPRINT_LANDING_QUESTIONS):
         return "sprint_landing"
+    if any(phrase in m for phrase in _PROJECT_ACTIVITY_QUESTIONS):
+        return "project_activity"
     return "data"
 
 
@@ -97,6 +109,50 @@ def _format_sprint_answer(projects: dict[str, dict]) -> str:
         f"{carry_tickets} are projected to carry over. "
         "I don't have the sprint end date, so I can't say if it will land."
     )
+
+
+def _format_project_activity_answer(projects: dict[str, dict]) -> str:
+    """Build a grounded answer to "which is the most active project?".
+
+    Uses Qiko Track project metrics. If no project has completed or in-progress
+    tickets, decline honestly.
+    """
+    available = {k: v for k, v in projects.items() if v.get("available") is True}
+    if not available:
+        return _NO_DATA_REPLY
+
+    by_throughput = sorted(
+        available.items(),
+        key=lambda kv: (kv[1].get("throughput") or {}).get("tickets", 0),
+        reverse=True,
+    )
+    top_key, top_data = by_throughput[0]
+    throughput = top_data.get("throughput") or {}
+    wip = top_data.get("wip") or {}
+    completed = throughput.get("tickets", 0)
+    points = throughput.get("points", 0)
+    in_progress = wip.get("total", 0)
+
+    if completed > 0:
+        return (
+            f"{top_key} is the most active Qiko Track project, with {completed} completed tickets "
+            f"in the last 30 days ({points} points) and {in_progress} ticket(s) in progress."
+        )
+
+    by_wip = sorted(
+        available.items(),
+        key=lambda kv: (kv[1].get("wip") or {}).get("total", 0),
+        reverse=True,
+    )
+    top_key, top_data = by_wip[0]
+    wip = top_data.get("wip") or {}
+    if wip.get("total", 0) > 0:
+        return (
+            f"{top_key} has the most active work in progress ({wip['total']} tickets), "
+            "though no tickets were completed in the last 30 days."
+        )
+
+    return _NO_DATA_REPLY
 
 
 def _format_sources(result: AgentResult, passages: list) -> list[str]:
@@ -157,6 +213,17 @@ class IntelligenceChat:
             else:
                 projects = await metrics_provider()
                 reply = _format_sprint_answer(projects)
+            return await self._record_and_return(
+                chat, tenant, conversation_id, user_id, agent_id, question, reply, intent)
+
+        if intent == "project_activity":
+            if metrics_provider is None:
+                reply = _NO_DATA_REPLY
+            else:
+                projects = await metrics_provider()
+                reply = _format_project_activity_answer(projects)
+                if "github" in question.lower() and "Qiko Track" in reply:
+                    reply += " I don't have GitHub project activity data."
             return await self._record_and_return(
                 chat, tenant, conversation_id, user_id, agent_id, question, reply, intent)
 

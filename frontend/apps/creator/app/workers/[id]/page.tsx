@@ -21,7 +21,7 @@ import {
   addFaq, addPolicy, addWebsite, ask, askIntelligence, connectTeamsWebhook, disconnectCalendly, disconnectClickUp,
   disconnectGmail, disconnectSlack,
   deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, financeChat, getCalendlyCredentials,
-  getClickUpCredentials, getFinanceHistory, getGmailCredentials, getSalesforceCredentials, getSlackCredentials,
+  getClickUpCredentials, getFinanceHistory, getGmailCredentials, getIntelligenceChatHistory, getSalesforceCredentials, getSlackCredentials,
   getTeamsWebhookStatus, getVapiCredentials, ingest, ingestFile, listAgents, listDocuments, markReady, me,
   saveCalendlyCredentials, saveClickUpCredentials, saveGmailCredentials, saveSalesforceCredentials,
   saveSlackCredentials, saveVapiCredentials,
@@ -1349,8 +1349,17 @@ function WorkerShare({ id, tenant }: { id: string; tenant: string }) {
   );
 }
 
+function newConversationId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
-  const [conversationId] = useState(() => `test-${Date.now()}`);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const [conversationId, setConversationId] = useState(() => searchParams.get("conversation") ?? "");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<{ role: string; text: string }[]>([]);
   const [busy, setBusy] = useState(false);
@@ -1365,16 +1374,22 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
   const isFinance = worker?.atype === "finance";
   const isIntelligence = worker?.atype === "worker" || worker?.atype === "intelligence";
 
-  // The finance chat is the same persisted conversation as the Studio cockpit: seed the
-  // transcript from it instead of always starting blank.
+  // Load the persisted transcript for this conversation so refreshing or sharing the URL keeps history.
   useEffect(() => {
-    if (!isFinance) return;
+    if (isFinance) {
+      let cancelled = false;
+      getFinanceHistory(id)
+        .then((res) => { if (!cancelled) setMessages(res.history.map((h) => ({ role: h.role, text: h.content }))); })
+        .catch(() => undefined);
+      return () => { cancelled = true; };
+    }
+    if (!isIntelligence || !conversationId) return;
     let cancelled = false;
-    getFinanceHistory(id)
-      .then((res) => { if (!cancelled) setMessages(res.history.map((h) => ({ role: h.role, text: h.content }))); })
+    getIntelligenceChatHistory(id, conversationId)
+      .then((res) => { if (!cancelled) setMessages(res); })
       .catch(() => undefined);
     return () => { cancelled = true; };
-  }, [id, isFinance]);
+  }, [id, isFinance, isIntelligence, conversationId]);
 
   async function sendText(q: string) {
     if (!q || busy) return;
@@ -1386,9 +1401,17 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
       if (isFinance) {
         reply = { role: "assistant", text: (await financeChat(id, q)).reply };
       } else if (isIntelligence) {
-        reply = { role: "assistant", text: (await askIntelligence(conversationId, q, id)).reply };
+        const cid = conversationId || newConversationId();
+        const res = await askIntelligence(cid, q, id);
+        if (res.conversation_id && res.conversation_id !== conversationId) {
+          setConversationId(res.conversation_id);
+          const params = new URLSearchParams(searchParams.toString());
+          params.set("conversation", res.conversation_id);
+          router.replace(`?${params.toString()}`, { scroll: false });
+        }
+        reply = { role: "assistant", text: res.reply };
       } else {
-        reply = await ask(conversationId, q, id);
+        reply = await ask(conversationId || newConversationId(), q, id);
       }
       setMessages((m) => [...m, reply]);
     } catch {

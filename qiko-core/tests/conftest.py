@@ -14,6 +14,9 @@ from app.main import create_app
 # real regression and reproduced nowhere in isolation. Token expiry itself stays covered by
 # tests/test_identity_units.py::test_expired_token_rejected, which builds its own expired token.
 get_settings().access_token_ttl_seconds = 24 * 60 * 60
+get_settings().slack_client_id = "test-slack-client-id"
+get_settings().slack_client_secret = "test-slack-client-secret"
+get_settings().slack_redirect_uri = "http://localhost:8000/api/v1/channels/slack/callback"
 
 
 @pytest.fixture(autouse=True)

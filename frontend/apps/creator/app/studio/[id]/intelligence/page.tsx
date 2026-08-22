@@ -110,7 +110,7 @@ export default function IntelligenceWorkerPage() {
             )}
             {Array.from(byClass.entries()).map(([cls, items]) => (
               <div key={cls} className="space-y-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-white/40">{cls.replace(/_/g, " ")}</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-white/40">{items[0]?.class_label ?? cls.replace(/_/g, " ")}</p>
                 {items.map((d, idx) => (
                   <DiscrepancyCard key={`${cls}-${idx}`} discrepancy={d} />
                 ))}
@@ -150,28 +150,44 @@ export default function IntelligenceWorkerPage() {
   );
 }
 
+function severityColor(severity: string) {
+  if (severity === "high") return "bg-rose-500";
+  if (severity === "medium") return "bg-amber-400";
+  return "bg-slate-400";
+}
+
+function formatDate(value: string | null) {
+  if (!value) return null;
+  const d = new Date(value);
+  return isNaN(d.getTime()) ? value : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
 function DiscrepancyCard({ discrepancy: d }: { discrepancy: Discrepancy }) {
   return (
     <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4 text-sm text-white/80">
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <p className="font-medium text-white">{d.title}</p>
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div className="flex items-start gap-2">
+          <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", severityColor(d.severity))} aria-hidden="true" />
+          <p className="font-medium text-white">{d.title}</p>
+        </div>
         {d.ref && <span className="shrink-0 rounded bg-white/[0.08] px-2 py-0.5 text-xs text-white/70">{d.ref}</span>}
       </div>
       <p className="mb-3 leading-relaxed text-white/60">{d.summary}</p>
       {d.sources.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {d.sources.map((s, i) => (
-            s.url ? (
+          {d.sources.map((s, i) => {
+            const label = [s.source_label, s.actor && `by ${s.actor}`, formatDate(s.occurred_at)].filter(Boolean).join(" ");
+            return s.url ? (
               <a key={i} href={s.url} target="_blank" rel="noreferrer"
                 className="inline-flex items-center gap-1 rounded bg-white/[0.06] px-2 py-1 text-xs text-white/70 hover:bg-white/[0.10] hover:text-white">
-                <LinkIcon className="size-3" /> {s.source}
+                <LinkIcon className="size-3" /> {label}
               </a>
             ) : (
               <span key={i} className="inline-flex items-center gap-1 rounded bg-white/[0.06] px-2 py-1 text-xs text-white/70">
-                {s.source}
+                {label}
               </span>
-            )
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

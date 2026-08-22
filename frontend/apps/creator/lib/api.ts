@@ -8,6 +8,18 @@ export class ApiError extends Error {
   }
 }
 
+function extractDetail(text: string): string {
+  try {
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed.detail)) return parsed.detail.map((item: unknown) => String(item)).join(". ");
+    if (typeof parsed.detail === "string") return parsed.detail;
+    if (typeof parsed.message === "string") return parsed.message;
+  } catch {
+    // Not JSON; return the raw response.
+  }
+  return text;
+}
+
 // Double-submit CSRF: the server sets a readable (non-httpOnly) qiko_csrf cookie and requires it
 // echoed back as a header on state-changing requests (currently /auth/logout and /auth/refresh).
 function csrfToken(): string | undefined {
@@ -71,7 +83,7 @@ async function requestResponse(path: string, opts: RequestInit = {}): Promise<Re
       window.location.assign("/login");
     }
   }
-  if (!res.ok) throw new ApiError(res.status, await res.text());
+  if (!res.ok) throw new ApiError(res.status, extractDetail(await res.text()));
   return res;
 }
 
@@ -278,14 +290,18 @@ export const askIntelligence = (conversation_id: string, question: string, agent
     method: "POST",
     body: JSON.stringify({ conversation_id, question }),
   });
+export const getIntelligenceChatHistory = (agent_id: string, conversation_id: string) =>
+  request<{ role: string; text: string }[]>(`/intelligence/agents/${encodeURIComponent(agent_id)}/chat/${encodeURIComponent(conversation_id)}/history`);
 export type Discrepancy = {
   class: string;
+  class_label: string;
+  severity: "high" | "medium" | "low";
   ref: string | null;
   title: string;
   summary: string;
   claimed_at: string | null;
   evidence_at: string | null;
-  sources: { source: string; external_id: string; url: string | null; actor: string; occurred_at: string | null }[];
+  sources: { source: string; source_label: string; external_id: string; url: string | null; actor: string; occurred_at: string | null }[];
 };
 export const getDiscrepancies = (agentId: string) => request<Discrepancy[]>(`/intelligence/agents/${encodeURIComponent(agentId)}/discrepancies`);
 
@@ -483,7 +499,7 @@ async function postDocumentText<T>(path: string, documentText: string): Promise<
     method: "POST", credentials: "include", body: form,
     headers: csrf ? { "x-csrf-token": csrf } : undefined,
   });
-  if (!res.ok) throw new ApiError(res.status, await res.text());
+  if (!res.ok) throw new ApiError(res.status, extractDetail(await res.text()));
   return res.json() as Promise<T>;
 }
 // GET reads the persisted brief/compliance (no LLM). Returns null when nothing has been generated
@@ -719,7 +735,7 @@ export async function extractPack(packId: string, files: File | File[]): Promise
     method: "POST", credentials: "include", body: form,
     headers: csrf ? { "x-csrf-token": csrf } : undefined,
   });
-  if (!res.ok) throw new ApiError(res.status, await res.text());
+  if (!res.ok) throw new ApiError(res.status, extractDetail(await res.text()));
   return res.json();
 }
 
@@ -738,7 +754,7 @@ export async function ingestFile(docId: string, file: File, agentId?: string): P
     method: "POST", credentials: "include", body: form,
     headers: csrf ? { "x-csrf-token": csrf } : undefined,
   });
-  if (!res.ok) throw new ApiError(res.status, await res.text());
+  if (!res.ok) throw new ApiError(res.status, extractDetail(await res.text()));
   return res.json();
 }
 
@@ -1203,7 +1219,7 @@ export async function uploadFinanceFile(agentId: string, file: File): Promise<Fi
     method: "POST", credentials: "include", body: form,
     headers: csrf ? { "x-csrf-token": csrf } : undefined,
   });
-  if (!res.ok) throw new ApiError(res.status, await res.text());
+  if (!res.ok) throw new ApiError(res.status, extractDetail(await res.text()));
   return res.json();
 }
 

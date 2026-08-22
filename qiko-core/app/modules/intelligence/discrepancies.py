@@ -30,12 +30,39 @@ _CI_GREEN_PHRASES = (
 )
 _NEGATORS = ("not", "no", "never", "didn't", "doesn't", "isn't", "wasn't")
 
+_DISCREPANCY_LABELS: dict[str, dict[str, str]] = {
+    "claimed_not_done": {"label": "Done claims not reflected", "severity": "high"},
+    "done_without_evidence": {"label": "Done without linked work", "severity": "medium"},
+    "stalled_review": {"label": "Stalled code review", "severity": "medium"},
+    "blocked_and_silent": {"label": "Blocked and gone quiet", "severity": "high"},
+    "ci_red_but_claimed_green": {"label": "Build claim mismatch", "severity": "high"},
+    "discussed_never_tracked": {"label": "Discussed but not tracked", "severity": "low"},
+}
+
+_STATUS_LABELS: dict[str, str] = {
+    "DONE": "done",
+    "READY_TO_DEPLOY": "ready to deploy",
+    "IN_PROGRESS": "in progress",
+    "IN_REVIEW": "in review",
+    "VERIFYING": "being verified",
+    "BACKLOG": "in the backlog",
+    "BLOCKED": "blocked",
+}
+
+_SOURCE_LABELS: dict[str, str] = {
+    "qiko_track": "Qiko Track",
+    "slack": "Slack",
+    "github": "GitHub",
+}
+
 
 @dataclass(frozen=True)
 class Discrepancy:
-    """One mismatch between a claim and evidence."""
+    """One mismatch between a claim and evidence, phrased for a non-technical reader."""
 
     discrepancy_class: str
+    class_label: str
+    severity: str
     ref: str | None
     title: str
     summary: str
@@ -46,6 +73,8 @@ class Discrepancy:
     def to_dict(self) -> dict:
         return {
             "class": self.discrepancy_class,
+            "class_label": self.class_label,
+            "severity": self.severity,
             "ref": self.ref,
             "title": self.title,
             "summary": self.summary,
@@ -53,6 +82,26 @@ class Discrepancy:
             "evidence_at": _iso(self.evidence_at),
             "sources": self.sources,
         }
+
+
+def _class_meta(cls: str) -> dict[str, str]:
+    return _DISCREPANCY_LABELS.get(cls, {"label": cls.replace("_", " "), "severity": "medium"})
+
+
+def _status_label(status: str | None) -> str:
+    if not status:
+        return "not done"
+    return _STATUS_LABELS.get(status.upper(), status.lower().replace("_", " "))
+
+
+def _source_label(source: str) -> str:
+    return _SOURCE_LABELS.get(source, source)
+
+
+def _date(value: datetime | None) -> str:
+    if value is None:
+        return "unknown date"
+    return value.strftime("%d %b %Y")
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -171,14 +220,17 @@ class DiscrepancyEngine:
 
         for signal in data["slack"]:
             if _has_claim(signal.body, _COMPLETION_PHRASES):
+                meta = _class_meta("claimed_not_done")
                 return [Discrepancy(
                     discrepancy_class="claimed_not_done",
+                    class_label=meta["label"],
+                    severity=meta["severity"],
                     ref=ref,
-                    title=f"{ref} claimed complete but is {status}",
+                    title=f"Reported complete, still {_status_label(status)}",
                     summary=(
                         f"{ref} was reported complete in {signal.container} on "
-                        f"{signal.occurred_at.date().isoformat()} by {signal.actor}. "
-                        f"Qiko Track has it in {status}."
+                        f"{_date(signal.occurred_at)} by {signal.actor}, but Qiko Track "
+                        f"still shows it as {_status_label(status)}."
                     ),
                     claimed_at=signal.occurred_at,
                     evidence_at=self._latest_time(data["qiko_track"]),
@@ -195,14 +247,16 @@ class DiscrepancyEngine:
         if merged:
             return []
         latest = self._latest_signal(data["qiko_track"])
+        meta = _class_meta("done_without_evidence")
         return [Discrepancy(
             discrepancy_class="done_without_evidence",
+            class_label=meta["label"],
+            severity=meta["severity"],
             ref=ref,
-            title=f"{ref} is {state.get('status')} with no merged PR",
+            title="Marked done with no linked code change",
             summary=(
-                f"{ref} moved to {state.get('status')} on "
-                f"{latest.occurred_at.date().isoformat()}. No merged PR or commit "
-                "signal references it."
+                f"{ref} was marked done on {_date(latest.occurred_at)}, but no pull "
+                "request or commit has been linked to it."
             ),
             claimed_at=None,
             evidence_at=latest.occurred_at,
@@ -224,13 +278,16 @@ class DiscrepancyEngine:
             return []
         if now - newest_requested.occurred_at < self.review_stall:
             return []
+        meta = _class_meta("stalled_review")
         return [Discrepancy(
             discrepancy_class="stalled_review",
+            class_label=meta["label"],
+            severity=meta["severity"],
             ref=ref,
-            title=f"{ref} has a review request older than {self.review_stall}",
+            title="Code review has been waiting too long",
             summary=(
-                f"Review requested on {newest_requested.occurred_at.date().isoformat()} "
-                f"for {ref} but no approval or merge since."
+                f"A review was requested for {ref} on {_date(newest_requested.occurred_at)} "
+                "and has not been approved or merged since."
             ),
             claimed_at=None,
             evidence_at=newest_requested.occurred_at,
@@ -249,14 +306,18 @@ class DiscrepancyEngine:
         after = [s for s in data["slack"] if s.occurred_at > latest_block.occurred_at]
         if after:
             return []
+        reason = meta.get("blocked_reason")
+        reason_text = f": {reason}" if reason else ""
+        meta = _class_meta("blocked_and_silent")
         return [Discrepancy(
             discrepancy_class="blocked_and_silent",
+            class_label=meta["label"],
+            severity=meta["severity"],
             ref=ref,
-            title=f"{ref} is blocked and silent",
+            title="Blocked work has had no follow-up",
             summary=(
-                f"{ref} was blocked on {latest_block.occurred_at.date().isoformat()}"
-                f"{(': ' + meta.get('blocked_reason')) if meta.get('blocked_reason') else ''}. "
-                "No Slack activity since."
+                f"{ref} was blocked on {_date(latest_block.occurred_at)}{reason_text}. "
+                "No one has discussed it since."
             ),
             claimed_at=None,
             evidence_at=latest_block.occurred_at,
@@ -275,14 +336,17 @@ class DiscrepancyEngine:
             if signal.occurred_at > latest_failure.occurred_at:
                 # Claim after the failure may be referring to a later fix.
                 continue
+            meta = _class_meta("ci_red_but_claimed_green")
             return [Discrepancy(
                 discrepancy_class="ci_red_but_claimed_green",
+                class_label=meta["label"],
+                severity=meta["severity"],
                 ref=ref,
-                title=f"{ref} CI claimed green but latest run failed",
+                title="Build failure contradicted by a passing claim",
                 summary=(
-                    f"{signal.actor} said CI is green on "
-                    f"{signal.occurred_at.date().isoformat()}, but the latest failed CI "
-                    f"run for {ref} was on {latest_failure.occurred_at.date().isoformat()}."
+                    f"{signal.actor} said the build is passing on "
+                    f"{_date(signal.occurred_at)}, but the latest recorded failed build for "
+                    f"{ref} was on {_date(latest_failure.occurred_at)}."
                 ),
                 claimed_at=signal.occurred_at,
                 evidence_at=latest_failure.occurred_at,
@@ -305,14 +369,17 @@ class DiscrepancyEngine:
             after = [s for s in qt_created if s.occurred_at > signal.occurred_at]
             if after:
                 continue
+            meta = _class_meta("discussed_never_tracked")
             results.append(Discrepancy(
                 discrepancy_class="discussed_never_tracked",
+                class_label=meta["label"],
+                severity=meta["severity"],
                 ref=None,
-                title="Flagged Slack thread has no tracked ticket",
+                title="Important Slack message never became a ticket",
                 summary=(
                     f"A flagged message in {signal.container} on "
-                    f"{signal.occurred_at.date().isoformat()} has no ticket reference and no "
-                    "Qiko Track ticket was created after it."
+                    f"{_date(signal.occurred_at)} has no ticket reference and no "
+                    "follow-up ticket was created."
                 ),
                 claimed_at=signal.occurred_at,
                 evidence_at=None,
@@ -338,6 +405,7 @@ class DiscrepancyEngine:
             seen.add(key)
             sources.append({
                 "source": s.source,
+                "source_label": _source_label(s.source),
                 "external_id": s.external_id,
                 "url": s.url,
                 "actor": s.actor,
