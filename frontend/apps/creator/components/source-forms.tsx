@@ -264,7 +264,9 @@ export function QikoTrackForm({
         <p className="text-xs text-muted-foreground">
           {c.service_token_used ? "Connected via service token" : `Token: ${c.token_masked || "saved"}`}
         </p>
-        <p className="text-xs text-muted-foreground">Project keys: {c.project_keys.join(", ")}</p>
+        <p className="text-xs text-muted-foreground">
+          {c.project_keys.length > 1 ? `All Qiko Track projects (${c.project_keys.length})` : `Project key: ${c.project_keys.join(", ")}`}
+        </p>
         <div className="space-y-1">
           <Label className="text-xs">Base URL</Label>
           <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://track.qiko.ai" />
@@ -338,11 +340,11 @@ export function QikoTrackForm({
       >
         <div className="space-y-4">
           <h2 id="qiko-track-connect-title" className="text-lg font-semibold">Connect Qiko Track</h2>
-          <p className="text-sm text-muted-foreground">A new project will be created with the key below. You can edit it.</p>
+          <p className="text-sm text-muted-foreground">This worker will watch all Qiko Track projects. Choose or create the project where backlog proposals will be created.</p>
 
           {existing.length > 0 && (
             <div className="space-y-1">
-              <Label className="text-xs">Project</Label>
+              <Label className="text-xs">Backlog project</Label>
               <Select value={existingKey} onChange={(e) => setExistingKey(e.target.value)}>
                 <option value="">Create new</option>
                 {existing.map((p) => (
@@ -353,11 +355,11 @@ export function QikoTrackForm({
           )}
 
           <div className="space-y-1">
-            <Label className="text-xs">Project key</Label>
+            <Label className="text-xs">Backlog project key</Label>
             <Input value={projectKey} onChange={(e) => setProjectKey(e.target.value.toUpperCase())} placeholder="QIW" />
           </div>
           <div className="space-y-1">
-            <Label className="text-xs">Project name</Label>
+            <Label className="text-xs">Backlog project name</Label>
             <Input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder="Qiko Intelligence Worker" />
           </div>
           <div className="space-y-1">

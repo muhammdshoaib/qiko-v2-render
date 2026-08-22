@@ -545,7 +545,13 @@ async def connect_source(
                 except (QikoTrackClientError, SsrfError) as exc:
                     raise HTTPException(status_code=502, detail=f"Qiko Track project creation failed: {exc}") from exc
 
+            seen = {project_key}
             project_keys = [project_key]
+            for p in existing:
+                key = (p.get("key") or "").upper()
+                if key and key not in seen:
+                    seen.add(key)
+                    project_keys.append(key)
             patch = {
                 meta["added"]: True,
                 meta["service_token"]: True,
