@@ -3107,6 +3107,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/intelligence/agents/{agent_id}/sources/{key}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Source Settings
+         * @description Update per-source settings without rotating credentials.
+         */
+        post: operations["set_source_settings_api_v1_intelligence_agents__agent_id__sources__key__settings_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/intelligence/agents/{agent_id}/sources/{key}/test": {
         parameters: {
             query?: never;
@@ -7442,6 +7462,30 @@ export interface components {
         SlackWatchChannelsBody: {
             /** Channel Ids */
             channel_ids?: string[];
+        };
+        /**
+         * SourceSettingsBody
+         * @description Update per-source settings without rotating the credential.
+         */
+        SourceSettingsBody: {
+            /** Base Url */
+            base_url?: string | null;
+            /** Digest Interval Minutes */
+            digest_interval_minutes?: number | null;
+            /** Heads Up Timeout Minutes */
+            heads_up_timeout_minutes?: number | null;
+            /** Project Keys */
+            project_keys?: string[] | null;
+            /** Purposes */
+            purposes?: string[] | null;
+            /** Repo Allowlist */
+            repo_allowlist?: string[] | null;
+            /** Summary Interval Minutes */
+            summary_interval_minutes?: number | null;
+            /** Watched Branches */
+            watched_branches?: string[] | null;
+            /** Watched Channels */
+            watched_channels?: string[] | null;
         };
         /** SpeakBody */
         SpeakBody: {
@@ -13917,6 +13961,44 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_source_settings_api_v1_intelligence_agents__agent_id__sources__key__settings_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SourceSettingsBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

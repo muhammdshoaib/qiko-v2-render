@@ -361,3 +361,84 @@ def test_qiko_track_auto_connect_reuses_existing_project(client, monkeypatch):
     assert r.status_code == 200
     assert r.json()["connected"] is True
     assert created == []
+
+
+def test_set_source_settings_stores_and_returns_fields(client):
+    client.post(
+        "/api/v1/intelligence/agents/w1/sources/github",
+        cookies=C,
+        json={"token": "ghp_test", "repo_allowlist": ["acme/api"], "watched_branches": ["main"]},
+    )
+    r = client.post(
+        "/api/v1/intelligence/agents/w1/sources/github/settings",
+        cookies=C,
+        json={"repo_allowlist": ["acme/web"], "watched_branches": ["main", "develop"]},
+    )
+    assert r.status_code == 200
+    assert r.json()["settings"]["repo_allowlist"] == ["acme/web"]
+    assert r.json()["settings"]["watched_branches"] == ["main", "develop"]
+
+    conn = client.get("/api/v1/intelligence/agents/w1/sources/github/connection", cookies=C)
+    assert conn.status_code == 200
+    assert conn.json()["settings"]["repo_allowlist"] == ["acme/web"]
+
+
+def test_set_source_settings_ignores_fields_for_other_source(client):
+    client.post(
+        "/api/v1/intelligence/agents/w1/sources/qiko_track",
+        cookies=C,
+        json={"token": "qt_token", "project_keys": ["QIW"], "base_url": "https://track.example.com"},
+    )
+    r = client.post(
+        "/api/v1/intelligence/agents/w1/sources/qiko_track/settings",
+        cookies=C,
+        json={"project_keys": ["QIW", "PROJ-1"], "base_url": "https://track.qiko.ai", "repo_allowlist": ["should", "be", "ignored"]},
+    )
+    assert r.status_code == 200
+    assert r.json()["settings"]["project_keys"] == ["QIW", "PROJ-1"]
+    assert r.json()["settings"]["base_url"] == "https://track.qiko.ai"
+
+
+def test_slack_settings_include_purposes_and_intervals(client, monkeypatch):
+    from app.modules.channels.slack_oauth import SlackInstallation
+
+    install = SlackInstallation(
+        tenant="intelco", worker_id="w1", team_id="T123",
+        bot_token="xoxb-test", bot_user_id="U123",
+    )
+    monkeypatch.setattr(
+        client.app.state.slack_oauth.store, "find_for_worker",
+        lambda tenant, worker_id: install,
+    )
+
+    r = client.post(
+        "/api/v1/intelligence/agents/w1/sources/slack/settings",
+        cookies=C,
+        json={
+            "watched_channels": ["C1", "C2"],
+            "purposes": ["monitor", "digest"],
+            "summary_interval_minutes": 30,
+            "digest_interval_minutes": 120,
+            "heads_up_timeout_minutes": 15,
+        },
+    )
+    assert r.status_code == 200
+    settings = r.json()["settings"]
+    assert settings["watched_channels"] == ["C1", "C2"]
+    assert settings["purposes"] == ["monitor", "digest"]
+    assert settings["summary_interval_minutes"] == 30
+    assert settings["digest_interval_minutes"] == 120
+    assert settings["heads_up_timeout_minutes"] == 15
+
+    conn = client.get("/api/v1/intelligence/agents/w1/sources/slack/connection", cookies=C)
+    assert conn.status_code == 200
+    assert conn.json()["settings"]["digest_interval_minutes"] == 120
+
+
+def test_set_source_settings_rejects_unknown_source(client):
+    r = client.post(
+        "/api/v1/intelligence/agents/w1/sources/nope/settings",
+        cookies=C,
+        json={"repo_allowlist": ["acme/api"]},
+    )
+    assert r.status_code == 404

@@ -87,6 +87,21 @@ class SlackWatchChannelsBody(BaseModel):
     channel_ids: list[str] = Field(default_factory=list)
 
 
+class SourceSettingsBody(BaseModel):
+    """Update per-source settings without rotating the credential."""
+    model_config = ConfigDict(extra="forbid")
+
+    repo_allowlist: list[str] | None = None
+    watched_branches: list[str] | None = None
+    project_keys: list[str] | None = None
+    base_url: str | None = None
+    watched_channels: list[str] | None = None
+    purposes: list[str] | None = None
+    summary_interval_minutes: int | None = Field(default=None, ge=1)
+    digest_interval_minutes: int | None = Field(default=None, ge=1)
+    heads_up_timeout_minutes: int | None = Field(default=None, ge=1)
+
+
 class PipelineRunCreate(BaseModel):
     subject: str = Field(min_length=1)
     facets: list[str] = Field(min_length=1, max_length=20)
@@ -204,8 +219,54 @@ _SOURCE_CONFIG = {
 }
 
 
+_SOURCE_SETTINGS_BODY_TO_CONFIG = {
+    "repo_allowlist": "github_repo_allowlist",
+    "watched_branches": "github_watched_branches",
+    "project_keys": "qiko_track_project_keys",
+    "base_url": "qiko_track_base_url",
+    "watched_channels": "slack_watched_channels",
+    "purposes": "slack_purposes",
+    "summary_interval_minutes": "slack_summary_interval_minutes",
+    "digest_interval_minutes": "slack_digest_interval_minutes",
+    "heads_up_timeout_minutes": "slack_heads_up_timeout_minutes",
+}
+
+
 def _mask(secret: str) -> str:
     return f"{secret[:4]}{'*' * max(len(secret) - 4, 4)}" if secret else ""
+
+
+def _settings_patch(body: SourceSettingsBody) -> dict:
+    """Build a config patch from a settings body, dropping unset fields."""
+    patch = {}
+    for body_field, config_key in _SOURCE_SETTINGS_BODY_TO_CONFIG.items():
+        value = getattr(body, body_field)
+        if value is not None:
+            patch[config_key] = value
+    return patch
+
+
+def _source_settings_for_key(key: str, cfg: dict) -> dict:
+    """Return the stored settings for a source as an API-friendly dict."""
+    if key == "github":
+        return {
+            "repo_allowlist": cfg.get("github_repo_allowlist") or [],
+            "watched_branches": cfg.get("github_watched_branches") or [],
+        }
+    if key == "qiko_track":
+        return {
+            "project_keys": cfg.get("qiko_track_project_keys") or [],
+            "base_url": cfg.get("qiko_track_base_url") or "",
+        }
+    if key == "slack":
+        return {
+            "watched_channels": cfg.get("slack_watched_channels") or [],
+            "purposes": cfg.get("slack_purposes") or ["monitor", "digest"],
+            "summary_interval_minutes": cfg.get("slack_summary_interval_minutes") or 60,
+            "digest_interval_minutes": cfg.get("slack_digest_interval_minutes") or 1440,
+            "heads_up_timeout_minutes": cfg.get("slack_heads_up_timeout_minutes") or 60,
+        }
+    return {}
 
 
 def _qiko_track_credential(cfg: dict) -> str | None:
@@ -741,6 +802,7 @@ async def get_source_connection(
             "token_masked": _mask(plaintext or ""),
             "repo_allowlist": cfg.get("github_repo_allowlist") or [],
             "watched_branches": cfg.get("github_watched_branches") or [],
+            "settings": _source_settings_for_key(key, cfg),
         }
     if key == "qiko_track":
         plaintext = _plaintext_of_config(cfg, _SOURCE_CONFIG["qiko_track"]["token"])
@@ -753,15 +815,18 @@ async def get_source_connection(
             "token_masked": _mask(plaintext or ""),
             "project_keys": cfg.get("qiko_track_project_keys") or [],
             "base_url": cfg.get("qiko_track_base_url") or "",
+            "settings": _source_settings_for_key(key, cfg),
         }
     if key == "slack":
         inst = await _slack_installation_for_agent(slack_oauth.store, tenant, agent_id)
+        slack_settings = _source_settings_for_key(key, cfg)
         return {
             "key": key,
             "connected": inst is not None and bool(cfg.get("slack_watched_channels")),
             "team_id": inst.team_id if inst else None,
-            "watched_channels": cfg.get("slack_watched_channels") or [],
+            "watched_channels": slack_settings["watched_channels"],
             "channels": [],
+            "settings": slack_settings,
         }
     raise HTTPException(status_code=404, detail="source not found")
 
@@ -772,6 +837,53 @@ async def _slack_installation_for_agent(store, tenant: str, agent_id: str):
         return await asyncio.to_thread(store.find_for_worker, tenant, agent_id)
     except Exception:  # noqa: BLE001
         return None
+
+
+_SOURCE_SETTINGS_PREFIXES = {
+    "github": "github_",
+    "qiko_track": "qiko_track_",
+    "slack": "slack_",
+}
+
+
+@router.post("/agents/{agent_id}/sources/{key}/settings")
+async def set_source_settings(
+    agent_id: str, key: str, body: SourceSettingsBody, request: Request,
+    tenant: str = Depends(authed_tenant),
+    claims: dict = Depends(current_claims),
+    _role: dict = Depends(require_role(Role.editor)),
+    agents: AgentService = Depends(get_agents),
+    catalog: SourceCatalog = Depends(get_source_catalog),
+) -> dict:
+    """Update per-source settings without rotating credentials."""
+    _worker, recheck = await _resolve_worker(request, tenant, agent_id)
+    definition = catalog.definition(key)
+    if definition is None or key not in _SOURCE_SETTINGS_PREFIXES:
+        raise HTTPException(status_code=404, detail="source not found")
+
+    agent = await agents.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+
+    prefix = _SOURCE_SETTINGS_PREFIXES[key]
+    full_patch = _settings_patch(body)
+    patch = {k: v for k, v in full_patch.items() if k.startswith(prefix)}
+
+    if patch:
+        def build_record(previous: dict) -> dict:
+            return audit.build_row(audit.AuditEvent(
+                action=audit_actions.WORKER_CONFIG_CHANGED, target_id=agent_id,
+                target_label=agent.name, tenant_id=tenant,
+                actor_type=audit.USER, actor_id=str(claims.get("sub") or ""),
+                actor_label=str(claims.get("email") or claims.get("sub") or ""),
+                changes=patch,
+                metadata={"previous": {k: previous.get(k) for k in patch}}))
+
+        await agents.update_config(tenant, agent_id, patch, audit=build_record)
+
+    await recheck()
+    updated = await agents.get(tenant, agent_id)
+    return {"settings": _source_settings_for_key(key, updated.config or {})}
 
 
 @router.delete("/agents/{agent_id}/sources/{key}")

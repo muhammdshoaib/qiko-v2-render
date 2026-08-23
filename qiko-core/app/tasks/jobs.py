@@ -358,6 +358,7 @@ def _slack_worker_from_state():
         installation_store=app.state.slack_oauth.store,
         cost_guard=getattr(app.state, "cost_guard", None),
         usage_store=getattr(app.state, "ai_usage", None),
+        agent_store=app.state.agents,
     )
 
 
@@ -368,7 +369,8 @@ def _slack_worker_from_sessionmaker(sessionmaker, *, sync_sessionmaker=None):
     passed in: an earlier version left it None, so the job resolved no bot token, raised after the
     model had already been billed, and arq retried it three times.
     """
-    from app.db.stores import SqlSlackChannelStore, SqlCostCapStore, SqlUsageStore
+    from app.db.stores import SqlAgentStore, SqlSlackChannelStore, SqlCostCapStore, SqlUsageStore
+    from app.modules.agents.service import AgentService
     from app.modules.ai.caps import CostGuard
     from app.modules.ai.gateway import get_provider
 
@@ -387,6 +389,7 @@ def _slack_worker_from_sessionmaker(sessionmaker, *, sync_sessionmaker=None):
         provider=get_provider(),
         cost_guard=CostGuard(caps=SqlCostCapStore(sessionmaker), usage=usage_store),
         usage_store=usage_store,
+        agent_store=AgentService(store=SqlAgentStore(sessionmaker)),
     )
 
 

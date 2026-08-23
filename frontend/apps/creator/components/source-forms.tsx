@@ -13,6 +13,7 @@ import {
   getIntelligenceQikoTrackPreview,
   getIntelligenceSourceConnection,
   listSlackWatchedChannels,
+  setIntelligenceSourceSettings,
   setSlackWatchedChannels,
   testIntelligenceSource,
 } from "@/lib/api";
@@ -21,6 +22,10 @@ type OnChange = () => void;
 
 function parseList(value: string) {
   return value.split(",").map((s) => s.trim()).filter(Boolean);
+}
+
+function formatList(items: string[]) {
+  return items.join(", ");
 }
 
 type TestDialogState = {
@@ -116,9 +121,39 @@ export function GithubForm({
     );
   }
 
+  const [repos, setRepos] = useState("");
+  const [branches, setBranches] = useState("");
+
+  const save = useMutation({
+    mutationFn: () => setIntelligenceSourceSettings(agentId, "github", {
+      repo_allowlist: parseList(repos),
+      watched_branches: parseList(branches),
+    }),
+    onSuccess: () => { setMessage(""); onChange(); },
+    onError: (e: Error) => setMessage(e.message),
+  });
+
+  useEffect(() => {
+    if (c) {
+      setRepos(formatList(c.settings?.repo_allowlist ?? c.repo_allowlist ?? []));
+      setBranches(formatList(c.settings?.watched_branches ?? c.watched_branches ?? []));
+    }
+  }, [c]);
+
   return (
     <div className="space-y-3">
+      <div className="space-y-1">
+        <Label className="text-xs">Repo allowlist</Label>
+        <Input value={repos} onChange={(e) => setRepos(e.target.value)} placeholder="acme/api, acme/web" />
+      </div>
+      <div className="space-y-1">
+        <Label className="text-xs">Watched branches</Label>
+        <Input value={branches} onChange={(e) => setBranches(e.target.value)} placeholder="main, develop" />
+      </div>
       <div className="flex flex-wrap gap-2">
+        <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
+          {save.isPending && <Loader2 className="size-4 animate-spin" />} Save
+        </Button>
         <Button variant="outline" size="sm" disabled={test.isPending} onClick={() => test.mutate()}>
           {test.isPending && <Loader2 className="size-4 animate-spin" />} Test
         </Button>
@@ -126,6 +161,7 @@ export function GithubForm({
           {disconnect.isPending && <Loader2 className="size-4 animate-spin" />} Disconnect
         </Button>
       </div>
+      {message && <p className="text-xs text-destructive">{message}</p>}
       <TestResultDialog state={testDialog} onClose={() => setTestDialog((s) => ({ ...s, open: false }))} />
     </div>
   );
@@ -218,10 +254,37 @@ export function QikoTrackForm({
     }
   }, [existingKey, preview.data]);
 
+  const save = useMutation({
+    mutationFn: () => setIntelligenceSourceSettings(agentId, "qiko_track", {
+      project_keys: parseList(projectKeys),
+      base_url: baseUrl || undefined,
+    }),
+    onSuccess: () => { setMessage(""); onChange(); },
+    onError: (e: Error) => setMessage(e.message),
+  });
+
+  useEffect(() => {
+    if (c) {
+      setProjectKeys(formatList(c.settings?.project_keys ?? c.project_keys ?? []));
+      setBaseUrl(c.settings?.base_url ?? c.base_url ?? "");
+    }
+  }, [c]);
+
   if (c?.connected) {
     return (
       <div className="space-y-3">
+        <div className="space-y-1">
+          <Label className="text-xs">Base URL</Label>
+          <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://track.qiko.ai" />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Project keys</Label>
+          <Input value={projectKeys} onChange={(e) => setProjectKeys(e.target.value)} placeholder="QIW, PROJ-1" />
+        </div>
         <div className="flex flex-wrap gap-2">
+          <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
+            {save.isPending && <Loader2 className="size-4 animate-spin" />} Save
+          </Button>
           <Button variant="outline" size="sm" disabled={test.isPending} onClick={() => test.mutate()}>
             {test.isPending && <Loader2 className="size-4 animate-spin" />} Test
           </Button>
@@ -229,6 +292,7 @@ export function QikoTrackForm({
             {disconnect.isPending && <Loader2 className="size-4 animate-spin" />} Disconnect
           </Button>
         </div>
+        {message && <p className="text-xs text-destructive">{message}</p>}
         <TestResultDialog state={testDialog} onClose={() => setTestDialog((s) => ({ ...s, open: false }))} />
       </div>
     );
@@ -342,6 +406,10 @@ export function SlackForm({
   const [message, setMessage] = useState<string | null>(null);
   const [polling, setPolling] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [purposes, setPurposes] = useState<Set<string>>(new Set(["monitor", "digest"]));
+  const [summaryInterval, setSummaryInterval] = useState(60);
+  const [digestInterval, setDigestInterval] = useState(1440);
+  const [headsUpTimeout, setHeadsUpTimeout] = useState(60);
   const c = connection?.key === "slack" ? connection : undefined;
 
   const watched = useQuery({
@@ -351,8 +419,13 @@ export function SlackForm({
   });
 
   useEffect(() => {
-    const ids = new Set(watched.data?.watched_channels ?? c?.watched_channels ?? []);
+    const ids = new Set(watched.data?.watched_channels ?? c?.settings?.watched_channels ?? c?.watched_channels ?? []);
     setSelected(ids);
+    const ps = new Set(c?.settings?.purposes ?? ["monitor", "digest"]);
+    setPurposes(ps);
+    setSummaryInterval(c?.settings?.summary_interval_minutes ?? 60);
+    setDigestInterval(c?.settings?.digest_interval_minutes ?? 1440);
+    setHeadsUpTimeout(c?.settings?.heads_up_timeout_minutes ?? 60);
   }, [watched.data, c]);
 
   const connect = useMutation({
@@ -370,8 +443,14 @@ export function SlackForm({
     onError: (e: Error) => setMessage(e.message),
   });
 
-  const saveChannels = useMutation({
-    mutationFn: () => setSlackWatchedChannels(agentId, Array.from(selected)),
+  const save = useMutation({
+    mutationFn: () => setIntelligenceSourceSettings(agentId, "slack", {
+      watched_channels: Array.from(selected),
+      purposes: Array.from(purposes),
+      summary_interval_minutes: summaryInterval,
+      digest_interval_minutes: digestInterval,
+      heads_up_timeout_minutes: headsUpTimeout,
+    }),
     onSuccess: () => { setMessage(null); onChange(); },
     onError: (e: Error) => setMessage(e.message),
   });
@@ -412,12 +491,55 @@ export function SlackForm({
   }
 
   const channels = watched.data?.channels ?? [];
+  const purposeOptions = [
+    { key: "monitor", label: "Monitor" },
+    { key: "summarize", label: "Summarize" },
+    { key: "digest", label: "Digest" },
+    { key: "heads_up", label: "Heads-up" },
+  ];
+
+  const togglePurpose = (key: string, checked: boolean) => {
+    const next = new Set(purposes);
+    if (checked) next.add(key);
+    else next.delete(key);
+    setPurposes(next);
+  };
 
   return (
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">Team: {c.team_id}</p>
+      <div className="space-y-2">
+        <p className="text-xs font-medium text-white/70">Purposes</p>
+        <div className="flex flex-wrap gap-3">
+          {purposeOptions.map((p) => (
+            <label key={p.key} className="flex items-center gap-2 text-xs text-white/80">
+              <input
+                type="checkbox"
+                className="size-4 rounded border-white/[0.08] bg-white/[0.05]"
+                checked={purposes.has(p.key)}
+                onChange={(e) => togglePurpose(p.key, e.target.checked)}
+              />
+              {p.label}
+            </label>
+          ))}
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="space-y-1">
+          <Label className="text-xs">Summary interval (min)</Label>
+          <Input type="number" min={1} value={summaryInterval} onChange={(e) => setSummaryInterval(Number(e.target.value))} />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Digest interval (min)</Label>
+          <Input type="number" min={1} value={digestInterval} onChange={(e) => setDigestInterval(Number(e.target.value))} />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Heads-up timeout (min)</Label>
+          <Input type="number" min={1} value={headsUpTimeout} onChange={(e) => setHeadsUpTimeout(Number(e.target.value))} />
+        </div>
+      </div>
       <div className="max-h-40 space-y-2 overflow-y-auto rounded border border-white/[0.08] bg-white/[0.03] p-2">
-        {channels.length === 0 && <p className="text-xs text-muted-foreground">No public channels found.</p>}
+        {channels.length === 0 && <p className="text-xs text-muted-foreground">No public channels found. Add channel IDs below if they are not listed.</p>}
         {channels.map((ch) => (
           <label key={ch.id} className="flex items-center gap-2 text-xs text-white/80">
             <input
@@ -436,8 +558,8 @@ export function SlackForm({
         ))}
       </div>
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" disabled={saveChannels.isPending} onClick={() => saveChannels.mutate()}>
-          {saveChannels.isPending && <Loader2 className="size-4 animate-spin" />} Save channels
+        <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
+          {save.isPending && <Loader2 className="size-4 animate-spin" />} Save
         </Button>
         <Button variant="destructive" size="sm" disabled={disconnect.isPending} onClick={() => disconnect.mutate()}>
           {disconnect.isPending && <Loader2 className="size-4 animate-spin" />} Disconnect
