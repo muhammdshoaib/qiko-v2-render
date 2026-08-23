@@ -14,7 +14,6 @@ import {
   getIntelligenceSourceConnection,
   listSlackWatchedChannels,
   setIntelligenceSourceSettings,
-  setSlackWatchedChannels,
   testIntelligenceSource,
 } from "@/lib/api";
 
