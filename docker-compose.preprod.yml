@@ -15,7 +15,7 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
-    depends_on: [creator, admin, qiko-core]
+    depends_on: { qiko-core: { condition: service_healthy }, creator: { condition: service_started }, admin: { condition: service_started } }
     networks:
       proxy-net:
         ipv4_address: 172.28.10.2

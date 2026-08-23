@@ -3,13 +3,14 @@ and grounded chat over captured signals.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Literal
 
 import jwt
-from fastapi import APIRouter, Body, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Body, Depends, File, HTTPException, Query, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -19,6 +20,9 @@ from app.core.deps import (
     authed_tenant, current_claims, get_agents, get_chat, get_slack_oauth,
     require_role, resolve_tenant_worker, stored_credential,
 )
+from app.core.tenancy import reset_tenant, set_tenant
+from app.modules.ai import usage
+from app.modules.ai.caps import CostGuard
 from app.tasks.queue import EagerTaskQueue
 from app.modules.audit import credentials as audit_credentials
 from app.modules.audit import registry as audit_actions
@@ -27,6 +31,11 @@ from app.modules.agents.service import AgentService
 from app.modules.identity.rbac import Role
 from app.modules.intelligence.catalog import SourceCatalog, UnknownSource
 from app.modules.intelligence.chat import IntelligenceChat
+from app.modules.intelligence.digest import (
+    DigestUnavailable,
+    generate_heads_up_digest,
+    window_start,
+)
 from app.modules.intelligence.discrepancies import DiscrepancyEngine
 from app.modules.intelligence.documents import SUPPORTED_DOCUMENT_EXTENSIONS, UnsupportedDocumentError
 from app.modules.intelligence.ingest import ingest_source
@@ -1067,13 +1076,64 @@ async def list_discrepancies(
     agent_id: str, request: Request,
     tenant: str = Depends(authed_tenant),
     _claims: dict = Depends(require_role(Role.admin)),
-) -> list[dict]:
+    project: list[str] | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
     """Surface claim-vs-evidence discrepancies for this worker. Owner/admin only."""
     _worker, recheck = await _resolve_worker(request, tenant, agent_id)
     engine = DiscrepancyEngine(request.app.state.intelligence_signal_store)
-    discrepancies = await engine.analyze(tenant, agent_id)
+    project_keys = set(project) if project else None
+    discrepancies, total, counts = await engine.analyze_paginated(
+        tenant, agent_id, project_keys=project_keys, limit=limit, offset=offset)
+    items = [d.to_dict() for d in discrepancies]
+    projects = [
+        {"project_key": key, "count": count}
+        for key, count in sorted(counts.items(), key=lambda x: x[1], reverse=True)
+    ]
     await recheck()
-    return [d.to_dict() for d in discrepancies]
+    return {"items": items, "total": total, "projects": projects}
+
+
+@router.get("/agents/{agent_id}/discrepancies/digest")
+async def get_discrepancy_digest(
+    agent_id: str, request: Request,
+    tenant: str = Depends(authed_tenant),
+    _claims: dict = Depends(require_role(Role.admin)),
+    agents: AgentService = Depends(get_agents),
+    project: list[str] | None = Query(default=None),
+    window: Literal["daily", "weekly"] = Query(default="daily"),
+) -> dict:
+    """AI-generated heads-up digest for the selected window. Owner/admin only."""
+    _worker, recheck = await _resolve_worker(request, tenant, agent_id)
+    engine = DiscrepancyEngine(request.app.state.intelligence_signal_store)
+    project_keys = set(project) if project else None
+    agent = await agents.get(tenant, agent_id)
+    if agent is not None and not project_keys:
+        active_projects = (agent.config or {}).get("discrepancy_active_projects") or []
+        if active_projects:
+            project_keys = set(active_projects)
+    since = window_start(window)
+    discrepancies = await engine.analyze(
+        tenant, agent_id, since=since, project_keys=project_keys)
+
+    cost_guard = CostGuard(caps=request.app.state.cost_caps, usage=request.app.state.ai_usage)
+    decision = await cost_guard.check(tenant, agent_id)
+    if not decision.allowed:
+        raise HTTPException(status_code=402, detail="cost cap reached")
+
+    token = set_tenant(tenant)
+    events: list[usage.UsageEvent] = []
+    try:
+        with usage.scope() as events:
+            digest = await asyncio.to_thread(generate_heads_up_digest, discrepancies, window)
+    except DigestUnavailable as exc:
+        raise HTTPException(status_code=503, detail="digest unavailable") from exc
+    finally:
+        reset_tenant(token)
+        await usage.flush(request.app.state.ai_usage, events)
+    await recheck()
+    return digest.__dict__
 
 
 @router.get("/agents/{agent_id}/metrics")

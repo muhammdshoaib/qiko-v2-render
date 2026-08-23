@@ -2770,6 +2770,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/intelligence/agents/{agent_id}/discrepancies/digest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Discrepancy Digest
+         * @description AI-generated heads-up digest for the selected window. Owner/admin only.
+         */
+        get: operations["get_discrepancy_digest_api_v1_intelligence_agents__agent_id__discrepancies_digest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/intelligence/agents/{agent_id}/documents": {
         parameters: {
             query?: never;
@@ -13241,7 +13261,11 @@ export interface operations {
     };
     list_discrepancies_api_v1_intelligence_agents__agent_id__discrepancies_get: {
         parameters: {
-            query?: never;
+            query?: {
+                project?: string[] | null;
+                limit?: number;
+                offset?: number;
+            };
             header?: never;
             path: {
                 agent_id: string;
@@ -13258,7 +13282,43 @@ export interface operations {
                 content: {
                     "application/json": {
                         [key: string]: unknown;
-                    }[];
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_discrepancy_digest_api_v1_intelligence_agents__agent_id__discrepancies_digest_get: {
+        parameters: {
+            query?: {
+                project?: string[] | null;
+                window?: "daily" | "weekly";
+            };
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

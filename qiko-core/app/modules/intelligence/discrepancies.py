@@ -19,6 +19,7 @@ DONE_STATUSES = {"DONE", "READY_TO_DEPLOY"}
 TICKET_KEY_RE = re.compile(r"\b([A-Z][A-Z0-9]*-\d+)\b")
 PR_REF_RE = re.compile(r"\b([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#(\d+)\b")
 BRANCH_REF_RE = re.compile(r"(?:feature|fix|chore)/([A-Za-z0-9]+-\d+)", re.IGNORECASE)
+PROJECT_KEY_RE = re.compile(r"^([A-Z][A-Z0-9]*)-")
 
 _COMPLETION_PHRASES = (
     "done", "finished", "completed", "complete", "shipped", "deployed",
@@ -69,17 +70,21 @@ class Discrepancy:
     claimed_at: datetime | None
     evidence_at: datetime | None
     sources: list[dict] = field(default_factory=list)
+    project_key: str | None = None
 
     def to_dict(self) -> dict:
+        occurred_at = self.evidence_at or self.claimed_at
         return {
             "class": self.discrepancy_class,
             "class_label": self.class_label,
             "severity": self.severity,
             "ref": self.ref,
+            "project_key": self.project_key,
             "title": self.title,
             "summary": self.summary,
             "claimed_at": _iso(self.claimed_at),
             "evidence_at": _iso(self.evidence_at),
+            "occurred_at": _iso(occurred_at),
             "sources": self.sources,
         }
 
@@ -125,6 +130,22 @@ def _extract_refs(text: str) -> list[str]:
     return sorted(refs)
 
 
+def _project_key(ref: str | None, signals: list[Signal]) -> str | None:
+    """Best-effort project key for a discrepancy."""
+    if ref:
+        match = PROJECT_KEY_RE.match(ref)
+        if match:
+            return match.group(1)
+    for signal in signals:
+        if signal.source == "qiko_track" and signal.ref:
+            match = PROJECT_KEY_RE.match(signal.ref)
+            if match:
+                return match.group(1)
+        if signal.source == "qiko_track" and signal.container:
+            return signal.container.split("/")[-1].upper()
+    return None
+
+
 def _has_claim(text: str, phrases: tuple[str, ...]) -> bool:
     """True when `text` contains a positive claim from `phrases`."""
     text = (text or "").lower()
@@ -167,8 +188,9 @@ class DiscrepancyEngine:
 
     async def analyze(self, tenant: str, agent_id: str, *,
                       since: datetime | None = None,
-                      now: datetime | None = None) -> list[Discrepancy]:
-        """Return all discrepancies visible for this worker."""
+                      now: datetime | None = None,
+                      project_keys: set[str] | None = None) -> list[Discrepancy]:
+        """Return all discrepancies visible for this worker, newest first."""
         now = now or datetime.now(timezone.utc)
         if since is None:
             since = now - timedelta(days=30)
@@ -207,7 +229,30 @@ class DiscrepancyEngine:
             results.extend(self._ci_red_but_claimed_green(ref, data))
 
         results.extend(self._discussed_never_tracked(slack_signals, qt_signals))
-        return sorted(results, key=lambda d: d.evidence_at or d.claimed_at or now, reverse=True)
+        results = sorted(results, key=lambda d: d.evidence_at or d.claimed_at or now, reverse=True)
+
+        if project_keys:
+            results = [d for d in results if d.project_key is None or d.project_key in project_keys]
+        return results
+
+    async def analyze_paginated(self, tenant: str, agent_id: str, *,
+                                since: datetime | None = None,
+                                now: datetime | None = None,
+                                project_keys: set[str] | None = None,
+                                limit: int = 50,
+                                offset: int = 0) -> tuple[list[Discrepancy], int, dict[str | None, int]]:
+        """Return a paginated window of discrepancies, the total count, and project counts."""
+        results = await self.analyze(tenant, agent_id, since=since, now=now, project_keys=project_keys)
+        total = len(results)
+        counts: dict[str | None, int] = {}
+        for d in results:
+            key = d.project_key or None
+            counts[key] = counts.get(key, 0) + 1
+        if offset:
+            results = results[offset:]
+        if limit is not None:
+            results = results[:limit]
+        return results, total, counts
 
     def _claimed_not_done(self, ref: str, data: dict[str, list[Signal]]) -> list[Discrepancy]:
         """Slack claims completion but ticket is not DONE/READY_TO_DEPLOY."""
@@ -235,6 +280,7 @@ class DiscrepancyEngine:
                     claimed_at=signal.occurred_at,
                     evidence_at=self._latest_time(data["qiko_track"]),
                     sources=self._sources([signal] + data["qiko_track"]),
+                    project_key=_project_key(ref, [signal] + data["qiko_track"]),
                 )]
         return []
 
@@ -261,6 +307,7 @@ class DiscrepancyEngine:
             claimed_at=None,
             evidence_at=latest.occurred_at,
             sources=self._sources(data["qiko_track"] + data["github"]),
+            project_key=_project_key(ref, data["qiko_track"] + data["github"]),
         )]
 
     def _stalled_review(self, ref: str, data: dict[str, list[Signal]],
@@ -292,6 +339,7 @@ class DiscrepancyEngine:
             claimed_at=None,
             evidence_at=newest_requested.occurred_at,
             sources=self._sources([newest_requested]),
+            project_key=_project_key(ref, data["github"]),
         )]
 
     def _blocked_and_silent(self, ref: str, data: dict[str, list[Signal]]) -> list[Discrepancy]:
@@ -322,6 +370,7 @@ class DiscrepancyEngine:
             claimed_at=None,
             evidence_at=latest_block.occurred_at,
             sources=self._sources([latest_block]),
+            project_key=_project_key(ref, data["qiko_track"] + data["slack"]),
         )]
 
     def _ci_red_but_claimed_green(self, ref: str, data: dict[str, list[Signal]]) -> list[Discrepancy]:
@@ -351,6 +400,7 @@ class DiscrepancyEngine:
                 claimed_at=signal.occurred_at,
                 evidence_at=latest_failure.occurred_at,
                 sources=self._sources([signal, latest_failure]),
+                project_key=_project_key(ref, [signal, latest_failure]),
             )]
         return []
 
@@ -384,6 +434,7 @@ class DiscrepancyEngine:
                 claimed_at=signal.occurred_at,
                 evidence_at=None,
                 sources=self._sources([signal]),
+                project_key=None,
             ))
         return results
 
