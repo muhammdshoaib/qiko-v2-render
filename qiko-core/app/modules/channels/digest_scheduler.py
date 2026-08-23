@@ -27,6 +27,7 @@ from app.modules.channels.digest import (
     generate_digest,
 )
 from app.modules.channels.slack_oauth import InstallationStore
+from app.modules.agents.service import AgentService
 from app.modules.channels.slack_store import (
     DEFAULT_MESSAGE_LIMIT,
     SlackChannelStore,
@@ -57,10 +58,17 @@ class DigestScheduler:
 
     message_store: SlackChannelStore
     task_queue: TaskQueue
+    agent_store: AgentService | None = None
 
     async def on_new_message(self, message: SlackMessage) -> None:
         """Record the message and (re-)schedule a digest for its channel."""
         await self.message_store.add(message)
+        config = await _agent_config(self.agent_store, message.tenant, message.agent_id)
+        purposes = config.get("slack_purposes")
+        if purposes is None:
+            purposes = ["digest"]
+        if "digest" not in purposes:
+            return
         await self.task_queue.enqueue(
             "generate_slack_digest",
             tenant=message.tenant,
@@ -70,7 +78,7 @@ class DigestScheduler:
             # Part of the installation key, so the worker resolves the same workspace the event
             # arrived for rather than only the non-enterprise one.
             enterprise_id=message.enterprise_id,
-            defer_by=_window(),
+            defer_by=_window(config),
         )
 
 
@@ -84,11 +92,18 @@ class DigestWorker:
     provider: LLMProvider | None = None
     cost_guard: object | None = None
     usage_store: object | None = None
+    agent_store: AgentService | None = None
 
     async def run(self, *, tenant: str, agent_id: str | None = None, team_id: str,
                   channel_id: str, enterprise_id: str | None = None) -> dict:
         """Generate and post a digest if the channel has been quiet long enough."""
-        window = _window()
+        config = await _agent_config(self.agent_store, tenant, agent_id)
+        purposes = config.get("slack_purposes")
+        if purposes is None:
+            purposes = ["digest"]
+        if "digest" not in purposes:
+            return {"ok": True, "skipped": True, "reason": "digest disabled"}
+        window = _window(config)
         # A floor, not a cap: see LOOKBACK_FLOOR. The row limit below is the real bound.
         since = datetime.now(timezone.utc) - max(window, LOOKBACK_FLOOR)
 
@@ -198,8 +213,18 @@ class DigestWorker:
         return installation, SlackClient(bot_token=installation.bot_token)
 
 
-def _window() -> timedelta:
-    return timedelta(minutes=get_settings().slack_digest_interval_minutes)
+async def _agent_config(agent_store: AgentService | None, tenant: str, agent_id: str | None) -> dict:
+    if agent_store is None or agent_id is None:
+        return {}
+    agent = await agent_store.get(tenant, agent_id)
+    return (agent.config or {}) if agent else {}
+
+
+def _window(config: dict | None = None) -> timedelta:
+    minutes = get_settings().slack_digest_interval_minutes
+    if config:
+        minutes = config.get("slack_digest_interval_minutes") or minutes
+    return timedelta(minutes=minutes)
 
 
 def _latest_message_ts(messages: list[SlackMessage]) -> datetime | None:

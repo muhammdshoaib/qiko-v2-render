@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
-import { Badge, Card, CardContent, Logo } from "@qiko/ui";
+import { Loader2, Settings } from "lucide-react";
+import { Badge, Button, Card, CardContent, Dialog, Logo } from "@qiko/ui";
 import { type IntelligenceSource, getIntelligenceSourceConnection, listIntelligenceSources } from "@/lib/api";
 import { GithubForm, QikoTrackForm, SlackForm } from "./source-forms";
 
@@ -39,7 +40,6 @@ function SourceIcon({ source }: { source: string }) {
 }
 
 export function SourcesTab({ agentId }: { agentId: string }) {
-  const qc = useQueryClient();
   const sources = useQuery({
     queryKey: ["intelligence-sources", agentId],
     queryFn: () => listIntelligenceSources(agentId),
@@ -76,10 +76,82 @@ export function SourcesTab({ agentId }: { agentId: string }) {
 }
 
 function SourceCard({ agentId, source }: { agentId: string; source: IntelligenceSource }) {
+  const [open, setOpen] = useState(false);
+  const [opener, setOpener] = useState<HTMLElement | null>(null);
+
+  const configured = source.configured !== false;
+  const titleId = `${source.key}-settings-title`;
+
+  return (
+    <Card className="flex h-full flex-col bg-card">
+      <CardContent className="flex flex-1 flex-col p-5">
+        <div className="flex items-start gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted">
+            <SourceIcon source={source.key} />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-foreground">{source.name}</h3>
+            <p className="text-xs text-muted-foreground">{source.description}</p>
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <Badge variant={source.connected ? "success" : "muted"}>
+              {source.connected ? "Connected" : "Not connected"}
+            </Badge>
+            {!configured && <Badge variant="warning">Not configured</Badge>}
+          </div>
+        </div>
+
+        <div className="mt-auto pt-5">
+          {configured ? (
+            <Button
+              size="sm"
+              variant={source.connected ? "outline" : "default"}
+              onClick={(e) => { setOpener(e.currentTarget); setOpen(true); }}
+              className="w-full sm:w-auto"
+            >
+              <Settings className="size-4" />
+              <span className="ml-2">{source.connected ? "Settings" : "Connect"}</span>
+            </Button>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Ask an admin to configure the {source.name} app before connecting.
+            </p>
+          )}
+        </div>
+      </CardContent>
+
+      <SourceSettingsDialog
+        agentId={agentId}
+        source={source}
+        open={open}
+        onClose={() => setOpen(false)}
+        opener={opener}
+        titleId={titleId}
+      />
+    </Card>
+  );
+}
+
+function SourceSettingsDialog({
+  agentId,
+  source,
+  open,
+  onClose,
+  opener,
+  titleId,
+}: {
+  agentId: string;
+  source: IntelligenceSource;
+  open: boolean;
+  onClose: () => void;
+  opener: HTMLElement | null;
+  titleId: string;
+}) {
   const qc = useQueryClient();
   const connection = useQuery({
     queryKey: ["intelligence-source-connection", agentId, source.key],
     queryFn: () => getIntelligenceSourceConnection(agentId, source.key),
+    enabled: open,
   });
 
   const invalidate = () => {
@@ -88,36 +160,38 @@ function SourceCard({ agentId, source }: { agentId: string; source: Intelligence
   };
 
   return (
-    <Card className="bg-card">
-      <CardContent className="space-y-4 pt-6">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted">
-              <SourceIcon source={source.key} />
-            </span>
-            <div>
-              <h3 className="font-semibold text-foreground">{source.name}</h3>
-              {!source.connected && <p className="text-xs text-muted-foreground">{source.description}</p>}
-            </div>
-          </div>
-          <div className="flex shrink-0 flex-col items-end gap-1">
-            <Badge variant={source.connected ? "success" : "muted"}>
-              {source.connected ? "Connected" : "Not connected"}
-            </Badge>
-            {!source.configured && <Badge variant="warning">Not configured</Badge>}
+    <Dialog open={open} onClose={onClose} labelledBy={titleId} opener={opener} className="w-[min(94vw,34rem)]">
+      <div className="space-y-4">
+        <div className="flex items-start gap-3">
+          <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted">
+            <SourceIcon source={source.key} />
+          </span>
+          <div>
+            <h3 id={titleId} className="text-base font-semibold text-foreground">{source.name} settings</h3>
+            <p className="text-xs text-muted-foreground">{source.description}</p>
           </div>
         </div>
 
-        {source.key === "github" && (
+        {connection.isLoading && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Loading connection...
+          </div>
+        )}
+
+        {connection.isError && (
+          <p className="text-sm text-destructive">Could not load connection details.</p>
+        )}
+
+        {connection.data && source.key === "github" && (
           <GithubForm agentId={agentId} connection={connection.data} onChange={invalidate} />
         )}
-        {source.key === "qiko_track" && (
+        {connection.data && source.key === "qiko_track" && (
           <QikoTrackForm agentId={agentId} connection={connection.data} onChange={invalidate} />
         )}
-        {source.key === "slack" && (
+        {connection.data && source.key === "slack" && (
           <SlackForm agentId={agentId} connection={connection.data} onChange={invalidate} configured={source.configured} />
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </Dialog>
   );
 }

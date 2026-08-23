@@ -233,6 +233,7 @@ async def lifespan(app: FastAPI):
         app.state.slack_messages.knowledge = app.state.knowledge
         if getattr(app.state, "slack_digest_scheduler", None):
             app.state.slack_digest_scheduler.message_store = app.state.slack_messages
+            app.state.slack_digest_scheduler.agent_store = app.state.agents
         app.state.intelligence_signal_store = SqlSignalStore(sm)
         app.state.intelligence_document_store = SqlDocumentStore(sm)
         app.state.pipeline_run_store = SqlPipelineRunStore(sm)
@@ -542,6 +543,7 @@ def create_app() -> FastAPI:
     app.state.slack_digest_scheduler = DigestScheduler(
         message_store=app.state.slack_messages,
         task_queue=app.state.task_queue,
+        agent_store=app.state.agents,
     )
     app.state.slack_events = SlackEventHandler(
         installation_store=app.state.slack_oauth.store,

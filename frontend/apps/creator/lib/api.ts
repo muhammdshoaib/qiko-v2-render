@@ -1234,10 +1234,23 @@ export const clearFinanceHistory = (agentId: string) =>
 
 // Intelligence Worker sources (Slack capture, GitHub, Qiko Track).
 export type IntelligenceSource = { key: string; name: string; description: string; pollable: boolean; connected: boolean; configured: boolean };
+
+export type SourceSettings = {
+  repo_allowlist?: string[];
+  watched_branches?: string[];
+  project_keys?: string[];
+  base_url?: string;
+  watched_channels?: string[];
+  purposes?: string[];
+  summary_interval_minutes?: number;
+  digest_interval_minutes?: number;
+  heads_up_timeout_minutes?: number;
+};
+
 export type IntelligenceSourceConnection =
-  | { key: "github"; connected: boolean; token_masked: string; repo_allowlist: string[]; watched_branches: string[] }
-  | { key: "qiko_track"; connected: boolean; service_token_used?: boolean; token_masked: string; project_keys: string[]; base_url: string }
-  | { key: "slack"; connected: boolean; team_id: string | null; watched_channels: string[]; channels: { id: string; name: string }[] };
+  | { key: "github"; connected: boolean; token_masked: string; repo_allowlist: string[]; watched_branches: string[]; settings: SourceSettings }
+  | { key: "qiko_track"; connected: boolean; service_token_used?: boolean; token_masked: string; project_keys: string[]; base_url: string; settings: SourceSettings }
+  | { key: "slack"; connected: boolean; team_id: string | null; watched_channels: string[]; channels: { id: string; name: string }[]; settings: SourceSettings };
 
 export type QikoTrackPreview = {
   service_token_configured: boolean;
@@ -1275,6 +1288,11 @@ export const verifyIntelligenceSource = (agentId: string, sourceKey: string, bod
 export const testIntelligenceSource = (agentId: string, sourceKey: string) =>
   request<{ ok: boolean; error?: string; team?: string; user?: string; repos?: { full_name: string; private: boolean }[] }>(
     `/intelligence/agents/${agentId}/sources/${sourceKey}/test`, { method: "POST" });
+
+export const setIntelligenceSourceSettings = (agentId: string, sourceKey: string, body: SourceSettings) =>
+  request<{ settings: SourceSettings }>(`/intelligence/agents/${agentId}/sources/${sourceKey}/settings`, {
+    method: "POST", body: JSON.stringify(body),
+  });
 
 export const setSlackWatchedChannels = (agentId: string, channelIds: string[]) =>
   request<{ watched_channels: string[] }>(`/intelligence/agents/${agentId}/sources/slack/channels`, {
