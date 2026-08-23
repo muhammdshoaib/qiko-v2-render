@@ -182,7 +182,7 @@ export function Dialog({ open, onClose, opener, busy = false, labelledBy, classN
       }}
       onCancel={(event) => { if (busy) event.preventDefault(); }}
       className={cn(
-        "w-[min(94vw,42rem)] rounded-2xl border border-border bg-card p-5 text-foreground",
+        "m-auto max-h-[90dvh] w-[min(94vw,42rem)] overflow-y-auto rounded-2xl border border-border bg-card p-5 text-foreground",
         "backdrop:bg-black/50",
         className,
       )}
