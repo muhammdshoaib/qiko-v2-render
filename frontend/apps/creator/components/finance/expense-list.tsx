@@ -31,7 +31,7 @@ export function ExpenseList({
   hideViewUnitAction?: boolean;
   title?: string;
 }) {
-  const { agentId, analytics } = useFinance();
+  const { agentId, analytics, currency } = useFinance();
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<string>("invoiceDate");
@@ -83,14 +83,14 @@ export function ExpenseList({
       { id: "heading", header: "Category", cell: (e) => e.heading },
       { id: "expenditureDescription", header: "Description", cell: (e) => e.expenditureDescription },
       { id: "supplierName", header: "Vendor", cell: (e) => e.supplierName },
-      { id: "nett", header: "Nett", numeric: true, sortable: true, cell: (e) => formatCurrency(e.nett) },
-      { id: "vat", header: "VAT", numeric: true, sortable: true, cell: (e) => formatCurrency(e.vat) },
-      { id: "gross", header: "Gross", numeric: true, sortable: true, cell: (e) => formatCurrency(e.gross) },
+      { id: "nett", header: "Nett", numeric: true, sortable: true, cell: (e) => formatCurrency(e.nett, currency) },
+      { id: "vat", header: "VAT", numeric: true, sortable: true, cell: (e) => formatCurrency(e.vat, currency) },
+      { id: "gross", header: "Gross", numeric: true, sortable: true, cell: (e) => formatCurrency(e.gross, currency) },
       { id: "invoiceDate", header: "Date", sortable: true, cell: (e) => formatDateShort(e.invoiceDate) },
       { id: "settled", header: "Settled", cell: (e) => e.settled || "-" },
     );
     return cols;
-  }, [agentId, router, hideProperty, hideUnit]);
+  }, [agentId, router, hideProperty, hideUnit, currency]);
 
   return (
     <div className="space-y-3">

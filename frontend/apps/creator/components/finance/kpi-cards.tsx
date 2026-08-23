@@ -3,14 +3,11 @@
 import { Building2, DollarSign, TrendingDown, TrendingUp } from "lucide-react";
 import { cn } from "@qiko/ui";
 import { EXPENSE_COLOR, INCOME_COLOR, PROFIT_COLOR, formatCurrency, type NormalizedSummary } from "./utils";
+import { useFinance } from "./finance-context";
 
 const CARD_STYLE = { background: "oklch(0.16 0.02 250)" } as const;
 
 export type KpiKey = "income" | "expenses" | "profit" | "properties";
-
-function fmt(n: number | null | undefined) {
-  return formatCurrency(n);
-}
 
 function Card({ label, value, icon: Icon, color, onClick, children }: {
   label: string; value: React.ReactNode; icon: React.ElementType; color: string;
@@ -40,11 +37,12 @@ function Card({ label, value, icon: Icon, color, onClick, children }: {
 export function KpiCards({ summary, propertyCount, onOpenPortfolio, onKpiClick }: {
   summary: NormalizedSummary; propertyCount: number; onOpenPortfolio?: () => void; onKpiClick?: (key: KpiKey) => void;
 }) {
+  const { currency } = useFinance();
   return (
     <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 md:grid-cols-4">
-      <Card label="Total Income" value={summary.formatted.totalIncome ?? fmt(summary.totalIncome)} icon={TrendingUp} color={INCOME_COLOR} onClick={() => onKpiClick?.("income")} />
-      <Card label="Total Expenses" value={summary.formatted.totalExpenses ?? fmt(summary.totalExpenses)} icon={TrendingDown} color={EXPENSE_COLOR} onClick={() => onKpiClick?.("expenses")} />
-      <Card label="Net Profit" value={summary.formatted.netProfit ?? fmt(summary.netProfit)} icon={DollarSign} color={PROFIT_COLOR} onClick={() => onKpiClick?.("profit")} />
+      <Card label="Total Income" value={formatCurrency(summary.totalIncome, currency)} icon={TrendingUp} color={INCOME_COLOR} onClick={() => onKpiClick?.("income")} />
+      <Card label="Total Expenses" value={formatCurrency(summary.totalExpenses, currency)} icon={TrendingDown} color={EXPENSE_COLOR} onClick={() => onKpiClick?.("expenses")} />
+      <Card label="Net Profit" value={formatCurrency(summary.netProfit, currency)} icon={DollarSign} color={PROFIT_COLOR} onClick={() => onKpiClick?.("profit")} />
       <Card label="Total Properties" value={propertyCount} icon={Building2} color="#22d3ee" onClick={onOpenPortfolio}>
         <div className="mt-1 min-h-[2.75rem] text-[10px] leading-snug text-white/48">Open portfolio table</div>
       </Card>

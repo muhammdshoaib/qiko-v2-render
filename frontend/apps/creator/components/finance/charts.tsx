@@ -8,9 +8,10 @@ import {
   Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { cn } from "@qiko/ui";
+import { useFinance } from "./finance-context";
 import {
   EXPENSE_COLOR, INCOME_COLOR, RISK_ASSESSMENT_TOOLTIP,
-  formatCurrency, type DonutSlice, type PropertyBar, type RiskRow, type VendorRow,
+  formatCompact, formatCurrency, type DonutSlice, type PropertyBar, type RiskRow, type VendorRow,
 } from "./utils";
 
 const TOOLTIP_STYLE = { background: "#0f1220", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 8, fontSize: 12, color: "#e2e8f0" } as const;
@@ -38,6 +39,7 @@ export function ChartCard({ title, icon, iconColor, action, children }: {
 
 // ── Income vs Expenses grouped bar ───────────────────────────────────────────────────────────────
 export function IncomeExpensesChart({ data, onPropertyClick }: { data: PropertyBar[]; onPropertyClick?: (ref: string, name: string) => void }) {
+  const { currency } = useFinance();
   const handleBarClick = (_: unknown, index: number) => {
     const p = data[index];
     if (p && onPropertyClick) onPropertyClick(p.propertyRef, p.propertyName);
@@ -49,8 +51,8 @@ export function IncomeExpensesChart({ data, onPropertyClick }: { data: PropertyB
         <BarChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 40 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
           <XAxis dataKey="name" tick={AXIS_TICK} angle={-35} textAnchor="end" height={60} tickFormatter={(v) => truncate(String(v))} />
-          <YAxis tick={AXIS_TICK} tickFormatter={(v) => `£${(Number(v) / 1000).toFixed(0)}k`} />
-          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} formatter={(v) => formatCurrency(Number(v))} />
+          <YAxis tick={AXIS_TICK} tickFormatter={(v) => formatCompact(Number(v), currency)} />
+          <Tooltip contentStyle={TOOLTIP_STYLE} cursor={{ fill: "rgba(255,255,255,0.04)" }} formatter={(v) => formatCurrency(Number(v), currency)} />
           <Bar dataKey="income" name="Income" fill={INCOME_COLOR} radius={[4, 4, 0, 0]} onClick={handleBarClick} />
           <Bar dataKey="expenses" name="Expenses" fill={EXPENSE_COLOR} radius={[4, 4, 0, 0]} onClick={handleBarClick} />
         </BarChart>
@@ -92,6 +94,7 @@ export function ProfitabilityDonut({ data, onClassClick }: { data: DonutSlice[];
 
 // ── Top Vendors by Spend (ranked list with thin progress bars) ─────────────────────────────────────
 export function VendorSpendList({ data, onVendorClick }: { data: VendorRow[]; onVendorClick?: (name: string) => void }) {
+  const { currency } = useFinance();
   return (
     <ChartCard title="Top Vendors by Spend" icon={<Tag className="h-4 w-4" />} iconColor="text-purple-400">
       <div className="space-y-2.5">
@@ -101,7 +104,7 @@ export function VendorSpendList({ data, onVendorClick }: { data: VendorRow[]; on
             className="w-full text-left disabled:cursor-default" disabled={!onVendorClick}>
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="min-w-0 flex-1 break-words text-xs text-white/72">{v.name}</span>
-              <span className="shrink-0 text-xs text-white/58">{formatCurrency(v.spend)} ({v.percent}%)</span>
+              <span className="shrink-0 text-xs text-white/58">{formatCurrency(v.spend, currency)} ({v.percent}%)</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,0.08)" }}>
               <div className="h-full rounded-full" style={{ width: `${Math.min(100, v.percent)}%`, background: v.color, minWidth: 4 }} />
@@ -115,6 +118,7 @@ export function VendorSpendList({ data, onVendorClick }: { data: VendorRow[]; on
 
 // ── Expense Categories donut ──────────────────────────────────────────────────────────────────────
 export function ExpenseCategoriesDonut({ data, onCategoryClick }: { data: DonutSlice[]; onCategoryClick?: (cat: string) => void }) {
+  const { currency } = useFinance();
   return (
     <ChartCard title="Expense Categories" icon={<DollarSign className="h-4 w-4" />} iconColor="text-amber-400">
       <div className="flex h-[220px] items-center justify-center">
@@ -127,7 +131,7 @@ export function ExpenseCategoriesDonut({ data, onCategoryClick }: { data: DonutS
                 <Cell key={i} fill={entry.color} className={onCategoryClick ? "cursor-pointer" : undefined} />
               ))}
             </Pie>
-            <Tooltip contentStyle={TOOLTIP_STYLE} cursor={false} formatter={(v, n) => [formatCurrency(Number(v)), String(n)]} />
+            <Tooltip contentStyle={TOOLTIP_STYLE} cursor={false} formatter={(v, n) => [formatCurrency(Number(v), currency), String(n)]} />
           </PieChart>
         </ResponsiveContainer>
       </div>
@@ -177,6 +181,7 @@ export function RiskScoreList({ data, onPropertyClick }: { data: RiskRow[]; onPr
 
 // ── Property Profitability Ranking (green bar chart, red when negative) ─────────────────────────────
 export function ProfitabilityRankingChart({ data, onPropertyClick }: { data: PropertyBar[]; onPropertyClick?: (ref: string, name: string) => void }) {
+  const { currency } = useFinance();
   const handleBarClick = (_: unknown, index: number) => {
     const p = data[index];
     if (p && onPropertyClick) onPropertyClick(p.propertyRef, p.propertyName);
@@ -188,11 +193,11 @@ export function ProfitabilityRankingChart({ data, onPropertyClick }: { data: Pro
         <BarChart data={data} margin={{ top: 5, right: 10, left: 10, bottom: 40 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.08)" />
           <XAxis dataKey="name" tick={AXIS_TICK} angle={-35} textAnchor="end" height={60} tickFormatter={(v) => truncate(String(v))} />
-          <YAxis tick={AXIS_TICK} tickFormatter={(v) => `£${(Number(v) / 1000).toFixed(0)}k`} />
+          <YAxis tick={AXIS_TICK} tickFormatter={(v) => formatCompact(Number(v), currency)} />
           {/* Bars are colored per-point via <Cell> below, not via a top-level Bar fill, so Recharts
               has no series color to key its default tooltip item text off - force it explicitly
               or it renders black on this dark tooltip background. */}
-          <Tooltip contentStyle={TOOLTIP_STYLE} itemStyle={{ color: "#e2e8f0" }} cursor={{ fill: "rgba(255,255,255,0.04)" }} formatter={(v) => formatCurrency(Number(v))} />
+          <Tooltip contentStyle={TOOLTIP_STYLE} itemStyle={{ color: "#e2e8f0" }} cursor={{ fill: "rgba(255,255,255,0.04)" }} formatter={(v) => formatCurrency(Number(v), currency)} />
           <Bar dataKey="profit" name="Net Profit" radius={[4, 4, 0, 0]} onClick={handleBarClick}>
             {data.map((entry, i) => <Cell key={i} fill={entry.profit >= 0 ? INCOME_COLOR : EXPENSE_COLOR} className={onPropertyClick ? "cursor-pointer" : undefined} />)}
           </Bar>
