@@ -442,3 +442,31 @@ def test_set_source_settings_rejects_unknown_source(client):
         json={"repo_allowlist": ["acme/api"]},
     )
     assert r.status_code == 404
+
+
+def test_get_discrepancies_returns_envelope_with_project_counts(client):
+    r = client.get("/api/v1/intelligence/agents/w1/discrepancies", cookies=C)
+    assert r.status_code == 200
+    payload = r.json()
+    assert "items" in payload
+    assert "total" in payload
+    assert "projects" in payload
+    assert isinstance(payload["items"], list)
+
+
+def test_get_discrepancy_digest_rejects_viewer(client):
+    cookies = auth_cookies("intelco", "viewer")
+    r = client.get("/api/v1/intelligence/agents/w1/discrepancies/digest?window=daily", cookies=cookies)
+    assert r.status_code == 403
+
+
+def test_get_discrepancy_digest_returns_heads_up_digest_or_503(client, monkeypatch):
+    # By default the stub provider refuses, so we test the shape and that the
+    # endpoint is wired rather than depending on a real LLM call.
+    r = client.get("/api/v1/intelligence/agents/w1/discrepancies/digest?window=daily", cookies=C)
+    assert r.status_code in (200, 503)
+    if r.status_code == 200:
+        payload = r.json()
+        assert "headline" in payload
+        assert "summary" in payload
+        assert "sections" in payload

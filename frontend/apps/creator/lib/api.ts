@@ -297,13 +297,34 @@ export type Discrepancy = {
   class_label: string;
   severity: "high" | "medium" | "low";
   ref: string | null;
+  project_key: string | null;
   title: string;
   summary: string;
   claimed_at: string | null;
   evidence_at: string | null;
+  occurred_at: string | null;
   sources: { source: string; source_label: string; external_id: string; url: string | null; actor: string; occurred_at: string | null }[];
 };
-export const getDiscrepancies = (agentId: string) => request<Discrepancy[]>(`/intelligence/agents/${encodeURIComponent(agentId)}/discrepancies`);
+export type DiscrepancyProject = { project_key: string | null; count: number };
+export type DiscrepanciesResponse = { items: Discrepancy[]; total: number; projects: DiscrepancyProject[] };
+export const getDiscrepancies = (agentId: string, params?: { project?: string[]; limit?: number; offset?: number }) => {
+  const search = new URLSearchParams();
+  if (params?.project) params.project.forEach((p) => search.append("project", p));
+  if (params?.limit) search.set("limit", String(params.limit));
+  if (params?.offset !== undefined) search.set("offset", String(params.offset));
+  return request<DiscrepanciesResponse>(`/intelligence/agents/${encodeURIComponent(agentId)}/discrepancies?${search.toString()}`);
+};
+export type DiscrepancyDigest = {
+  headline: string;
+  summary: string;
+  sections: { title: string; items: string[] }[];
+  tone: "calm" | "tense" | "at-risk";
+};
+export const getDiscrepancyDigest = (agentId: string, window: "daily" | "weekly", project?: string[]) => {
+  const search = new URLSearchParams({ window });
+  if (project) project.forEach((p) => search.append("project", p));
+  return request<DiscrepancyDigest>(`/intelligence/agents/${encodeURIComponent(agentId)}/discrepancies/digest?${search.toString()}`);
+};
 
 export type Distribution = { count: number; medianHours: number; p85Hours: number; minHours: number; maxHours: number } | null;
 export type SprintMetrics = {

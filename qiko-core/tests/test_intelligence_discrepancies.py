@@ -151,3 +151,49 @@ async def test_ci_red_but_claimed_green(store, engine):
 
     assert len(result) == 1
     assert result[0].discrepancy_class == "ci_red_but_claimed_green"
+
+
+@pytest.mark.asyncio
+async def test_project_key_extracted_from_ref(store, engine):
+    await store.add(_signal(
+        source="slack", external_id="s1", body="QIW-1004 is done",
+        title="QIW-1004 is done", ref="QIW-1004"))
+    await store.add(_signal(
+        source="qiko_track", kind="ticket_moved", external_id="qt1",
+        ref="QIW-1004", meta={"state": {"status": "IN_PROGRESS"}}))
+
+    result = await engine.analyze("t1", "w1", now=T0 + timedelta(hours=1))
+
+    assert result[0].project_key == "QIW"
+
+
+@pytest.mark.asyncio
+async def test_analyze_paginated_returns_total_and_counts(store, engine):
+    for i in range(5):
+        await store.add(_signal(
+            source="qiko_track", kind="ticket_moved", external_id=f"qt{i}",
+            ref=f"QIW-{1000 + i}", occurred_at=T0 + timedelta(hours=i),
+            meta={"state": {"status": "DONE"}}))
+
+    items, total, counts = await engine.analyze_paginated("t1", "w1", limit=2, offset=0)
+
+    assert total == 5
+    assert len(items) == 2
+    assert counts["QIW"] == 5
+
+
+@pytest.mark.asyncio
+async def test_project_filter_excludes_other_projects(store, engine):
+    await store.add(_signal(
+        source="qiko_track", kind="ticket_moved", external_id="qt1",
+        ref="ABC-1", occurred_at=T0,
+        meta={"state": {"status": "DONE"}}))
+    await store.add(_signal(
+        source="qiko_track", kind="ticket_moved", external_id="qt2",
+        ref="QIW-1004", occurred_at=T0,
+        meta={"state": {"status": "DONE"}}))
+
+    result = await engine.analyze("t1", "w1", project_keys={"QIW"})
+
+    assert len(result) == 1
+    assert result[0].ref == "QIW-1004"
