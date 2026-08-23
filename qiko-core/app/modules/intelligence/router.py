@@ -259,9 +259,12 @@ def _source_settings_for_key(key: str, cfg: dict) -> dict:
             "base_url": cfg.get("qiko_track_base_url") or "",
         }
     if key == "slack":
+        purposes = cfg.get("slack_purposes")
+        if purposes is None:
+            purposes = ["monitor", "digest"]
         return {
             "watched_channels": cfg.get("slack_watched_channels") or [],
-            "purposes": cfg.get("slack_purposes") or ["monitor", "digest"],
+            "purposes": purposes,
             "summary_interval_minutes": cfg.get("slack_summary_interval_minutes") or 60,
             "digest_interval_minutes": cfg.get("slack_digest_interval_minutes") or 1440,
             "heads_up_timeout_minutes": cfg.get("slack_heads_up_timeout_minutes") or 60,

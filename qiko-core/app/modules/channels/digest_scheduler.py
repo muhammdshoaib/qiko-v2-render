@@ -64,7 +64,10 @@ class DigestScheduler:
         """Record the message and (re-)schedule a digest for its channel."""
         await self.message_store.add(message)
         config = await _agent_config(self.agent_store, message.tenant, message.agent_id)
-        if "digest" not in (config.get("slack_purposes") or ["digest"]):
+        purposes = config.get("slack_purposes")
+        if purposes is None:
+            purposes = ["digest"]
+        if "digest" not in purposes:
             return
         await self.task_queue.enqueue(
             "generate_slack_digest",
@@ -95,7 +98,10 @@ class DigestWorker:
                   channel_id: str, enterprise_id: str | None = None) -> dict:
         """Generate and post a digest if the channel has been quiet long enough."""
         config = await _agent_config(self.agent_store, tenant, agent_id)
-        if "digest" not in (config.get("slack_purposes") or ["digest"]):
+        purposes = config.get("slack_purposes")
+        if purposes is None:
+            purposes = ["digest"]
+        if "digest" not in purposes:
             return {"ok": True, "skipped": True, "reason": "digest disabled"}
         window = _window(config)
         # A floor, not a cap: see LOOKBACK_FLOOR. The row limit below is the real bound.
