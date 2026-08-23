@@ -93,7 +93,7 @@ AUDIT_WRITERS: dict[str, int] = {
     "chat/router.py": 1,
     "rfp/router.py": 7,
     "finance/router.py": 1,
-    "intelligence/router.py": 12,
+    "intelligence/router.py": 13,
     "agentcore/batch_router.py": 1,
     # One route each, though login writes three different events (success, bad password, bad 2FA).
     "identity/router.py": 1,
@@ -370,6 +370,7 @@ INSTRUMENTED: set[tuple[str, str]] = {
     ("POST", "/api/v1/agents/{agent_id}/gmail-credentials/test"),
     ("POST", "/api/v1/intelligence/agents/{agent_id}/sources/{key}"),
     ("DELETE", "/api/v1/intelligence/agents/{agent_id}/sources/{key}"),
+    ("POST", "/api/v1/intelligence/agents/{agent_id}/sources/{key}/settings"),
     ("POST", "/api/v1/intelligence/agents/{agent_id}/sources/{key}/verify"),
     ("POST", "/api/v1/intelligence/agents/{agent_id}/sources/{key}/test"),
     ("POST", "/api/v1/intelligence/agents/{agent_id}/documents"),
