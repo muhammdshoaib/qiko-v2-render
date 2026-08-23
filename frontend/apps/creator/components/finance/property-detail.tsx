@@ -57,7 +57,7 @@ export function PropertyDetail({ propertyRef, unitRef, from }: { propertyRef: st
 }
 
 function PropertyOverview({ property, propertyRef, from }: { property: FinanceProperty; propertyRef: string; from?: string | null }) {
-  const { agentId } = useFinance();
+  const { agentId, currency } = useFinance();
   const router = useRouter();
   const fromPortfolio = from === "portfolio";
 
@@ -79,9 +79,9 @@ function PropertyOverview({ property, propertyRef, from }: { property: FinancePr
   const unitColumns: Column<FinanceUnitLedger>[] = [
     { id: "unitRef", header: "Unit", rowHeader: true, sortable: true, cell: (u) => u.unitRef },
     { id: "unitDescription", header: "Description", sortable: true, cell: (u) => u.unitDescription },
-    { id: "income", header: "Income", numeric: true, sortable: true, cell: (u) => formatCurrency(u.income) },
-    { id: "outstanding", header: "Outstanding", numeric: true, sortable: true, cell: (u) => formatCurrency(u.outstanding) },
-    { id: "totalGross", header: "Gross", numeric: true, sortable: true, cell: (u) => formatCurrency(u.totalGross) },
+    { id: "income", header: "Income", numeric: true, sortable: true, cell: (u) => formatCurrency(u.income, currency) },
+    { id: "outstanding", header: "Outstanding", numeric: true, sortable: true, cell: (u) => formatCurrency(u.outstanding, currency) },
+    { id: "totalGross", header: "Gross", numeric: true, sortable: true, cell: (u) => formatCurrency(u.totalGross, currency) },
     { id: "invoiceCount", header: "Invoices", numeric: true, sortable: true, cell: (u) => u.invoiceCount },
   ];
 
@@ -94,16 +94,16 @@ function PropertyOverview({ property, propertyRef, from }: { property: FinancePr
         backLabel={fromPortfolio ? "Back to properties" : "Back to dashboard"}
         onBack={() => router.push(fromPortfolio ? `/studio/${agentId}/finance/breakdown?view=properties` : `/studio/${agentId}/finance`)}
         title={property.name || property.propertyRef || "Property"}
-        subtitle={<p className="text-sm text-white/55">{`Property ${property.propertyRef ?? ""} — income, expenses, risk, and vendor mix for the selected period.`}</p>}
+        subtitle={<p className="text-sm text-white/55">{`Property ${property.propertyRef ?? ""} - income, expenses, risk, and vendor mix for the selected period.`}</p>}
       >
         <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Field label="Reference" value={property.propertyRef} />
-        <Field label="Income" value={formatCurrency(property.income)} />
-        <Field label="Expenses" value={formatCurrency(property.expenses)} />
-        <Field label="Net Profit" value={formatCurrency(property.netProfit)} />
+        <Field label="Income" value={formatCurrency(property.income, currency)} />
+        <Field label="Expenses" value={formatCurrency(property.expenses, currency)} />
+        <Field label="Net Profit" value={formatCurrency(property.netProfit, currency)} />
         <Field label="Margin" value={`${property.marginPercent ?? 0}%`} />
-        <Field label="Outstanding" value={formatCurrency(property.outstanding)} />
+        <Field label="Outstanding" value={formatCurrency(property.outstanding, currency)} />
         <Field label="Risk" value={property.riskLevel ? `${property.riskLevel} (${property.riskScore ?? 0})` : undefined} />
         <Field label="Units" value={property.unitCount ?? property.unitLedger?.length} />
         <Field label="Invoices" value={property.invoiceCount} />
@@ -151,7 +151,7 @@ function PropertyOverview({ property, propertyRef, from }: { property: FinancePr
                 >
                   {v.vendorName}
                 </button>
-                <span className="text-xs text-white/62">{formatCurrency(v.amount)}</span>
+                <span className="text-xs text-white/62">{formatCurrency(v.amount, currency)}</span>
               </li>
             ))}
           </ul>
@@ -170,7 +170,7 @@ function PropertyOverview({ property, propertyRef, from }: { property: FinancePr
                 >
                   {c.category}
                 </button>
-                <span className="text-xs text-white/62">{formatCurrency(c.amount)}</span>
+                <span className="text-xs text-white/62">{formatCurrency(c.amount, currency)}</span>
               </li>
             ))}
           </ul>
@@ -187,6 +187,7 @@ function PropertyOverview({ property, propertyRef, from }: { property: FinancePr
 }
 
 function UnitDetail({ property, unit, onBack }: { property: FinanceProperty; unit: FinanceUnitLedger; onBack: () => void }) {
+  const { currency } = useFinance();
 
   return (
     <DrilldownFrame
@@ -197,9 +198,9 @@ function UnitDetail({ property, unit, onBack }: { property: FinanceProperty; uni
     >
       <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Field label="Income" value={formatCurrency(unit.income)} />
-        <Field label="Outstanding" value={formatCurrency(unit.outstanding)} />
-        <Field label="Gross" value={formatCurrency(unit.totalGross)} />
+        <Field label="Income" value={formatCurrency(unit.income, currency)} />
+        <Field label="Outstanding" value={formatCurrency(unit.outstanding, currency)} />
+        <Field label="Gross" value={formatCurrency(unit.totalGross, currency)} />
         <Field label="Invoices" value={unit.invoiceCount} />
       </div>
 

@@ -8,6 +8,7 @@ interface FinanceContextValue {
   agentId: string;
   workerName: string;
   analytics: FinanceAnalytics | undefined;
+  currency: string;
   isLoading: boolean;
   files: FinanceFile[] | undefined;
   filesLoading: boolean;
@@ -47,10 +48,13 @@ export function FinanceProvider({ agentId, children }: { agentId: string; childr
     retry: false,
   });
 
+  const currency = useMemo(() => analyticsQ.data?.currency ?? "GBP", [analyticsQ.data]);
+
   const value = useMemo(() => ({
     agentId,
     workerName,
     analytics: analyticsQ.data,
+    currency,
     isLoading: analyticsQ.isLoading,
     files: filesQ.data?.files,
     filesLoading: filesQ.isLoading,
@@ -64,7 +68,7 @@ export function FinanceProvider({ agentId, children }: { agentId: string; childr
     setFilesOpen,
     chatTab,
     setChatTab,
-  }), [agentId, workerName, analyticsQ.data, analyticsQ.isLoading, filesQ.data, filesQ.isLoading, month, search, pendingPrompt, filesOpen, chatTab]);
+  }), [agentId, workerName, analyticsQ.data, currency, analyticsQ.isLoading, filesQ.data, filesQ.isLoading, month, search, pendingPrompt, filesOpen, chatTab]);
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
 }

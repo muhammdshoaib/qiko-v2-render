@@ -19,7 +19,7 @@ function Field({ label, value }: { label: string; value?: React.ReactNode }) {
 export default function VendorPage() {
   const params = useParams<{ vendorName: string }>();
   const router = useRouter();
-  const { agentId, analytics } = useFinance();
+  const { agentId, analytics, currency } = useFinance();
   const vendorName = decodeURIComponent(params.vendorName);
 
   const rows = useMemo(
@@ -36,12 +36,12 @@ export default function VendorPage() {
     <DrilldownFrame
       onBack={() => router.push(`/studio/${agentId}/finance`)}
       title={vendorName}
-      subtitle={<p className="text-sm text-white/55">{`${propertyCount} properties · ${invoiceCount} invoices — vendor spend profile and payment mix.`}</p>}
+      subtitle={<p className="text-sm text-white/55">{`${propertyCount} properties · ${invoiceCount} invoices - vendor spend profile and payment mix.`}</p>}
     >
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Field label="Total gross" value={formatCurrency(totalGross)} />
-          <Field label="Total nett" value={formatCurrency(totalNett)} />
+          <Field label="Total gross" value={formatCurrency(totalGross, currency)} />
+          <Field label="Total nett" value={formatCurrency(totalNett, currency)} />
           <Field label="Invoices" value={invoiceCount} />
           <Field label="Properties" value={propertyCount} />
         </div>

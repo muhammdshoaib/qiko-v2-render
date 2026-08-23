@@ -3,15 +3,16 @@
 import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, BarChart3, Bot, FileText, Link as LinkIcon, MessageSquare, RefreshCw, Search, SendHorizonal, ShieldAlert, Database } from "lucide-react";
+import { ArrowLeft, BarChart3, FileText, MessageSquare, RefreshCw, Search, SendHorizonal, ShieldAlert, Database } from "lucide-react";
 import { Badge, Button, cn } from "@qiko/ui";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import { SourcesTab } from "@/components/sources-tab";
 import { DocumentsTab } from "@/components/documents-tab";
 import { ResearchTab } from "@/components/research-tab";
 import { WorkerAvatar } from "@/components/worker-avatar";
+import { DiscrepanciesTab } from "./discrepancies-tab";
 import {
-  askIntelligence, getDiscrepancies, getIntelligenceMetrics, listAgents, listIntelligenceSources, type Discrepancy, type IntelligenceMetrics, type IntelligenceSource, type ProjectMetrics,
+  askIntelligence, getIntelligenceMetrics, listAgents, listIntelligenceSources, type IntelligenceMetrics, type ProjectMetrics,
 } from "@/lib/api";
 import { workerTypeLabel } from "@/lib/stringUtils";
 
@@ -23,10 +24,6 @@ export default function IntelligenceWorkerPage() {
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const worker = useMemo(() => agents.data?.find((a) => a.id === agentId), [agents.data, agentId]);
 
-  const discrepancies = useQuery({
-    queryKey: ["intelligence-discrepancies", agentId],
-    queryFn: () => getDiscrepancies(agentId),
-  });
   const sources = useQuery({
     queryKey: ["intelligence-sources", agentId],
     queryFn: () => listIntelligenceSources(agentId),
@@ -35,14 +32,6 @@ export default function IntelligenceWorkerPage() {
     queryKey: ["intelligence-metrics", agentId],
     queryFn: () => getIntelligenceMetrics(agentId),
   });
-
-  const byClass = useMemo(() => {
-    const map = new Map<string, Discrepancy[]>();
-    for (const d of discrepancies.data ?? []) {
-      map.set(d.class, [...(map.get(d.class) ?? []), d]);
-    }
-    return map;
-  }, [discrepancies.data]);
 
   const [tab, setTab] = useState<"discrepancies" | "chat" | "sources" | "documents" | "research">("discrepancies");
 
@@ -96,26 +85,7 @@ export default function IntelligenceWorkerPage() {
         {tab === "discrepancies" && (
           <section className="space-y-4">
             <MetricsPanel metrics={metrics.data} loading={metrics.isLoading} onRefetch={() => metrics.refetch()} />
-            <div className="flex items-center justify-between">
-              <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
-                <ShieldAlert className="size-4 text-amber-400" /> Open discrepancies
-              </h2>
-              <button onClick={() => discrepancies.refetch()} className="text-white/50 hover:text-white">
-                <RefreshCw className="size-4" />
-              </button>
-            </div>
-            {discrepancies.isLoading && <PageSkeleton />}
-            {!discrepancies.isLoading && (discrepancies.data?.length ?? 0) === 0 && (
-              <EmptyState sources={sources.data ?? []} />
-            )}
-            {Array.from(byClass.entries()).map(([cls, items]) => (
-              <div key={cls} className="space-y-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-white/40">{items[0]?.class_label ?? cls.replace(/_/g, " ")}</p>
-                {items.map((d, idx) => (
-                  <DiscrepancyCard key={`${cls}-${idx}`} discrepancy={d} />
-                ))}
-              </div>
-            ))}
+            <DiscrepanciesTab agentId={agentId} worker={worker} metrics={metrics.data} />
           </section>
         )}
 
@@ -146,50 +116,6 @@ export default function IntelligenceWorkerPage() {
           </section>
         )}
       </main>
-    </div>
-  );
-}
-
-function severityColor(severity: string) {
-  if (severity === "high") return "bg-rose-500";
-  if (severity === "medium") return "bg-amber-400";
-  return "bg-slate-400";
-}
-
-function formatDate(value: string | null) {
-  if (!value) return null;
-  const d = new Date(value);
-  return isNaN(d.getTime()) ? value : d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-}
-
-function DiscrepancyCard({ discrepancy: d }: { discrepancy: Discrepancy }) {
-  return (
-    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4 text-sm text-white/80">
-      <div className="mb-2 flex items-start justify-between gap-3">
-        <div className="flex items-start gap-2">
-          <span className={cn("mt-1.5 size-2 shrink-0 rounded-full", severityColor(d.severity))} aria-hidden="true" />
-          <p className="font-medium text-white">{d.title}</p>
-        </div>
-        {d.ref && <span className="shrink-0 rounded bg-white/[0.08] px-2 py-0.5 text-xs text-white/70">{d.ref}</span>}
-      </div>
-      <p className="mb-3 leading-relaxed text-white/60">{d.summary}</p>
-      {d.sources.length > 0 && (
-        <div className="flex flex-wrap gap-2">
-          {d.sources.map((s, i) => {
-            const label = [s.source_label, s.actor && `by ${s.actor}`, formatDate(s.occurred_at)].filter(Boolean).join(" ");
-            return s.url ? (
-              <a key={i} href={s.url} target="_blank" rel="noreferrer"
-                className="inline-flex items-center gap-1 rounded bg-white/[0.06] px-2 py-1 text-xs text-white/70 hover:bg-white/[0.10] hover:text-white">
-                <LinkIcon className="size-3" /> {label}
-              </a>
-            ) : (
-              <span key={i} className="inline-flex items-center gap-1 rounded bg-white/[0.06] px-2 py-1 text-xs text-white/70">
-                {label}
-              </span>
-            );
-          })}
-        </div>
-      )}
     </div>
   );
 }
@@ -309,22 +235,6 @@ function Metric({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg bg-white/[0.04] p-2">
       <p className="text-xs text-white/40">{label}</p>
       <p className="text-sm font-medium text-white">{value}</p>
-    </div>
-  );
-}
-
-function EmptyState({ sources }: { sources: IntelligenceSource[] }) {
-  const connected = sources.filter((s) => s.connected).map((s) => s.name);
-  return (
-    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-6 text-center">
-      <div className="mx-auto mb-4 grid size-11 place-items-center rounded-xl bg-emerald-400/10 text-emerald-300">
-        <Bot className="size-5" />
-      </div>
-      <p className="text-sm font-medium text-white">No open discrepancies</p>
-      <p className="mt-1 text-xs text-white/50">
-        Connected sources: {connected.length > 0 ? connected.join(", ") : "none"}.
-        Add Slack, Qiko Track or GitHub to start surfacing claim-vs-evidence gaps.
-      </p>
     </div>
   );
 }

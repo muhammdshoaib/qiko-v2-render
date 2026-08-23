@@ -80,7 +80,7 @@ export function FinanceHistoryPanel({ agentId }: { agentId: string }) {
             <div className="flex min-h-[12rem] items-center justify-center">
               <div className="w-full max-w-lg rounded-xl border border-white/[0.08] p-8 text-center">
                 <p className="mb-1 text-sm text-white/50">No messages yet</p>
-                <p className="text-xs text-white/35">Use the Chat tab to ask the analyst — conversations appear here.</p>
+                <p className="text-xs text-white/35">Use the Chat tab to ask the analyst - conversations appear here.</p>
               </div>
             </div>
           )}

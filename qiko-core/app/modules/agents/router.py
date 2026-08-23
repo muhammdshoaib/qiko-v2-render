@@ -71,6 +71,7 @@ _WRITE_ONLY_VIA_DEDICATED_ENDPOINT = frozenset(_REDACTED_CONFIG_KEYS) | {
 # incident needs, and recording only that the threshold moved would leave the reader to go and ask.
 _AUDITED_SCALAR_KEYS = frozenset({
     "archived", "gate_threshold", "retrieval_k", "studio_linked", "language",
+    "discrepancy_active_projects", "discrepancy_digest_frequency",
 })
 # These are tenant free text, sometimes long, sometimes containing customer names. Recorded by NAME
 # only: knowing the persona was rewritten is actionable, copying it into a second store is not.

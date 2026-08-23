@@ -58,7 +58,7 @@ function ConfirmRemoval({ email, reason, onReasonChange, opener, onConfirm, onCa
       onClose={close}
       // Escape must not abandon a request that is already in flight.
       onCancel={(event) => { if (pending) event.preventDefault(); }}
-      className="w-[min(92vw,28rem)] rounded-2xl border border-border bg-card p-5 text-foreground backdrop:bg-black/50">
+      className="m-auto max-h-[90dvh] w-[min(92vw,28rem)] overflow-y-auto rounded-2xl border border-border bg-card p-5 text-foreground backdrop:bg-black/50">
       <h2 id="confirm-removal-title" className="text-lg font-semibold">Remove platform access</h2>
       <p className="mt-2 text-sm text-muted-foreground">
         {email} will lose access to the admin console. This is recorded in the audit trail.

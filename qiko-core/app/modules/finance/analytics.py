@@ -73,10 +73,10 @@ def _prop_id(rank: int) -> str:
 def _month_label(frm: str, to: str) -> str:
     fp, tp = frm.split("-"), to.split("-")
     if len(fp) < 2 or len(tp) < 2:
-        return f"{frm} \u2014 {to}"
+        return f"{frm} - {to}"
     fm = _MONTHS[int(fp[1]) - 1] if fp[1].isdigit() and 1 <= int(fp[1]) <= 12 else ""
     tm = _MONTHS[int(tp[1]) - 1] if tp[1].isdigit() and 1 <= int(tp[1]) <= 12 else ""
-    return f"{fm} {fp[0]} \u2014 {tm} {tp[0]}"
+    return f"{fm} {fp[0]} - {tm} {tp[0]}"
 
 
 def _risk_score(cost_to_income: float) -> int:
@@ -422,7 +422,7 @@ def compute_analytics(expenses: list[ExpenseRow], incomes: list[IncomeRow], *,
     charts["monthlyTrends"] = _monthly_trends(real_exp, real_inc)
     insights = _build_insights(raw_props, charts, total_income, total_expenses, net_profit,
                                total_outstanding, len(distinct_vendors), risk_counts)
-    trends = _build_trends(raw_props, real_exp, total_income, total_outstanding)
+    trends = _build_trends(raw_props, real_exp, total_income, total_outstanding, currency)
 
     summary = _build_summary(raw_props, real_exp, real_inc, total_income, total_expenses, total_nett,
                              total_vat, total_outstanding, net_profit, len(real_refs))
@@ -599,12 +599,8 @@ def _build_insights(props: list[dict], charts: dict, total_income: float, total_
     }
 
 
-def _gbp(n: float) -> str:
-    return f"\u00a3{n:,.2f}"
-
-
 def _build_trends(props: list[dict], all_exp: list[ExpenseRow], total_income: float,
-                  total_outstanding: float) -> list[dict]:
+                  total_outstanding: float, currency: str = DEFAULT_CURRENCY) -> list[dict]:
     by_income = sorted(props, key=lambda p: p["income"], reverse=True)
     top_prop = by_income[0] if by_income else None
     top_share = _round2((top_prop["income"] / total_income) * 100) if total_income > 0 and top_prop else 0.0
@@ -617,16 +613,16 @@ def _build_trends(props: list[dict], all_exp: list[ExpenseRow], total_income: fl
         "section": "Property Performance", "insightCount": 3, "insights": [
             {"title": "Top Performer",
              "insightText": (f"{top_prop['name']} generates the highest net income at "
-                             f"{_gbp(top_prop['netProfit'])}, contributing {top_share}% of total portfolio income"
+                             f"{_fmt(top_prop['netProfit'], currency)}, contributing {top_share}% of total portfolio income"
                              if top_prop else "No property data available"),
              "metricValue": top_prop["netProfit"] if top_prop else 0,
-             "metricFormatted": _gbp(top_prop["netProfit"]) if top_prop else "\u00a30.00",
+             "metricFormatted": _fmt(top_prop["netProfit"], currency) if top_prop else _fmt(0, currency),
              "propertyRef": top_prop["propertyRef"] if top_prop else "",
              "propertyName": top_prop["name"] if top_prop else "",
              "direction": "stable", "severity": "positive"},
             {"title": "Lowest Margin",
              "insightText": (f"{lowest_margin['name']} has the lowest margin at "
-                             f"{lowest_margin['marginPercent']}% \u2014 review expenses"
+                             f"{lowest_margin['marginPercent']}% - review expenses"
                              if lowest_margin else "No margin data available"),
              "metricValue": lowest_margin["marginPercent"] if lowest_margin else 0,
              "metricFormatted": f"{lowest_margin['marginPercent']}%" if lowest_margin else "0%",
@@ -658,17 +654,17 @@ def _build_trends(props: list[dict], all_exp: list[ExpenseRow], total_income: fl
     arrears_collections = {
         "section": "Arrears & Collections", "insightCount": 3, "insights": [
             {"title": "Total Arrears",
-             "insightText": (f"Total tenant arrears stand at {_gbp(total_arrears)} across "
-                             f"{len(with_arrears)} properties \u2014 {arrears_pct}% of annual demanded rent"),
-             "metricValue": total_arrears, "metricFormatted": _gbp(total_arrears),
+             "insightText": (f"Total tenant arrears stand at {_fmt(total_arrears, currency)} across "
+                             f"{len(with_arrears)} properties - {arrears_pct}% of annual demanded rent"),
+             "metricValue": total_arrears, "metricFormatted": _fmt(total_arrears, currency),
              "propertyCount": len(with_arrears), "percentOfIncome": arrears_pct,
              "direction": "stable", "severity": "warning" if total_arrears > 0 else "positive"},
             {"title": "Highest Arrears",
              "insightText": (f"{top_arrears['name']} has the highest individual arrears at "
-                             f"{_gbp(top_arrears['outstanding'])} \u2014 recommend escalation to collections"
+                             f"{_fmt(top_arrears['outstanding'], currency)} - recommend escalation to collections"
                              if top_arrears else "No arrears data available"),
              "metricValue": top_arrears["outstanding"] if top_arrears else 0,
-             "metricFormatted": _gbp(top_arrears["outstanding"]) if top_arrears else "\u00a30.00",
+             "metricFormatted": _fmt(top_arrears["outstanding"], currency) if top_arrears else _fmt(0, currency),
              "propertyRef": top_arrears["propertyRef"] if top_arrears else "",
              "propertyName": top_arrears["name"] if top_arrears else "",
              "direction": "increase", "severity": "warning"},
@@ -703,21 +699,21 @@ def _build_trends(props: list[dict], all_exp: list[ExpenseRow], total_income: fl
         "section": "Maintenance / Expenses", "insightCount": 3, "insights": [
             {"title": "Top Expense Category",
              "insightText": (f"{top_cat[0]} is the largest expense category at {top_cat_share}% of total "
-                             f"spend ({_gbp(top_cat_amount)})" if top_cat else "No expense data available"),
-             "metricValue": top_cat_amount, "metricFormatted": _gbp(top_cat_amount),
+                             f"spend ({_fmt(top_cat_amount, currency)})" if top_cat else "No expense data available"),
+             "metricValue": top_cat_amount, "metricFormatted": _fmt(top_cat_amount, currency),
              "categoryName": top_cat[0] if top_cat else "", "sharePercent": top_cat_share,
              "direction": "stable", "severity": "info"},
             {"title": "Vendor Concentration",
              "insightText": (f"{top_vendor[0]} accounts for {top_vendor_share}% of total maintenance spend "
-                             f"\u2014 {'high concentration risk' if top_vendor_share > 50 else 'within acceptable range'}"
+                             f" - {'high concentration risk' if top_vendor_share > 50 else 'within acceptable range'}"
                              if top_vendor else "No vendor data available"),
-             "metricValue": top_vendor_amount, "metricFormatted": _gbp(top_vendor_amount),
+             "metricValue": top_vendor_amount, "metricFormatted": _fmt(top_vendor_amount, currency),
              "vendorName": top_vendor[0] if top_vendor else "", "sharePercent": top_vendor_share,
              "direction": "stable", "severity": "warning" if top_vendor_share > 50 else "info"},
             {"title": "High Cost Properties",
              "insightText": (f"{len(high_cost)} {'property has' if len(high_cost) == 1 else 'properties have'} "
                              f"high cost-to-income ratio ({', '.join(p['name'] for p in high_cost) or 'none'}) "
-                             "\u2014 review maintenance contracts"),
+                             " - review maintenance contracts"),
              "metricValue": len(high_cost), "metricFormatted": str(len(high_cost)),
              "affectedProperties": [{"propertyRef": p["propertyRef"], "name": p["name"],
                                      "costToIncomeRatio": p["costToIncomeRatio"], "riskScore": p["riskScore"]}
@@ -742,24 +738,24 @@ def _build_trends(props: list[dict], all_exp: list[ExpenseRow], total_income: fl
         "section": "Unit-Level Trends", "insightCount": 3, "insights": [
             {"title": "Highest Maintenance Unit",
              "insightText": (f"{top_unit['unitDescription']} ({top_unit['propertyName']}) has the highest "
-                             f"maintenance spend at {_gbp(top_unit['totalGross'])} across "
+                             f"maintenance spend at {_fmt(top_unit['totalGross'], currency)} across "
                              f"{top_unit['invoiceCount']} invoices" if top_unit else "No unit data available"),
              "metricValue": top_unit["totalGross"] if top_unit else 0,
-             "metricFormatted": _gbp(top_unit["totalGross"]) if top_unit else "\u00a30.00",
+             "metricFormatted": _fmt(top_unit["totalGross"], currency) if top_unit else _fmt(0, currency),
              "unitRef": top_unit["unitRef"] if top_unit else "",
              "unitDescription": top_unit["unitDescription"] if top_unit else "",
              "propertyName": top_unit["propertyName"] if top_unit else "",
              "direction": "stable", "severity": "info"},
             {"title": "Recurring Issues",
-             "insightText": (f"{len(recurring)} units have 3+ maintenance invoices \u2014 may indicate "
+             "insightText": (f"{len(recurring)} units have 3+ maintenance invoices - may indicate "
                              "recurring issues requiring capital investment"),
              "metricValue": len(recurring), "metricFormatted": str(len(recurring)),
              "direction": "increase" if recurring else "stable", "severity": "info"},
             {"title": "Above Average Spend",
              "insightText": (f"{len(above_avg)} units have maintenance spend more than 2x the average "
-                             f"({_gbp(avg_unit)}) \u2014 review for systemic issues"),
+                             f"({_fmt(avg_unit, currency)}) - review for systemic issues"),
              "metricValue": len(above_avg), "metricFormatted": str(len(above_avg)),
-             "averagePerUnit": _gbp(avg_unit),
+             "averagePerUnit": _fmt(avg_unit, currency),
              "direction": "increase" if above_avg else "stable",
              "severity": "warning" if above_avg else "positive"},
         ],

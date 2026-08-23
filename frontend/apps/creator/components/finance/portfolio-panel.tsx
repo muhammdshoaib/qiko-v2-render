@@ -11,7 +11,7 @@ import { activeProperties, formatCurrency } from "./utils";
 type SortKey = "propertyName" | "income" | "expenses";
 
 export function PortfolioPanel() {
-  const { agentId, analytics } = useFinance();
+  const { agentId, analytics, currency } = useFinance();
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortKey>("propertyName");
@@ -123,8 +123,8 @@ export function PortfolioPanel() {
                   className="cursor-pointer border-t border-white/[0.06] text-white/88 transition-colors hover:bg-white/[0.07] focus-visible:bg-white/[0.07] focus-visible:outline-none"
                 >
                   <td className="max-w-[14rem] px-4 py-3 font-medium leading-snug text-white/90">{row.propertyName}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-emerald-300/95">{formatCurrency(row.income)}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-rose-300/95">{formatCurrency(row.expenses)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-emerald-300/95">{formatCurrency(row.income, currency)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-rose-300/95">{formatCurrency(row.expenses, currency)}</td>
                 </tr>
               ))}
             </tbody>
