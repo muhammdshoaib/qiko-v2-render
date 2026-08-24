@@ -36,6 +36,16 @@ _PROJECT_ACTIVITY_QUESTIONS = (
     "proiect activ",
     "cel mai ocupat",
 )
+_LIST_PROJECTS_QUESTIONS = (
+    "projects in qiko track",
+    "proiecte în qiko track",
+    "qiko track projects",
+    "proiecte qiko track",
+    "ce proiecte",
+    "what projects",
+    "list projects",
+    "avem proiecte",
+)
 
 _INTELLIGENCE_PROMPT = (
     "You are a Qiko Intelligence Worker. Answer ONLY using the signals in the CONTEXT below. "
@@ -60,6 +70,10 @@ def _classify_intent(message: str) -> str:
         return "sprint_landing"
     if any(phrase in m for phrase in _PROJECT_ACTIVITY_QUESTIONS):
         return "project_activity"
+    if any(phrase in m for phrase in _LIST_PROJECTS_QUESTIONS) or (
+        ("projects" in m or "proiecte" in m) and "qiko track" in m
+    ):
+        return "list_projects"
     return "data"
 
 
@@ -155,6 +169,23 @@ def _format_project_activity_answer(projects: dict[str, dict]) -> str:
     return _NO_DATA_REPLY
 
 
+def _format_project_list_answer(projects: dict[str, dict]) -> str:
+    """Build a grounded answer to "which Qiko Track projects do we have?".
+
+    Lists available projects by key. If none are reachable, reports the
+    configured keys and the reachability failure honestly.
+    """
+    if not projects:
+        return _NO_DATA_REPLY
+    available = {k: v for k, v in projects.items() if v.get("available") is True}
+    if not available:
+        keys = ", ".join(projects.keys())
+        return f"I see the configured Qiko Track projects ({keys}) but cannot reach Qiko Track right now."
+    keys = ", ".join(available.keys())
+    count = len(available)
+    return f"You have {count} Qiko Track project{'s' if count != 1 else ''}: {keys}."
+
+
 def _format_sources(result: AgentResult, passages: list) -> list[str]:
     """Return clickable source URLs, dropping empty or non-URL labels."""
     seen: set[str] = set()
@@ -224,6 +255,15 @@ class IntelligenceChat:
                 reply = _format_project_activity_answer(projects)
                 if "github" in question.lower() and "Qiko Track" in reply:
                     reply += " I don't have GitHub project activity data."
+            return await self._record_and_return(
+                chat, tenant, conversation_id, user_id, agent_id, question, reply, intent)
+
+        if intent == "list_projects":
+            if metrics_provider is None:
+                reply = _NO_DATA_REPLY
+            else:
+                projects = await metrics_provider()
+                reply = _format_project_list_answer(projects)
             return await self._record_and_return(
                 chat, tenant, conversation_id, user_id, agent_id, question, reply, intent)
 

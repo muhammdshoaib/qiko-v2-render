@@ -1158,7 +1158,7 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
       >
         {pendingDelete && (
           <div className="space-y-4">
-            <h3 id="delete-behavior-title" className="text-lg font-semibold text-white">
+            <h3 id="delete-behavior-title" className="pr-10 text-lg font-semibold text-white">
               Delete {pendingDelete.title ? `"${pendingDelete.title}"` : "this behavior entry"}?
             </h3>
             <p className="text-sm text-slate-300">This cannot be undone.</p>
@@ -1183,7 +1183,7 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
       >
         {pendingHelp && (
           <div className="space-y-4">
-            <h3 id="behavior-help-title" className="text-lg font-semibold text-white">
+            <h3 id="behavior-help-title" className="pr-10 text-lg font-semibold text-white">
               {pendingHelp.label}
             </h3>
             <p className="text-sm text-slate-300">{pendingHelp.help}</p>

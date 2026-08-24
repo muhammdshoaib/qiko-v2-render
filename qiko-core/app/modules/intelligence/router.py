@@ -4,6 +4,7 @@ and grounded chat over captured signals.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime
@@ -773,16 +774,17 @@ async def github_app_callback(
             tenant=tenant, agent_id=agent_id, agent_name=agent.name,
             action=audit_actions.CREDENTIAL_SET, claims=claims, request=request))
     redirect_url = f"{settings.frontend_url.rstrip('/')}/workers/{agent_id}?tab=Sources"
-    html = (
+    target_origin = settings.frontend_url.rstrip("/") or "*"
+    body = (
         "<html><head><title>GitHub connected</title></head><body>"
         "<p>GitHub connected. You can close this window.</p>"
         "<script>"
-        "if (window.opener) { window.opener.postMessage({ type: 'github-connected' }, '*'); window.close(); }"
-        f"else {{ window.location.href = '{redirect_url}'; }}"
+        f"if (window.opener) {{ window.opener.postMessage({{ type: 'github-connected' }}, {json.dumps(target_origin)}); window.close(); }}"
+        f"else {{ window.location.href = {json.dumps(redirect_url)}; }}"
         "</script>"
         "</body></html>"
     )
-    return HTMLResponse(content=html)
+    return HTMLResponse(content=body)
 
 
 @router.get("/agents/{agent_id}/sources/{key}/connection")

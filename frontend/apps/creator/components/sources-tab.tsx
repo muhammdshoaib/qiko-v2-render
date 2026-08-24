@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Settings, X } from "lucide-react";
+import { Loader2, Settings } from "lucide-react";
 import { Badge, Button, Card, CardContent, Dialog, Logo } from "@qiko/ui";
 import { type IntelligenceSource, getIntelligenceSourceConnection, listIntelligenceSources } from "@/lib/api";
 import { GithubForm, QikoTrackForm, SlackForm } from "./source-forms";
@@ -162,16 +162,8 @@ function SourceSettingsDialog({
 
   return (
     <Dialog open={open} onClose={onClose} labelledBy={titleId} opener={opener} className="w-[min(94vw,34rem)]">
-      <div className="relative space-y-4">
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-0 top-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          aria-label="Close"
-        >
-          <X className="size-4" />
-        </button>
-        <div className="flex items-start gap-3 pr-6">
+      <div className="space-y-4">
+        <div className="flex items-start gap-3 pr-10">
           <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted">
             <SourceIcon source={source.key} />
           </span>
