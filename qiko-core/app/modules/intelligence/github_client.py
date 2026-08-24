@@ -253,8 +253,10 @@ class GitHubClient:
         for commit in commits:
             sha = commit.get("sha", "")[:12]
             message = (commit.get("commit") or {}).get("message", "")
-            author = ((commit.get("commit") or {}).get("author") or {}).get("name", "")
-            date = _parse_iso(((commit.get("commit") or {}).get("author") or {}).get("date"))
+            git_author = (commit.get("commit") or {}).get("author") or {}
+            git_name = git_author.get("name", "")
+            actor = (commit.get("author") or {}).get("login") or git_name
+            date = _parse_iso(git_author.get("date"))
             url = commit.get("html_url") or f"https://github.com/{repo}/commit/{sha}"
             ref = self._ref_from_text(message, branch)
             signals.append(Signal(
@@ -265,11 +267,15 @@ class GitHubClient:
                 external_id=f"commit-{sha}",
                 title=f"{repo}@{branch}: {message.splitlines()[0] if message else 'commit'}",
                 body=message,
-                actor=author,
+                actor=actor,
                 url=url,
                 ref=ref,
                 container=repo,
                 occurred_at=date,
+                meta={
+                    "git_author_name": git_name,
+                    "git_author_email": git_author.get("email", ""),
+                },
             ))
         return signals
 
