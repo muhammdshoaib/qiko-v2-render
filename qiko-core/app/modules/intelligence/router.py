@@ -7,7 +7,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 import jwt
@@ -312,6 +312,30 @@ def _plaintext_of_config(config: dict, key: str) -> str | None:
         return None
 
 
+def _github_credential(cfg: dict) -> str | None:
+    """Resolve the effective GitHub credential for this worker."""
+    return _plaintext_of_config(cfg, "github_token_encrypted")
+
+
+def _qiko_track_credential(cfg: dict) -> str | None:
+    """Resolve the effective Qiko Track token for this worker.
+
+    Service-token mode reads from global settings at runtime so a rotation
+    does not require reconnecting every worker. Manual mode decrypts the
+    per-worker token stored by the user.
+    """
+    if cfg.get("qiko_track_service_token"):
+        token = get_settings().qiko_track_service_token
+        if token:
+            return token
+    try:
+        return stored_credential(
+            cfg, flag="qiko_track_credentials_added",
+            key="qiko_track_token_encrypted", label="Qiko Track")
+    except HTTPException:
+        return None
+
+
 def get_source_catalog(request: Request) -> SourceCatalog:
     return request.app.state.intelligence_catalog
 
@@ -481,6 +505,55 @@ async def verify_source(agent_id: str, key: str, body: VerifySourceBody, request
     return result
 
 
+_GITHUB_CHAT_KEYWORDS = (
+    "github", "developer", "contributor", "commit", "pull request",
+    "repository", "repo", "branch", "merge", "review",
+)
+
+
+async def _ensure_github_signals_for_chat(
+    question: str, agent, *, catalog: SourceCatalog, signal_store, knowledge,
+    tenant: str, agent_id: str,
+) -> None:
+    """If the question is about GitHub and the worker has no recent signals, fetch them now.
+
+    This keeps the chat agentic: it does not say "I don't have that data" when a live
+    connected source can answer the question.
+    """
+    if agent is None:
+        return
+    cfg = agent.config or {}
+    if not cfg.get("github_credentials_added"):
+        return
+    credential = _github_credential(cfg)
+    if not credential:
+        return
+    repo_allowlist = cfg.get("github_repo_allowlist") or []
+    if not repo_allowlist:
+        return
+
+    m = question.lower()
+    if not any(kw in m for kw in _GITHUB_CHAT_KEYWORDS):
+        return
+
+    since = datetime.now(timezone.utc) - timedelta(days=30)
+    recent = await signal_store.list_recent(
+        tenant, agent_id, source="github", since=since, limit=1)
+    if recent:
+        return
+
+    config = {
+        "repo_allowlist": repo_allowlist,
+        "watched_branches": cfg.get("github_watched_branches") or [],
+    }
+    try:
+        await ingest_source(
+            tenant, agent_id, "github", config, credential,
+            catalog=catalog, signal_store=signal_store, knowledge=knowledge, since=since)
+    except Exception as exc:  # noqa: BLE001 - a failed live fetch must not break chat
+        logger.warning("live GitHub fetch for chat failed for %s/%s: %s", tenant, agent_id, exc)
+
+
 def _metrics_provider_for_agent(agent) -> Callable[[], Awaitable[dict[str, dict]]] | None:
     """Return a cached metrics loader for the agent's Qiko Track connection, or None."""
     if agent is None:
@@ -509,6 +582,12 @@ async def ask(
     user_id = claims.get("sub", "public")
     worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
     agent = await agents.get(tenant, agent_id)
+    await _ensure_github_signals_for_chat(
+        body.question, agent,
+        catalog=request.app.state.intelligence_catalog,
+        signal_store=request.app.state.intelligence_signal_store,
+        knowledge=request.app.state.knowledge,
+        tenant=tenant, agent_id=agent_id)
     metrics_provider = _metrics_provider_for_agent(agent)
     intelligence = IntelligenceChat(worker)
     try:
