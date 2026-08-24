@@ -194,10 +194,10 @@ export function propertyBars(analytics: FinanceAnalytics | undefined): PropertyB
   const chart = analytics?.charts?.incomeVsExpensesByProperty;
   if (Array.isArray(chart) && chart.length > 0) {
     return chart.map((p) => {
-      const income = Math.round(Number(p.income ?? 0));
-      const expenses = Math.round(Number(p.expenses ?? 0));
-      const profit = Math.round(Number(p.netProfit ?? income - expenses));
-      const margin = income > 0 ? Math.round((profit / income) * 100) : 0;
+      const income = Number(p.income ?? 0);
+      const expenses = Number(p.expenses ?? 0);
+      const profit = Number(p.netProfit ?? income - expenses);
+      const margin = income > 0 ? (profit / income) * 100 : 0;
       const name = String(p.propertyName ?? "-");
       return { name, fullName: name, propertyName: name, propertyRef: String(p.propertyRef ?? name), staNo: String(p.propertyId ?? name), income, expenses, profit, margin };
     }).sort((a, b) => b.profit - a.profit).slice(0, 10);
@@ -205,10 +205,10 @@ export function propertyBars(analytics: FinanceAnalytics | undefined): PropertyB
 
   const props = activeProperties(analytics);
   const rows: PropertyBar[] = props.map((p) => {
-    const income = Math.round(Number(p.income ?? 0));
-    const expenses = Math.round(Number(p.expenses ?? 0));
-    const profit = Math.round(Number(p.netProfit ?? income - expenses));
-    const margin = income > 0 ? Math.round((profit / income) * 100) : Math.round(Number(p.marginPercent ?? 0));
+    const income = Number(p.income ?? 0);
+    const expenses = Number(p.expenses ?? 0);
+    const profit = Number(p.netProfit ?? income - expenses);
+    const margin = income > 0 ? (profit / income) * 100 : Number(p.marginPercent ?? 0);
     const name = String(p.name ?? p.propertyId ?? "-");
     return { name, fullName: name, propertyName: name, propertyRef: String(p.propertyRef ?? name), staNo: String(p.propertyId ?? name), income, expenses, profit, margin };
   });
@@ -248,7 +248,7 @@ export function expenseCategoryDonut(analytics: FinanceAnalytics | undefined): D
     .map(([name, value], i) => ({
       key: name,
       name: name.length > 20 ? `${name.slice(0, 20)}…` : name,
-      value: Math.round(value),
+      value,
       color: CHART_COLORS[i % CHART_COLORS.length],
     }));
 }
@@ -274,10 +274,10 @@ export function vendorRows(analytics: FinanceAnalytics | undefined): VendorRow[]
       .map(([vendorName, amount]) => ({ vendorName, amount }));
   }
   return rows.slice(0, 8).map((v, i) => {
-    const spend = Math.round(Number(v.amount ?? 0));
+    const spend = Number(v.amount ?? 0);
     const percent = v.sharePercent != null
-      ? Math.round(Number(v.sharePercent))
-      : totalExpenses > 0 ? Math.round((spend / totalExpenses) * 100) : 0;
+      ? Number(v.sharePercent)
+      : totalExpenses > 0 ? (spend / totalExpenses) * 100 : 0;
     return { name: v.vendorName, fullName: v.vendorName, spend, percent, color: CHART_COLORS[i % CHART_COLORS.length] };
   });
 }

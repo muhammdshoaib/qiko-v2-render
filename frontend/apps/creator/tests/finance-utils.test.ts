@@ -6,6 +6,9 @@ import {
   formatCompact,
   normalizeFinanceSummary,
   kpiMetricDrilldown,
+  propertyBars,
+  vendorRows,
+  expenseCategoryDonut,
   type KpiMetricKey,
 } from "../components/finance/utils";
 
@@ -83,6 +86,45 @@ test("kpiMetricDrilldown expands expenseBreakdown and formats monetary sub-field
   assert.ok(result.details.some(([label, value]) => label.includes("Net") && value === expectedCurrency(300, "EUR")));
   assert.ok(result.details.some(([label, value]) => label.includes("Vat") && value === expectedCurrency(30, "EUR")));
   assert.ok(result.details.some(([label, value]) => label === "Total Expenses Invoice Count" && value === "10"));
+});
+
+test("propertyBars preserves decimals from analytics", () => {
+  const analytics = {
+    properties: [{
+      name: "Alpha",
+      propertyRef: "A-1",
+      income: 180842.30,
+      expenses: 2777.50,
+      netProfit: 178064.80,
+      marginPercent: 1.5,
+      outstanding: 0,
+    }],
+  } as any;
+  const bars = propertyBars(analytics);
+  assert.equal(bars[0].income, 180842.30);
+  assert.equal(bars[0].expenses, 2777.50);
+  assert.equal(bars[0].profit, 178064.80);
+});
+
+test("vendorRows and expenseCategoryDonut preserve decimals", () => {
+  const analytics = {
+    summary: { totalExpenses: 2777.50 },
+    properties: [{
+      propertyRef: "A-1",
+      income: 0,
+      expenses: 2777.50,
+      netProfit: 0,
+      expenseCategories: [{ category: "Repairs", amount: 1234.56 }],
+      topVendors: [{ vendorName: "ACME", amount: 1234.56 }],
+    }],
+  } as any;
+
+  const vendors = vendorRows(analytics);
+  assert.equal(vendors[0].spend, 1234.56);
+  assert.ok(vendors[0].percent > 0);
+
+  const categories = expenseCategoryDonut(analytics);
+  assert.equal(categories[0].value, 1234.56);
 });
 
 test("kpiMetricDrilldown shows missing values as -", () => {
