@@ -46,6 +46,7 @@ _LIST_PROJECTS_QUESTIONS = (
     "list projects",
     "avem proiecte",
 )
+_QIKO_TRACK_ACCESS_KEYWORDS = ("access", "acces", "connected", "conectat", "reachable", "reach", "conectare")
 
 _INTELLIGENCE_PROMPT = (
     "You are a Qiko Intelligence Worker. Answer ONLY using the signals in the CONTEXT below. "
@@ -74,6 +75,8 @@ def _classify_intent(message: str) -> str:
         ("projects" in m or "proiecte" in m) and "qiko track" in m
     ):
         return "list_projects"
+    if "qiko track" in m and any(kw in m for kw in _QIKO_TRACK_ACCESS_KEYWORDS):
+        return "qiko_track_access"
     return "data"
 
 
@@ -186,6 +189,23 @@ def _format_project_list_answer(projects: dict[str, dict]) -> str:
     return f"You have {count} Qiko Track project{'s' if count != 1 else ''}: {keys}."
 
 
+def _format_qiko_track_access_answer(projects: dict[str, dict]) -> str:
+    """Build a grounded answer to "do you have access to Qiko Track?".
+
+    Answers yes/no based on whether the agent can reach any configured Qiko Track
+    project right now, and lists the reachable project keys when it can.
+    """
+    if not projects:
+        return _NO_DATA_REPLY
+    available = {k: v for k, v in projects.items() if v.get("available") is True}
+    if not available:
+        keys = ", ".join(projects.keys())
+        return f"Qiko Track is configured for {keys}, but I cannot reach it right now."
+    keys = ", ".join(available.keys())
+    count = len(available)
+    return f"Yes. I can read Qiko Track data for {count} project{'s' if count != 1 else ''}: {keys}."
+
+
 def _format_sources(result: AgentResult, passages: list) -> list[str]:
     """Return clickable source URLs, dropping empty or non-URL labels."""
     seen: set[str] = set()
@@ -264,6 +284,15 @@ class IntelligenceChat:
             else:
                 projects = await metrics_provider()
                 reply = _format_project_list_answer(projects)
+            return await self._record_and_return(
+                chat, tenant, conversation_id, user_id, agent_id, question, reply, intent)
+
+        if intent == "qiko_track_access":
+            if metrics_provider is None:
+                reply = _NO_DATA_REPLY
+            else:
+                projects = await metrics_provider()
+                reply = _format_qiko_track_access_answer(projects)
             return await self._record_and_return(
                 chat, tenant, conversation_id, user_id, agent_id, question, reply, intent)
 
