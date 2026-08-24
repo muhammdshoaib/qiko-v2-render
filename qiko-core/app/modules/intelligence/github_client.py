@@ -90,7 +90,7 @@ class GitHubClient:
         self._installation_token_expires = time.time() + 3300
         return self._installation_token
 
-    async def _mint_installation_token(self) -> str:
+    def _mint_app_jwt(self) -> str:
         settings = get_settings()
         app_id = settings.github_app_id
         private_key = settings.github_app_private_key
@@ -103,10 +103,12 @@ class GitHubClient:
             "iss": app_id,
         }
         try:
-            app_token = jwt.encode(payload, private_key, algorithm="RS256")
+            return jwt.encode(payload, private_key, algorithm="RS256")
         except Exception as exc:
             raise GitHubClientError(f"failed to mint GitHub App JWT: {exc}") from exc
 
+    async def _mint_installation_token(self) -> str:
+        app_token = self._mint_app_jwt()
         path = f"/app/installations/{self.credential}/access_tokens"
         result = await self._request("POST", path, token=app_token, retry_on_rate_limit=False)
         token = result.get("token")
@@ -156,11 +158,15 @@ class GitHubClient:
     async def verify(self, repo_allowlist: list[str]) -> dict:
         """Check the credential and repo visibility. Returns a summary dict."""
         try:
-            user_or_app = await self._request("GET", "/app" if self._is_installation_id else "/user")
+            if self._is_installation_id:
+                user_or_app = await self._request(
+                    "GET", f"/app/installations/{self.credential}", token=self._mint_app_jwt())
+            else:
+                user_or_app = await self._request("GET", "/user")
         except GitHubClientError as exc:
             return {"ok": False, "error": str(exc)}
 
-        login = user_or_app.get("login") or user_or_app.get("slug", "app")
+        login = user_or_app.get("account", {}).get("login") or user_or_app.get("login") or user_or_app.get("slug", "app")
         repo_results = []
         missing = []
         for repo in repo_allowlist:
