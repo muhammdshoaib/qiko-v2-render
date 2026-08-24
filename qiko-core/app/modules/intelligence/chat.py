@@ -57,6 +57,7 @@ _INTELLIGENCE_PROMPT = (
 )
 
 _NO_DATA_REPLY = "I don't have that data."
+_NOT_CONNECTED_REPLY = "Qiko Track is not connected for this worker."
 
 
 def _classify_intent(message: str) -> str:
@@ -179,7 +180,7 @@ def _format_project_list_answer(projects: dict[str, dict]) -> str:
     configured keys and the reachability failure honestly.
     """
     if not projects:
-        return _NO_DATA_REPLY
+        return _NOT_CONNECTED_REPLY
     available = {k: v for k, v in projects.items() if v.get("available") is True}
     if not available:
         keys = ", ".join(projects.keys())
@@ -196,7 +197,7 @@ def _format_qiko_track_access_answer(projects: dict[str, dict]) -> str:
     project right now, and lists the reachable project keys when it can.
     """
     if not projects:
-        return _NO_DATA_REPLY
+        return _NOT_CONNECTED_REPLY
     available = {k: v for k, v in projects.items() if v.get("available") is True}
     if not available:
         keys = ", ".join(projects.keys())
@@ -280,7 +281,7 @@ class IntelligenceChat:
 
         if intent == "list_projects":
             if metrics_provider is None:
-                reply = _NO_DATA_REPLY
+                reply = _NOT_CONNECTED_REPLY
             else:
                 projects = await metrics_provider()
                 reply = _format_project_list_answer(projects)
@@ -289,7 +290,7 @@ class IntelligenceChat:
 
         if intent == "qiko_track_access":
             if metrics_provider is None:
-                reply = _NO_DATA_REPLY
+                reply = _NOT_CONNECTED_REPLY
             else:
                 projects = await metrics_provider()
                 reply = _format_qiko_track_access_answer(projects)

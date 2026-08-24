@@ -270,7 +270,7 @@ def test_intelligence_chat_unit_declines_project_list_without_metrics():
     chat = IntelligenceChat(worker)
     result = asyncio.run(chat.answer("what projects do we have in Qiko Track?"))
     assert result["intent"] == "list_projects"
-    assert result["reply"] == "I don't have that data."
+    assert result["reply"] == "Qiko Track is not connected for this worker."
     assert result["passages_used"] == 0
 
 
@@ -315,5 +315,5 @@ def test_intelligence_chat_unit_declines_qiko_track_access_without_metrics():
     chat = IntelligenceChat(worker)
     result = asyncio.run(chat.answer("do you have access to Qiko Track?"))
     assert result["intent"] == "qiko_track_access"
-    assert result["reply"] == "I don't have that data."
+    assert result["reply"] == "Qiko Track is not connected for this worker."
     assert result["passages_used"] == 0
