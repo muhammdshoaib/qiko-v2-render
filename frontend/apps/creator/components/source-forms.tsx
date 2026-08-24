@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
 import { Button, Dialog, Input, Label, Select } from "@qiko/ui";
@@ -51,7 +51,7 @@ function TestResultDialog({ state, onClose }: { state: TestDialogState; onClose:
           ) : (
             <AlertTriangle className="size-5 text-amber-400" aria-hidden="true" />
           )}
-          <h2 id={titleId} className="text-base font-semibold text-white">{state.title}</h2>
+          <h2 id={titleId} className="pr-10 text-base font-semibold text-white">{state.title}</h2>
         </div>
         <p className="whitespace-pre-wrap text-sm text-white/70">{state.message}</p>
         <Button onClick={onClose} className="w-full">Close</Button>
@@ -98,6 +98,13 @@ export function GithubForm({
     setPolling(false);
   };
 
+  const finish = useCallback(() => {
+    popupRef.current?.close();
+    popupRef.current = null;
+    setPolling(false);
+    onChange();
+  }, [onChange]);
+
   const install = useMutation({
     mutationFn: () => getGitHubAppInstallUrl(agentId),
     onSuccess: (res) => {
@@ -111,23 +118,35 @@ export function GithubForm({
 
   useEffect(() => {
     if (!polling) return;
-    const interval = setInterval(() => {
+    const check = async () => {
+      try {
+        const res = await getIntelligenceSourceConnection(agentId, "github");
+        if (res.key === "github" && res.connected) {
+          finish();
+          return;
+        }
+      } catch {}
       if (popupRef.current?.closed) {
         setPolling(false);
         popupRef.current = null;
-        return;
       }
-      getIntelligenceSourceConnection(agentId, "github").then((res) => {
-        if (res.key === "github" && res.connected) {
-          popupRef.current?.close();
-          popupRef.current = null;
-          setPolling(false);
-          onChange();
-        }
-      }).catch(() => {});
-    }, 2000);
+    };
+    const interval = setInterval(check, 2000);
     return () => clearInterval(interval);
-  }, [polling, agentId, onChange]);
+  }, [polling, agentId, finish]);
+
+  useEffect(() => {
+    if (!polling) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === "github-connected") {
+        getIntelligenceSourceConnection(agentId, "github").then((res) => {
+          if (res.key === "github" && res.connected) finish();
+        }).catch(() => {});
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [polling, agentId, finish]);
 
   if (!c?.connected) {
     return (
@@ -447,6 +466,13 @@ export function SlackForm({
     setPolling(false);
   };
 
+  const finish = useCallback(() => {
+    popupRef.current?.close();
+    popupRef.current = null;
+    setPolling(false);
+    onChange();
+  }, [onChange]);
+
   const connect = useMutation({
     mutationFn: () => connectIntelligenceSource(agentId, "slack"),
     onSuccess: (res) => {
@@ -482,23 +508,35 @@ export function SlackForm({
 
   useEffect(() => {
     if (!polling) return;
-    const interval = setInterval(() => {
+    const check = async () => {
+      try {
+        const res = await getIntelligenceSourceConnection(agentId, "slack");
+        if (res.key === "slack" && res.team_id) {
+          finish();
+          return;
+        }
+      } catch {}
       if (popupRef.current?.closed) {
         setPolling(false);
         popupRef.current = null;
-        return;
       }
-      getIntelligenceSourceConnection(agentId, "slack").then((res) => {
-        if (res.key === "slack" && res.team_id) {
-          popupRef.current?.close();
-          popupRef.current = null;
-          setPolling(false);
-          onChange();
-        }
-      }).catch(() => {});
-    }, 2000);
+    };
+    const interval = setInterval(check, 2000);
     return () => clearInterval(interval);
-  }, [polling, agentId, onChange]);
+  }, [polling, agentId, finish]);
+
+  useEffect(() => {
+    if (!polling) return;
+    const onMessage = (event: MessageEvent) => {
+      if (event.data?.type === "slack-connected") {
+        getIntelligenceSourceConnection(agentId, "slack").then((res) => {
+          if (res.key === "slack" && res.team_id) finish();
+        }).catch(() => {});
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [polling, agentId, finish]);
 
   if (!c?.team_id) {
     return (

@@ -14,6 +14,7 @@
  * native element so it stays in the natural tab order.
  */
 import * as React from "react";
+import { X } from "lucide-react";
 
 import { cn } from "./cn";
 
@@ -182,12 +183,25 @@ export function Dialog({ open, onClose, opener, busy = false, labelledBy, classN
       }}
       onCancel={(event) => { if (busy) event.preventDefault(); }}
       className={cn(
-        "m-auto max-h-[90dvh] w-[min(94vw,42rem)] overflow-y-auto rounded-2xl border border-border bg-card p-5 text-foreground",
+        "m-auto max-h-[90dvh] w-[min(94vw,42rem)] overflow-y-auto rounded-2xl bg-card p-5 text-foreground",
         "backdrop:bg-black/50",
         className,
       )}
     >
-      {open && children}
+      {open && (
+        <>
+          <button
+            type="button"
+            aria-label="Close"
+            disabled={busy}
+            onClick={onClose}
+            className="absolute right-5 top-5 rounded p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
+          >
+            <X className="size-4" aria-hidden="true" />
+          </button>
+          {children}
+        </>
+      )}
     </dialog>
   );
 }

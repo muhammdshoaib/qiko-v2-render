@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import logging
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field, field_validator
 
 from app.core.config import get_settings
@@ -316,21 +318,43 @@ async def slack_install(worker_id: str, request: Request,
 @router.get("/slack/callback")
 async def slack_callback(code: str, state: str, request: Request,
                          oauth=Depends(get_slack_oauth),
-                         agents=Depends(get_agents)) -> dict:
+                         agents=Depends(get_agents)) -> HTMLResponse:
     async def recheck(tenant: str, worker_id: str) -> None:
         _worker, check = await resolve_tenant_worker(request, tenant, worker_id)
         await check()
 
+    settings = get_settings()
     try:
         installation = await oauth.complete_install(
             code, state, recheck_worker=recheck)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail="invalid Slack OAuth callback") from exc
+    except Exception:
+        return _slack_oauth_html(
+            connected=False, detail="invalid Slack OAuth callback", settings=settings)
 
     await agents.update_config(
         installation.tenant, installation.worker_id,
         {"slack_watched_channels": [], "slack_team_id": installation.team_id})
-    return {"team_id": installation.team_id, "installed": True}
+    return _slack_oauth_html(
+        connected=True, worker_id=installation.worker_id, detail=installation.team_id, settings=settings)
+
+
+def _slack_oauth_html(
+    *, connected: bool, detail: str, settings, worker_id: str | None = None,
+) -> HTMLResponse:
+    """Return a self-closing popup page for Slack OAuth, or redirect if opened directly."""
+    base = (settings.frontend_url or "").rstrip("/") or "/"
+    redirect_url = f"{base}/workers/{worker_id}?tab=Sources" if worker_id else base
+    target_origin = base if base != "/" else "*"
+    message_type = "slack-connected" if connected else "slack-error"
+    safe_detail = html.escape(detail)
+    body = f"""<html><head><title>{"Slack connected" if connected else "Slack connection failed"}</title></head><body>
+<p>{"Slack connected. You can close this window." if connected else safe_detail}</p>
+<script>
+if (window.opener) {{ window.opener.postMessage({{ type: {json.dumps(message_type)}, detail: {json.dumps(detail)} }}, {json.dumps(target_origin)}); window.close(); }}
+else {{ window.location.href = {json.dumps(redirect_url)}; }}
+</script>
+</body></html>"""
+    return HTMLResponse(content=body)
 
 
 class SlackLink(BaseModel):

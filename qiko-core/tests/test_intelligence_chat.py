@@ -228,3 +228,47 @@ def test_intelligence_chat_unit_declines_sprint_landing_without_metrics():
     assert result["intent"] == "sprint_landing"
     assert result["reply"] == "I don't have that data."
     assert result["passages_used"] == 0
+
+
+def test_intelligence_chat_unit_lists_qiko_track_projects():
+    from app.modules.intelligence.chat import IntelligenceChat
+    from app.modules.knowledge.service import KnowledgeService
+    from app.modules.knowledge.store import InMemoryVectorStore
+
+    knowledge = KnowledgeService(store=InMemoryVectorStore())
+    worker = build_worker(
+        WorkerConfig(name="w1", tenant="intelco", agent_id="w1"),
+        provider=_Provider(), knowledge=knowledge,
+    )
+
+    async def _metrics():
+        return {
+            "QIW": {"available": True},
+            "PROJ": {"available": True},
+        }
+
+    chat = IntelligenceChat(worker)
+    result = asyncio.run(chat.answer(
+        "e proiecte avem în Qiko Track?", metrics_provider=_metrics))
+    assert result["intent"] == "list_projects"
+    assert "QIW" in result["reply"]
+    assert "PROJ" in result["reply"]
+    assert result["passages_used"] == 0
+    assert result["sources"] == []
+
+
+def test_intelligence_chat_unit_declines_project_list_without_metrics():
+    from app.modules.intelligence.chat import IntelligenceChat
+    from app.modules.knowledge.service import KnowledgeService
+    from app.modules.knowledge.store import InMemoryVectorStore
+
+    knowledge = KnowledgeService(store=InMemoryVectorStore())
+    worker = build_worker(
+        WorkerConfig(name="w1", tenant="intelco", agent_id="w1"),
+        provider=_Provider(), knowledge=knowledge,
+    )
+    chat = IntelligenceChat(worker)
+    result = asyncio.run(chat.answer("what projects do we have in Qiko Track?"))
+    assert result["intent"] == "list_projects"
+    assert result["reply"] == "I don't have that data."
+    assert result["passages_used"] == 0
