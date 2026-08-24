@@ -105,14 +105,14 @@ function FinanceShellInner({ children }: { children: React.ReactNode }) {
 
   function goFeed() {
     setChatTab(false);
-    router.push(dashboardHref);
+    if (!isDashboard) router.push(dashboardHref);
   }
   function goChat() {
     setChatTab(true);
   }
   function goHistory() {
     setChatTab(false);
-    router.push(historyHref);
+    if (!isHistory) router.push(historyHref);
   }
 
   return (
