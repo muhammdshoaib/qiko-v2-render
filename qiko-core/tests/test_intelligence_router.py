@@ -32,13 +32,13 @@ def client():
         catalog = SourceCatalog()
         catalog.register(
             key="slack", name="Slack", connector=None,
-            description="Slack workspace messages via the Events API (push).")
+            description="Workspace messages.")
         catalog.register(
             key="github", name="GitHub", connector=GitHubConnector(),
-            description="Repository commits, pull requests, reviews and CI status.")
+            description="Code, pull requests and CI.")
         catalog.register(
             key="qiko_track", name="Qiko Track", connector=QikoTrackConnector(),
-            description="Tickets, transitions, comments and blocked flags.")
+            description="Tickets, comments and blockers.")
         connector = _demo_connector()
         catalog.register(
             key="demo", name="Demo", connector=connector,
@@ -73,7 +73,7 @@ def test_get_source(client):
     assert r.status_code == 200
     assert r.json() == {
         "key": "slack", "name": "Slack",
-        "description": "Slack workspace messages via the Events API (push).",
+        "description": "Workspace messages.",
         "pollable": False, "connected": False, "configured": True,
     }
 

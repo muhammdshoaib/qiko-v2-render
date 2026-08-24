@@ -298,16 +298,16 @@ def _build_intelligence_catalog() -> SourceCatalog:
     catalog = SourceCatalog()
     catalog.register(
         key="slack", name="Slack", connector=None,
-        description="Slack workspace messages via the Events API (push).")
+        description="Workspace messages.")
     catalog.register(
         key="github", name="GitHub", connector=GitHubConnector(),
-        description="Repository commits, pull requests, reviews and CI status.")
+        description="Code, pull requests and CI.")
     catalog.register(
         key="qiko_track", name="Qiko Track", connector=QikoTrackConnector(),
-        description="Tickets, transitions, comments and blocked flags.")
+        description="Tickets, comments and blockers.")
     catalog.register(
         key="generic", name="Generic", connector=None,
-        description="Custom webhook or file ingestion.")
+        description="Custom webhooks or files.")
     return catalog
 
 

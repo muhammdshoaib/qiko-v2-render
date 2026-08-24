@@ -84,14 +84,13 @@ function SourceCard({ agentId, source }: { agentId: string; source: Intelligence
 
   return (
     <Card className="flex h-full flex-col bg-card">
-      <CardContent className="flex flex-1 flex-col p-5">
+      <CardContent className="flex flex-1 flex-col gap-3 p-5">
         <div className="flex items-start gap-3">
           <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted">
             <SourceIcon source={source.key} />
           </span>
           <div className="min-w-0 flex-1">
             <h3 className="font-semibold text-foreground">{source.name}</h3>
-            <p className="text-xs text-muted-foreground">{source.description}</p>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1">
             <Badge variant={source.connected ? "success" : "muted"}>
@@ -101,7 +100,9 @@ function SourceCard({ agentId, source }: { agentId: string; source: Intelligence
           </div>
         </div>
 
-        <div className="mt-auto pt-5">
+        <p className="text-xs text-muted-foreground">{source.description}</p>
+
+        <div className="mt-auto pt-2">
           {configured ? (
             <Button
               size="sm"
