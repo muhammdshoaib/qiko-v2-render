@@ -514,7 +514,8 @@ async def ask(
     try:
         result = await intelligence.answer(
             body.question, conversation_id=body.conversation_id or None,
-            chat=chat, user_id=user_id, metrics_provider=metrics_provider)
+            chat=chat, user_id=user_id, metrics_provider=metrics_provider,
+            signal_store=request.app.state.intelligence_signal_store)
     finally:
         await recheck()
     return result

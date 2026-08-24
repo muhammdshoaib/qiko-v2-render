@@ -6,11 +6,13 @@ Follows the pattern in app.modules.finance.chat but sits on top of the shared Wo
 from __future__ import annotations
 
 import uuid
-
+from collections import Counter
 from collections.abc import Awaitable, Callable
+from datetime import datetime, timedelta, timezone
 
 from app.modules.agentcore.models import AgentResult
 from app.modules.chat.service import ChatService
+from app.modules.intelligence.models import Signal, SignalStore
 from app.modules.workers.worker import StubProviderUnavailable, Worker
 
 _GREETINGS = ("hi", "hello", "hey", "good morning", "good afternoon", "good evening", "greetings")
@@ -47,6 +49,18 @@ _LIST_PROJECTS_QUESTIONS = (
     "avem proiecte",
 )
 _QIKO_TRACK_ACCESS_KEYWORDS = ("access", "acces", "connected", "conectat", "reachable", "reach", "conectare")
+_MOST_ACTIVE_DEVELOPER_QUESTIONS = (
+    "most active developer",
+    "most active contributor",
+    "top contributor",
+    "top developer",
+    "cel mai activ developer",
+    "cel mai activ dezvoltator",
+    "cel mai activ contributor",
+    "cea mai activa persoana",
+    "most active on github",
+    "cel mai activ pe github",
+)
 
 _INTELLIGENCE_PROMPT = (
     "You are a Qiko Intelligence Worker. Answer ONLY using the signals in the CONTEXT below. "
@@ -58,6 +72,7 @@ _INTELLIGENCE_PROMPT = (
 
 _NO_DATA_REPLY = "I don't have that data."
 _NOT_CONNECTED_REPLY = "Qiko Track is not connected for this worker."
+_NO_GITHUB_DATA_REPLY = "I don't have any captured GitHub activity for this worker yet."
 
 
 def _classify_intent(message: str) -> str:
@@ -70,6 +85,12 @@ def _classify_intent(message: str) -> str:
         return "capability"
     if any(phrase in m for phrase in _SPRINT_LANDING_QUESTIONS):
         return "sprint_landing"
+    if any(phrase in m for phrase in _MOST_ACTIVE_DEVELOPER_QUESTIONS) or (
+        ("developer" in m or "contributor" in m or "dezvoltator" in m or "persoana" in m)
+        and ("most active" in m or "cel mai activ" in m or "top" in m or "cea mai" in m)
+        and "github" in m
+    ):
+        return "most_active_developer"
     if any(phrase in m for phrase in _PROJECT_ACTIVITY_QUESTIONS):
         return "project_activity"
     if any(phrase in m for phrase in _LIST_PROJECTS_QUESTIONS) or (
@@ -207,6 +228,57 @@ def _format_qiko_track_access_answer(projects: dict[str, dict]) -> str:
     return f"Yes. I can read Qiko Track data for {count} project{'s' if count != 1 else ''}: {keys}."
 
 
+_COUNTED_GITHUB_KINDS = frozenset({
+    "commit", "pr_opened", "pr_merged", "pr_closed",
+    "review_approved", "review_changes_requested", "review_requested",
+})
+
+
+def _format_most_active_developer(signals: list[Signal]) -> str:
+    """Build a grounded answer to "who is the most active GitHub developer?".
+
+    Counts captured GitHub signals per actor over the last 30 days. Commits,
+    opened/merged/closed PRs, reviews and review requests all count as activity.
+    CI failures are excluded because the actor is the check app, not a person.
+    """
+    if not signals:
+        return _NO_GITHUB_DATA_REPLY
+
+    counter: Counter[str] = Counter()
+    by_actor: dict[str, list[Signal]] = {}
+    for signal in signals:
+        if signal.kind not in _COUNTED_GITHUB_KINDS or not signal.actor:
+            continue
+        counter[signal.actor] += 1
+        by_actor.setdefault(signal.actor, []).append(signal)
+
+    if not counter:
+        return _NO_GITHUB_DATA_REPLY
+
+    top_actor, top_count = counter.most_common(1)[0]
+    top_signals = by_actor[top_actor]
+    repos = sorted({s.container for s in top_signals if s.container})
+    repos_text = ", ".join(repos) if repos else "the connected repositories"
+    kinds = sorted({s.kind.replace("_", " ") for s in top_signals})
+
+    sources: list[str] = []
+    seen: set[str] = set()
+    for signal in top_signals:
+        url = (signal.url or "").strip()
+        if url and url not in seen and url.startswith("https://"):
+            sources.append(url)
+            seen.add(url)
+        if len(sources) >= 5:
+            break
+
+    reply = (
+        f"{top_actor} is the most active GitHub developer in the last 30 days "
+        f"with {top_count} event{'s' if top_count != 1 else ''} across {repos_text}. "
+        f"Activity includes {', '.join(kinds)}."
+    )
+    return reply
+
+
 def _format_sources(result: AgentResult, passages: list) -> list[str]:
     """Return clickable source URLs, dropping empty or non-URL labels."""
     seen: set[str] = set()
@@ -235,6 +307,7 @@ class IntelligenceChat:
         self, question: str, *, conversation_id: str | None = None,
         chat: ChatService | None = None, user_id: str = "public",
         metrics_provider: Callable[[], Awaitable[dict[str, dict]]] | None = None,
+        signal_store: SignalStore | None = None,
     ) -> dict:
         """Answer a question, record the exchange, and return sources.
 
@@ -296,6 +369,29 @@ class IntelligenceChat:
                 reply = _format_qiko_track_access_answer(projects)
             return await self._record_and_return(
                 chat, tenant, conversation_id, user_id, agent_id, question, reply, intent)
+
+        if intent == "most_active_developer":
+            if signal_store is None:
+                reply = _NO_GITHUB_DATA_REPLY
+                sources: list[str] = []
+            else:
+                since = datetime.now(timezone.utc) - timedelta(days=30)
+                signals = await signal_store.list_recent(
+                    tenant, agent_id, source="github", since=since, limit=10_000)
+                reply = _format_most_active_developer(signals)
+                sources = []
+                if reply != _NO_GITHUB_DATA_REPLY:
+                    seen: set[str] = set()
+                    for signal in signals:
+                        url = (signal.url or "").strip()
+                        if url and url not in seen and url.startswith("https://"):
+                            sources.append(url)
+                            seen.add(url)
+                        if len(sources) >= 5:
+                            break
+            return await self._record_and_return(
+                chat, tenant, conversation_id, user_id, agent_id, question, reply, intent,
+                sources=sources)
 
         # Check retrieval before spending on a model call: a question with no supporting signal
         # must fail closed into an honest "I don't have that data" rather than a hallucinated answer.

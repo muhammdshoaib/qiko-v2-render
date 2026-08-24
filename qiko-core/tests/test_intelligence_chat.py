@@ -317,3 +317,43 @@ def test_intelligence_chat_unit_declines_qiko_track_access_without_metrics():
     assert result["intent"] == "qiko_track_access"
     assert result["reply"] == "Qiko Track is not connected for this worker."
     assert result["passages_used"] == 0
+
+
+def test_intelligence_chat_unit_answers_most_active_developer():
+    from datetime import datetime, timedelta, timezone
+
+    from app.modules.intelligence.chat import IntelligenceChat
+    from app.modules.intelligence.models import InMemorySignalStore, Signal
+    from app.modules.knowledge.service import KnowledgeService
+    from app.modules.knowledge.store import InMemoryVectorStore
+
+    knowledge = KnowledgeService(store=InMemoryVectorStore())
+    worker = build_worker(
+        WorkerConfig(name="w1", tenant="intelco", agent_id="w1"),
+        provider=_Provider(), knowledge=knowledge,
+    )
+
+    store = InMemorySignalStore()
+    now = datetime.now(timezone.utc)
+    for i in range(3):
+        asyncio.run(store.add(Signal(
+            tenant="intelco", agent_id="w1", source="github", kind="commit",
+            external_id=f"c{i}", container="Qiko-AILabs/qiko-v2", actor="alice",
+            title=f"commit {i}", body="", occurred_at=now - timedelta(hours=i),
+            url=f"https://github.com/Qiko-AILabs/qiko-v2/commit/c{i}",
+        )))
+    asyncio.run(store.add(Signal(
+        tenant="intelco", agent_id="w1", source="github", kind="pr_opened",
+        external_id="pr-1", container="Qiko-AILabs/qiko-v2", actor="bob",
+        title="pr", body="", occurred_at=now - timedelta(hours=1),
+        url="https://github.com/Qiko-AILabs/qiko-v2/pull/1",
+    )))
+
+    chat = IntelligenceChat(worker)
+    result = asyncio.run(chat.answer(
+        "who is the most active developer on GitHub?", signal_store=store))
+    assert result["intent"] == "most_active_developer"
+    assert "alice" in result["reply"]
+    assert "3" in result["reply"]
+    assert result["passages_used"] == 0
+    assert result["sources"]
