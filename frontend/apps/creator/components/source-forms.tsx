@@ -72,6 +72,8 @@ export function GithubForm({
   const [message, setMessage] = useState<string | null>(null);
   const [testDialog, setTestDialog] = useState<TestDialogState>({ open: false, title: "", message: "", success: false });
   const [polling, setPolling] = useState(false);
+  const [repos, setRepos] = useState("");
+  const [branches, setBranches] = useState("");
   const popupRef = useRef<Window | null>(null);
   const c = connection?.key === "github" ? connection : undefined;
 
@@ -91,6 +93,22 @@ export function GithubForm({
     },
     onError: (e: Error) => showTest("Connection test failed", e.message, false),
   });
+
+  const save = useMutation({
+    mutationFn: () => setIntelligenceSourceSettings(agentId, "github", {
+      repo_allowlist: parseList(repos),
+      watched_branches: parseList(branches),
+    }),
+    onSuccess: () => { setMessage(""); onChange(); },
+    onError: (e: Error) => setMessage(e.message),
+  });
+
+  useEffect(() => {
+    if (c) {
+      setRepos(formatList(c.settings?.repo_allowlist ?? c.repo_allowlist ?? []));
+      setBranches(formatList(c.settings?.watched_branches ?? c.watched_branches ?? []));
+    }
+  }, [c]);
 
   const stopPolling = () => {
     popupRef.current?.close();
@@ -165,25 +183,6 @@ export function GithubForm({
       </div>
     );
   }
-
-  const [repos, setRepos] = useState("");
-  const [branches, setBranches] = useState("");
-
-  const save = useMutation({
-    mutationFn: () => setIntelligenceSourceSettings(agentId, "github", {
-      repo_allowlist: parseList(repos),
-      watched_branches: parseList(branches),
-    }),
-    onSuccess: () => { setMessage(""); onChange(); },
-    onError: (e: Error) => setMessage(e.message),
-  });
-
-  useEffect(() => {
-    if (c) {
-      setRepos(formatList(c.settings?.repo_allowlist ?? c.repo_allowlist ?? []));
-      setBranches(formatList(c.settings?.watched_branches ?? c.watched_branches ?? []));
-    }
-  }, [c]);
 
   return (
     <div className="space-y-3">
