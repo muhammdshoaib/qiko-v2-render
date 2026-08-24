@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, CheckCircle2, Loader2 } from "lucide-react";
-import { Button, Dialog, Input, Label, Select, cn } from "@qiko/ui";
+import { Button, Dialog, Input, Label, Select } from "@qiko/ui";
 import {
   type IntelligenceSourceConnection,
   type QikoTrackPreview,
@@ -18,6 +18,12 @@ import {
 } from "@/lib/api";
 
 type OnChange = () => void;
+
+function openCenteredPopup(url: string, name: string, width: number, height: number): Window | null {
+  const left = window.screenX + Math.round((window.outerWidth - width) / 2);
+  const top = window.screenY + Math.round((window.outerHeight - height) / 2);
+  return window.open(url, name, `width=${width},height=${height},left=${left},top=${top}`);
+}
 
 function parseList(value: string) {
   return value.split(",").map((s) => s.trim()).filter(Boolean);
@@ -66,6 +72,7 @@ export function GithubForm({
   const [message, setMessage] = useState<string | null>(null);
   const [testDialog, setTestDialog] = useState<TestDialogState>({ open: false, title: "", message: "", success: false });
   const [polling, setPolling] = useState(false);
+  const popupRef = useRef<Window | null>(null);
   const c = connection?.key === "github" ? connection : undefined;
 
   const showTest = (title: string, text: string, success: boolean) =>
@@ -85,10 +92,17 @@ export function GithubForm({
     onError: (e: Error) => showTest("Connection test failed", e.message, false),
   });
 
+  const stopPolling = () => {
+    popupRef.current?.close();
+    popupRef.current = null;
+    setPolling(false);
+  };
+
   const install = useMutation({
     mutationFn: () => getGitHubAppInstallUrl(agentId),
     onSuccess: (res) => {
-      const popup = window.open(res.url, "github_app_install", "width=900,height=800");
+      const popup = openCenteredPopup(res.url, "github_app_install", 900, 800);
+      popupRef.current = popup;
       if (popup) setPolling(true);
       else setMessage("Pop-up blocked. Allow pop-ups and try again.");
     },
@@ -98,8 +112,15 @@ export function GithubForm({
   useEffect(() => {
     if (!polling) return;
     const interval = setInterval(() => {
+      if (popupRef.current?.closed) {
+        setPolling(false);
+        popupRef.current = null;
+        return;
+      }
       getIntelligenceSourceConnection(agentId, "github").then((res) => {
         if (res.key === "github" && res.connected) {
+          popupRef.current?.close();
+          popupRef.current = null;
           setPolling(false);
           onChange();
         }
@@ -111,10 +132,16 @@ export function GithubForm({
   if (!c?.connected) {
     return (
       <div className="space-y-3">
-        <Button variant="outline" className="w-full" disabled={install.isPending} onClick={() => install.mutate()}>
-          {install.isPending && <Loader2 className="size-4 animate-spin" />} Connect GitHub App
-        </Button>
-        {polling && <p className="text-xs text-muted-foreground">Waiting for GitHub App authorization...</p>}
+        {polling ? (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">Waiting for GitHub authorization...</p>
+            <Button variant="outline" size="sm" className="w-full" onClick={stopPolling}>Cancel</Button>
+          </div>
+        ) : (
+          <Button variant="outline" className="w-full" disabled={install.isPending} onClick={() => install.mutate()}>
+            {install.isPending && <Loader2 className="size-4 animate-spin" />} Connect
+          </Button>
+        )}
         {message && <p className="text-xs text-destructive">{message}</p>}
       </div>
     );
@@ -186,7 +213,6 @@ export function QikoTrackForm({
   const [projectKeys, setProjectKeys] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
 
-  const [dialogOpen, setDialogOpen] = useState(false);
   const [projectKey, setProjectKey] = useState("");
   const [projectName, setProjectName] = useState("");
   const [projectKind, setProjectKind] = useState<"INTERNAL" | "PRODUCT" | "CLIENT">("INTERNAL");
@@ -216,7 +242,7 @@ export function QikoTrackForm({
       project_kind: projectKind,
       base_url: baseUrl || undefined,
     }),
-    onSuccess: () => { setDialogOpen(false); setMessage(null); onChange(); },
+    onSuccess: () => { setMessage(null); onChange(); },
     onError: (e: Error) => setMessage(e.message),
   });
 
@@ -333,33 +359,24 @@ export function QikoTrackForm({
 
   return (
     <div className="space-y-3">
-      <Button disabled={connectAuto.isPending} onClick={() => setDialogOpen(true)} className="w-full">
-        {connectAuto.isPending && <Loader2 className="size-4 animate-spin" />} Connect Qiko Track
-      </Button>
-      {message && <p className="text-xs text-destructive">{message}</p>}
+      <p className="text-sm text-muted-foreground">
+        Choose or create the Qiko Track project where backlog proposals will be created.
+      </p>
 
-      <Dialog
-        open={dialogOpen}
-        onClose={() => setDialogOpen(false)}
-        labelledBy="qiko-track-connect-title"
-        busy={connectAuto.isPending}
-      >
-        <div className="space-y-4">
-          <h2 id="qiko-track-connect-title" className="text-lg font-semibold">Connect Qiko Track</h2>
-          <p className="text-sm text-muted-foreground">This worker will watch all Qiko Track projects. Choose or create the project where backlog proposals will be created.</p>
+      {existing.length > 0 && (
+        <div className="space-y-1">
+          <Label className="text-xs">Backlog project</Label>
+          <Select value={existingKey} onChange={(e) => setExistingKey(e.target.value)}>
+            <option value="">Create new</option>
+            {existing.map((p) => (
+              <option key={p.key} value={p.key}>{p.name} ({p.key})</option>
+            ))}
+          </Select>
+        </div>
+      )}
 
-          {existing.length > 0 && (
-            <div className="space-y-1">
-              <Label className="text-xs">Backlog project</Label>
-              <Select value={existingKey} onChange={(e) => setExistingKey(e.target.value)}>
-                <option value="">Create new</option>
-                {existing.map((p) => (
-                  <option key={p.key} value={p.key}>{p.name} ({p.key})</option>
-                ))}
-              </Select>
-            </div>
-          )}
-
+      {!existingKey && (
+        <>
           <div className="space-y-1">
             <Label className="text-xs">Backlog project key</Label>
             <Input value={projectKey} onChange={(e) => setProjectKey(e.target.value.toUpperCase())} placeholder="QIW" />
@@ -376,17 +393,13 @@ export function QikoTrackForm({
               <option value="CLIENT">Client</option>
             </Select>
           </div>
+        </>
+      )}
 
-          <div className="flex flex-wrap gap-2">
-            <Button size="sm" disabled={!selectedKey || connectAuto.isPending} onClick={() => connectAuto.mutate()}>
-              {connectAuto.isPending && <Loader2 className="size-4 animate-spin" />} Connect
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setDialogOpen(false)}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      </Dialog>
+      <Button disabled={!selectedKey || connectAuto.isPending} onClick={() => connectAuto.mutate()} className="w-full">
+        {connectAuto.isPending && <Loader2 className="size-4 animate-spin" />} Connect
+      </Button>
+      {message && <p className="text-xs text-destructive">{message}</p>}
     </div>
   );
 }
@@ -409,6 +422,7 @@ export function SlackForm({
   const [summaryInterval, setSummaryInterval] = useState(60);
   const [digestInterval, setDigestInterval] = useState(1440);
   const [headsUpTimeout, setHeadsUpTimeout] = useState(60);
+  const popupRef = useRef<Window | null>(null);
   const c = connection?.key === "slack" ? connection : undefined;
 
   const watched = useQuery({
@@ -427,12 +441,19 @@ export function SlackForm({
     setHeadsUpTimeout(c?.settings?.heads_up_timeout_minutes ?? 60);
   }, [watched.data, c]);
 
+  const stopPolling = () => {
+    popupRef.current?.close();
+    popupRef.current = null;
+    setPolling(false);
+  };
+
   const connect = useMutation({
     mutationFn: () => connectIntelligenceSource(agentId, "slack"),
     onSuccess: (res) => {
       setMessage(null);
       if (res.url) {
-        const popup = window.open(res.url, "slack_oauth", "width=500,height=700");
+        const popup = openCenteredPopup(res.url, "slack_oauth", 500, 700);
+        popupRef.current = popup;
         if (popup) setPolling(true);
         else setMessage("Pop-up blocked. Please allow pop-ups and try again.");
       } else {
@@ -462,8 +483,15 @@ export function SlackForm({
   useEffect(() => {
     if (!polling) return;
     const interval = setInterval(() => {
+      if (popupRef.current?.closed) {
+        setPolling(false);
+        popupRef.current = null;
+        return;
+      }
       getIntelligenceSourceConnection(agentId, "slack").then((res) => {
         if (res.key === "slack" && res.team_id) {
+          popupRef.current?.close();
+          popupRef.current = null;
           setPolling(false);
           onChange();
         }
@@ -480,10 +508,16 @@ export function SlackForm({
             ? "Authorize the Qiko Slack app for this worker."
             : "Slack app is not configured. Ask an admin to add the client credentials before connecting."}
         </p>
-        <Button disabled={!configured || connect.isPending} onClick={() => connect.mutate()} className="w-full">
-          {connect.isPending && <Loader2 className="size-4 animate-spin" />} Connect Slack
-        </Button>
-        {configured && polling && <p className="text-xs text-muted-foreground">Waiting for Slack authorization...</p>}
+        {polling ? (
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">Waiting for Slack authorization...</p>
+            <Button variant="outline" size="sm" className="w-full" onClick={stopPolling}>Cancel</Button>
+          </div>
+        ) : (
+          <Button disabled={!configured || connect.isPending} onClick={() => connect.mutate()} className="w-full">
+            {connect.isPending && <Loader2 className="size-4 animate-spin" />} Connect
+          </Button>
+        )}
         {message && <p className="text-xs text-destructive">{message}</p>}
       </div>
     );

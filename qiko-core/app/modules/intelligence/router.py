@@ -348,13 +348,12 @@ async def _connected_keys(agent, installation_store) -> set[str]:
         connected.add("github")
     if cfg.get("qiko_track_credentials_added") and (cfg.get("qiko_track_token_encrypted") or cfg.get("qiko_track_service_token")):
         connected.add("qiko_track")
-    if cfg.get("slack_watched_channels"):
-        try:
-            inst = await asyncio.to_thread(installation_store.find_for_worker, agent.tenant, agent.id)
-        except Exception:  # noqa: BLE001 - sync store may raise if the schema is not ready
-            inst = None
-        if inst is not None:
-            connected.add("slack")
+    try:
+        inst = await asyncio.to_thread(installation_store.find_for_worker, agent.tenant, agent.id)
+    except Exception:  # noqa: BLE001 - sync store may raise if the schema is not ready
+        inst = None
+    if inst is not None:
+        connected.add("slack")
     return connected
 
 
@@ -834,8 +833,8 @@ async def get_source_connection(
         slack_settings = _source_settings_for_key(key, cfg)
         return {
             "key": key,
-            "connected": inst is not None and bool(cfg.get("slack_watched_channels")),
-            "team_id": inst.team_id if inst else None,
+            "connected": inst is not None,
+            "team_id": inst.team_id if inst else cfg.get("slack_team_id"),
             "watched_channels": slack_settings["watched_channels"],
             "channels": [],
             "settings": slack_settings,
@@ -906,8 +905,9 @@ async def disconnect_source(
     _role: dict = Depends(require_role(Role.editor)),
     agents: AgentService = Depends(get_agents),
     catalog: SourceCatalog = Depends(get_source_catalog),
+    slack_oauth=Depends(get_slack_oauth),
 ) -> dict:
-    """Remove stored source credentials. Slack clears the watched channel list."""
+    """Remove stored source credentials. Slack clears the watched channel list and installation."""
     _worker, recheck = await _resolve_worker(request, tenant, agent_id)
     definition = catalog.definition(key)
     if definition is None:
@@ -928,6 +928,9 @@ async def disconnect_source(
         }
     elif key == "slack":
         meta = _SOURCE_CONFIG["slack"]
+        inst = await _slack_installation_for_agent(slack_oauth.store, tenant, agent_id)
+        if inst is not None:
+            await asyncio.to_thread(slack_oauth.store.delete, inst.team_id, inst.enterprise_id, tenant)
         patch = {meta["watched"]: None, meta["team_id"]: None}
     else:
         raise HTTPException(status_code=404, detail="source not found")

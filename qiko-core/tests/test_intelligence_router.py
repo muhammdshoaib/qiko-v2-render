@@ -191,6 +191,24 @@ def test_slack_connect_returns_oauth_url(client):
     assert r.json()["url"].startswith("https://slack.com/oauth/v2/authorize")
 
 
+def test_slack_is_connected_when_installation_exists(client):
+    from app.modules.channels.slack_oauth import SlackInstallation
+
+    client.app.state.slack_oauth.store.save(SlackInstallation(
+        team_id="T1", bot_token="xoxb-fake", bot_user_id="U999",
+        tenant="intelco", worker_id="w1"))
+
+    r = client.get("/api/v1/intelligence/agents/w1/sources", cookies=C)
+    assert r.status_code == 200
+    sources = {s["key"]: s for s in r.json()}
+    assert sources["slack"]["connected"] is True
+
+    r = client.get("/api/v1/intelligence/agents/w1/sources/slack/connection", cookies=C)
+    assert r.status_code == 200
+    assert r.json()["connected"] is True
+    assert r.json()["team_id"] == "T1"
+
+
 def test_slack_watched_channels_are_stored(client):
     from app.modules.channels.slack_oauth import SlackInstallation
 

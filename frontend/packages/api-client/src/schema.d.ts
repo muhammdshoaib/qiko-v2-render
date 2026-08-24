@@ -3099,7 +3099,7 @@ export interface paths {
         post: operations["connect_source_api_v1_intelligence_agents__agent_id__sources__key__post"];
         /**
          * Disconnect Source
-         * @description Remove stored source credentials. Slack clears the watched channel list.
+         * @description Remove stored source credentials. Slack clears the watched channel list and installation.
          */
         delete: operations["disconnect_source_api_v1_intelligence_agents__agent_id__sources__key__delete"];
         options?: never;
