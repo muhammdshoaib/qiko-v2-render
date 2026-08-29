@@ -294,7 +294,7 @@ function FinanceShellInner({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
-        <FinanceFileManagerDialog agentId={agentId} open={filesOpen} onOpenChange={setFilesOpen} />
+        <FinanceFileManagerDialog agentId={agentId} open={filesOpen} onOpenChange={setFilesOpen} onUploaded={() => setMonth("all")} />
       </div>
     </AppShell>
   );

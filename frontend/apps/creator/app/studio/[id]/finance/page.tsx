@@ -21,7 +21,7 @@ const BG = "oklch(0.16 0.02 250)";
 export default function FinanceDashboardPage() {
   const { id: agentId } = useParams<{ id: string }>();
   const router = useRouter();
-  const { analytics, isLoading, search } = useFinance();
+  const { analytics, isLoading, search, setMonth } = useFinance();
 
   const hasData = (analytics?.properties?.length ?? 0) > 0 || (analytics?.totalRows ?? 0) > 0;
 
@@ -59,7 +59,7 @@ export default function FinanceDashboardPage() {
   const handleClassClick = () => to("/breakdown?view=profit");
 
   if (isLoading) return <DashboardSkeleton />;
-  if (!hasData) return <EmptyState agentId={agentId} />;
+  if (!hasData) return <EmptyState agentId={agentId} onUploaded={() => setMonth("all")} />;
 
   return (
     <div className="flex-1 space-y-4 overflow-y-auto p-4">
@@ -93,7 +93,7 @@ function DashboardSkeleton() {
   );
 }
 
-function EmptyState({ agentId }: { agentId: string }) {
+function EmptyState({ agentId, onUploaded }: { agentId: string; onUploaded?: () => void }) {
   const uploadRef = useRef<HTMLDivElement>(null);
   return (
     <div className="flex flex-1 items-center justify-center overflow-y-auto px-4 py-8">
@@ -125,7 +125,7 @@ function EmptyState({ agentId }: { agentId: string }) {
             <p className="text-xs text-white/45">Charts, KPIs, and trends appear on this dashboard.</p>
           </div>
         </div>
-        <FinanceFileManager agentId={agentId} />
+        <FinanceFileManager agentId={agentId} onUploaded={onUploaded} />
       </div>
     </div>
   );

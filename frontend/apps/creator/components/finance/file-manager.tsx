@@ -82,8 +82,8 @@ export function FinanceFileManager({ agentId, onUploaded }: { agentId: string; o
   );
 }
 
-export function FinanceFileManagerDialog({ agentId, open, onOpenChange, className }: {
-  agentId: string; open: boolean; onOpenChange: (v: boolean) => void; className?: string;
+export function FinanceFileManagerDialog({ agentId, open, onOpenChange, className, onUploaded }: {
+  agentId: string; open: boolean; onOpenChange: (v: boolean) => void; className?: string; onUploaded?: () => void;
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -94,7 +94,7 @@ export function FinanceFileManagerDialog({ agentId, open, onOpenChange, classNam
             Upload Excel workbooks (.xlsx) to power the dashboard. Delete a file to remove its data.
           </DialogDescription>
         </DialogHeader>
-        <FinanceFileManager agentId={agentId} />
+        <FinanceFileManager agentId={agentId} onUploaded={onUploaded} />
       </DialogContent>
     </Dialog>
   );
