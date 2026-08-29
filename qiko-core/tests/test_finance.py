@@ -376,6 +376,106 @@ async def test_service_chat_includes_unit_level_data_for_unit_questions():
     assert "A001/1" in result["reply"]
 
 
+def test_normalize_markdown_tables_leaves_well_formed_input_untouched():
+    from app.modules.finance.chat import _normalize_markdown_tables
+
+    already_fine = (
+        "Some prose that mentions true || false without a real table.\n\n"
+        "- a bullet\n- another bullet\n\n"
+        "| A | B |\n|---|---|\n| 1 | 2 |"
+    )
+    assert _normalize_markdown_tables(already_fine) == already_fine
+
+
+def test_normalize_markdown_tables_does_not_drop_a_cell_that_looks_like_a_separator():
+    # A "--"/"-" no-data placeholder is common in real financial tables and, in isolation, matches
+    # the same dashes pattern as a genuine header-separator row. Guessing the column width from it
+    # must not silently delete the other cells in that ordinary, already-correct row.
+    from app.modules.finance.chat import _normalize_markdown_tables
+
+    row_with_placeholder_cell = "| A | B | -- |"
+    assert _normalize_markdown_tables(row_with_placeholder_cell) == row_with_placeholder_cell
+
+
+def test_normalize_markdown_tables_reflows_a_glued_table_that_has_a_placeholder_cell():
+    # A "--" no-data placeholder inside one of several genuinely glued rows must not stop the
+    # whole table (which has a real, unambiguous separator row) from being reflowed correctly.
+    from app.modules.finance.chat import _normalize_markdown_tables
+
+    glued = "| Property | Arrears | |------|---------|| A | -- || B | 120.00 |"
+    assert _normalize_markdown_tables(glued) == (
+        "| Property | Arrears |\n|------|---------|\n| A | -- |\n| B | 120.00 |"
+    )
+
+
+def test_normalize_markdown_tables_handles_prose_before_the_table_on_the_same_line():
+    from app.modules.finance.chat import _normalize_markdown_tables
+
+    glued = "Here's the data: | A | B ||---|---|| 1 | 2 |"
+    assert _normalize_markdown_tables(glued) == (
+        "Here's the data:\n| A | B |\n|---|---|\n| 1 | 2 |"
+    )
+
+
+def test_normalize_markdown_tables_documents_ragged_empty_cell_limitation():
+    # Known residual limitation (see _reflow_glued_table_row's docstring): a ragged glued table
+    # whose extra/missing cells are empty, rather than containing visible text, can pass both
+    # safety checks and get reflowed with values reattributed to the wrong column. Values are
+    # preserved (nothing is deleted), but "9" and "7" end up under different columns than the
+    # input implied. This pins the current, known-imperfect behavior so a future change to the
+    # function is a deliberate decision, not a silent regression.
+    from app.modules.finance.chat import _normalize_markdown_tables
+
+    ragged_with_empty_cells = (
+        "| A | B |" "| --- | --- |" "| X | Y | |" "| 7 | | 9 |" "| | 11 | 12 |"
+    )
+    result = _normalize_markdown_tables(ragged_with_empty_cells)
+    assert "7" in result and "9" in result and "11" in result and "12" in result
+    assert result.count("\n") > 0  # it is reflowed, not left as one line
+
+
+def test_normalize_markdown_tables_does_not_truncate_a_ragged_row():
+    # A stray "|" (e.g. inside a property/vendor name pulled from the tenant's own workbook, or
+    # the model emitting an uneven row) makes the pipe count not divide evenly by the column
+    # width. Reflowing anyway would silently drop the leftover characters, truncating a real
+    # figure with no signal -- leave the line untouched instead of guessing.
+    from app.modules.finance.chat import _normalize_markdown_tables
+
+    ragged = (
+        "| Rank | Property | |------|----------|"
+        "| 1 | 12 | High Street |"  # one extra "|" inside this row's second cell
+    )
+    assert _normalize_markdown_tables(ragged) == ragged
+
+
+async def test_service_chat_reflows_a_table_the_model_glued_onto_one_line():
+    # EL-1015: the model sometimes returns an entire markdown table (header, separator, every
+    # data row) as one unbroken line instead of one row per line. That is not valid GFM, so the
+    # frontend renders it as raw pipes instead of a table even though remark-gfm already handles
+    # a properly-formatted table (EL-1013). Recover the real column count from the dashes
+    # separator row (an unambiguous marker) and put each row back on its own line.
+    glued = (
+        "Here are the top properties:\n\n"
+        "| Rank | Property | Net Profit | "
+        "|------|----------|-----------|"
+        "| 1 | Mandrell & Mauleverer Rd | £178,064.80 |"
+        "| 2 | 1 Waterson Street | £137,838.40 |"
+    )
+    svc = FinanceService(provider=StubProvider(canned=glued))
+    await svc.upload("acme", "agent-1", _build_workbook(), filename="p.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    result = await svc.chat("acme", "agent-1", "What are the top properties by net profit?")
+
+    assert "||" not in result["reply"]
+    table_lines = [ln for ln in result["reply"].split("\n") if ln.strip().startswith("|")]
+    assert table_lines == [
+        "| Rank | Property | Net Profit |",
+        "|------|----------|-----------|",
+        "| 1 | Mandrell & Mauleverer Rd | £178,064.80 |",
+        "| 2 | 1 Waterson Street | £137,838.40 |",
+    ]
+
+
 async def test_service_chat_without_data_does_not_hallucinate():
     svc = FinanceService(provider=StubProvider(canned="SHOULD NOT BE CALLED"))
     result = await svc.chat("acme", "agent-empty", "How much profit did we make?")

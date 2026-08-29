@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Clock3, MessageSquare, RefreshCw, Search, User } from "lucide-react";
 import { cn } from "@qiko/ui";
+import { AnswerMarkdown } from "@/components/chat-message";
 import { getFinanceHistory, type FinanceHistoryItem } from "@/lib/api";
 import { useFinance } from "./finance-context";
 
@@ -174,7 +175,13 @@ function HistoryBubble({ row }: { row: FinanceHistoryItem }) {
             <span className="tabular-nums text-[10px] text-white/30">{formatStamp(row.timestamp)}</span>
           ) : null}
         </div>
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-white/90">{row.content}</p>
+        {isUser ? (
+          <p className="whitespace-pre-wrap text-sm leading-relaxed text-white/90">{row.content}</p>
+        ) : (
+          <div className="text-sm text-white/90">
+            <AnswerMarkdown text={row.content} />
+          </div>
+        )}
       </div>
       {isUser && (
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-indigo-400/30 bg-indigo-500/15">
