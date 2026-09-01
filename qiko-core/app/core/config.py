@@ -81,6 +81,9 @@ class Settings(BaseSettings):
     whatsapp_app_secret: str = ""   # HMAC secret for inbound webhook signature verification
     interakt_webhook_secret: str = ""   # HMAC secret for Interakt's Interakt-Signature header
     interakt_api_key: str = ""   # Template Message Send API auth
+    # jm-backend's internal API (JM2-1023): investor lookup + WhatsApp conversation persistence.
+    jm_backend_base_url: str = ""
+    jm_backend_shared_secret: str = ""
     slack_client_id: str = ""
     slack_client_secret: str = ""
     slack_signing_secret: str = ""   # Slack request signing for the inbound Events API

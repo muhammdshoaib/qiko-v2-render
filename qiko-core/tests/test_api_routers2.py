@@ -228,6 +228,68 @@ def test_interakt_inbound_ignores_non_message_events(client, monkeypatch):
     assert client.post("/api/v1/channels/interakt/webhook", json=payload).json()["processed"] == []
 
 
+class _FakeJmBackend:
+    """Records every turn in memory, standing in for jm-backend's internal API in tests."""
+
+    def __init__(self):
+        self.turns: list[tuple[str, str, str]] = []
+
+    def record_turn(self, phone_number, role, text, *, template_used=None, interakt_message_id=None):
+        from app.modules.joseph_mews.jm_backend_client import ConversationState, ConversationTurn
+
+        self.turns.append((phone_number, role, text))
+        return ConversationState(
+            conversation_id=f"wa_{phone_number}", investor_id=None,
+            history=tuple(
+                ConversationTurn(role=r, text=t) for _, r, t in self.turns if _ == phone_number
+            ),
+        )
+
+
+def test_interakt_inbound_records_both_turns_with_jm_backend(client, monkeypatch):
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "channels_inbound_enabled", True)
+    fake_jm_backend = _FakeJmBackend()
+    client.app.state.jm_backend = fake_jm_backend
+
+    client.post("/api/v1/channels/interakt/webhook", json=_interakt_message("Tell me about ISO", "im-4"))
+
+    roles = [role for _, role, _ in fake_jm_backend.turns]
+    assert roles == ["customer", "joe"]
+    assert fake_jm_backend.turns[0] == ("447700900000", "customer", "Tell me about ISO")
+
+
+def test_interakt_inbound_wants_human_forces_handoff_end_to_end(client, monkeypatch):
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "channels_inbound_enabled", True)
+
+    class _EscalatingJmBackend(_FakeJmBackend):
+        def record_turn(self, phone_number, role, text, *, template_used=None, interakt_message_id=None):
+            from app.modules.joseph_mews.jm_backend_client import ConversationState, ConversationTurn
+
+            self.turns.append((phone_number, role, text))
+            return ConversationState(
+                conversation_id=f"wa_{phone_number}", investor_id=None,
+                history=(ConversationTurn(role="customer", text="I want to speak to a human please"),),
+            )
+
+    from app.modules.joseph_mews.qualification import LeadQualification
+
+    monkeypatch.setattr(
+        "app.modules.channels.router.extract_qualification",
+        lambda *_a, **_kw: LeadQualification(wants_human=True),
+    )
+    client.app.state.jm_backend = _EscalatingJmBackend()
+
+    response = client.post(
+        "/api/v1/channels/interakt/webhook",
+        json=_interakt_message("I want to speak to a human please", "im-5"),
+    )
+    assert response.json()["replyMode"] == "handoff"
+
+
 def test_excel_search(client):
     client.post("/api/v1/knowledge/ingest", json={"doc_id": "excel-q3-0", "text": "region: EMEA, revenue: 120000"}, cookies=_cookies())
     hits = client.post("/api/v1/excel/search", json={"query": "EMEA revenue"}, cookies=_cookies()).json()["results"]

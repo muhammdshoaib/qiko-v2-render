@@ -209,6 +209,10 @@ def get_interakt_idempotency(request: Request):
     return request.app.state.interakt_idempotency
 
 
+def get_jm_backend(request: Request):
+    return request.app.state.jm_backend
+
+
 def get_excel(request: Request):
     return request.app.state.excel
 
