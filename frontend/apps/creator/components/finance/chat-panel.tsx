@@ -2,11 +2,11 @@
 
 // "Ask Analyst" chat surface -- posts to POST /finance/{agentId}/chat and renders grounded answers.
 import { useEffect, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { MessageSquare, SendHorizonal, Sparkles } from "lucide-react";
 import { cn } from "@qiko/ui";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
-import { financeChat } from "@/lib/api";
+import { financeChat, getFinanceHistory } from "@/lib/api";
 
 const SUGGESTED = [
   "Which property has the highest net profit?",
@@ -20,12 +20,18 @@ export function FinanceChatPanel({
 }: {
   agentId: string; workerName: string; pendingPrompt?: string | null; onPendingConsumed?: () => void;
 }) {
+  const qc = useQueryClient();
   const [messages, setMessages] = useState<{ role: string; text: string }[]>([]);
   const [text, setText] = useState("");
   const send = useMutation({
     mutationFn: (message: string) => financeChat(agentId, message),
     onMutate: (message) => setMessages((m) => [...m, { role: "user", text: message }]),
-    onSuccess: (reply) => setMessages((m) => [...m, { role: "assistant", text: reply.reply }]),
+    onSuccess: (reply) => {
+      setMessages((m) => [...m, { role: "assistant", text: reply.reply }]);
+      // Keep the History tab (which now stays mounted alongside Chat, EL-1016/EL-1019) from
+      // showing a stale transcript after a new exchange.
+      qc.invalidateQueries({ queryKey: ["finance-history", agentId] });
+    },
     onError: (err) => setMessages((m) => [...m, { role: "assistant", text: `Sorry, I couldn't answer that. (${(err as Error).message})` }]),
   });
 
@@ -35,6 +41,25 @@ export function FinanceChatPanel({
     send.mutate(q);
     setText("");
   }
+
+  // EL-1019: switching tabs away from Chat and back (or a full page reload) used to always show
+  // a blank "Ask about your portfolio" screen even though the conversation is persisted
+  // server-side. Seed the transcript from it instead of always starting blank, same pattern the
+  // worker-screen chat already uses (ChatTab, EL-1010).
+  useEffect(() => {
+    let cancelled = false;
+    getFinanceHistory(agentId)
+      .then((res) => {
+        if (cancelled) return;
+        // Never clobber a message already in flight: this effect and the pendingPrompt effect
+        // below both fire on mount (e.g. arriving here via an InsightRail click), and the fetch
+        // can resolve after `submit`'s optimistic append but before the reply -- overwriting
+        // unconditionally would erase the just-sent question from view.
+        setMessages((current) => (current.length > 0 ? current : res.history.map((h) => ({ role: h.role, text: h.content }))));
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [agentId]);
 
   useEffect(() => {
     if (!pendingPrompt) return;

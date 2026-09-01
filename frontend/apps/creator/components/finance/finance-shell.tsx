@@ -243,37 +243,40 @@ function FinanceShellInner({ children }: { children: React.ReactNode }) {
         )}
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          {tab === "chat" ? (
-            <div className="min-h-0 w-full min-w-0 flex-1 overflow-hidden p-4">
-              <FinanceChatPanel
-                agentId={agentId}
-                workerName={workerName}
-                pendingPrompt={pendingPrompt}
-                onPendingConsumed={() => setPendingPrompt(null)}
-              />
-            </div>
-          ) : (
-            <>
-              <main className="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden">
-                {children}
-              </main>
-              {tab === "feed" && isDashboard && (
-                <aside className="order-3 hidden w-[340px] shrink-0 flex-col border-l border-white/[0.06] xl:flex">
-                  <div className="h-full p-4 xl:p-5">
-                    <section className="flex h-full flex-col overflow-hidden rounded-2xl border border-white/[0.08]" style={{ background: "oklch(0.16 0.02 250)" }}>
-                      <InsightRail
-                        sections={sections}
-                        onInsightClick={(text, section, title) => {
-                          setPendingPrompt(title ? `${title}: ${text}` : `${section}: ${text}`);
-                          setChatTab(true);
-                        }}
-                      />
-                    </section>
-                  </div>
-                </aside>
-              )}
-            </>
-          )}
+          {/* EL-1016/EL-1019: this used to be a `tab === "chat" ? X : Y` ternary, which fully
+              unmounted whichever side wasn't active. That destroyed FinanceChatPanel's in-memory
+              messages every time you left the Chat tab (looked like the chat "clearing all the
+              data"), and dropped scroll position/local state on the dashboard side too (felt like
+              "the page refreshes"). Keep both sides mounted always and hide the inactive one with
+              CSS instead. */}
+          <div className={cn("min-h-0 w-full min-w-0 flex-1 overflow-hidden p-4", tab === "chat" ? "flex" : "hidden")}>
+            <FinanceChatPanel
+              agentId={agentId}
+              workerName={workerName}
+              pendingPrompt={pendingPrompt}
+              onPendingConsumed={() => setPendingPrompt(null)}
+            />
+          </div>
+          <div className={cn("flex min-h-0 min-w-0 flex-1 overflow-hidden", tab === "chat" && "hidden")}>
+            <main className="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden">
+              {children}
+            </main>
+            {tab === "feed" && isDashboard && (
+              <aside className="order-3 hidden w-[340px] shrink-0 flex-col border-l border-white/[0.06] xl:flex">
+                <div className="h-full p-4 xl:p-5">
+                  <section className="flex h-full flex-col overflow-hidden rounded-2xl border border-white/[0.08]" style={{ background: "oklch(0.16 0.02 250)" }}>
+                    <InsightRail
+                      sections={sections}
+                      onInsightClick={(text, section, title) => {
+                        setPendingPrompt(title ? `${title}: ${text}` : `${section}: ${text}`);
+                        setChatTab(true);
+                      }}
+                    />
+                  </section>
+                </div>
+              </aside>
+            )}
+          </div>
         </div>
 
         {mobileTrendsOpen && tab === "feed" && isDashboard && (
