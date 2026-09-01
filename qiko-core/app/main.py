@@ -29,6 +29,7 @@ from app.core.ratelimit import InMemoryRateLimiter, RedisRateLimiter
 from app.core.redis import build_redis
 from app.core.dev_gateways import (
     StubGA4Gateway,
+    StubInteraktClient,
     StubSignalEngine,
     StubSpeechGateway,
     StubStripeGateway,
@@ -37,14 +38,17 @@ from app.core.dev_gateways import (
 from app.core.observability import init_sentry, init_tracing
 from app.integrations.clients import (
     GA4Client,
+    InteraktClient,
     SignalEngineClient,
     StripeClient,
     WhatsAppClient,
 )
 from app.modules.billing.payment_links import PaymentLinkService
 from app.modules.channels.digest_scheduler import DigestScheduler
+from app.modules.channels.interakt import InteraktGateway
 from app.modules.channels.sessions import ChannelSessionStore
 from app.modules.channels.slack_events import SlackEventHandler
+from app.modules.channels.webhooks import IdempotencyGuard
 from app.modules.channels.slack_oauth import InstallationStore, SlackOAuth, WorkspaceLinkStore
 from app.modules.channels.slack_store import InMemorySlackChannelStore
 from app.modules.channels.teams_integration import TeamsNotifier
@@ -499,6 +503,9 @@ def create_app() -> FastAPI:
         invoices=app.state.stripe_webhook.invoices, gateway=app.state.subscriptions.gateway)
     app.state.whatsapp = WhatsAppAdapter(
         WhatsAppClient() if settings.whatsapp_access_token else StubWhatsAppGateway())
+    app.state.interakt = InteraktGateway(
+        InteraktClient() if settings.interakt_api_key else StubInteraktClient())
+    app.state.interakt_idempotency = IdempotencyGuard()
     app.state.excel = ExcelService(app.state.knowledge)
     app.state.sources = KnowledgeSources(app.state.knowledge)
     speech_gateway = StubSpeechGateway() if settings.debug else UnavailableSpeechGateway()

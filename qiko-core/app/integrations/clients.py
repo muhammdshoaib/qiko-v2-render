@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import httpx
+import phonenumbers
 
 from app.core.config import get_settings
 
@@ -145,6 +146,36 @@ class WhatsAppClient:
         r = self._c.post(f"/{self._phone}/messages",
                          json={"messaging_product": "whatsapp", "to": to,
                                "type": "text", "text": {"body": text}})
+        r.raise_for_status()
+        return r.json()
+
+
+def _split_phone_number(raw: str) -> tuple[str, str]:
+    """Interakt's Template Send API wants countryCode and phoneNumber as separate fields, unlike
+    Meta's Cloud API (WhatsAppClient above), which takes one E.164 string. Country-code length
+    varies (1-3 digits), so this uses phonenumbers (libphonenumber) rather than a naive split."""
+    parsed = phonenumbers.parse(raw if raw.startswith("+") else f"+{raw}")
+    return f"+{parsed.country_code}", str(parsed.national_number)
+
+
+class InteraktClient:
+    """Implements channels.interakt.InteraktClient via Interakt's Template Message Send API.
+
+    Interakt has no free-text send endpoint at all (channels/interakt.py); this is the only
+    outbound call this integration ever makes.
+    """
+
+    def __init__(self, api_key: str | None = None, client: httpx.Client | None = None):
+        key = api_key or get_settings().interakt_api_key
+        self._c = _client("https://api.interakt.ai/v1/public",
+                          {"Authorization": f"Basic {key}", "Content-Type": "application/json"}, client)
+
+    def send_template(self, to: str, template_name: str, params: list[str]) -> dict:
+        country_code, national_number = _split_phone_number(to)
+        r = self._c.post("/message/", json={
+            "countryCode": country_code, "phoneNumber": national_number, "type": "Template",
+            "template": {"name": template_name, "languageCode": "en", "bodyValues": params},
+        })
         r.raise_for_status()
         return r.json()
 

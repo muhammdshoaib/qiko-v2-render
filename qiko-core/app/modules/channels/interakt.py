@@ -15,6 +15,33 @@ from enum import Enum
 from typing import Protocol
 
 
+@dataclass
+class InboundInteraktMessage:
+    message_id: str
+    phone_number: str
+    text: str
+
+
+def parse_inbound(payload: dict) -> InboundInteraktMessage | None:
+    """Extract a text message from an Interakt 'message_received' webhook payload (confirmed
+    shape against interakt.shop's own docs, JM2-1024 research). Returns None for any other
+    event type (e.g. message_api_sent/delivered/read/failed) or a non-text message (media),
+    which the caller should ack with 200 and otherwise ignore."""
+    if payload.get("type") != "message_received":
+        return None
+    data = payload.get("data") or {}
+    message = data.get("message") or {}
+    if message.get("message_content_type") != "Text":
+        return None
+    customer = data.get("customer") or {}
+    message_id = message.get("id")
+    phone_number = customer.get("channel_phone_number")
+    text = message.get("message")
+    if not message_id or not phone_number or not text:
+        return None
+    return InboundInteraktMessage(message_id=message_id, phone_number=phone_number, text=text)
+
+
 class ReplyMode(str, Enum):
     template = "template"
     draft_for_agent = "draft_for_agent"

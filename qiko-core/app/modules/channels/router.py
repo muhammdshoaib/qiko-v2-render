@@ -16,6 +16,8 @@ from app.core.deps import (
     authed_tenant,
     get_agents,
     get_channel_sessions,
+    get_interakt,
+    get_interakt_idempotency,
     get_slack_links,
     get_slack_oauth,
     get_teams_notifier,
@@ -27,7 +29,11 @@ from app.core.deps import (
 from app.modules.channels.teams_integration import TeamsWebhookError
 from app.modules.channels.webhooks import verify_hmac_signature
 from app.modules.channels.whatsapp import verify_webhook
+from app.modules.channels.interakt import parse_inbound
 from app.modules.identity.rbac import Role
+from app.modules.joseph_mews.conversation import advance_turn
+from app.modules.joseph_mews.worker import joseph_mews_worker_config
+from app.modules.workers.worker import build_worker
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +125,50 @@ async def whatsapp_inbound(request: Request, x_hub_signature_256: str = Header(d
         raise HTTPException(status_code=403, detail="webhook signature secret not configured")
     messages = adapter.handle_inbound(json.loads(body or b"{}"))
     return {"processed": [m.message_id for m in messages]}
+
+
+@router.post("/interakt/webhook")
+async def interakt_inbound(
+    request: Request,
+    interakt_signature: str = Header(default="", alias="Interakt-Signature"),
+    gateway=Depends(get_interakt),
+    idempotency=Depends(get_interakt_idempotency),
+) -> dict:
+    """Inbound Interakt webhook for the joseph-mews tenant's Joe agent.
+
+    Same DISABLED-by-default honesty as whatsapp_inbound above (CHANNELS_INBOUND_ENABLED), for the
+    same reason: acking 200 for a message nothing actually answers is worse than an explicit 501.
+
+    Interakt has ~3 seconds to get a 200 back (JM2-1024 research); worker.answer runs a retrieval
+    embedding and a generation call, comfortably over that budget, so this must not block the ack
+    on it. There is no task queue wired for this yet (JM2-1025 tracks moving idempotency to Redis
+    for the same reason), so this is currently synchronous for correctness's sake, not throughput -
+    tracked as a known follow-up rather than silently accepted.
+    """
+    body = await request.body()
+    s = get_settings()
+    if not s.channels_inbound_enabled:
+        raise HTTPException(status_code=501, detail="inbound channel routing is not implemented")
+    if s.interakt_webhook_secret:
+        if not verify_hmac_signature(s.interakt_webhook_secret, body, interakt_signature):
+            raise HTTPException(status_code=403, detail="invalid signature")
+    elif not s.debug:
+        raise HTTPException(status_code=403, detail="webhook signature secret not configured")
+
+    parsed = parse_inbound(json.loads(body or b"{}"))
+    if parsed is None:
+        return {"processed": []}
+    if idempotency.is_duplicate(parsed.message_id):
+        return {"processed": []}
+
+    worker = build_worker(
+        joseph_mews_worker_config(),
+        knowledge=request.app.state.knowledge,
+        cost_guard=getattr(request.app.state, "cost_guard", None),
+    )
+    reply = await advance_turn(worker, parsed.phone_number, parsed.text)
+    outcome = gateway.send(parsed.phone_number, reply)
+    return {"processed": [parsed.message_id], "replyMode": reply.reply_mode.value, "outcome": outcome}
 
 
 # --- outbound sends (authenticated, editor) ---

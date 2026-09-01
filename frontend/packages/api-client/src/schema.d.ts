@@ -1899,6 +1899,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/channels/interakt/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Interakt Inbound
+         * @description Inbound Interakt webhook for the joseph-mews tenant's Joe agent.
+         *
+         *     Same DISABLED-by-default honesty as whatsapp_inbound above (CHANNELS_INBOUND_ENABLED), for the
+         *     same reason: acking 200 for a message nothing actually answers is worse than an explicit 501.
+         *
+         *     Interakt has ~3 seconds to get a 200 back (JM2-1024 research); worker.answer runs a retrieval
+         *     embedding and a generation call, comfortably over that budget, so this must not block the ack
+         *     on it. There is no task queue wired for this yet (JM2-1025 tracks moving idempotency to Redis
+         *     for the same reason), so this is currently synchronous for correctness's sake, not throughput -
+         *     tracked as a known follow-up rather than silently accepted.
+         */
+        post: operations["interakt_inbound_api_v1_channels_interakt_webhook_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/channels/sessions/{external_id}": {
         parameters: {
             query?: never;
@@ -11485,6 +11514,39 @@ export interface operations {
                 "application/json": components["schemas"]["GmailSend"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    interakt_inbound_api_v1_channels_interakt_webhook_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "Interakt-Signature"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

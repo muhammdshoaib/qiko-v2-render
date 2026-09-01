@@ -548,6 +548,8 @@ AUDIT_BACKLOG: dict[tuple[str, str], str] = {
         "MEDIUM: leg E2. State change with an identifiable actor, not yet instrumented."),
     ("POST", "/api/v1/channels/gmail/send"): (
         "MEDIUM: leg E2. State change with an identifiable actor, not yet instrumented."),
+    ("POST", "/api/v1/channels/interakt/webhook"): (
+        "MEDIUM: leg E2. State change with an identifiable actor, not yet instrumented."),
     ("POST", "/api/v1/channels/sessions/{external_id}/worker"): (
         "MEDIUM: leg E2. State change with an identifiable actor, not yet instrumented."),
     ("POST", "/api/v1/channels/slack/link"): (

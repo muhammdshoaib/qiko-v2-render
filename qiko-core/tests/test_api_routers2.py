@@ -169,6 +169,65 @@ def test_whatsapp_inbound_still_de_duplicates_once_explicitly_enabled(client, mo
     assert client.post("/api/v1/channels/whatsapp/webhook", json=payload).json()["processed"] == []
 
 
+def _interakt_message(text: str, message_id: str, phone: str = "447700900000") -> dict:
+    return {
+        "version": "1.0",
+        "timestamp": "2026-08-28T10:00:00.000000",
+        "type": "message_received",
+        "data": {
+            "customer": {"id": "cust-1", "channel_phone_number": phone, "traits": {}},
+            "message": {
+                "id": message_id,
+                "chat_message_type": "CustomerMessage",
+                "message_status": "Sent",
+                "received_at_utc": "2026-08-28T10:00:00.000000",
+                "is_template_message": False,
+                "message_content_type": "Text",
+                "message": text,
+                "meta_data": {},
+            },
+        },
+    }
+
+
+def test_interakt_inbound_disabled_by_default(client):
+    response = client.post("/api/v1/channels/interakt/webhook", json=_interakt_message("hi", "im-1"))
+    assert response.status_code == 501
+    assert "not implemented" in response.json()["detail"]
+
+
+def test_interakt_inbound_answers_and_dedupes_once_enabled(client, monkeypatch):
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "channels_inbound_enabled", True)
+
+    # No knowledge ingested for the joseph-mews tenant here: this is testing the wiring (dedup,
+    # response shape, never a raw 500) not grounding quality, which is already covered by
+    # test_chat_ask_is_grounded_and_records for the shared engine.
+    response = client.post(
+        "/api/v1/channels/interakt/webhook", json=_interakt_message("Tell me about your ISO cert", "im-2")
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["processed"] == ["im-2"]
+    assert body["replyMode"] in ("draft_for_agent", "handoff")
+
+    # a replay of the same message id is dropped, never answered twice
+    replay = client.post(
+        "/api/v1/channels/interakt/webhook", json=_interakt_message("Tell me about your ISO cert", "im-2")
+    )
+    assert replay.json()["processed"] == []
+
+
+def test_interakt_inbound_ignores_non_message_events(client, monkeypatch):
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "channels_inbound_enabled", True)
+    payload = _interakt_message("delivered", "im-3")
+    payload["type"] = "message_api_delivered"
+    assert client.post("/api/v1/channels/interakt/webhook", json=payload).json()["processed"] == []
+
+
 def test_excel_search(client):
     client.post("/api/v1/knowledge/ingest", json={"doc_id": "excel-q3-0", "text": "region: EMEA, revenue: 120000"}, cookies=_cookies())
     hits = client.post("/api/v1/excel/search", json={"query": "EMEA revenue"}, cookies=_cookies()).json()["results"]

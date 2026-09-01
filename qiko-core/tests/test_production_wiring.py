@@ -39,6 +39,9 @@ DURABLE_STORES = (
 KNOWN_IN_MEMORY = {
     "slack_links": "Slack user -> worker links are lost on restart",
     "channel_sessions": "per-channel sessions are lost on restart (no production consumer today)",
+    "interakt_idempotency": "Interakt message-id dedup is lost on restart (JM2-1025 tracks moving "
+                            "it to Redis; channels_inbound_enabled is False by default today, so "
+                            "there is no production consumer of this yet either)",
 }
 
 

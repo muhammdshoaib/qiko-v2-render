@@ -79,6 +79,8 @@ class Settings(BaseSettings):
     whatsapp_access_token: str = ""
     whatsapp_phone_number_id: str = ""
     whatsapp_app_secret: str = ""   # HMAC secret for inbound webhook signature verification
+    interakt_webhook_secret: str = ""   # HMAC secret for Interakt's Interakt-Signature header
+    interakt_api_key: str = ""   # Template Message Send API auth
     slack_client_id: str = ""
     slack_client_secret: str = ""
     slack_signing_secret: str = ""   # Slack request signing for the inbound Events API

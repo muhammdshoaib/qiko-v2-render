@@ -201,6 +201,14 @@ def get_whatsapp(request: Request):
     return request.app.state.whatsapp
 
 
+def get_interakt(request: Request):
+    return request.app.state.interakt
+
+
+def get_interakt_idempotency(request: Request):
+    return request.app.state.interakt_idempotency
+
+
 def get_excel(request: Request):
     return request.app.state.excel
 

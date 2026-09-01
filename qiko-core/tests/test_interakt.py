@@ -1,6 +1,6 @@
 import pytest
 
-from app.modules.channels.interakt import InteraktGateway, ReplyMode, WorkerReply
+from app.modules.channels.interakt import InteraktGateway, ReplyMode, WorkerReply, parse_inbound
 
 
 class FakeInteraktClient:
@@ -45,3 +45,44 @@ def test_template_reply_requires_a_template_name():
 def test_draft_for_agent_requires_draft_text():
     with pytest.raises(ValueError):
         WorkerReply(reply_mode=ReplyMode.draft_for_agent)
+
+
+def _message_received(*, message="Hi there", message_id="msg-1", content_type="Text",
+                      phone="447700900000"):
+    return {
+        "version": "1.0",
+        "timestamp": "2026-08-28T10:00:00.000000",
+        "type": "message_received",
+        "data": {
+            "customer": {"id": "cust-1", "channel_phone_number": phone, "traits": {}},
+            "message": {
+                "id": message_id,
+                "chat_message_type": "CustomerMessage",
+                "message_status": "Sent",
+                "received_at_utc": "2026-08-28T10:00:00.000000",
+                "is_template_message": False,
+                "message_content_type": content_type,
+                "message": message,
+                "meta_data": {},
+            },
+        },
+    }
+
+
+def test_parse_inbound_extracts_text_message():
+    parsed = parse_inbound(_message_received())
+    assert parsed is not None
+    assert parsed.message_id == "msg-1"
+    assert parsed.phone_number == "447700900000"
+    assert parsed.text == "Hi there"
+
+
+def test_parse_inbound_ignores_non_text_content():
+    parsed = parse_inbound(_message_received(content_type="Image"))
+    assert parsed is None
+
+
+def test_parse_inbound_ignores_a_non_message_received_event():
+    payload = _message_received()
+    payload["type"] = "message_api_sent"
+    assert parse_inbound(payload) is None

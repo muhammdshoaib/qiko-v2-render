@@ -69,3 +69,37 @@ admin.preprod.qiko.ai {
 		reverse_proxy admin:3001
 	}
 }
+
+# Marketing site v2 (qiko-website-v2) -- shared nav/footer across Home, Signal, Labs.
+# Isolated container on the same proxy network; does not touch the app/admin blocks above.
+www.preprod.qiko.ai {
+	request_body {
+		max_size 10MB
+	}
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+	}
+	handle {
+		reverse_proxy website:3000
+	}
+}
+
+# Signal preprod (qiko-signal-preprod stack) -- own DB/Redis/13 services on this host, this
+# vhost is the only thing shared with the platform stack (the frontend container's alias on
+# the shared proxy network). Does not touch the blocks above.
+signal.preprod.qiko.ai {
+	request_body {
+		max_size 10MB
+	}
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+	}
+	handle {
+		reverse_proxy signal-frontend:3000 {
+			lb_try_duration 45s
+			lb_try_interval 500ms
+		}
+	}
+}

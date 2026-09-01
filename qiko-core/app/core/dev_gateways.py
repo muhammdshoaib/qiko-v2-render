@@ -41,6 +41,11 @@ class StubWhatsAppGateway:
         return {"to": to, "text": text, "stub": True}
 
 
+class StubInteraktClient:
+    def send_template(self, to: str, template_name: str, params: list[str]) -> dict:
+        return {"to": to, "template": template_name, "params": params, "stub": True}
+
+
 class StubSpeechGateway:
     def transcribe(self, audio: bytes) -> str:
         return audio.decode("utf-8", "ignore") if audio else ""
