@@ -704,6 +704,36 @@ def test_parser_maps_description_column_to_expenditure_desc():
     assert expenses[0].property_desc == ""  # Description should not become property name
 
 
+def test_unit_ledger_falls_back_to_income_description_when_no_expenses():
+    # EL-1018: a unit with zero expense rows (Gross=0, Invoices=0) still has a description in the
+    # income sheet ("Unit Description" column), but _build_unit_ledger used to source
+    # unitDescription only from expense rows, so a unit with no expenses always showed a blank
+    # description even though income data (and its description) was right there.
+    wb = Workbook()
+    exp = wb.active
+    exp.title = "Exp YTD"
+    exp.append(_EXPENSE_HEADER)
+    exp.append(["A001", "12 High Street", "A001/1", "Flat 1, 12 High Street", "Repairs",
+                "Acme Maintenance", 100.0, 20.0, 120.0, "01/03/2024"])
+    # A001/2 has no expense row at all -> Gross=0, Invoices=0 for that unit.
+
+    inc = wb.create_sheet("Income Receivable YTD")
+    inc.append(_INCOME_HEADER)
+    inc.append(["A001", "A001/1", "Flat 1, 12 High Street", 500.0, 0.0, "05/03/2024"])
+    inc.append(["A001", "A001/2", "Flat 2, 12 High Street", 400.0, 0.0, "05/03/2024"])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    expenses, incomes = parse_workbook(buf.getvalue())
+    result = compute_analytics(expenses, incomes)
+
+    prop_a = next(p for p in result["properties"] if p["propertyRef"] == "A001")
+    unit2 = next(u for u in prop_a["unitLedger"] if u["unitRef"] == "A001/2")
+    assert unit2["totalGross"] == 0.0
+    assert unit2["invoiceCount"] == 0
+    assert unit2["unitDescription"] == "Flat 2, 12 High Street"
+
+
 def test_analytics_enriches_property_ref_and_monthly_trends():
     expenses, incomes = parse_workbook(_build_workbook())
     result = compute_analytics(expenses, incomes)

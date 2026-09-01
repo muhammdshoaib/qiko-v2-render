@@ -170,9 +170,11 @@ def _build_unit_ledger(property_ref: str, property_name: str, expenses: list[Exp
         ref = i.unit_ref or i.property_ref
         if not ref:
             continue
-        acc = unit_income.setdefault(ref, {"income": 0.0, "outstanding": 0.0})
+        acc = unit_income.setdefault(ref, {"income": 0.0, "outstanding": 0.0, "desc": ""})
         acc["income"] += i.amount
         acc["outstanding"] += i.income_receivable
+        if not acc["desc"] and i.unit_desc:
+            acc["desc"] = i.unit_desc
 
     unit_expense: dict[str, dict] = {}
     for e in expenses:
@@ -190,11 +192,15 @@ def _build_unit_ledger(property_ref: str, property_name: str, expenses: list[Exp
 
     ledger: list[dict] = []
     for ref in set(unit_income) | set(unit_expense):
-        inc = unit_income.get(ref, {"income": 0.0, "outstanding": 0.0})
+        inc = unit_income.get(ref, {"income": 0.0, "outstanding": 0.0, "desc": ""})
         exp = unit_expense.get(ref, {"desc": "", "rows": []})
+        # A unit with no expense rows (Gross=0, Invoices=0) still has a description in the income
+        # sheet (EL-1018) -- prefer the expense-side description (matches every other field, which
+        # is expense-derived) but fall back to the income-side one rather than showing blank.
+        description = exp["desc"] or inc["desc"]
         rows: list[ExpenseRow] = exp["rows"]
         ledger.append({
-            "unitRef": ref, "unitDescription": exp["desc"],
+            "unitRef": ref, "unitDescription": description,
             "propertyRef": property_ref, "propertyName": property_name,
             "income": _round2(inc["income"]), "outstanding": _round2(inc["outstanding"]),
             "totalGross": _round2(sum(e.gross for e in rows)),
@@ -206,7 +212,7 @@ def _build_unit_ledger(property_ref: str, property_name: str, expenses: list[Exp
             "topVendor": max(((e.vendor, e.gross) for e in rows if e.vendor), key=lambda x: x[1], default=["", 0.0])[0],
             "expenses": [{
                 "propertyRef": property_ref, "propertyName": property_name,
-                "unitRef": ref, "unitDescription": exp["desc"],
+                "unitRef": ref, "unitDescription": description,
                 "heading": e.heading, "expenditureDescription": e.expenditure_desc,
                 "nett": _round2(e.nett), "vat": _round2(e.vat), "gross": _round2(e.gross),
                 "settled": e.settled, "invoiceDate": e.exp_date, "periodFrom": e.period_from,
