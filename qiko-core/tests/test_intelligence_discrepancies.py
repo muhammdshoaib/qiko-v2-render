@@ -175,7 +175,8 @@ async def test_analyze_paginated_returns_total_and_counts(store, engine):
             ref=f"QIW-{1000 + i}", occurred_at=T0 + timedelta(hours=i),
             meta={"state": {"status": "DONE"}}))
 
-    items, total, counts = await engine.analyze_paginated("t1", "w1", limit=2, offset=0)
+    items, total, counts = await engine.analyze_paginated(
+        "t1", "w1", limit=2, offset=0, now=T0 + timedelta(hours=6))
 
     assert total == 5
     assert len(items) == 2
@@ -193,7 +194,8 @@ async def test_project_filter_excludes_other_projects(store, engine):
         ref="QIW-1004", occurred_at=T0,
         meta={"state": {"status": "DONE"}}))
 
-    result = await engine.analyze("t1", "w1", project_keys={"QIW"})
+    result = await engine.analyze(
+        "t1", "w1", now=T0 + timedelta(hours=1), project_keys={"QIW"})
 
     assert len(result) == 1
     assert result[0].ref == "QIW-1004"
