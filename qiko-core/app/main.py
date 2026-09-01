@@ -46,6 +46,7 @@ from app.integrations.clients import (
 from app.modules.billing.payment_links import PaymentLinkService
 from app.modules.channels.digest_scheduler import DigestScheduler
 from app.modules.channels.interakt import InteraktGateway
+from app.modules.joseph_mews.jm_backend_client import HttpJmBackendClient, UnavailableJmBackendClient
 from app.modules.channels.sessions import ChannelSessionStore
 from app.modules.channels.slack_events import SlackEventHandler
 from app.modules.channels.webhooks import IdempotencyGuard
@@ -506,6 +507,11 @@ def create_app() -> FastAPI:
     app.state.interakt = InteraktGateway(
         InteraktClient() if settings.interakt_api_key else StubInteraktClient())
     app.state.interakt_idempotency = IdempotencyGuard()
+    app.state.jm_backend = (
+        HttpJmBackendClient(settings.jm_backend_base_url, settings.jm_backend_shared_secret)
+        if settings.jm_backend_base_url and settings.jm_backend_shared_secret
+        else UnavailableJmBackendClient()
+    )
     app.state.excel = ExcelService(app.state.knowledge)
     app.state.sources = KnowledgeSources(app.state.knowledge)
     speech_gateway = StubSpeechGateway() if settings.debug else UnavailableSpeechGateway()

@@ -22,6 +22,11 @@ qiko.ai, www.qiko.ai {
 	# external site, so it uses frame-ancestors * and no X-Frame-Options. Everything else stays
 	# clickjacking-locked (SAMEORIGIN + frame-ancestors 'self'). QIK-336.
 	@embed path /embed/* /widget.js
+	# Marketing site v2 (qiko-website-v2): shared nav/footer across Home, Signal and Labs.
+	# Only these specific paths move; everything else (login, dashboard, api, embed, signal)
+	# stays on the existing creator/qiko-core origin, unchanged. Same pattern as /api/* and
+	# /embed/* below, just a different backend. Isolated container on this stack's proxy network.
+	@marketing path / /labs /about /terms /privacy /cookies
 	@app {
 		not path /embed/* /widget.js
 	}
@@ -49,6 +54,9 @@ qiko.ai, www.qiko.ai {
 	}
 	handle /api/* {
 		reverse_proxy qiko-core:8000
+	}
+	handle @marketing {
+		reverse_proxy website:3000
 	}
 	handle {
 		reverse_proxy creator:3000

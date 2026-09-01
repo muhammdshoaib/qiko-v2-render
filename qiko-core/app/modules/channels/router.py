@@ -18,6 +18,7 @@ from app.core.deps import (
     get_channel_sessions,
     get_interakt,
     get_interakt_idempotency,
+    get_jm_backend,
     get_slack_links,
     get_slack_oauth,
     get_teams_notifier,
@@ -32,6 +33,8 @@ from app.modules.channels.whatsapp import verify_webhook
 from app.modules.channels.interakt import parse_inbound
 from app.modules.identity.rbac import Role
 from app.modules.joseph_mews.conversation import advance_turn
+from app.modules.joseph_mews.extraction import extract_qualification
+from app.modules.joseph_mews.jm_backend_client import JmBackendError
 from app.modules.joseph_mews.worker import joseph_mews_worker_config
 from app.modules.workers.worker import build_worker
 
@@ -133,6 +136,7 @@ async def interakt_inbound(
     interakt_signature: str = Header(default="", alias="Interakt-Signature"),
     gateway=Depends(get_interakt),
     idempotency=Depends(get_interakt_idempotency),
+    jm_backend=Depends(get_jm_backend),
 ) -> dict:
     """Inbound Interakt webhook for the joseph-mews tenant's Joe agent.
 
@@ -166,8 +170,38 @@ async def interakt_inbound(
         knowledge=request.app.state.knowledge,
         cost_guard=getattr(request.app.state, "cost_guard", None),
     )
-    reply = await advance_turn(worker, parsed.phone_number, parsed.text)
+
+    # jm-backend owns conversation history (JM2-1023); best-effort here, since a lead's message
+    # must still get an answer even if jm-backend is briefly unavailable, just without history or
+    # qualification-based escalation for this one turn rather than dropping it.
+    history_context: list[str] | None = None
+    qualification = None
+    try:
+        state = jm_backend.record_turn(
+            parsed.phone_number, "customer", parsed.text, interakt_message_id=parsed.message_id,
+        )
+        history_context = [f"{turn.role}: {turn.text}" for turn in state.history]
+        qualification = extract_qualification(
+            "\n".join(history_context), worker.agent.generator.provider,
+        )
+    except JmBackendError:
+        logger.warning("jm-backend unavailable for %s, answering without history", parsed.phone_number)
+
+    reply = await advance_turn(
+        worker, parsed.phone_number, parsed.text,
+        history_context=history_context, qualification=qualification,
+    )
     outcome = gateway.send(parsed.phone_number, reply)
+
+    try:
+        jm_backend.record_turn(
+            parsed.phone_number, "joe",
+            reply.draft_text or reply.handoff_reason or reply.reply_mode.value,
+            template_used=reply.template_name,
+        )
+    except JmBackendError:
+        logger.warning("jm-backend unavailable for %s, Joe's turn was not persisted", parsed.phone_number)
+
     return {"processed": [parsed.message_id], "replyMode": reply.reply_mode.value, "outcome": outcome}
 
 
