@@ -2,12 +2,12 @@
 
 // Upload / list / delete the property-portfolio Excel workbooks that power the dashboard. Used both
 // inside the empty state (upload CTA) and behind a "Manage files" dialog on the worker info bar.
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileSpreadsheet, Loader2, Trash2, Upload } from "lucide-react";
-import { cn } from "@qiko/ui";
+import { Button, cn, Dialog } from "@qiko/ui";
 import {
-  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+  Dialog as FileListDialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { deleteFinanceFiles, listFinanceFiles, uploadFinanceFile } from "@/lib/api";
 
@@ -17,12 +17,24 @@ function useFinanceFiles(agentId: string) {
   return useQuery({ queryKey: ["finance-files", agentId], queryFn: () => listFinanceFiles(agentId), retry: false });
 }
 
-/** Inner body: upload button + file list. Compact variant used in the empty state hides the list header. */
-export function FinanceFileManager({ agentId, onUploaded }: { agentId: string; onUploaded?: () => void }) {
+/** Inner body: upload button + file list. Compact variant used in the empty state hides the list header.
+ * `onConfirmOpenChange` lets a container dialog (see FinanceFileManagerDialog) know a nested
+ * delete-confirmation is open, so it can block its own Escape handling: Radix's Escape listener
+ * is a document-level, capture-phase listener, which runs before any bubble-phase handler on the
+ * confirmation itself, so nothing the confirmation does on its own `onKeyDown` can stop it. */
+export function FinanceFileManager({ agentId, onUploaded, onConfirmOpenChange }: {
+  agentId: string; onUploaded?: () => void; onConfirmOpenChange?: (open: boolean) => void;
+}) {
   const qc = useQueryClient();
   const filesQ = useFinanceFiles(agentId);
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; label: string } | null>(null);
+  const deleteOpenerRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    onConfirmOpenChange?.(!!pendingDelete);
+  }, [pendingDelete, onConfirmOpenChange]);
 
   const upload = useMutation({
     mutationFn: (file: File) => uploadFinanceFile(agentId, file),
@@ -40,8 +52,18 @@ export function FinanceFileManager({ agentId, onUploaded }: { agentId: string; o
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["finance-files", agentId] });
       qc.invalidateQueries({ queryKey: ["finance-analytics", agentId] });
+      setPendingDelete(null);
     },
   });
+
+  const requestRemove = (id: string, label: string, opener: HTMLElement | null) => {
+    deleteOpenerRef.current = opener;
+    setPendingDelete({ id, label });
+  };
+  const confirmRemove = () => {
+    if (!pendingDelete || remove.isPending) return;
+    remove.mutate(pendingDelete.id);
+  };
 
   const files = filesQ.data?.files ?? [];
 
@@ -70,7 +92,7 @@ export function FinanceFileManager({ agentId, onUploaded }: { agentId: string; o
               <p className="truncate text-xs font-medium text-white/85">{f.label}</p>
               <p className="text-[10px] text-white/45">{f.rowCount.toLocaleString()} rows</p>
             </div>
-            <button type="button" onClick={() => remove.mutate(f.id)} disabled={remove.isPending}
+            <button type="button" onClick={(e) => requestRemove(f.id, f.label, e.currentTarget)} disabled={remove.isPending}
               className="shrink-0 rounded-md p-1.5 text-white/40 transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"
               aria-label={`Delete ${f.label}`}>
               <Trash2 className="h-3.5 w-3.5" />
@@ -78,6 +100,31 @@ export function FinanceFileManager({ agentId, onUploaded }: { agentId: string; o
           </div>
         ))}
       </div>
+
+      <Dialog
+        open={!!pendingDelete}
+        onClose={() => setPendingDelete(null)}
+        opener={deleteOpenerRef.current}
+        busy={remove.isPending}
+        labelledBy="delete-workbook-title"
+      >
+        {pendingDelete && (
+          <div className="space-y-4">
+            <h3 id="delete-workbook-title" className="pr-10 text-lg font-semibold text-white">
+              Delete &quot;{pendingDelete.label}&quot;?
+            </h3>
+            <p className="text-sm text-slate-300">This will remove its data from the dashboard. This cannot be undone.</p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" disabled={remove.isPending} onClick={() => setPendingDelete(null)}>
+                Cancel
+              </Button>
+              <Button type="button" variant="destructive" disabled={remove.isPending} onClick={confirmRemove}>
+                {remove.isPending ? "Deleting..." : "Delete"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
     </div>
   );
 }
@@ -85,17 +132,25 @@ export function FinanceFileManager({ agentId, onUploaded }: { agentId: string; o
 export function FinanceFileManagerDialog({ agentId, open, onOpenChange, className, onUploaded }: {
   agentId: string; open: boolean; onOpenChange: (v: boolean) => void; className?: string; onUploaded?: () => void;
 }) {
+  // Radix calls onEscapeKeyDown from within its own capture-phase listener before deciding to
+  // dismiss, so this is the only place that can actually stop Escape from closing this dialog
+  // while the nested delete-confirmation (a plain native <dialog>, not a Radix one) is open.
+  const [confirmOpen, setConfirmOpen] = useState(false);
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn("border-white/[0.08] text-white", className)} style={{ background: "oklch(0.16 0.02 250)" }}>
+    <FileListDialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className={cn("border-white/[0.08] text-white", className)}
+        style={{ background: "oklch(0.16 0.02 250)" }}
+        onEscapeKeyDown={(e) => { if (confirmOpen) e.preventDefault(); }}
+      >
         <DialogHeader>
           <DialogTitle className="text-white/90">Portfolio workbooks</DialogTitle>
           <DialogDescription className="text-white/50">
             Upload Excel workbooks (.xlsx) to power the dashboard. Delete a file to remove its data.
           </DialogDescription>
         </DialogHeader>
-        <FinanceFileManager agentId={agentId} onUploaded={onUploaded} />
+        <FinanceFileManager agentId={agentId} onUploaded={onUploaded} onConfirmOpenChange={setConfirmOpen} />
       </DialogContent>
-    </Dialog>
+    </FileListDialog>
   );
 }

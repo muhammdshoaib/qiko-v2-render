@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { FileText, Loader2, Trash2, Upload, XCircle } from "lucide-react";
-import { Badge, Button, cn } from "@qiko/ui";
+import { Badge, Button, cn, Dialog } from "@qiko/ui";
 import { deleteIntelligenceDocument, listIntelligenceDocuments, uploadIntelligenceDocument, type IntelligenceDocument } from "@/lib/api";
 
 const SUPPORTED = new Set(["txt", "md", "csv", "json", "jsonl", "pdf", "docx", "xlsx", "xls", "html", "htm"]);
@@ -12,6 +12,8 @@ export function DocumentsTab({ agentId }: { agentId: string }) {
   const qc = useQueryClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; filename: string } | null>(null);
+  const deleteOpenerRef = useRef<HTMLElement | null>(null);
 
   const docs = useQuery({
     queryKey: ["intelligence-documents", agentId],
@@ -30,8 +32,20 @@ export function DocumentsTab({ agentId }: { agentId: string }) {
 
   const remove = useMutation({
     mutationFn: (docId: string) => deleteIntelligenceDocument(agentId, docId),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["intelligence-documents", agentId] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["intelligence-documents", agentId] });
+      setPendingDelete(null);
+    },
   });
+
+  const requestRemove = (id: string, filename: string, opener: HTMLElement | null) => {
+    deleteOpenerRef.current = opener;
+    setPendingDelete({ id, filename });
+  };
+  const confirmRemove = () => {
+    if (!pendingDelete || remove.isPending) return;
+    remove.mutate(pendingDelete.id);
+  };
 
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -96,15 +110,41 @@ export function DocumentsTab({ agentId }: { agentId: string }) {
       {docs.data && docs.data.length > 0 && (
         <div className="divide-y divide-border rounded-lg border border-border bg-card">
           {docs.data.map((doc) => (
-            <DocumentRow key={doc.doc_id} doc={doc} onDelete={() => remove.mutate(doc.doc_id)} deleting={remove.isPending} />
+            <DocumentRow key={doc.doc_id} doc={doc}
+              onDelete={(opener) => requestRemove(doc.doc_id, doc.filename, opener)} deleting={remove.isPending} />
           ))}
         </div>
       )}
+
+      <Dialog
+        open={!!pendingDelete}
+        onClose={() => setPendingDelete(null)}
+        opener={deleteOpenerRef.current}
+        busy={remove.isPending}
+        labelledBy="delete-document-title"
+      >
+        {pendingDelete && (
+          <div className="space-y-4">
+            <h3 id="delete-document-title" className="pr-10 text-lg font-semibold text-foreground">
+              Delete &quot;{pendingDelete.filename}&quot;?
+            </h3>
+            <p className="text-sm text-muted-foreground">This cannot be undone.</p>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" disabled={remove.isPending} onClick={() => setPendingDelete(null)}>
+                Cancel
+              </Button>
+              <Button type="button" variant="destructive" disabled={remove.isPending} onClick={confirmRemove}>
+                {remove.isPending ? "Deleting..." : "Delete"}
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
     </div>
   );
 }
 
-function DocumentRow({ doc, onDelete, deleting }: { doc: IntelligenceDocument; onDelete: () => void; deleting: boolean }) {
+function DocumentRow({ doc, onDelete, deleting }: { doc: IntelligenceDocument; onDelete: (opener: HTMLElement | null) => void; deleting: boolean }) {
   return (
     <div className="flex items-center justify-between gap-4 p-4">
       <div className="flex min-w-0 items-center gap-3">
@@ -124,7 +164,7 @@ function DocumentRow({ doc, onDelete, deleting }: { doc: IntelligenceDocument; o
           size="icon"
           aria-label="Delete document"
           disabled={deleting || doc.status === "uploading"}
-          onClick={onDelete}
+          onClick={(e) => onDelete(e.currentTarget)}
         >
           <Trash2 className="size-4" />
         </Button>

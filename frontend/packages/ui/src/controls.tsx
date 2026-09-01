@@ -182,6 +182,13 @@ export function Dialog({ open, onClose, opener, busy = false, labelledBy, classN
         requestAnimationFrame(() => opener?.focus());
       }}
       onCancel={(event) => { if (busy) event.preventDefault(); }}
+      // Stop this dialog's own Escape keydown from bubbling further, as basic defense in depth
+      // for any bubble-phase ancestor listener. NOTE this does not, by itself, stop a
+      // document-level *capture*-phase listener such as Radix Dialog's DismissableLayer, which
+      // runs before this handler ever gets a chance to call stopPropagation() -- a container
+      // built on a Radix Dialog needs its own `onEscapeKeyDown` guard (see
+      // FinanceFileManagerDialog for the pattern) to keep Escape from closing both at once.
+      onKeyDown={(event) => { if (event.key === "Escape") event.stopPropagation(); }}
       className={cn(
         "m-auto max-h-[90dvh] w-[min(94vw,42rem)] overflow-y-auto rounded-2xl bg-card p-5 text-foreground",
         "backdrop:bg-black/50",
