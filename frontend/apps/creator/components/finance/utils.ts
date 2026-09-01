@@ -5,7 +5,7 @@
 // so the dashboard derives everything it can from `properties[]` when a chart block is absent.
 import type {
   FinanceAnalytics, FinanceProperty, FinanceSummary, FinanceTrends,
-  FinanceUnitExpense, FinanceUnitLedger, FinanceMonthlyTrend, FinanceFile,
+  FinanceUnitExpense, FinanceUnitLedger, FinanceMonthlyTrend,
 } from "@/lib/api";
 
 // ── Colors (match the reference: green=income/positive, red=expenses/negative, amber/orange=risk,
@@ -376,20 +376,20 @@ export function trendSections(payload: FinanceTrends | undefined): TrendSection[
 }
 
 // ── File month options + date helpers ------------------------------------------------------------
-export function monthOptionsFromFiles(files?: FinanceFile[]): { label: string; value: string }[] {
+/** Turns the backend's `availableMonths` ("YYYY-MM", derived from the real income/expense
+ * transaction dates) into dropdown options. EL-1014: this used to be derived from each uploaded
+ * file's *upload* timestamp instead, so a workbook's real period was ignored, and two files
+ * uploaded together (sharing an upload timestamp) could collapse to a single wrong month option. */
+export function monthOptionsFromAvailableMonths(months?: string[]): { label: string; value: string }[] {
   const opts: { label: string; value: string }[] = [{ label: "All time", value: "all" }];
-  const seen = new Set<string>();
-  if (!files) return opts;
-  for (const file of files) {
-    if (!file?.uploadedAt) continue;
-    const d = new Date(file.uploadedAt);
-    if (Number.isNaN(d.getTime())) continue;
-    const month = d.toLocaleString("en-GB", { month: "short", year: "numeric" });
-    const value = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-    if (!seen.has(value)) {
-      seen.add(value);
-      opts.push({ label: month, value });
-    }
+  if (!months) return opts;
+  // De-duped defensively even though the backend already returns a de-duped set: the dropdown
+  // must never show the same month twice regardless of what the caller passes in.
+  for (const value of [...new Set(months)].sort()) {
+    const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(value);
+    if (!m) continue;
+    const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1));
+    opts.push({ label: d.toLocaleString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" }), value });
   }
   return opts;
 }

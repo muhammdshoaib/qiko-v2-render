@@ -303,6 +303,49 @@ async def test_service_analytics_month_filter_narrows_to_that_month():
 
 # --- service (with injected stub LLM) --------------------------------------------------------
 
+def _single_month_workbook(income_date: str) -> bytes:
+    """One property, one income row on the given DD/MM/YYYY date, no expenses. Used to build
+    workbooks that each cover a single, distinct month regardless of when they are uploaded."""
+    wb = Workbook()
+    exp = wb.active
+    exp.title = "Exp YTD"
+    exp.append(_EXPENSE_HEADER)
+
+    inc = wb.create_sheet("Income Receivable YTD")
+    inc.append(_INCOME_HEADER)
+    inc.append(["A001", "A001/1", "Flat 1, 12 High Street", 1000.0, 0.0, income_date])
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+async def test_service_list_files_reports_available_months_from_real_data_not_upload_time():
+    # EL-1014: the month dropdown used to be built from each file's *upload* timestamp
+    # (FinanceFile.uploaded_at), not the period its data actually covers. Two files uploaded in the
+    # same test run (same wall-clock day) used to collapse to at most one upload-timestamp month,
+    # even though their real data is for February 2026 and December 2025. availableMonths must
+    # reflect the real transaction dates, independent of when the files were uploaded.
+    svc = FinanceService(provider=StubProvider(canned="ok"))
+    await svc.upload("acme", "agent-1", _single_month_workbook("15/02/2026"), filename="feb.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    await svc.upload("acme", "agent-1", _single_month_workbook("20/12/2025"), filename="dec.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    listing = await svc.list_files("acme", "agent-1")
+    assert listing["availableMonths"] == ["2025-12", "2026-02"]
+
+
+async def test_service_available_months_rejects_out_of_range_month_digits():
+    # A garbled/day-month-swapped date in the tenant's own workbook must not surface a
+    # calendar-invalid token like "2026-13" in the dropdown.
+    svc = FinanceService(provider=StubProvider(canned="ok"))
+    await svc.upload("acme", "agent-1", _single_month_workbook("31/13/2026"), filename="bad.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    listing = await svc.list_files("acme", "agent-1")
+    assert listing["availableMonths"] == []
+
+
 async def test_service_upload_parse_store_and_analytics():
     svc = FinanceService(provider=StubProvider(canned="ok"))
     stored = await svc.upload("acme", "agent-1", _build_workbook(), filename="portfolio.xlsx",
@@ -568,6 +611,7 @@ def test_finance_is_tenant_isolated(client):
     # Beta sees no files for the same agent id (BOLA-safe).
     other = client.get("/api/v1/finance/agent-fin-4/files", cookies=cookies_b)
     assert other.json()["totalFiles"] == 0
+    assert other.json()["availableMonths"] == []
     other_analytics = client.get("/api/v1/finance/agent-fin-4/analytics", cookies=cookies_b)
     assert other_analytics.json()["summary"]["propertyCount"] == 0
 

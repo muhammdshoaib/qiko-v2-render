@@ -67,7 +67,7 @@ def _namespace_for(agent_id: str, file_id: str) -> str:
     return f"finance-{agent_id}-{file_id}"
 
 
-_MONTH_RE = re.compile(r"^(\d{4})-(\d{2})$")
+_MONTH_RE = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])$")
 
 
 def _resolve_range(frm: str | None, to: str | None,
@@ -84,6 +84,25 @@ def _resolve_range(frm: str | None, to: str | None,
                 last = calendar.monthrange(year, mon)[1]
                 return f"{month}-01", f"{month}-{last:02d}"
     return frm, to
+
+
+def _available_months(files: list[FinanceFile]) -> list[str]:
+    """Distinct "YYYY-MM" months with real income or expense data across every uploaded file,
+    used to populate the dashboard's month filter (EL-1014). This must come from the parsed
+    transaction dates, not from FinanceFile.uploaded_at: a workbook can cover any period regardless
+    of when it happens to be uploaded, and two workbooks uploaded together used to collapse to at
+    most one (wrong) month option because they shared an upload timestamp."""
+    months: set[str] = set()
+    for f in files:
+        for e in f.expenses():
+            d = (e.period_to or e.exp_date)[:7]
+            if _MONTH_RE.match(d):
+                months.add(d)
+        for i in f.incomes():
+            d = i.tran_date[:7]
+            if _MONTH_RE.match(d):
+                months.add(d)
+    return sorted(months)
 
 
 @dataclass
@@ -137,6 +156,7 @@ class FinanceService:
             } for f in files],
             "totalFiles": len(files),
             "totalRows": sum(f.row_count for f in files),
+            "availableMonths": _available_months(files),
         }
 
     async def delete_files(self, tenant: str, agent_id: str, ids: list[str]) -> dict:

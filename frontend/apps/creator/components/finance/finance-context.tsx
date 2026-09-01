@@ -12,6 +12,7 @@ interface FinanceContextValue {
   isLoading: boolean;
   files: FinanceFile[] | undefined;
   filesLoading: boolean;
+  availableMonths: string[] | undefined;
   month: string;
   setMonth: (value: string) => void;
   search: string;
@@ -58,6 +59,7 @@ export function FinanceProvider({ agentId, children }: { agentId: string; childr
     isLoading: analyticsQ.isLoading,
     files: filesQ.data?.files,
     filesLoading: filesQ.isLoading,
+    availableMonths: filesQ.data?.availableMonths,
     month,
     setMonth,
     search,

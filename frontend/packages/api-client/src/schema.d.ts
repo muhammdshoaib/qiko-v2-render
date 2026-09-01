@@ -6078,6 +6078,8 @@ export interface components {
         };
         /** FinanceFilesResponse */
         FinanceFilesResponse: {
+            /** Availablemonths */
+            availableMonths?: string[];
             /** Files */
             files: components["schemas"]["FinanceFileRef"][];
             /** Id */

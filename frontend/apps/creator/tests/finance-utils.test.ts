@@ -9,6 +9,7 @@ import {
   propertyBars,
   vendorRows,
   expenseCategoryDonut,
+  monthOptionsFromAvailableMonths,
   type KpiMetricKey,
 } from "../components/finance/utils";
 
@@ -136,4 +137,30 @@ test("kpiMetricDrilldown shows missing values as -", () => {
   const result = kpiMetricDrilldown(summary, "totalIncome" as KpiMetricKey, "GBP");
   assert.ok(result.details.some(([label, value]) => label === "Total Income Top Property" && value === "-"));
   assert.ok(result.details.some(([label, value]) => label === "Total Income Top Property Income" && value === "-"));
+});
+
+// EL-1014: the dropdown used to be built from each uploaded file's *upload* timestamp, so two
+// files uploaded together on the same day collapsed to one (wrong) month option no matter which
+// real periods their data covered. Options must come straight from the backend's availableMonths
+// (derived from the real transaction dates), not from any client-side file metadata.
+test("monthOptionsFromAvailableMonths builds one option per distinct backend month, oldest first, plus All time", () => {
+  const opts = monthOptionsFromAvailableMonths(["2026-02", "2025-12"]);
+  assert.deepEqual(opts, [
+    { label: "All time", value: "all" },
+    { label: "Dec 2025", value: "2025-12" },
+    { label: "Feb 2026", value: "2026-02" },
+  ]);
+});
+
+test("monthOptionsFromAvailableMonths de-dupes a repeated month", () => {
+  // Defence-in-depth: the backend already de-dupes via a Python set, but the dropdown must not
+  // show the same month twice even if that ever changed.
+  const opts = monthOptionsFromAvailableMonths(["2025-12", "2025-12"]);
+  const values = opts.map((o) => o.value).filter((v) => v !== "all");
+  assert.deepEqual(values, ["2025-12"]);
+});
+
+test("monthOptionsFromAvailableMonths tolerates missing/empty input", () => {
+  assert.deepEqual(monthOptionsFromAvailableMonths(undefined), [{ label: "All time", value: "all" }]);
+  assert.deepEqual(monthOptionsFromAvailableMonths([]), [{ label: "All time", value: "all" }]);
 });

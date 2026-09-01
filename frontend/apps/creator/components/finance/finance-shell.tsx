@@ -13,7 +13,7 @@ import { FinanceFileManagerDialog } from "@/components/finance/file-manager";
 import { FinanceProvider, useFinance } from "./finance-context";
 import { InsightRail } from "./insight-rail";
 import {
-  activeProperties, monthOptionsFromFiles, normalizeFinanceSummary, trendSections, vendorRows,
+  activeProperties, monthOptionsFromAvailableMonths, normalizeFinanceSummary, trendSections, vendorRows,
 } from "./utils";
 
 const PAGE_BG = "oklch(0.13 0.025 250)";
@@ -30,7 +30,7 @@ export function FinanceShell({ agentId, children }: { agentId: string; children:
 function FinanceShellInner({ children }: { children: React.ReactNode }) {
   const { id: agentId } = useParams<{ id: string }>();
   const {
-    workerName, month, setMonth, filesOpen, setFilesOpen, analytics, files,
+    workerName, month, setMonth, filesOpen, setFilesOpen, analytics, availableMonths,
     search, setSearch, pendingPrompt, setPendingPrompt, chatTab, setChatTab,
   } = useFinance();
   const router = useRouter();
@@ -51,7 +51,7 @@ function FinanceShellInner({ children }: { children: React.ReactNode }) {
   const propertyCount = summary.propertyCount || activeProperties(analytics).length;
   const vendorCount = summary.vendorCount || vendorRows(analytics).length;
   const sections = useMemo(() => trendSections(analytics?.trends), [analytics]);
-  const monthOptions = useMemo(() => monthOptionsFromFiles(files).filter((o) => o.value !== "all"), [files]);
+  const monthOptions = useMemo(() => monthOptionsFromAvailableMonths(availableMonths).filter((o) => o.value !== "all"), [availableMonths]);
   const monthsByYear = useMemo(() => {
     const grouped: Record<string, { label: string; value: string }[]> = {};
     for (const opt of monthOptions) {

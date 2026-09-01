@@ -38,6 +38,7 @@ class FinanceFilesResponse(BaseModel):
     files: list[FinanceFileRef]
     totalFiles: int
     totalRows: int
+    availableMonths: list[str] = Field(default_factory=list)
 
 
 class FinanceDeleteResponse(BaseModel):
