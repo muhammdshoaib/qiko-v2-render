@@ -134,6 +134,7 @@ WORKER_ENABLED_CHANGED = "admin.worker_enabled_changed"
 WORKER_STATUS_CHANGED = "admin.worker_status_changed"
 WORKER_CONFIG_CHANGED = "config.worker_config_changed"
 WORKER_PUBLISHED = "admin.worker_published"
+SUPPORT_WORKER_VIEWED = "access.support_worker_viewed"
 
 # --- data -------------------------------------------------------------------------------------------
 DOCUMENT_INGESTED = "data.document_ingested"
@@ -199,6 +200,8 @@ _SPECS: tuple[ActionSpec, ...] = (
           template="{actor} removed {target} from a team"),
     _spec(INVITE_SENT, ACCESS, "email", diff_fields=("role",), template="{actor} invited {target}"),
     _spec(INVITE_ACCEPTED, ACCESS, "email", durability=CRITICAL, template="{target} accepted an invitation"),
+    _spec(SUPPORT_WORKER_VIEWED, ACCESS, "worker",
+          template="{actor} opened the support view for worker {target}"),
 
     # Money. All CRITICAL and all gated on manage_billing, because the amounts are commercial detail.
     _spec(CHECKOUT_STARTED, BILLING, "tenant", read_capability=Capability.manage_billing,

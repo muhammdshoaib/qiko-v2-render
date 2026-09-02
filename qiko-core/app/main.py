@@ -68,6 +68,7 @@ from app.modules.intelligence.models import InMemorySignalStore
 from app.modules.intelligence.router import router as intelligence_router
 from app.core.tenancy import tenant_dependency
 from app.modules.admin.router import router as admin_router
+from app.modules.admin.support import router as admin_support_router
 from app.modules.agents.router import router as agents_router
 from app.modules.agents.service import AgentService
 from app.modules.audit.service import InMemoryAuditStore
@@ -574,7 +575,8 @@ def create_app() -> FastAPI:
     app.include_router(health_router)
     app.include_router(health_router, prefix="/api/v1", dependencies=[Depends(tenant_dependency)])
     for r in (identity_router, identity_users_router, knowledge_router, agents_router, rfp_router,
-              assignments_router, admin_router, chat_router, teams_router, leads_router, billing_router,
+              assignments_router, admin_router, admin_support_router, chat_router, teams_router,
+              leads_router, billing_router,
               channels_router, excel_router, voice_router, signal_router, intelligence_router,
               public_chat_router, sources_router, twofa_router, onboarding_router, admin_org_router,
               batch_router, marketing_router, crm_router, sales_intelligence_router, finance_router,

@@ -4,7 +4,9 @@ from app.modules.identity.admin_rbac import (
     AdminAuthzError,
     AdminOrg,
     AdminRole,
+    Capability,
     can_invite_admins,
+    default_capabilities,
 )
 from app.modules.identity.tokens import create_team_invite_token
 
@@ -46,3 +48,8 @@ async def test_team_invite_token_cannot_be_accepted_as_platform_admin():
         await org.accept(token)
 
     assert await org.role_of("person@example.com") is None
+
+
+def test_support_view_worker_is_super_admin_default_but_not_viewer_default():
+    assert Capability.support_view_worker in default_capabilities(AdminRole.super_admin)
+    assert Capability.support_view_worker not in default_capabilities(AdminRole.viewer)

@@ -24,6 +24,7 @@ const LABELS: Record<Capability, string> = {
   view_ai_cost: "View AI cost",
   view_system_stats: "View system stats",
   set_cost_caps: "Set cost caps",
+  support_view_worker: "View worker support conversations",
 };
 
 /** Removing an admin used to go through window.confirm: unstyleable, unannounced to assistive tech,

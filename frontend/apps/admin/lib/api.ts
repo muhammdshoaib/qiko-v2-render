@@ -120,14 +120,14 @@ export type CustomerDetail = Customer & {
 // Only the capabilities the server actually enforces today. view_ai_cost, set_cost_caps and
 // view_system_stats arrive with the endpoints they gate, so the UI never offers a permission that
 // does nothing.
-export type Capability = "view_audit" | "view_customers" | "manage_customers" | "manage_workers" | "manage_billing" | "manage_admins" | "view_ai_cost" | "view_system_stats" | "set_cost_caps";
+export type Capability = "view_audit" | "view_customers" | "manage_customers" | "manage_workers" | "manage_billing" | "manage_admins" | "view_ai_cost" | "view_system_stats" | "set_cost_caps" | "support_view_worker";
 
 /** Every capability the backend enforces. This list being short is not cosmetic: the grant form
  *  renders checkboxes from it and posts the SELECTED set, so anything missing here cannot be granted
  *  at all, and saving an explicit set for an existing admin silently strips it. view_audit was added
  *  to the backend without this list, so for one release no operator could grant audit access and
  *  editing a super_admin through this form removed theirs. */
-export const ALL_CAPABILITIES: Capability[] = ["view_audit", "view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins", "view_ai_cost", "view_system_stats", "set_cost_caps"];
+export const ALL_CAPABILITIES: Capability[] = ["view_audit", "view_customers", "manage_customers", "manage_workers", "manage_billing", "manage_admins", "view_ai_cost", "view_system_stats", "set_cost_caps", "support_view_worker"];
 
 export type PlatformAdmin = { email: string; role: AdminRole; capabilities: Capability[] };
 export type AdminGrantAudit = {
@@ -188,6 +188,39 @@ export const listWorkers = (search = "", page = 1, enabled?: boolean, sort?: Lis
       search, status,
       enabled: enabled === undefined ? undefined : String(enabled),
     }, sort)}`);
+
+// Read-only support view of one intelligence worker's own chat and discrepancies
+// (app/modules/admin/support.py), gated by support_view_worker rather than manage_workers: this
+// exposes tenant conversation/discrepancy CONTENT, not just directory metadata.
+export type SupportWorkerSummary = { id: string; tenant_id: string; name: string; atype: string };
+export type SupportConversation = { id: string; user_id: string; created_at: string | null };
+export type SupportMessage = { role: string; text: string; created_at: string | null };
+// Per-source shape matches DiscrepancyEngine._sources in
+// qiko-core/app/modules/intelligence/discrepancies.py exactly (source, source_label, external_id,
+// url, actor, occurred_at) - it is not the guessed {source, url} shape, every field is one the
+// backend actually serializes.
+export type SupportDiscrepancySource = {
+  source: string; source_label: string; external_id: string;
+  url: string | null; actor: string; occurred_at: string | null;
+};
+export type SupportDiscrepancy = {
+  class: string; class_label: string; severity: string; ref: string | null;
+  project_key: string | null; title: string; summary: string;
+  claimed_at: string | null; evidence_at: string | null; occurred_at: string | null;
+  sources: SupportDiscrepancySource[];
+};
+
+export const getSupportWorker = (agentId: string) =>
+  request<SupportWorkerSummary>(`/admin/support/workers/${encodeURIComponent(agentId)}`);
+export const listSupportConversations = (agentId: string) =>
+  request<SupportConversation[]>(
+    `/admin/support/workers/${encodeURIComponent(agentId)}/conversations`);
+export const getSupportConversationHistory = (agentId: string, conversationId: string) =>
+  request<SupportMessage[]>(
+    `/admin/support/workers/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}`);
+export const listSupportDiscrepancies = (agentId: string) =>
+  request<{ items: SupportDiscrepancy[]; total: number; projects: { key: string; count: number }[] }>(
+    `/admin/support/workers/${encodeURIComponent(agentId)}/discrepancies`);
 
 export type UsageTotals = {
   calls: number; input_tokens: number; output_tokens: number;

@@ -64,6 +64,9 @@ class Capability(str, Enum):
     # Setting a cap can stop a customer's workers answering, so it is a mutation of customer-facing
     # behaviour and is gated separately from merely reading spend.
     set_cost_caps = "set_cost_caps"
+    # Read-only support access to one worker's own chat and discrepancy data from admin.qiko.ai,
+    # without provisioning a tenant `users` row for the admin. QIKO-1073.
+    support_view_worker = "support_view_worker"
 
 
 # A super_admin keeps everything, so today's behaviour is unchanged. A viewer keeps read-only

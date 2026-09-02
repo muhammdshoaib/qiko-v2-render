@@ -2,10 +2,12 @@
 
 import { Suspense, useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQuery } from "@tanstack/react-query";
 import { Badge, Button, SegmentedFilter, type Column } from "@qiko/ui";
 import { DirectoryPage } from "@/components/directory-page";
 import { RowActivityDialog } from "@/components/row-activity-dialog";
-import { listWorkers, type WorkerRow } from "@/lib/api";
+import { WorkerSupportDialog } from "@/components/worker-support-dialog";
+import { adminMe, listWorkers, type WorkerRow } from "@/lib/api";
 
 const columns: Column<WorkerRow>[] = [
   {
@@ -34,8 +36,13 @@ function WorkersView() {
   const router = useRouter();
   const params = useSearchParams();
   const [active, setActive] = useState<WorkerRow | null>(null);
+  const [supportRow, setSupportRow] = useState<WorkerRow | null>(null);
   const availability = params.get("enabled") ?? "";
   const status = params.get("status") ?? "";
+  // Same ["admin-me"] query DirectoryPage already runs for this page; TanStack Query dedupes by
+  // key, so reading it here to gate "Support view" adds no extra request.
+  const me = useQuery({ queryKey: ["admin-me"], queryFn: adminMe });
+  const canSupportView = me.data?.capabilities?.includes("support_view_worker") ?? false;
 
   const setFilter = useCallback((key: string, value: string) => {
     const next = new URLSearchParams(params.toString());
@@ -74,10 +81,18 @@ function WorkersView() {
         </div>
       }
       actions={(row) => (
-        <Button variant="outline" className="min-h-11" onClick={() => setActive(row)}
-          aria-label={`Recent activity for ${row.name}`}>
-          Activity
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" className="min-h-11" onClick={() => setActive(row)}
+            aria-label={`Recent activity for ${row.name}`}>
+            Activity
+          </Button>
+          {row.type === "intelligence" && canSupportView && (
+            <Button variant="outline" className="min-h-11" onClick={() => setSupportRow(row)}
+              aria-label={`Support view for ${row.name}`}>
+              Support view
+            </Button>
+          )}
+        </div>
       )}
       emptyMessage={(filtered) => filtered ? "No workers match this search or filter." : "No workers yet."}
     />
@@ -87,6 +102,12 @@ function WorkersView() {
       subtitle={active ? `${active.tenant_id} / ${active.id}` : undefined}
       targetId={active?.id}
       onClose={() => setActive(null)}
+    />
+    <WorkerSupportDialog
+      open={Boolean(supportRow)}
+      agentId={supportRow?.id ?? ""}
+      workerName={supportRow?.name ?? ""}
+      onClose={() => setSupportRow(null)}
     />
     </>
   );
