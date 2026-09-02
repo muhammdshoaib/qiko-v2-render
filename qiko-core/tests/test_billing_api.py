@@ -314,6 +314,22 @@ def test_create_invoice_requires_manage_billing_and_csrf(client):
     assert inv["status"] == "open"
 
 
+def test_create_invoice_validates_and_normalizes_currency(client):
+    # QIKO-1055: currency previously only had max_length=3, so "123" or "XY!" passed through
+    # to Stripe unvalidated. It must also be normalized (Stripe's own codes are lowercase).
+    admin_cookies, headers = _with_csrf(_admin_cookies(client))
+    body = {"customer_id": "cus_test", "amount_cents": 5000, "currency": "EUR"}
+    res = client.post("/api/v1/billing/invoices", json=body, cookies=admin_cookies, headers=headers)
+    assert res.status_code == 200 and res.json()["currency"] == "eur"
+
+    rejected = client.post(
+        "/api/v1/billing/invoices",
+        json={"customer_id": "cus_test", "amount_cents": 5000, "currency": "123"},
+        cookies=admin_cookies, headers=headers,
+    )
+    assert rejected.status_code == 422
+
+
 def test_create_invoice_rejects_tenant_without_stripe_customer(client):
     admin_cookies, headers = _with_csrf(_admin_cookies(client))
     res = client.post("/api/v1/billing/invoices",

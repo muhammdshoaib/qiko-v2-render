@@ -185,20 +185,7 @@ class WorkerEnabledBody(BaseModel):
     reason: str | None = Field(default=None, max_length=1000)
 
 
-_CSRF_OPENAPI = {
-    "parameters": [
-        {
-            "name": "X-CSRF-Token", "in": "header", "required": True,
-            "schema": {"type": "string"},
-            "description": "Must match the qiko_csrf cookie.",
-        },
-        {
-            "name": "qiko_csrf", "in": "cookie", "required": True,
-            "schema": {"type": "string"},
-            "description": "Double-submit CSRF cookie.",
-        },
-    ]
-}
+_CSRF_OPENAPI = csrf.CSRF_OPENAPI_EXTRA
 
 
 def _require_csrf(request: Request) -> None:
@@ -216,7 +203,7 @@ async def set_worker_enabled(customer_id: str, agent_id: str, body: WorkerEnable
                              _identity=Depends(require_platform_capability(Capability.manage_workers))) -> dict:
     _require_csrf(request)
     if await run_in_threadpool(request.app.state.customers.details, customer_id) is None:
-        raise HTTPException(status_code=404, detail="worker not found")
+        raise HTTPException(status_code=404, detail="customer not found")
     agent = await request.app.state.agents.get(customer_id, agent_id)
     if agent is None:
         raise HTTPException(status_code=404, detail="worker not found")
@@ -289,7 +276,7 @@ async def customer_delete(user_id: str, request: Request,
 def overview(request: Request, _tenant: str = Depends(authed_tenant),
              _identity=Depends(require_platform_capability(Capability.view_customers))) -> dict:
     subs = request.app.state.subscriptions.summary()
-    customers_total = request.app.state.customers.list()["total"]
+    customers_total = request.app.state.customers.count()
     return {"customers_total": customers_total, **subs}
 
 

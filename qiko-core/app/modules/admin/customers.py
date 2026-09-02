@@ -36,6 +36,10 @@ class CustomerDirectory:
     def add(self, rec: CustomerRecord) -> None:
         self._by_id[rec.user_id] = rec
 
+    def count(self) -> int:
+        """Total non-deleted customers, without the sort/paginate work list() does for its rows."""
+        return sum(1 for r in self._by_id.values() if not r.deleted)
+
     def list(self, *, search: str | None = None, plan: str | None = None,
              page: int = 1, page_size: int = PAGE_SIZE,
              sort: str | None = None, order: str = "desc",
