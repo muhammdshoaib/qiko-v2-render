@@ -57,9 +57,34 @@ test("preprod and live expose one strict creator CSP without unsafe eval or broa
     assert.match(caddy, /frame-ancestors 'self'/, filename);
     // frame-ancestors * is allowed in exactly ONE CSP header value (the public embed surface).
     assert.equal((caddy.match(/Content-Security-Policy "[^"]*frame-ancestors \*/g) ?? []).length, 1, filename);
+    // An external scan flagged 'unsafe-inline' in script-src as "CSP implemented unsafely."
+    // Neither app/admin CSP needs it (no inline <script> tags in either app -- the
+    // dangerouslySetInnerHTML content on app/page.tsx and qiko-website-v2's HtmlPage.tsx is
+    // style-attribute-only, no <script>), so it's removed from script-src for both. style-src
+    // keeps 'unsafe-inline' -- both apps use React's style={{...}} prop extensively, and CSP
+    // nonces don't cover inline style attributes, only <style>/<script> elements; removing it
+    // would need a much larger CSS-classes refactor, tracked separately.
+    for (const directive of caddy.matchAll(/Content-Security-Policy "([^"]+)"/g)) {
+      const scriptSrc = /script-src ([^;]+)/.exec(directive[1])?.[1] ?? "";
+      const isEmbed = directive[1].includes("frame-ancestors *");
+      if (!isEmbed) assert.doesNotMatch(scriptSrc, /unsafe-inline/, `${filename}: ${directive[1]}`);
+      assert.match(directive[1], /style-src 'self' 'unsafe-inline'/, filename);
+    }
   }
   const live = readFileSync(resolve(repositoryRoot, "Caddyfile.live"), "utf8");
   assert.match(live, /@www host www\.qiko\.ai/);
   assert.match(live, /redir @www https:\/\/qiko\.ai\{uri\} permanent/);
   assert.match(live, /connect-src 'self' https:\/\/api\.stripe\.com/);
+});
+
+// An external security scan flagged www.preprod.qiko.ai (the marketing site's own standalone
+// preprod vhost) for missing X-Frame-Options/Permissions-Policy. On live, the equivalent
+// marketing paths are served under the qiko.ai app vhost's own @app header block (see the
+// @marketing handle in Caddyfile.live), so they already inherit both headers from there; this
+// vhost only exists as a *separate* block on preprod, so it needs its own copy to match.
+test("preprod's marketing vhost sends X-Frame-Options and Permissions-Policy, matching live", () => {
+  const caddy = readFileSync(resolve(repositoryRoot, "Caddyfile"), "utf8");
+  const marketingBlock = caddy.slice(caddy.indexOf("www.preprod.qiko.ai {"), caddy.indexOf("\n}\n", caddy.indexOf("www.preprod.qiko.ai {")));
+  assert.match(marketingBlock, /X-Frame-Options "SAMEORIGIN"/);
+  assert.match(marketingBlock, /Permissions-Policy "[^"]+"/);
 });
