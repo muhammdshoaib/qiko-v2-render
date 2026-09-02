@@ -84,6 +84,8 @@ class Settings(BaseSettings):
     # jm-backend's internal API (JM2-1023): investor lookup + WhatsApp conversation persistence.
     jm_backend_base_url: str = ""
     jm_backend_shared_secret: str = ""
+    # The reverse direction (JM2-1065/1066): jm-backend calling INTO qiko-core's worker API.
+    jm_backend_api_key: str = ""
     slack_client_id: str = ""
     slack_client_secret: str = ""
     slack_signing_secret: str = ""   # Slack request signing for the inbound Events API

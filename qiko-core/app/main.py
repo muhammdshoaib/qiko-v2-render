@@ -47,6 +47,7 @@ from app.modules.billing.payment_links import PaymentLinkService
 from app.modules.channels.digest_scheduler import DigestScheduler
 from app.modules.channels.interakt import InteraktGateway
 from app.modules.joseph_mews.jm_backend_client import HttpJmBackendClient, UnavailableJmBackendClient
+from app.modules.joseph_mews.router import router as joseph_mews_router
 from app.modules.channels.sessions import ChannelSessionStore
 from app.modules.channels.slack_events import SlackEventHandler
 from app.modules.channels.webhooks import IdempotencyGuard
@@ -580,7 +581,7 @@ def create_app() -> FastAPI:
               channels_router, excel_router, voice_router, signal_router, intelligence_router,
               public_chat_router, sources_router, twofa_router, onboarding_router, admin_org_router,
               batch_router, marketing_router, crm_router, sales_intelligence_router, finance_router,
-              notifications_router, consent_router):
+              notifications_router, consent_router, joseph_mews_router):
         app.include_router(r, prefix="/api/v1")
     return app
 

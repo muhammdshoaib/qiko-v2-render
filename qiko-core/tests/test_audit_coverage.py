@@ -22,6 +22,9 @@ NOT_AUDITED: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/knowledge/search"): "read, persists nothing",
     ("POST", "/api/v1/excel/search"): "read, persists nothing",
     ("POST", "/api/v1/excel/analytics"): "read, persists nothing",
+    ("POST", "/api/v1/tenants/{tenant_id}/signals/summarize"): (
+        "service-to-service AI draft for jm-backend (JM2-1065); persists nothing durable here, "
+        "only an in-memory idempotency cache, the resulting IntentSignal lives in jm-backend"),
 
     # Volume. These are 99% of writes and close to 0% of evidential value; auditing them would drown
     # the trail that the CRITICAL events live in. Content is already durable in its own tables.

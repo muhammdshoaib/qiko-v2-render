@@ -4988,6 +4988,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tenants/{tenant_id}/signals/summarize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Summarize Signal Endpoint */
+        post: operations["summarize_signal_endpoint_api_v1_tenants__tenant_id__signals_summarize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/voice/speak": {
         parameters: {
             query?: never;
@@ -7499,6 +7516,38 @@ export interface components {
             /** Token */
             token: string;
         };
+        /** SignalSummarizeRequest */
+        SignalSummarizeRequest: {
+            /** Development */
+            development?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Investor
+             * @default {}
+             */
+            investor: {
+                [key: string]: unknown;
+            };
+            /**
+             * Locale
+             * @default en-GB
+             */
+            locale: string;
+            /** Property */
+            property?: {
+                [key: string]: unknown;
+            } | null;
+            /** Propertyunit */
+            propertyUnit?: {
+                [key: string]: unknown;
+            } | null;
+            /** Requestid */
+            requestId: string;
+            signal: components["schemas"]["_SignalContext"];
+        } & {
+            [key: string]: unknown;
+        };
         /** SignupBody */
         SignupBody: {
             /**
@@ -7898,6 +7947,38 @@ export interface components {
             reason?: string | null;
             /** Status */
             status: string;
+        };
+        /** _SignalContext */
+        _SignalContext: {
+            /** Id */
+            id?: number | null;
+            /**
+             * Intentlevel
+             * @default
+             */
+            intentLevel: string;
+            /**
+             * Ruledescription
+             * @default
+             */
+            ruleDescription: string;
+            /**
+             * Rulename
+             * @default
+             */
+            ruleName: string;
+            /**
+             * Signaltype
+             * @default
+             */
+            signalType: string;
+            /**
+             * Triggeringactivity
+             * @default
+             */
+            triggeringActivity: string;
+        } & {
+            [key: string]: unknown;
         };
         /** FeedbackBody */
         app__modules__agentcore__batch_router__FeedbackBody: {
@@ -17972,6 +18053,46 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    summarize_signal_endpoint_api_v1_tenants__tenant_id__signals_summarize_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+                "x-tenant-id"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignalSummarizeRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
