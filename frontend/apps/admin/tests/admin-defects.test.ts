@@ -119,3 +119,26 @@ defectsTest("the audit log requests the full history the server allows", () => {
   // Omitting the limit capped the access log at the server default of 50, silently.
   defectsAssert.match(read("lib/api.ts"), /admin\/org\/audit\?limit=\$\{limit\}/);
 });
+
+defectsTest("QIKO-1050: the subscriptions plan filter offers only real backend plan keys", () => {
+  // PLANS listed "starter" (never existed) and omitted "enterprise" (a real plan). Selecting
+  // "starter" always returned zero rows; there was no way to filter for enterprise accounts.
+  const source = read("app/subscriptions/page.tsx");
+  const plansBlock = source.slice(source.indexOf("const PLANS ="), source.indexOf("];", source.indexOf("const PLANS =")));
+  const filterValues = [...plansBlock.matchAll(/value: "(\w*)"/g)].map((m: RegExpMatchArray) => m[1]);
+
+  const backendPlansPath = defectsResolve(defectsRoot, "../../../qiko-core/app/modules/billing/plans.py");
+  const backendSource = defectsReadFileSync(backendPlansPath, "utf8");
+  const plansDict = backendSource.slice(backendSource.indexOf("PLANS: dict"), backendSource.indexOf("\n\n\n", backendSource.indexOf("PLANS: dict")));
+  const backendKeys = [...plansDict.matchAll(/^\s*"(\w+)": Plan\(/gm)].map((m: RegExpMatchArray) => m[1]);
+
+  defectsAssert.ok(backendKeys.length > 0, "could not read any plan key from plans.py; check the slice bounds");
+  for (const key of backendKeys) {
+    defectsAssert.ok(filterValues.includes(key), `PLANS filter is missing backend plan "${key}"`);
+  }
+  // "" is the sentinel for "All plans", the only filter value with no backing plan.
+  for (const value of filterValues) {
+    if (value === "") continue;
+    defectsAssert.ok(backendKeys.includes(value), `PLANS filter offers "${value}", which is not a real backend plan`);
+  }
+});

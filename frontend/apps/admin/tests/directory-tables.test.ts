@@ -110,7 +110,7 @@ dirTest("filters narrow on the server, not after the fetch", () => {
 dirTest("the heading announces a range, not a bare total", () => {
   // "137 total" is identical before and after a filter that returns the same count of a different set,
   // so a live region announces nothing.
-  dirAssert.match(dirShell, /Showing \$\{firstOnPage\}-\$\{\(page - 1\) \* pageSize \+ shown\} of \$\{total\}/);
+  dirAssert.match(dirShell, /Showing \$\{firstOnPage\}-\$\{\(effectivePage - 1\) \* pageSize \+ shown\} of \$\{total\}/);
   dirAssert.match(dirShell, /aria-live="polite"/);
 });
 
@@ -188,9 +188,20 @@ dirTest("the range and page count come from what the server applied", () => {
   // something other than what was asked for, arithmetic based on the request is wrong.
   dirAssert.match(dirShell, /const pageSize = rows\.data\?\.page_size \|\| DIRECTORY_PAGE_SIZE;/);
   dirAssert.match(dirShell, /Math\.ceil\(total \/ pageSize\)/);
-  dirAssert.match(dirShell, /\(page - 1\) \* pageSize \+ 1/);
+  dirAssert.match(dirShell, /\(effectivePage - 1\) \* pageSize \+ 1/);
   // No local mirror of the server's default may come back.
   dirAssert.doesNotMatch(dirShell, /const PAGE_SIZE = \d+/, "no second source of truth for the size");
+});
+
+dirTest("QIKO-1044: the displayed page follows the server's clamp, not the URL's request", () => {
+  // The server clamps an out-of-range page (?page=100 with only 5 pages exist) and reports the clamped
+  // value in rows.data.page. Computing the range or handing the Pagination control the raw URL `page`
+  // instead shows a range like "991-... of 50": the right total, computed from the wrong page.
+  dirAssert.match(dirShell, /const effectivePage = rows\.data\?\.page \?\? page;/);
+  dirAssert.match(dirShell, /\(effectivePage - 1\) \* pageSize \+ shown/);
+  dirAssert.match(dirShell, /<Pagination page=\{effectivePage\}/);
+  // The raw URL-requested page must still be what is actually sent to the server.
+  dirAssert.match(dirShell, /queryFn: \(\) => fetchPage\(urlSearch, page, sort\)/);
 });
 
 dirTest("payment links are a table but not a directory", () => {

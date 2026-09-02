@@ -12,8 +12,8 @@ import { formatMoney, listCustomers, type Customer } from "@/lib/api";
 const PLANS = [
   { value: "", label: "All plans" },
   { value: "free", label: "Free" },
-  { value: "starter", label: "Starter" },
   { value: "pro", label: "Pro" },
+  { value: "enterprise", label: "Enterprise" },
 ] as const;
 
 const columns: Column<Customer>[] = [

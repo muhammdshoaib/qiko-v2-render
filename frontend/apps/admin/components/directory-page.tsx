@@ -120,7 +120,11 @@ function Directory<T>({
   const pageSize = rows.data?.page_size || DIRECTORY_PAGE_SIZE;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
   const shown = rows.data?.items.length ?? 0;
-  const firstOnPage = shown === 0 ? 0 : (page - 1) * pageSize + 1;
+  // The server clamps an out-of-range page (e.g. ?page=100 with only 5 pages) and reports the clamped
+  // value back in rows.data.page. Using the URL's requested `page` here instead would show a range like
+  // "991-... of 50": the right total, computed from the wrong page.
+  const effectivePage = rows.data?.page ?? page;
+  const firstOnPage = shown === 0 ? 0 : (effectivePage - 1) * pageSize + 1;
   const narrowed = Boolean(urlSearch) || filterToken !== "";
 
   return (
@@ -133,7 +137,7 @@ function Directory<T>({
                 that returns the same count of a different set, so a live region announces nothing. */}
             <p role="status" aria-live="polite" className="text-sm text-muted-foreground">
               {awaitingFirstAnswer ? `Loading ${noun}...`
-                : rows.data ? `Showing ${firstOnPage}-${(page - 1) * pageSize + shown} of ${total} ${noun}`
+                : rows.data ? `Showing ${firstOnPage}-${(effectivePage - 1) * pageSize + shown} of ${total} ${noun}`
                   : "Unavailable"}
             </p>
           </div>
@@ -191,7 +195,7 @@ function Directory<T>({
           )}
 
         {pageCount > 1 && (
-          <Pagination page={page} pageCount={pageCount} total={total} shown={shown} label={noun}
+          <Pagination page={effectivePage} pageCount={pageCount} total={total} shown={shown} label={noun}
             busy={rows.isFetching}
             onChange={(next) => setParam({ page: next === 1 ? "" : String(next) })} />
         )}
