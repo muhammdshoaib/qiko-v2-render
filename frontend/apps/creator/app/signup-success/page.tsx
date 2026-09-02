@@ -48,9 +48,9 @@ export default function SignUpSuccess() {
           </p>
 
 
-          <div className="mt-8 flex items-center justify-center gap-3">
+          <div className="mt-8 flex flex-col items-stretch justify-center gap-3 sm:flex-row sm:items-center">
             <Button
-              className="min-w-[200px] bg-gradient-to-r from-purple-600 to-cyan-600 text-white border-0"
+              className="min-h-11 w-full border-0 bg-gradient-to-r from-purple-600 to-cyan-600 text-white sm:min-h-9 sm:min-w-[200px] sm:w-auto"
               onClick={() => setLocation("/onboarding")}
             >
               Start onboarding

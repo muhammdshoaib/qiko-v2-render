@@ -96,12 +96,12 @@ export default function WorkersPage() {
         {isViewer ? (
           <p role="status" className="text-sm text-slate-400">View-only access - ask an admin to create or manage workers.</p>
         ) : (
-        <div className="flex w-full items-center justify-start gap-3 sm:w-auto sm:justify-end">
+        <div className="flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="New worker name..."
             aria-label="New worker name"
-            className="w-56 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 transition-colors focus-visible:border-cyan-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500" />
+            className="w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 transition-colors focus-visible:border-cyan-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 sm:w-56" />
           <Button disabled={usage.isLoading || usage.isError || atLimit || !name || create.isPending} aria-describedby="workers-plan-usage" onClick={() => create.mutate()}
-            className="rounded-xl bg-gradient-to-r from-violet-500 to-cyan-400 font-medium text-white shadow-lg shadow-cyan-500/20 hover:opacity-90">
+            className="min-h-11 w-full rounded-xl bg-gradient-to-r from-violet-500 to-cyan-400 font-medium text-white shadow-lg shadow-cyan-500/20 hover:opacity-90 sm:min-h-9 sm:w-auto">
             <Plus className="size-4" /> Create Worker
           </Button>
         </div>

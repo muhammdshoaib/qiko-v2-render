@@ -57,7 +57,7 @@ export default function SettingsPage() {
 
   return (
     <AppShell title="Settings">
-      <div className="p-6 lg:p-8">
+      <div className="p-4 sm:p-6 lg:p-8">
         <div className="mx-auto max-w-3xl">
           <div className="mb-8">
             <h1 className="mb-2 text-2xl font-bold lg:text-3xl" style={{
@@ -70,14 +70,16 @@ export default function SettingsPage() {
             <p className="text-slate-400">Manage your account and preferences</p>
           </div>
 
-          <div className="mb-6 inline-flex h-12 w-fit items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.015] p-1.5">
+          <div className="mb-6 max-w-full overflow-x-auto">
+            <div className="inline-flex h-12 w-max min-w-full items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.015] p-1.5 sm:min-w-0">
             {SETTINGS_TABS.map(({ id, label, icon: Icon }) => (
               <button key={id} onClick={() => setTab(id)} aria-current={tab === id ? "page" : undefined}
-                className={cn("inline-flex h-full items-center justify-center gap-1.5 rounded-xl border px-6 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
+                className={cn("inline-flex h-full shrink-0 items-center justify-center gap-1.5 rounded-xl border px-4 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 sm:px-6",
                   tab === id ? "border-cyan-500/30 bg-cyan-500/10 text-white" : "border-transparent text-slate-300 hover:text-white")}>
                 <Icon className={cn("size-4", tab === id ? "text-cyan-400" : "text-slate-500")} /> {label}
               </button>
             ))}
+            </div>
           </div>
 
           {tab === "general" && (

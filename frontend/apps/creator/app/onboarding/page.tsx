@@ -617,7 +617,9 @@ export default function Onboarding() {
             />
           </div>
           
-          <div className="flex items-center gap-2">
+          <span className="text-xs font-medium text-slate-400 sm:hidden">Step {displayStep}/{totalDots}</span>
+
+          <div className="hidden items-center gap-2 sm:flex">
             {Array.from({ length: totalDots }, (_, i) => i + 1).map((s) => (
               <div
                 key={s}
@@ -644,7 +646,7 @@ export default function Onboarding() {
         </div>
       </header>
       
-      <main className="container mx-auto max-w-2xl px-4 relative z-10 flex flex-col justify-center" style={{ minHeight: "calc(100vh - 64px)", paddingTop: "80px", paddingBottom: "24px" }}>
+      <main className="container relative z-10 mx-auto flex max-w-2xl flex-col justify-center overflow-x-hidden px-4" style={{ minHeight: "calc(100vh - 64px)", paddingTop: "80px", paddingBottom: "24px" }}>
         {/* Step 1: Choose Industry */}
         {step === 1 && (
           <div className="space-y-4 animate-in fade-in slide-in-from-right-4 duration-300">

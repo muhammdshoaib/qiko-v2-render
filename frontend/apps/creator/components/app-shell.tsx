@@ -21,6 +21,8 @@ export function AppShell({ title, children }: { title: string; children: React.R
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  const closeMobileMenu = () => setMobileOpen(false);
+
   async function onLogout() {
     try {
       await logout();
@@ -30,12 +32,21 @@ export function AppShell({ title, children }: { title: string; children: React.R
   }
 
   return (
-    <div className="flex min-h-screen bg-[#05070d]">
+    <div className="flex min-h-screen min-w-0 overflow-x-hidden bg-[#05070d]">
+      {mobileOpen && (
+        <button
+          type="button"
+          aria-label="Close menu"
+          className="fixed inset-0 z-40 bg-black/60 lg:hidden"
+          onClick={closeMobileMenu}
+        />
+      )}
+
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex flex-col border-r border-white/[0.06] bg-[#070a12] shadow-[0_0_40px_rgba(3,8,20,0.8)]",
-          "transform transition-transform duration-300 ease-in-out max-md:-translate-x-full",
-          mobileOpen && "max-md:translate-x-0",
+          "transform transition-transform duration-300 ease-in-out -translate-x-full lg:translate-x-0",
+          mobileOpen && "translate-x-0",
         )}
         style={{ width: collapsed ? 72 : 200 }}
       >
@@ -46,14 +57,17 @@ export function AppShell({ title, children }: { title: string; children: React.R
           <button
             onClick={() => setCollapsed((c) => !c)}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className="absolute -right-3 top-1/2 mr-5 hidden size-7 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-[#111827] text-slate-300 shadow-md transition-all hover:bg-[#1f2937] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 md:flex"
+            className="absolute -right-3 top-1/2 mr-5 hidden size-7 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-[#111827] text-slate-300 shadow-md transition-all hover:bg-[#1f2937] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 lg:flex"
           >
             <ChevronLeft className={cn("size-4 transition-transform", collapsed && "rotate-180")} />
           </button>
         </div>
         <div className="border-b border-white/[0.06] px-3 py-3">
           <button
-            onClick={() => router.push(inStudio ? "/dashboard" : "/studio")}
+            onClick={() => {
+              closeMobileMenu();
+              router.push(inStudio ? "/dashboard" : "/studio");
+            }}
             className="flex w-full items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.015] px-3 py-2.5 text-xs font-medium transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
           >
             {inStudio ? <Sparkles className="size-4 shrink-0 text-violet-400" /> : <Wrench className="size-4 shrink-0 text-cyan-400" />}
@@ -92,6 +106,7 @@ export function AppShell({ title, children }: { title: string; children: React.R
                   <Link
                     href={href}
                     aria-current={active ? "page" : undefined}
+                    onClick={closeMobileMenu}
                     className={cn(
                       "group relative flex w-full items-center gap-3 rounded-xl px-3 py-3 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500",
                       active
@@ -119,13 +134,18 @@ export function AppShell({ title, children }: { title: string; children: React.R
             {!collapsed && <span className="text-sm font-medium">Logout</span>}
           </button>
         </div>
-        <button onClick={() => setMobileOpen(false)} aria-label="Close menu" className="absolute top-4 right-4 text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 md:hidden">
+        <button onClick={closeMobileMenu} aria-label="Close menu" className="absolute top-4 right-4 text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 lg:hidden">
           <X className="size-5" />
         </button>
       </aside>
 
-      <div className="flex flex-1 flex-col transition-[margin-left] duration-300 ease-in-out" style={{ marginLeft: 0 }}>
-        <div className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#05070d]/95 backdrop-blur md:hidden">
+      <main
+        className={cn(
+          "flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden transition-[margin-left] duration-300 ease-in-out",
+          collapsed ? "lg:ml-[72px]" : "lg:ml-[200px]",
+        )}
+      >
+        <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#05070d]/95 backdrop-blur lg:hidden">
           <div className="flex items-center justify-between p-4">
             <button onClick={() => setMobileOpen(true)} aria-label="Open menu" className="-ml-2 p-2 text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">
               <Menu className="size-5" />
@@ -133,11 +153,9 @@ export function AppShell({ title, children }: { title: string; children: React.R
             <span className="text-lg font-bold text-white" style={{ fontFamily: "var(--font-display)" }}>{title}</span>
             <div className="w-9" />
           </div>
-        </div>
-        <main className={cn("flex min-h-0 min-w-0 flex-1 flex-col", collapsed ? "md:pl-[72px]" : "md:pl-[200px]")}>
-          {children}
-        </main>
-      </div>
+        </header>
+        <div className="min-w-0 flex-1 overflow-x-hidden">{children}</div>
+      </main>
     </div>
   );
 }

@@ -82,3 +82,58 @@ test("login mobile controls meet the 44px touch target", async ({ page }) => {
   await expect(page.getByRole("img", { name: "Qiko" })).toBeVisible();
   await expect(page.getByPlaceholder("you" + "@" + "example.com")).toBeVisible();
 });
+
+test("signup and forgot-password fit mobile viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  for (const path of ["/signup?invite=test-token", "/forgot-password"]) {
+    await page.goto(path);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    const submit = page.getByRole("button").filter({ hasText: /create account|send one-time code/i }).first();
+    const box = await submit.boundingBox();
+    expect(box?.height).toBeGreaterThanOrEqual(44);
+  }
+});
+
+test("onboarding fits mobile viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/onboarding");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});
+
+async function mockCreatorSession(page: import("@playwright/test").Page, baseURL: string) {
+  await page.context().addCookies([
+    { name: "qiko_access", value: "e2e-mobile", url: baseURL },
+    { name: "qiko_csrf", value: "e2e-csrf", url: baseURL },
+  ]);
+  await page.route("**/api/v1/**", async (route) => {
+    const path = new URL(route.request().url()).pathname.replace(/\/api\/v1/, "");
+    const json = (body: unknown) => route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    if (path === "/auth/me") return json({ id: "u1", email: "mobile@example.test", name: "Mobile", role: "owner" });
+    if (path === "/consent") return json({ necessary: true, preferences: false, analytics: false, marketing: false });
+    if (path === "/agents") return json([]);
+    if (path === "/agents/usage") return json({ used: 0, limit: 5, plan: "starter" });
+    return json({});
+  });
+}
+
+test("post-login shell shows mobile header without horizontal overflow", async ({ page, baseURL }) => {
+  test.skip(!baseURL, "requires baseURL");
+  await mockCreatorSession(page, baseURL!);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/dashboard");
+  await expect(page.getByRole("button", { name: "Open menu" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.getByRole("button", { name: "Open menu" }).click();
+  await expect(page.getByRole("button", { name: "Close menu" }).first()).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Primary" })).toBeVisible();
+});
+
+test("workers page fits mobile viewport", async ({ page, baseURL }) => {
+  test.skip(!baseURL, "requires baseURL");
+  await mockCreatorSession(page, baseURL!);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/workers");
+  await expect(page.getByRole("heading", { name: "Your Workers" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+});

@@ -98,7 +98,7 @@ export default function DashboardPage() {
 
   return (
     <AppShell title="Dashboard">
-      <div className="p-6 lg:p-8">
+      <div className="p-4 sm:p-6 lg:p-8">
         <div className="mx-auto max-w-6xl">
           <div className="mb-8 flex items-center gap-3">
             <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-cyan-400 to-blue-500 shadow-lg shadow-cyan-500/20">
@@ -135,7 +135,7 @@ export default function DashboardPage() {
             <div className="space-y-6 lg:col-span-2">
               <div className={cn("p-6", CARD)}>
                 <p className="mb-5 text-[11px] font-semibold uppercase tracking-wider text-cyan-400">OUTCOMES &ndash; WORKFORCE</p>
-                <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
+                <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
                   {[
                     { label: "Workers", value: workers.length, sparkColor: null },
                     { label: "Verticals", value: industries, sparkColor: null },

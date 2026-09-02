@@ -15,22 +15,87 @@ export default function VerifyEmailPage() {
   const [acceptedPolicies, setAcceptedPolicies] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setEmail(params.get("email") ?? "");
     setCode(params.get("code") ?? "");
   }, []);
+
   async function verify() {
-    setBusy(true); setError(null);
+    setBusy(true);
+    setError(null);
     try {
-      const result = await verifySignupEmail({ email, code, password, accept_policies: acceptedPolicies,
-        terms_release_id: TERMS_RELEASE_ID, privacy_release_id: PRIVACY_RELEASE_ID,
-        cookies_release_id: COOKIES_RELEASE_ID });
-      // The backend issues an authenticated session on verification.
+      const result = await verifySignupEmail({
+        email,
+        code,
+        password,
+        accept_policies: acceptedPolicies,
+        terms_release_id: TERMS_RELEASE_ID,
+        privacy_release_id: PRIVACY_RELEASE_ID,
+        cookies_release_id: COOKIES_RELEASE_ID,
+      });
       setLocation(result.worker_id ? "/creating" : "/dashboard");
+    } catch {
+      setError("Verification failed. Check the code or request a new signup email.");
+    } finally {
+      setBusy(false);
     }
-    catch { setError("Verification failed. Check the code or request a new signup email."); }
-    finally { setBusy(false); }
   }
-  return <main className="flex min-h-screen items-center justify-center bg-[#050810] p-4 text-white"><section className="w-full max-w-md space-y-5 rounded-2xl border border-slate-800 bg-slate-900/70 p-6"><img src="/qiko-logo-email.png" alt="Qiko" className="mx-auto h-12 w-[120px] object-contain" /><h1 className="text-center text-2xl font-semibold">Verify your email</h1><div><Label htmlFor="verify-email">Email</Label><Input id="verify-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></div><div><Label htmlFor="verify-code">Verification code</Label><Input id="verify-code" inputMode="numeric" maxLength={6} value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))} /></div><div><Label htmlFor="verify-password">Choose password</Label><Input id="verify-password" type="password" autoComplete="new-password" minLength={8} value={password} onChange={(event) => setPassword(event.target.value)} /></div><label className="flex items-start gap-3 text-sm text-slate-300"><input type="checkbox" className="mt-1 h-4 w-4" checked={acceptedPolicies} onChange={(event) => setAcceptedPolicies(event.target.checked)} /><span>I accept the <a className="text-cyan-400 underline" href="/terms" target="_blank">Terms</a>, <a className="text-cyan-400 underline" href="/privacy" target="_blank">Privacy Policy</a>, and <a className="text-cyan-400 underline" href="/cookies" target="_blank">Cookie Policy</a>.</span></label>{error && <p role="alert" className="text-sm text-red-400">{error}</p>}<Button className="min-h-11 w-full" disabled={busy || !email || code.length !== 6 || password.length < 8 || !acceptedPolicies} onClick={verify}>{busy ? "Verifying..." : "Verify email"}</Button></section></main>;
+
+  return (
+    <main className="flex min-h-screen items-center justify-center overflow-x-hidden bg-[#050810] p-4 text-white">
+      <section className="w-full max-w-md space-y-5 rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+        <img src="/qiko-logo-email.png" alt="Qiko" className="mx-auto h-12 w-[120px] object-contain" />
+        <h1 className="text-center text-2xl font-semibold">Verify your email</h1>
+        <div className="space-y-2">
+          <Label htmlFor="verify-email">Email</Label>
+          <Input id="verify-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="verify-code">Verification code</Label>
+          <Input
+            id="verify-code"
+            inputMode="numeric"
+            maxLength={6}
+            value={code}
+            onChange={(event) => setCode(event.target.value.replace(/\D/g, ""))}
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="verify-password">Choose password</Label>
+          <Input
+            id="verify-password"
+            type="password"
+            autoComplete="new-password"
+            minLength={8}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </div>
+        <label className="flex items-start gap-3 text-sm text-slate-300">
+          <input
+            type="checkbox"
+            className="mt-1 size-4 shrink-0"
+            checked={acceptedPolicies}
+            onChange={(event) => setAcceptedPolicies(event.target.checked)}
+          />
+          <span>
+            I accept the{" "}
+            <a className="text-cyan-400 underline" href="/terms" target="_blank" rel="noreferrer">Terms</a>,{" "}
+            <a className="text-cyan-400 underline" href="/privacy" target="_blank" rel="noreferrer">Privacy Policy</a>, and{" "}
+            <a className="text-cyan-400 underline" href="/cookies" target="_blank" rel="noreferrer">Cookie Policy</a>.
+          </span>
+        </label>
+        {error && <p role="alert" className="text-sm text-red-400">{error}</p>}
+        <Button
+          className="min-h-11 w-full sm:min-h-9"
+          disabled={busy || !email || code.length !== 6 || password.length < 8 || !acceptedPolicies}
+          onClick={verify}
+        >
+          {busy ? "Verifying..." : "Verify email"}
+        </Button>
+      </section>
+    </main>
+  );
 }

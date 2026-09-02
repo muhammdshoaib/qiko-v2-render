@@ -140,7 +140,7 @@ export default function ResetPassword() {
                   </p>
                 </div>
                 <Link href="/login">
-                  <Button className="w-full bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white border-0">
+                  <Button className="min-h-11 w-full border-0 bg-gradient-to-r from-purple-600 to-cyan-600 text-white hover:from-purple-500 hover:to-cyan-500 sm:min-h-9">
                     Sign in
                   </Button>
                 </Link>
@@ -203,7 +203,7 @@ export default function ResetPassword() {
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition-colors"
+                      className="absolute right-0 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center text-slate-400 transition-colors hover:text-white sm:right-3 sm:size-9"
                     >
                       {showPassword ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                     </button>
@@ -244,7 +244,7 @@ export default function ResetPassword() {
                 <Button
                   type="submit"
                   disabled={isLoading || password !== confirmPassword || otp.length !== 6}
-                  className="w-full bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white border-0"
+                  className="min-h-11 w-full border-0 bg-gradient-to-r from-purple-600 to-cyan-600 text-white hover:from-purple-500 hover:to-cyan-500 sm:min-h-9"
                 >
                   {isLoading ? (
                     <>

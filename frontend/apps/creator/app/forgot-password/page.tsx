@@ -120,7 +120,7 @@ export default function ForgotPassword() {
                 <Button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full bg-gradient-to-r from-purple-600 to-cyan-600 hover:from-purple-500 hover:to-cyan-500 text-white border-0"
+                  className="min-h-11 w-full border-0 bg-gradient-to-r from-purple-600 to-cyan-600 text-white hover:from-purple-500 hover:to-cyan-500 sm:min-h-9"
                 >
                   {isLoading ? (
                     <>

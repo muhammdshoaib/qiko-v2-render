@@ -100,18 +100,18 @@ export default function WorkerDetailPage() {
 
   return (
     <AppShell title="Worker">
-      <div className="flex h-full flex-col">
-        <div className="relative border-b border-white/[0.06] bg-[#070a12]/80 backdrop-blur-xl">
-          <div className="flex items-center gap-4 px-6 py-4">
+      <div className="flex min-w-0 flex-col overflow-x-hidden">
+        <div className="relative min-w-0 border-b border-white/[0.06] bg-[#070a12]/80 backdrop-blur-xl">
+          <div className="flex items-center gap-4 px-4 py-4 sm:px-6">
             <Link href="/workers" className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm text-slate-400 transition-colors hover:bg-white/[0.04] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">
               <ArrowLeft className="size-4" /> All Workers
             </Link>
           </div>
-          <div className="flex items-center gap-4 bg-gradient-to-r from-cyan-500/10 to-violet-500/[0.06] px-6 py-4">
+          <div className="flex flex-wrap items-center gap-4 bg-gradient-to-r from-cyan-500/10 to-violet-500/[0.06] px-4 py-4 sm:px-6">
             <WorkerAvatar name={worker?.name} size="lg" ready={worker?.status === "ready"} />
-            <div className="flex-1">
-              <h1 className="text-xl font-bold text-white">{worker?.name ?? "Worker"}</h1>
-              <p className="text-sm text-slate-400">{workerTypeLabel(worker?.atype)}</p>
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-xl font-bold text-white">{worker?.name ?? "Worker"}</h1>
+              <p className="truncate text-sm text-slate-400">{workerTypeLabel(worker?.atype)}</p>
             </div>
             {worker && (
               <Badge variant={worker.status === "ready" ? "success" : "muted"} dot={worker.status === "ready"} className="capitalize">
@@ -150,8 +150,8 @@ export default function WorkerDetailPage() {
               </div>
             </div>
           </div>
-          <nav aria-label="Worker sections" className="overflow-x-auto px-4 py-2 sm:px-6">
-            <div className="flex w-max items-center gap-2">
+          <nav aria-label="Worker sections" className="max-w-full overflow-x-auto px-4 py-2 sm:px-6">
+            <div className="flex w-max min-w-full items-center gap-2 pr-4 sm:pr-0">
               {TABS.map(({ id: t, icon: Icon }) => {
                 if (tabLocked(t)) {
                   return (
@@ -177,7 +177,7 @@ export default function WorkerDetailPage() {
           </nav>
         </div>
 
-        <div className="flex-1 overflow-auto p-6">
+        <div className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6">
           {tab === "Overview" && <OverviewTab id={id} worker={worker} />}
           {tab === "Train" && !isViewer && (
             <TrainTab id={id} worker={worker} docs={docs.data} loading={docs.isLoading}
@@ -207,34 +207,34 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
     "Available around the clock without breaks",
   ];
   return (
-    <div className="space-y-6">
+    <div className="min-w-0 space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-muted-foreground">Overview of your digital worker&apos;s capabilities and performance</p>
+        <h1 className="text-xl font-bold text-foreground sm:text-2xl">Dashboard</h1>
+        <p className="text-sm text-muted-foreground sm:text-base">Overview of your digital worker&apos;s capabilities and performance</p>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-white/[0.06] bg-gradient-to-br from-cyan-500/10 via-white/[0.015] to-violet-500/10">
+      <div className="min-w-0 overflow-hidden rounded-2xl border border-white/[0.06] bg-gradient-to-br from-cyan-500/10 via-white/[0.015] to-violet-500/10">
         <button onClick={() => setOverviewOpen((o) => !o)}
-          className="flex w-full items-center justify-between px-4 py-4 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">
-          <div className="flex items-center gap-2 text-base font-semibold">
+          className="flex w-full items-start justify-between gap-3 px-4 py-4 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 text-base font-semibold">
             <span className="grid size-7 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-cyan-400 to-blue-500">
               <Bot className="size-4 text-white" />
             </span>
-            AI Model Overview
-            <Badge variant="success" className="ml-2 text-xs">Active</Badge>
+            <span className="text-white">AI Model Overview</span>
+            <Badge variant="success" className="text-xs">Active</Badge>
           </div>
-          <ChevronUp className={cn("size-4 shrink-0 text-muted-foreground transition-transform", !overviewOpen && "rotate-180")} />
+          <ChevronUp className={cn("mt-1 size-4 shrink-0 text-muted-foreground transition-transform", !overviewOpen && "rotate-180")} />
         </button>
         {overviewOpen && (
           <div className="space-y-6 px-4 pb-4">
-            <div className="flex items-start gap-4">
-              <span className="grid size-16 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-500 shadow-lg shadow-cyan-500/20">
-                <BrainCircuit className="size-8 text-white" />
+            <div className="flex min-w-0 items-start gap-4">
+              <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-cyan-400 to-blue-500 shadow-lg shadow-cyan-500/20 sm:size-16">
+                <BrainCircuit className="size-7 text-white sm:size-8" />
               </span>
-              <div>
+              <div className="min-w-0 flex-1">
                 <h3 className="text-lg font-bold text-white">{worker?.name ?? "Worker"}</h3>
                 <p className="text-sm font-medium text-cyan-400">{typeLabel}</p>
-                <p className="mt-2 text-sm leading-relaxed text-slate-400">
+                <p className="mt-2 break-words text-sm leading-relaxed text-slate-400">
                   This {typeLabel} delivers consistent, knowledgeable responses 24/7, grounded in the
                   knowledge you&apos;ve trained it on.
                 </p>

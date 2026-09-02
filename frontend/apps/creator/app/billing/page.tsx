@@ -25,7 +25,7 @@ export default function BillingPage() {
 
   return (
     <AppShell title="Billing">
-      <div className="p-6 lg:p-8">
+      <div className="p-4 sm:p-6 lg:p-8">
         <div className="mx-auto max-w-4xl">
           <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
