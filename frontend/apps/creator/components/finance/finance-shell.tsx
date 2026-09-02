@@ -199,7 +199,7 @@ function FinanceShellInner({ children }: { children: React.ReactNode }) {
                             {month === "all" && <Check className="h-3.5 w-3.5 text-indigo-300" />}
                           </button>
                         </div>
-                        {Object.entries(monthsByYear).sort(([a], [b]) => Number(a) - Number(b)).map(([year, options]) => (
+                        {Object.entries(monthsByYear).sort(([a], [b]) => Number(b) - Number(a)).map(([year, options]) => (
                           <div key={year}>
                             <div className="border-t border-white/[0.04] px-3 pb-1 pt-2">
                               <span className="text-[10px] font-semibold uppercase tracking-wider text-white/34">{year}</span>

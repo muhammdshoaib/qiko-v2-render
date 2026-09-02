@@ -379,13 +379,18 @@ export function trendSections(payload: FinanceTrends | undefined): TrendSection[
 /** Turns the backend's `availableMonths` ("YYYY-MM", derived from the real income/expense
  * transaction dates) into dropdown options. EL-1014: this used to be derived from each uploaded
  * file's *upload* timestamp instead, so a workbook's real period was ignored, and two files
- * uploaded together (sharing an upload timestamp) could collapse to a single wrong month option. */
+ * uploaded together (sharing an upload timestamp) could collapse to a single wrong month option.
+ *
+ * Most-recent-first: a real "YTD" workbook can carry individual invoices going back years
+ * (arrears, historic maintenance records), so this list can legitimately span many years for one
+ * upload. Oldest-first opened the dropdown on ancient, irrelevant entries instead of the recent
+ * reporting periods a user actually wants. */
 export function monthOptionsFromAvailableMonths(months?: string[]): { label: string; value: string }[] {
   const opts: { label: string; value: string }[] = [{ label: "All time", value: "all" }];
   if (!months) return opts;
   // De-duped defensively even though the backend already returns a de-duped set: the dropdown
   // must never show the same month twice regardless of what the caller passes in.
-  for (const value of [...new Set(months)].sort()) {
+  for (const value of [...new Set(months)].sort().reverse()) {
     const m = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(value);
     if (!m) continue;
     const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1));

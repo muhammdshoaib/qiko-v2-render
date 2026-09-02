@@ -143,12 +143,20 @@ test("kpiMetricDrilldown shows missing values as -", () => {
 // files uploaded together on the same day collapsed to one (wrong) month option no matter which
 // real periods their data covered. Options must come straight from the backend's availableMonths
 // (derived from the real transaction dates), not from any client-side file metadata.
-test("monthOptionsFromAvailableMonths builds one option per distinct backend month, oldest first, plus All time", () => {
+//
+// Once that was fixed, QA found a follow-on UX problem: a real "YTD" workbook can carry
+// individual outstanding/settled invoices going back *years* (arrears, historic maintenance
+// records), so availableMonths can legitimately span 2019-2026 for one upload. Sorted oldest
+// first, the dropdown opened on ancient, irrelevant entries ("Jun 2005", "Apr 2019", ...)
+// instead of the recent reporting periods a user actually wants, which read as broken even
+// though the months were all real. Most-recent-first matches finance-shell's own year-group
+// header sort (see the el-1014-upload-month-reset.test.ts regression test for that side).
+test("monthOptionsFromAvailableMonths builds one option per distinct backend month, most recent first, plus All time", () => {
   const opts = monthOptionsFromAvailableMonths(["2026-02", "2025-12"]);
   assert.deepEqual(opts, [
     { label: "All time", value: "all" },
-    { label: "Dec 2025", value: "2025-12" },
     { label: "Feb 2026", value: "2026-02" },
+    { label: "Dec 2025", value: "2025-12" },
   ]);
 });
 

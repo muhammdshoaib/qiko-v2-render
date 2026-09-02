@@ -30,3 +30,11 @@ test("finance dashboard empty-state uploader also resets the month filter", () =
   assert.match(src, /<EmptyState[\s\S]*?onUploaded=\{\(\)\s*=>\s*setMonth\("all"\)\}/);
   assert.match(src, /<FinanceFileManager[\s\S]*?onUploaded=\{onUploaded\}/);
 });
+
+// EL-1014 (part 3): a real YTD workbook can carry invoices going back years (arrears, historic
+// records), so the year-group headers in the month dropdown must list the most recent year
+// first, not oldest-first -- otherwise the dropdown opens on ancient, irrelevant entries.
+test("finance shell month dropdown lists year groups most-recent-first", () => {
+  const src = source("components/finance/finance-shell.tsx");
+  assert.match(src, /Object\.entries\(monthsByYear\)\.sort\(\(\[a\], \[b\]\) => Number\(b\) - Number\(a\)\)/);
+});
