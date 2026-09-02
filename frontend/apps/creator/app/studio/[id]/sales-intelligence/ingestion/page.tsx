@@ -11,6 +11,7 @@ import {
   type SalesIntelSource, type SalesScanCadence, type SalesSourceCatalogItem,
 } from "@/lib/api";
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
+import { useConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { OutcomesStrip } from "@/components/sales-intelligence/outcomes-strip";
 import { Input, Switch } from "@/components/cockpit/controls";
 import { formatDate, humanize } from "@/components/sales-intelligence/utils";
@@ -41,6 +42,7 @@ function scanStatusClass(status: string | null | undefined): string {
 export default function SalesIntelligenceIngestionPage() {
   const { id: agentId } = useParams<{ id: string }>();
   const qc = useQueryClient();
+  const { openConfirmationDialog, closeConfirmationDialog, setPending, ConfirmActionDialog } = useConfirmActionDialog();
   const [query, setQuery] = useState("security");
   const [useQuery_, setUseQuery] = useState(true);
   const [allCountries, setAllCountries] = useState(false);
@@ -133,6 +135,7 @@ export default function SalesIntelligenceIngestionPage() {
 
   return (
     <CockpitShell agentId={agentId} workerName={worker?.name ?? "IDG - Sales Intelligence"} active="ingestion">
+      {ConfirmActionDialog}
       <div className="space-y-6">
         <OutcomesStrip title="INGESTION" tiles={[
           { value: String(activeSources), label: "Active Sources", caption: "ingestion portals", trend: "up" },
@@ -166,7 +169,20 @@ export default function SalesIntelligenceIngestionPage() {
                 onScan={() => scanMut.mutate(s.sourceKey)} scanning={scanningKey === s.sourceKey} error={scanMut.isError && scanMut.variables === s.sourceKey}
                 onCadenceChange={(cadence) => cadenceMut.mutate({ sourceKey: s.sourceKey, cadence })} cadenceUpdating={updatingCadenceKey === s.sourceKey}
                 onToggleActive={(active) => statusMut.mutate({ sourceKey: s.sourceKey, active })} statusUpdating={updatingStatusKey === s.sourceKey}
-                onDelete={() => deleteMut.mutate(s.sourceKey)} deleting={deletingKey === s.sourceKey} />
+                onDelete={(opener) => openConfirmationDialog({
+                  title: "Delete source",
+                  description: `Delete ${s.name}? It will be removed from this agent. You can add the same source key again later to restore it.`,
+                  confirmLabel: "Delete",
+                  isDestructive: true,
+                  onConfirm: () => {
+                    setPending(true);
+                    deleteMut.mutate(s.sourceKey, {
+                      onSuccess: () => closeConfirmationDialog(),
+                      onSettled: () => setPending(false),
+                    });
+                  },
+                }, opener)}
+                deleting={deletingKey === s.sourceKey} />
             ))}
           </div>
 
@@ -217,7 +233,7 @@ function SourceCard({ icon, name, sourceKey, fullName, source, scannable = true,
   source?: SalesIntelSource; scannable?: boolean; onScan: () => void; scanning: boolean; error?: boolean;
   onCadenceChange: (cadence: SalesScanCadence) => void; cadenceUpdating: boolean;
   onToggleActive: (active: boolean) => void; statusUpdating: boolean;
-  onDelete?: () => void; deleting?: boolean;
+  onDelete?: (opener: HTMLElement) => void; deleting?: boolean;
 }) {
   const active = (source?.status ?? "active") === "active";
   const cadence = cadenceValue(source?.scanCadence);
@@ -242,7 +258,7 @@ function SourceCard({ icon, name, sourceKey, fullName, source, scannable = true,
             onCheckedChange={() => onToggleActive(!active)}
             label={`${active ? "Disable" : "Enable"} ${name} ingestion`} />
           {onDelete && (
-            <button type="button" onClick={onDelete} disabled={deleting} aria-label={`Remove ${name}`}
+            <button type="button" onClick={(e) => onDelete?.(e.currentTarget)} disabled={deleting} aria-label={`Remove ${name}`}
               className="flex size-11 items-center justify-center rounded-lg border border-white/10 text-slate-400 hover:border-red-500/40 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-50">
               {deleting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Trash2 className="size-4" aria-hidden="true" />}
             </button>

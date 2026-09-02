@@ -5,10 +5,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { FileSpreadsheet, Loader2, Trash2, Upload } from "lucide-react";
-import { Button, cn, Dialog } from "@qiko/ui";
+import { cn } from "@qiko/ui";
 import {
   Dialog as FileListDialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { useConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { deleteFinanceFiles, listFinanceFiles, uploadFinanceFile } from "@/lib/api";
 
 const ACCEPT = ".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -26,15 +27,15 @@ export function FinanceFileManager({ agentId, onUploaded, onConfirmOpenChange }:
   agentId: string; onUploaded?: () => void; onConfirmOpenChange?: (open: boolean) => void;
 }) {
   const qc = useQueryClient();
+  const { openConfirmationDialog, closeConfirmationDialog, setPending, ConfirmActionDialog, isOpen } =
+    useConfirmActionDialog();
   const filesQ = useFinanceFiles(agentId);
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<{ id: string; label: string } | null>(null);
-  const deleteOpenerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    onConfirmOpenChange?.(!!pendingDelete);
-  }, [pendingDelete, onConfirmOpenChange]);
+    onConfirmOpenChange?.(isOpen);
+  }, [isOpen, onConfirmOpenChange]);
 
   const upload = useMutation({
     mutationFn: (file: File) => uploadFinanceFile(agentId, file),
@@ -52,23 +53,14 @@ export function FinanceFileManager({ agentId, onUploaded, onConfirmOpenChange }:
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["finance-files", agentId] });
       qc.invalidateQueries({ queryKey: ["finance-analytics", agentId] });
-      setPendingDelete(null);
     },
   });
-
-  const requestRemove = (id: string, label: string, opener: HTMLElement | null) => {
-    deleteOpenerRef.current = opener;
-    setPendingDelete({ id, label });
-  };
-  const confirmRemove = () => {
-    if (!pendingDelete || remove.isPending) return;
-    remove.mutate(pendingDelete.id);
-  };
 
   const files = filesQ.data?.files ?? [];
 
   return (
     <div className="space-y-4">
+      {ConfirmActionDialog}
       <input ref={inputRef} type="file" accept={ACCEPT} className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) upload.mutate(f); e.target.value = ""; }} />
 
@@ -92,7 +84,21 @@ export function FinanceFileManager({ agentId, onUploaded, onConfirmOpenChange }:
               <p className="truncate text-xs font-medium text-white/85">{f.label}</p>
               <p className="text-[10px] text-white/45">{f.rowCount.toLocaleString()} rows</p>
             </div>
-            <button type="button" onClick={(e) => requestRemove(f.id, f.label, e.currentTarget)} disabled={remove.isPending}
+            <button type="button"
+              onClick={(e) => openConfirmationDialog({
+                title: "Delete workbook?",
+                description: `Delete "${f.label}"? Its data will be removed from the dashboard.`,
+                confirmLabel: "Delete",
+                isDestructive: true,
+                onConfirm: () => {
+                  setPending(true);
+                  remove.mutate(f.id, {
+                    onSuccess: () => closeConfirmationDialog(),
+                    onSettled: () => setPending(false),
+                  });
+                },
+              }, e.currentTarget)}
+              disabled={remove.isPending}
               className="shrink-0 rounded-md p-1.5 text-white/40 transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"
               aria-label={`Delete ${f.label}`}>
               <Trash2 className="h-3.5 w-3.5" />
@@ -100,31 +106,6 @@ export function FinanceFileManager({ agentId, onUploaded, onConfirmOpenChange }:
           </div>
         ))}
       </div>
-
-      <Dialog
-        open={!!pendingDelete}
-        onClose={() => setPendingDelete(null)}
-        opener={deleteOpenerRef.current}
-        busy={remove.isPending}
-        labelledBy="delete-workbook-title"
-      >
-        {pendingDelete && (
-          <div className="space-y-4">
-            <h3 id="delete-workbook-title" className="pr-10 text-lg font-semibold text-white">
-              Delete &quot;{pendingDelete.label}&quot;?
-            </h3>
-            <p className="text-sm text-slate-300">This will remove its data from the dashboard. This cannot be undone.</p>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" disabled={remove.isPending} onClick={() => setPendingDelete(null)}>
-                Cancel
-              </Button>
-              <Button type="button" variant="destructive" disabled={remove.isPending} onClick={confirmRemove}>
-                {remove.isPending ? "Deleting..." : "Delete"}
-              </Button>
-            </div>
-          </div>
-        )}
-      </Dialog>
     </div>
   );
 }
@@ -134,7 +115,9 @@ export function FinanceFileManagerDialog({ agentId, open, onOpenChange, classNam
 }) {
   // Radix calls onEscapeKeyDown from within its own capture-phase listener before deciding to
   // dismiss, so this is the only place that can actually stop Escape from closing this dialog
-  // while the nested delete-confirmation (a plain native <dialog>, not a Radix one) is open.
+  // while the nested delete-confirmation (now also a Radix AlertDialog, via
+  // useConfirmActionDialog) is open. Kept as defense in depth even though Radix's own
+  // dismissable-layer stack may already coordinate correctly between two of its own primitives.
   const [confirmOpen, setConfirmOpen] = useState(false);
   return (
     <FileListDialog open={open} onOpenChange={onOpenChange}>

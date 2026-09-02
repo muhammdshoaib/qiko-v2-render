@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Badge, Button, Card, CardContent, Dialog, Input, Label, Skeleton, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
+import { useConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { WorkerAvatar } from "@/components/worker-avatar";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import { CrmPipeline } from "@/components/crm-pipeline";
@@ -927,6 +928,7 @@ type BehaviorMutation =
   | { type: "remove"; key: BehaviorKey; entryId: string };
 
 function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onSaved: () => void }) {
+  const { openConfirmationDialog, closeConfirmationDialog, setPending, ConfirmActionDialog } = useConfirmActionDialog();
   const cfg = worker?.config ?? {};
   const seed = (k: BehaviorKey): BehaviorEntry[] => normalizeBehaviorEntries(cfg[k]);
   const [items, setItems] = useState<Record<BehaviorKey, BehaviorEntry[]>>({
@@ -938,9 +940,7 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
   const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState<BehaviorKey | null>("prompts");
-  const [pendingDelete, setPendingDelete] = useState<{ key: BehaviorKey; entryId: string; title: string } | null>(null);
   const [pendingHelp, setPendingHelp] = useState<{ label: string; help: string } | null>(null);
-  const deleteOpenerRef = useRef<HTMLElement | null>(null);
   const helpOpenerRef = useRef<HTMLElement | null>(null);
   const save = useMutation({
     mutationFn: async (operation: BehaviorMutation) => {
@@ -1039,21 +1039,26 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
       clearValidationError(key, entryId);
       return;
     }
-    deleteOpenerRef.current = opener;
-    setPendingDelete({ key, entryId, title: entry.title.trim() });
-  };
-
-  const confirmRemove = () => {
-    if (!pendingDelete || save.isPending) return;
-    const { key, entryId } = pendingDelete;
-    setPendingDelete(null);
-    save.mutate({ type: "remove", key, entryId });
+    const title = entry.title.trim();
+    openConfirmationDialog({
+      title: title ? `Delete "${title}"?` : "Delete this behavior entry?",
+      description: "This cannot be undone.",
+      confirmLabel: "Delete",
+      onConfirm: () => {
+        setPending(true);
+        save.mutate({ type: "remove", key, entryId }, {
+          onSuccess: () => closeConfirmationDialog(),
+          onSettled: () => setPending(false),
+        });
+      },
+    }, opener);
   };
 
   const q = search.trim().toLowerCase();
 
   return (
     <div className="space-y-4">
+      {ConfirmActionDialog}
       <div>
         <h2 className="text-lg font-semibold text-white">Behavior</h2>
         <p className="text-sm text-muted-foreground">Prompts &amp; rules</p>
@@ -1148,31 +1153,6 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
           );
         })}
       </div>
-
-      <Dialog
-        open={!!pendingDelete}
-        onClose={() => setPendingDelete(null)}
-        opener={deleteOpenerRef.current}
-        busy={save.isPending}
-        labelledBy="delete-behavior-title"
-      >
-        {pendingDelete && (
-          <div className="space-y-4">
-            <h3 id="delete-behavior-title" className="pr-10 text-lg font-semibold text-white">
-              Delete {pendingDelete.title ? `"${pendingDelete.title}"` : "this behavior entry"}?
-            </h3>
-            <p className="text-sm text-slate-300">This cannot be undone.</p>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="outline" disabled={save.isPending} onClick={() => setPendingDelete(null)}>
-                Cancel
-              </Button>
-              <Button type="button" variant="destructive" disabled={save.isPending} onClick={confirmRemove}>
-                {save.isPending ? "Deleting..." : "Delete"}
-              </Button>
-            </div>
-          </div>
-        )}
-      </Dialog>
 
       <Dialog
         open={!!pendingHelp}
@@ -1274,9 +1254,11 @@ function KnowledgeStep({ id, docs, loading, onChange }: { id: string; docs?: Doc
 // The ingested-documents "Library": the SAME per-worker knowledge base the studio Sources tab reads
 // (both use listDocuments / deleteDocument), so a doc added in either place shows up in the other.
 function DocumentLibrary({ id, docs, loading, onChange }: { id: string; docs?: Doc[]; loading: boolean; onChange: () => void }) {
+  const { openConfirmationDialog, closeConfirmationDialog, setPending, ConfirmActionDialog } = useConfirmActionDialog();
   const remove = useMutation({ mutationFn: (docId: string) => deleteDocument(docId, id), onSuccess: onChange });
   return (
     <div className="space-y-2">
+      {ConfirmActionDialog}
       {loading && [0, 1, 2].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
       {!loading && (docs?.length ?? 0) === 0 && (
         <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-12 text-center">
@@ -1298,7 +1280,19 @@ function DocumentLibrary({ id, docs, loading, onChange }: { id: string; docs?: D
             </div>
             <Button variant="ghost" size="icon" aria-label={`Delete ${label}`}
               disabled={remove.isPending && remove.variables === d.doc_id}
-              onClick={() => { if (window.confirm(`Remove "${label}" from the knowledge base?`)) remove.mutate(d.doc_id); }}>
+              onClick={(e) => openConfirmationDialog({
+                title: "Remove from knowledge base?",
+                description: `Remove "${label}" from the knowledge base?`,
+                confirmLabel: "Remove",
+                isDestructive: true,
+                onConfirm: () => {
+                  setPending(true);
+                  remove.mutate(d.doc_id, {
+                    onSuccess: () => closeConfirmationDialog(),
+                    onSettled: () => setPending(false),
+                  });
+                },
+              }, e.currentTarget)}>
               {remove.isPending && remove.variables === d.doc_id
                 ? <Loader2 className="size-4 animate-spin text-muted-foreground" />
                 : <Trash2 className="size-4 text-muted-foreground" />}
@@ -1464,6 +1458,7 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
 }
 
 function SettingsTab({ id, worker, onWorkerChange }: { id: string; worker?: Agent; onWorkerChange: () => void }) {
+  const { openConfirmationDialog, closeConfirmationDialog, setPending, ConfirmActionDialog } = useConfirmActionDialog();
   const cfg = worker?.config ?? {};
   // Full Name defaults to the agent's top-level name (which has no dedicated update endpoint),
   // then persists into config.full_name; the other three are free-form config keys. All four are
@@ -1503,6 +1498,7 @@ function SettingsTab({ id, worker, onWorkerChange }: { id: string; worker?: Agen
 
   return (
     <div className="space-y-6">
+      {ConfirmActionDialog}
       <div>
         <h1 className="text-2xl font-bold text-foreground">Worker Settings</h1>
         <p className="text-muted-foreground">Manage your digital worker&apos;s profile and configuration</p>
@@ -1601,7 +1597,18 @@ function SettingsTab({ id, worker, onWorkerChange }: { id: string; worker?: Agen
           <Button
             variant="outline"
             disabled={archive.isPending}
-            onClick={() => { if (window.confirm("Archive this worker? It will be hidden from the workers list.")) archive.mutate(); }}
+            onClick={(e) => openConfirmationDialog({
+              title: "Archive this worker?",
+              description: "It will be hidden from the workers list. You can restore it later from the archive.",
+              confirmLabel: "Archive worker",
+              isDestructive: true,
+              onConfirm: () => {
+                setPending(true);
+                archive.mutate(undefined, {
+                  onSettled: () => setPending(false),
+                });
+              },
+            }, e.currentTarget)}
             className="border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-300"
           >
             {archive.isPending ? "Archiving…" : "Archive worker"}
@@ -1617,6 +1624,7 @@ function SettingsTab({ id, worker, onWorkerChange }: { id: string; worker?: Agen
 // "Ingest" button upload via ingestFile -> POST /knowledge/ingest-file (editor role), mirroring the
 // studio Sources UX; free-text ingest stays as a lightweight alternative. Both refetch on success.
 function KnowledgeTab({ id, docs, loading, onChange }: { id: string; docs?: Doc[]; loading: boolean; onChange: () => void }) {
+  const { openConfirmationDialog, closeConfirmationDialog, setPending, ConfirmActionDialog } = useConfirmActionDialog();
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const add = useMutation({ mutationFn: () => ingest(`${id}-${Date.now()}`, text, id), onSuccess: () => { setText(""); onChange(); } });
@@ -1628,6 +1636,7 @@ function KnowledgeTab({ id, docs, loading, onChange }: { id: string; docs?: Doc[
   });
   return (
     <div className="space-y-4">
+      {ConfirmActionDialog}
       <Card><CardContent className="space-y-3 pt-6">
         <p className="text-sm font-medium text-white">Add a document</p>
         <div className="flex flex-wrap items-center gap-3">
@@ -1665,7 +1674,19 @@ function KnowledgeTab({ id, docs, loading, onChange }: { id: string; docs?: Doc[
                 <span className="truncate text-sm font-medium">{label}</span><Badge variant="muted">{d.chunks} passage{d.chunks === 1 ? "" : "s"}</Badge></div>
               <Button variant="ghost" size="icon" aria-label={`Delete ${label}`}
                 disabled={remove.isPending && remove.variables === d.doc_id}
-                onClick={() => { if (window.confirm(`Remove "${label}" from the knowledge base?`)) remove.mutate(d.doc_id); }}>
+                onClick={(e) => openConfirmationDialog({
+                  title: "Remove from knowledge base?",
+                  description: `Remove "${label}" from the knowledge base?`,
+                  confirmLabel: "Remove",
+                  isDestructive: true,
+                  onConfirm: () => {
+                    setPending(true);
+                    remove.mutate(d.doc_id, {
+                      onSuccess: () => closeConfirmationDialog(),
+                      onSettled: () => setPending(false),
+                    });
+                  },
+                }, e.currentTarget)}>
                 {remove.isPending && remove.variables === d.doc_id
                   ? <Loader2 className="size-4 animate-spin text-muted-foreground" />
                   : <Trash2 className="size-4 text-muted-foreground" />}

@@ -9,15 +9,17 @@ function source(path: string): string {
 
 // EL-1017: deleting a finance workbook or an intelligence document fired the delete mutation
 // straight from the trash-icon button's onClick, with no confirmation step at all. Both should
-// show a confirm dialog first (matching the existing @qiko/ui Dialog + destructive Button pattern
-// already used for deleting a worker behavior entry in app/workers/[id]/page.tsx).
+// show a confirm dialog first. Originally fixed with a local @qiko/ui Dialog + pendingDelete
+// state (matching the pattern then used for deleting a worker behavior entry); QIKO-1063 replaced
+// that local pattern across the app with the shared useConfirmActionDialog, so the finance file
+// manager's own confirmation now goes through that instead - same guarantee, one implementation.
 test("finance file manager confirms before deleting a workbook", () => {
   const src = source("components/finance/file-manager.tsx");
-  assert.match(src, /import\s*\{[^}]*\bDialog\b[^}]*\}\s*from\s*["']@qiko\/ui["']/);
+  assert.match(src, /import\s*\{\s*useConfirmActionDialog\s*\}\s*from\s*["']@\/components\/confirm-action-dialog["']/);
   // The trash button no longer deletes directly on click.
   assert.doesNotMatch(src, /onClick=\{\(\)\s*=>\s*remove\.mutate\(f\.id\)\}/);
-  assert.match(src, /pendingDelete/);
-  assert.match(src, /variant="destructive"/);
+  assert.match(src, /openConfirmationDialog\(/);
+  assert.match(src, /isDestructive:\s*true/);
 });
 
 test("documents tab confirms before deleting a document", () => {

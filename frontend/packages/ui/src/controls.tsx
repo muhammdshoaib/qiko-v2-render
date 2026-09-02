@@ -190,7 +190,7 @@ export function Dialog({ open, onClose, opener, busy = false, labelledBy, classN
       // FinanceFileManagerDialog for the pattern) to keep Escape from closing both at once.
       onKeyDown={(event) => { if (event.key === "Escape") event.stopPropagation(); }}
       className={cn(
-        "m-auto max-h-[90dvh] w-[min(94vw,42rem)] overflow-y-auto rounded-2xl bg-card p-5 text-foreground",
+        "fixed m-auto max-h-[90dvh] w-[min(94vw,42rem)] overflow-y-auto rounded-2xl bg-card p-5 text-foreground",
         "backdrop:bg-black/50",
         className,
       )}

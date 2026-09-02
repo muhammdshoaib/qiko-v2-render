@@ -67,7 +67,10 @@ test("behavior UI binds structured fields, limits, save and confirmed deletion",
   assert.match(source, /maxLength=\{BEHAVIOR_MAX_TITLE\}/);
   assert.match(source, /maxLength=\{BEHAVIOR_MAX_CONTENT\}/);
   assert.match(source, /all\.length >= BEHAVIOR_MAX_ENTRIES/);
-  assert.match(source, /window\.confirm/);
+  // QIKO-1063: window.confirm is unstyleable and unannounced to assistive tech. Deleting a saved
+  // behavior entry now goes through the shared accessible confirmation dialog instead.
+  assert.doesNotMatch(source, /window\.confirm/);
+  assert.match(source, /openConfirmationDialog\(/);
   assert.match(source, /upsertBehaviorEntry/);
   assert.match(source, /removeBehaviorEntry/);
 });

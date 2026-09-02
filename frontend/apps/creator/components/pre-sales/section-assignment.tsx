@@ -15,6 +15,7 @@ import {
 } from "@/lib/api";
 import { Input, Select } from "@/components/cockpit/controls";
 import { assignableSections } from "@/components/pre-sales/section-assignment-utils";
+import { useConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { formatShortDate } from "@/lib/stringUtils";
 
 function isAssignmentOverdue(assignment: Assignment): boolean {
@@ -23,6 +24,7 @@ function isAssignmentOverdue(assignment: Assignment): boolean {
 
 export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentId: string }) {
   const qc = useQueryClient();
+  const { openConfirmationDialog, closeConfirmationDialog, setPending, ConfirmActionDialog } = useConfirmActionDialog();
   const [packId, setPackId] = useState<string>(packs[0]?.id ?? "");
   const activePack = packs.find((p) => p.id === packId) ?? null;
 
@@ -100,6 +102,7 @@ export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentI
 
   return (
     <div className="space-y-6">
+      {ConfirmActionDialog}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-white">Section Assignment</h2>
@@ -234,7 +237,19 @@ export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentI
                             {a.section_id && (
                               <button
                                 type="button"
-                                onClick={() => { if (window.confirm("Remove all assignments for this section?")) removeSection.mutate(a.section_id as string); }}
+                                onClick={(e) => openConfirmationDialog({
+                                  title: "Remove section assignments?",
+                                  description: `Remove all assignments for ${a.section_title || "this section"}?`,
+                                  confirmLabel: "Remove",
+                                  isDestructive: true,
+                                  onConfirm: () => {
+                                    setPending(true);
+                                    removeSection.mutate(a.section_id as string, {
+                                      onSuccess: () => closeConfirmationDialog(),
+                                      onSettled: () => setPending(false),
+                                    });
+                                  },
+                                }, e.currentTarget)}
                                 disabled={removeSection.isPending}
                                 aria-label={`Delete assignments for ${a.section_title || "section"}`}
                                 className="rounded-md p-1.5 text-slate-500 hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-50"

@@ -15,6 +15,7 @@ import {
   type OpportunityDetail, type ReviewDecision, type SalesActivityLog,
 } from "@/lib/api";
 import { CockpitShell } from "@/components/sales-intelligence/cockpit-shell";
+import { useConfirmActionDialog } from "@/components/confirm-action-dialog";
 import { AssignReviewerControl } from "@/components/sales-intelligence/assign-reviewer-control";
 import { DecisionHistoryView } from "@/components/sales-intelligence/decision-history-view";
 import {
@@ -35,6 +36,7 @@ export default function OpportunityDetailPage() {
   const [tab, setTab] = useState<(typeof TABS)[number]>("Overview");
   const [editing, setEditing] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  const { openConfirmationDialog, closeConfirmationDialog, setPending, ConfirmActionDialog } = useConfirmActionDialog();
 
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const worker = agents.data?.find((a) => a.id === agentId);
@@ -80,9 +82,20 @@ export default function OpportunityDetailPage() {
   const isPushed = opp?.stage === "pushed" || Boolean(opp?.salesforceOpportunityId);
   const canEdit = !isArchived && !isPushed;
 
-  function confirmDelete() {
-    if (typeof window !== "undefined" && !window.confirm("Delete this opportunity? This cannot be undone.")) return;
-    del.mutate();
+  function confirmDelete(opener: HTMLElement) {
+    if (!opp) return;
+    openConfirmationDialog({
+      title: "Delete this opportunity?",
+      description: `This will remove "${opp.title}" from the pipeline. It will no longer appear in active lists or archive.`,
+      confirmLabel: "Delete",
+      isDestructive: true,
+      onConfirm: () => {
+        setPending(true);
+        del.mutate(undefined, {
+          onSettled: () => setPending(false),
+        });
+      },
+    }, opener);
   }
 
   if (oppQ.isLoading || !opp) {
@@ -107,6 +120,7 @@ export default function OpportunityDetailPage() {
 
   return (
     <CockpitShell agentId={agentId} workerName={worker?.name ?? "IDG - Sales Intelligence"} active="pipeline">
+      {ConfirmActionDialog}
       <div className="space-y-5">
         <button onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline`)}
           className="flex items-center gap-1.5 rounded-md px-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
@@ -178,7 +192,7 @@ export default function OpportunityDetailPage() {
                 <Archive className={cn("size-3.5", archive.isPending && "animate-spin")} /> {archive.isPending ? "Archiving…" : "Archive"}
               </button>
             )}
-            <button onClick={confirmDelete} disabled={del.isPending}
+            <button onClick={(e) => confirmDelete(e.currentTarget)} disabled={del.isPending}
               aria-label="Delete opportunity"
               className="flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-[13px] font-medium text-red-400 hover:bg-red-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/60 disabled:opacity-50">
               <Trash2 className={cn("size-3.5", del.isPending && "animate-spin")} /> {del.isPending ? "Deleting…" : "Delete"}

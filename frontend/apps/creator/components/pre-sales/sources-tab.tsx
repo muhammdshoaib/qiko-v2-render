@@ -5,9 +5,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Database, Library, Loader2, Trash2, Upload } from "lucide-react";
 import { deleteDocument, ingestFile, listDocuments, type Doc } from "@/lib/api";
 import { OutcomesStrip, type OutcomeTile } from "@/components/cockpit/outcomes-strip";
+import { useConfirmActionDialog } from "@/components/confirm-action-dialog";
 
 export function SourcesTab({ agentId }: { agentId: string }) {
   const qc = useQueryClient();
+  const { openConfirmationDialog, closeConfirmationDialog, setPending, ConfirmActionDialog } = useConfirmActionDialog();
   const docsQ = useQuery({ queryKey: ["documents", agentId], queryFn: () => listDocuments(agentId) });
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +44,7 @@ export function SourcesTab({ agentId }: { agentId: string }) {
 
   return (
     <div className="space-y-6">
+      {ConfirmActionDialog}
       <OutcomesStrip title="SOURCES" tiles={tiles} />
 
       <div>
@@ -112,7 +115,19 @@ export function SourcesTab({ agentId }: { agentId: string }) {
                 <p className="mt-2 text-[12px] text-slate-400">{d.chunks} passage{d.chunks === 1 ? "" : "s"}</p>
               </div>
               <button
-                onClick={() => { if (window.confirm(`Remove "${d.doc_id}" from the knowledge base?`)) remove.mutate(d.doc_id); }}
+                onClick={(e) => openConfirmationDialog({
+                  title: "Remove from knowledge base?",
+                  description: `Remove "${d.doc_id}" from the knowledge base?`,
+                  confirmLabel: "Remove",
+                  isDestructive: true,
+                  onConfirm: () => {
+                    setPending(true);
+                    remove.mutate(d.doc_id, {
+                      onSuccess: () => closeConfirmationDialog(),
+                      onSettled: () => setPending(false),
+                    });
+                  },
+                }, e.currentTarget)}
                 disabled={remove.isPending && remove.variables === d.doc_id}
                 aria-label={`Delete ${d.doc_id}`}
                 className="shrink-0 rounded-md p-1.5 text-slate-500 hover:bg-red-500/10 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-50"

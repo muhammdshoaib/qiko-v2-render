@@ -27,6 +27,7 @@ import {
   type TenantUser,
 } from "@/lib/api";
 import { ConsentSettingsButton } from "@/components/consent/ConsentUI";
+import { useConfirmActionDialog } from "@/components/confirm-action-dialog";
 
 const SETTINGS_TABS = [
   { id: "general", label: "General", icon: Settings2 },
@@ -363,6 +364,7 @@ function roleBadgeVariant(role: TenantRole): "default" | "success" | "muted" {
 
 function TeamPanel() {
   const qc = useQueryClient();
+  const { openConfirmationDialog, closeConfirmationDialog, setPending, ConfirmActionDialog } = useConfirmActionDialog();
   const account = useQuery({ queryKey: ["me"], queryFn: me });
   const canManage = account.data?.role === "owner" || account.data?.role === "admin";
 
@@ -411,6 +413,7 @@ function TeamPanel() {
 
   return (
     <div className="space-y-6">
+      {ConfirmActionDialog}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="flex items-center gap-2 text-2xl font-semibold text-white">
@@ -498,7 +501,19 @@ function TeamPanel() {
               ) : filteredUsers.map((u) => (
                 <AcceptedRow key={u.id} user={u} canManage={!!canManage}
                   onRole={(role) => roleMut.mutate({ userId: u.id, role })}
-                  onRemove={() => { if (window.confirm(`Remove ${u.name} from the team?`)) removeMut.mutate(u.id); }}
+                  onRemove={(opener) => openConfirmationDialog({
+                    title: "Remove accepted user?",
+                    description: `${u.email} will lose team access immediately.`,
+                    confirmLabel: "Remove User",
+                    isDestructive: true,
+                    onConfirm: () => {
+                      setPending(true);
+                      removeMut.mutate(u.id, {
+                        onSuccess: () => closeConfirmationDialog(),
+                        onSettled: () => setPending(false),
+                      });
+                    },
+                  }, opener)}
                   busy={roleMut.isPending || removeMut.isPending} />
               ))
             )}
@@ -513,7 +528,20 @@ function TeamPanel() {
                   <td className="px-4 py-3 text-right">
                     {canManage && (
                       <button type="button" aria-label={`Cancel invite for ${p.email}`}
-                        onClick={() => cancelMut.mutate(p.email)} disabled={cancelMut.isPending}
+                        onClick={(e) => openConfirmationDialog({
+                          title: "Cancel invite?",
+                          description: `${p.email} will no longer be able to accept this invitation.`,
+                          confirmLabel: "Cancel Invite",
+                          isDestructive: true,
+                          onConfirm: () => {
+                            setPending(true);
+                            cancelMut.mutate(p.email, {
+                              onSuccess: () => closeConfirmationDialog(),
+                              onSettled: () => setPending(false),
+                            });
+                          },
+                        }, e.currentTarget)}
+                        disabled={cancelMut.isPending}
                         className="inline-flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60 disabled:opacity-50">
                         <Trash2 className="size-4" />
                       </button>
@@ -531,7 +559,7 @@ function TeamPanel() {
 
 function AcceptedRow({ user, canManage, onRole, onRemove, busy }: {
   user: TenantUser; canManage: boolean;
-  onRole: (role: Exclude<TenantRole, "owner">) => void; onRemove: () => void; busy: boolean;
+  onRole: (role: Exclude<TenantRole, "owner">) => void; onRemove: (opener: HTMLElement) => void; busy: boolean;
 }) {
   const editable = canManage && !user.is_owner;
   return (
@@ -551,7 +579,8 @@ function AcceptedRow({ user, canManage, onRole, onRemove, busy }: {
       </td>
       <td className="px-4 py-3 text-right">
         {canManage && !user.is_owner && (
-          <button type="button" aria-label={`Remove ${user.name}`} onClick={onRemove} disabled={busy}
+          <button type="button" aria-label={`Remove ${user.name}`}
+            onClick={(e) => onRemove(e.currentTarget)} disabled={busy}
             className="inline-flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/60 disabled:opacity-50">
             <Trash2 className="size-4" />
           </button>
