@@ -41,7 +41,7 @@ export default function StudioWorkerPage() {
 
   return (
     <AppShell title="Studio">
-      <div className="mx-auto max-w-4xl space-y-6">
+      <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 sm:px-6 lg:px-12">
         <button onClick={() => router.push("/studio")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="size-4" /> Back to Studio
         </button>
@@ -114,7 +114,7 @@ function WorkerOverview({ agentId, ready, onOpenChat, onOpenResearch, onOpenKnow
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="w-full space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {metrics.map((m) => (
           <Card key={m.label}><CardContent className="space-y-1 pt-6">
@@ -163,9 +163,9 @@ function StudioChat({ agentId }: { agentId: string }) {
   });
 
   return (
-    <Card>
-      <CardContent className="space-y-4 pt-6">
-        <div className="min-h-40 space-y-3">
+    <Card className="w-full">
+      <CardContent className="flex min-h-[28rem] flex-col space-y-4 pt-6">
+        <div className="min-h-40 flex-1 space-y-3">
           {messages.length === 0 && <p className="text-sm text-muted-foreground">Ask this worker anything -- it answers grounded in its knowledge base.</p>}
           {messages.map((m, i) => (
             <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -174,9 +174,9 @@ function StudioChat({ agentId }: { agentId: string }) {
           ))}
           {send.isPending && <div className="flex justify-start"><TypingIndicator /></div>}
         </div>
-        <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) { send.mutate(text); setText(""); } }} className="flex gap-2">
+        <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) { send.mutate(text); setText(""); } }} className="flex w-full gap-2">
           <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask a question..." aria-label="Ask a question"
-            className="flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+            className="min-w-0 flex-1 rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
           <Button type="submit" size="icon" disabled={send.isPending} aria-label="Send message"><SendHorizonal className="size-4" /></Button>
         </form>
       </CardContent>
@@ -203,8 +203,8 @@ function StudioResearch({ agentId }: { agentId: string }) {
   }
 
   return (
-    <div className="space-y-4">
-      <Card><CardContent className="space-y-3 pt-6">
+    <div className="w-full space-y-4">
+      <Card className="w-full"><CardContent className="space-y-3 pt-6">
         <p className="text-sm text-muted-foreground">
           <Search className="mr-1 inline size-3.5" />
           Feed this worker a research brief -- one topic/question per line. Each comes back grounded in its
@@ -226,7 +226,7 @@ function StudioResearch({ agentId }: { agentId: string }) {
       </CardContent></Card>
 
       {run.data?.map((a: BatchAnswer) => (
-        <Card key={a.id}>
+        <Card key={a.id} className="w-full">
           <CardContent className="space-y-2 pt-6">
             <div className="flex items-start justify-between gap-3">
               <p className="flex items-center gap-2 font-medium"><MessageSquare className="size-4 text-primary" />{a.question}</p>
