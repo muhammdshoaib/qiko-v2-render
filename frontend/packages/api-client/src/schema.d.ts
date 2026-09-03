@@ -708,6 +708,16 @@ export interface paths {
          *     Visible to view_customers because worker state is operational, but the COST columns are returned
          *     only to a view_ai_cost holder. Ungating spend here would have made this endpoint a way around the
          *     /admin/ai-cost gate, which is the mistake QIK-515/516 made with platform authority.
+         *
+         *     Returns a JSONResponse directly rather than a plain dict: response_model's field-level typing
+         *     cannot express "these 3 fields are omitted entirely for some callers, while last_seen (also
+         *     Optional) must always stay present, even as null" in one static schema.
+         *     response_model_exclude_none would drop last_seen too, which test_ai_cost_and_monitoring.py's
+         *     existing test_monitoring_lists_every_worker_with_activity already depends on reading directly
+         *     (row["last_seen"], no .get()). WorkerMonitoringOut above still documents the real shape in
+         *     OpenAPI; this bypasses it only for the actual runtime serialization, the same established
+         *     pattern as erase_subject() below for the same reason (a Response subclass returned from a
+         *     handler is passed through unchanged).
          */
         get: operations["worker_monitoring_api_v1_admin_worker_monitoring_get"];
         put?: never;
@@ -5262,11 +5272,78 @@ export interface components {
             /** Title */
             title: string;
         };
+        /** AdminAcceptOut */
+        AdminAcceptOut: {
+            /** Role */
+            role: string;
+        };
+        /** AdminAuditEntryOut */
+        AdminAuditEntryOut: {
+            /** Capabilities */
+            capabilities: string[] | null;
+            /** Changed By Email */
+            changed_by_email: string;
+            /** Created At */
+            created_at: string;
+            /** Email */
+            email: string;
+            /** Id */
+            id: number | null;
+            /** Previous Capabilities */
+            previous_capabilities: string[] | null;
+            /** Previous Role */
+            previous_role: string | null;
+            /** Reason */
+            reason: string | null;
+            /** Role */
+            role: string | null;
+        };
+        /** AdminAuditListOut */
+        AdminAuditListOut: {
+            /** Entries */
+            entries: components["schemas"]["AdminAuditEntryOut"][];
+        };
+        /** AdminBootstrapOut */
+        AdminBootstrapOut: {
+            /** Super Admin */
+            super_admin: string;
+        };
+        /** AdminIdentityOut */
+        AdminIdentityOut: {
+            /** Capabilities */
+            capabilities: string[];
+            /** Email */
+            email: string;
+            /** Role */
+            role: string;
+        };
+        /** AdminInviteOut */
+        AdminInviteOut: {
+            /** Token */
+            token: string;
+        };
+        /** AdminListOut */
+        AdminListOut: {
+            /** Admins */
+            admins: components["schemas"]["AdminIdentityOut"][];
+        };
+        /** AdminRemovedOut */
+        AdminRemovedOut: {
+            /** Removed */
+            removed: string;
+        };
         /**
          * AdminRole
          * @enum {string}
          */
         AdminRole: "super_admin" | "viewer";
+        /** AdminRoleOfOut */
+        AdminRoleOfOut: {
+            /** Email */
+            email: string;
+            /** Role */
+            role: string | null;
+        };
         /** AdminSelfOut */
         AdminSelfOut: {
             /**
@@ -5354,10 +5431,56 @@ export interface components {
             /** Unpriced Calls */
             unpriced_calls: number;
         };
+        /** AiCostOut */
+        AiCostOut: {
+            /** Day */
+            day: {
+                [key: string]: components["schemas"]["AiCostTotalsOut"];
+            };
+            /** Model */
+            model: {
+                [key: string]: components["schemas"]["AiCostTotalsOut"];
+            };
+            /** Operation */
+            operation: {
+                [key: string]: components["schemas"]["AiCostTotalsOut"];
+            };
+            /** Tenant */
+            tenant: {
+                [key: string]: components["schemas"]["AiCostTotalsOut"];
+            };
+            totals: components["schemas"]["AiCostTotalsOut"];
+            /** Window Days */
+            window_days: number;
+        };
+        /** AiCostTotalsOut */
+        AiCostTotalsOut: {
+            /** Calls */
+            calls: number;
+            /** Cost Nano Usd */
+            cost_nano_usd: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Unpriced Calls */
+            unpriced_calls: number;
+        };
         /** AnalyticsBody */
         AnalyticsBody: {
             /** Rows */
             rows: unknown[][];
+        };
+        /** AnalyticsOut */
+        AnalyticsOut: {
+            /** Active Users */
+            active_users: number;
+            /** Had Data */
+            had_data: boolean;
+            /** Sessions */
+            sessions: number;
+            /** Top Pages */
+            top_pages: components["schemas"]["TopPageOut"][];
         };
         /** AnonymousConsentBody */
         AnonymousConsentBody: {
@@ -5395,6 +5518,112 @@ export interface components {
             name?: string | null;
             /** User Id */
             user_id?: string | null;
+        };
+        /** AuditActionCatalogueOut */
+        AuditActionCatalogueOut: {
+            /** Actions */
+            actions: components["schemas"]["AuditActionOut"][];
+            /** Categories */
+            categories: string[];
+        };
+        /** AuditActionOut */
+        AuditActionOut: {
+            /** Action */
+            action: string;
+            /** Category */
+            category: string;
+            /** Target Type */
+            target_type: string;
+        };
+        /** AuditEraseAcceptedOut */
+        AuditEraseAcceptedOut: {
+            /** Pseudonym */
+            pseudonym: string;
+            /** Request Ref */
+            request_ref: string;
+            /** Status */
+            status: string;
+            /** Where To Check */
+            where_to_check: string;
+        };
+        /** AuditEventOut */
+        AuditEventOut: {
+            /** Cursor */
+            _cursor: string;
+            /** Action */
+            action: string;
+            /** Actor Id */
+            actor_id: string | null;
+            /** Actor Label */
+            actor_label: string | null;
+            /** Actor Type */
+            actor_type: string;
+            /** Category */
+            category: string;
+            /** Changes */
+            changes: {
+                [key: string]: unknown;
+            };
+            /** Environment */
+            environment: string;
+            /** Event Id */
+            event_id: string;
+            /** Message */
+            message: string;
+            /** Metadata */
+            metadata: {
+                [key: string]: unknown;
+            };
+            /** Occurred At */
+            occurred_at: string;
+            /** On Behalf Of */
+            on_behalf_of: string | null;
+            /** Outcome */
+            outcome: string;
+            /** Reason */
+            reason: string | null;
+            /** Request Id */
+            request_id: string | null;
+            /** Route */
+            route: string | null;
+            /** Service */
+            service: string;
+            /** Source Ip */
+            source_ip: string | null;
+            /** Target Id */
+            target_id: string | null;
+            /** Target Label */
+            target_label: string | null;
+            /** Target Type */
+            target_type: string;
+            /** Tenant Id */
+            tenant_id: string | null;
+            /** User Agent */
+            user_agent: string | null;
+        };
+        /** AuditListOut */
+        AuditListOut: {
+            /** Has More */
+            has_more: boolean;
+            /** Hidden Actions */
+            hidden_actions?: number | null;
+            /** Items */
+            items: components["schemas"]["AuditEventOut"][];
+            /** Next Cursor */
+            next_cursor: string | null;
+            /** Window Days */
+            window_days?: number | null;
+        };
+        /** AuditRetentionOut */
+        AuditRetentionOut: {
+            /** Archive */
+            archive: string;
+            /** Erasure */
+            erasure: string;
+            /** Event Retention Days */
+            event_retention_days: number;
+            /** Network Retention Days */
+            network_retention_days: number;
         };
         /** BacklogCreateBody */
         BacklogCreateBody: {
@@ -5692,6 +5921,37 @@ export interface components {
             /** Monthly Cap Usd */
             monthly_cap_usd: number;
         };
+        /** CostCapOut */
+        CostCapOut: {
+            /** Agent Id */
+            agent_id: string | null;
+            /** Alert Threshold Pct */
+            alert_threshold_pct: number;
+            /** Monthly Cap Nano Usd */
+            monthly_cap_nano_usd: number;
+            /** Tenant Id */
+            tenant_id: string;
+            /** Unlimited */
+            unlimited: boolean;
+            /** Updated At */
+            updated_at: string;
+            /** Updated By Email */
+            updated_by_email: string | null;
+        };
+        /** CostCapRemovedOut */
+        CostCapRemovedOut: {
+            /** Agent Id */
+            agent_id: string | null;
+            /** Removed */
+            removed: string;
+        };
+        /** CostCapsListOut */
+        CostCapsListOut: {
+            /** Items */
+            items: components["schemas"]["CostCapOut"][];
+            /** Platform Key */
+            platform_key: string;
+        };
         /** CreateAgentBody */
         CreateAgentBody: {
             /**
@@ -5849,6 +6109,17 @@ export interface components {
             /** Workers */
             workers: components["schemas"]["AdminWorkerOut"][];
         };
+        /** CustomerDirectoryRow */
+        CustomerDirectoryRow: {
+            /** Earnings Cents */
+            earnings_cents: number;
+            /** Email */
+            email: string;
+            /** Plan */
+            plan: string;
+            /** User Id */
+            user_id: string;
+        };
         /** CustomerOut */
         CustomerOut: {
             /** Deleted */
@@ -5863,6 +6134,21 @@ export interface components {
             plan: string;
             /** User Id */
             user_id: string;
+        };
+        /** DatabaseStatsOut */
+        DatabaseStatsOut: {
+            /** Available */
+            available: boolean;
+            /** Connections Active */
+            connections_active?: number | null;
+            /** Connections Limit */
+            connections_limit?: number | null;
+            /** Connections Total */
+            connections_total?: number | null;
+            /** Reason */
+            reason?: string | null;
+            /** Size Bytes */
+            size_bytes?: number | null;
         };
         /** DeleteFilesBody */
         DeleteFilesBody: {
@@ -7184,6 +7470,17 @@ export interface components {
             note: string;
             outcome: components["schemas"]["GenerationOutcome"];
         };
+        /** OverviewOut */
+        OverviewOut: {
+            /** Active Subscriptions */
+            active_subscriptions: number;
+            /** By Plan */
+            by_plan: {
+                [key: string]: number;
+            };
+            /** Customers Total */
+            customers_total: number;
+        };
         /** PackRequirement */
         PackRequirement: {
             /** Classification */
@@ -7259,6 +7556,50 @@ export interface components {
              */
             weighting: string;
         };
+        /** PaginatedOut[CustomerDirectoryRow] */
+        PaginatedOut_CustomerDirectoryRow_: {
+            /** Items */
+            items: components["schemas"]["CustomerDirectoryRow"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /** PaginatedOut[TenantDirectoryRow] */
+        PaginatedOut_TenantDirectoryRow_: {
+            /** Items */
+            items: components["schemas"]["TenantDirectoryRow"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /** PaginatedOut[UserDirectoryRow] */
+        PaginatedOut_UserDirectoryRow_: {
+            /** Items */
+            items: components["schemas"]["UserDirectoryRow"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
+        /** PaginatedOut[WorkerDirectoryRow] */
+        PaginatedOut_WorkerDirectoryRow_: {
+            /** Items */
+            items: components["schemas"]["WorkerDirectoryRow"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
         /** PaymentLinkBody */
         PaymentLinkBody: {
             /** Amount Cents */
@@ -7316,6 +7657,40 @@ export interface components {
             source_id: string;
             /** Title */
             title: string;
+        };
+        /** ProbeOut */
+        ProbeOut: {
+            /** Detail */
+            detail: string | null;
+            /** Latency Ms */
+            latency_ms: number | null;
+            /** Name */
+            name: string;
+            /** Ok */
+            ok: boolean;
+        };
+        /** ProcessStatsOut */
+        ProcessStatsOut: {
+            /** Cpu Count */
+            cpu_count: number | null;
+            /** Cpu System Seconds */
+            cpu_system_seconds: number;
+            /** Cpu User Seconds */
+            cpu_user_seconds: number;
+            /** Load Average */
+            load_average: number[] | null;
+            /** Max Rss Kb */
+            max_rss_kb: number;
+            /** Pid */
+            pid: number;
+            /** Platform */
+            platform: string;
+            /** Python */
+            python: string;
+            /** Started At */
+            started_at: string;
+            /** Uptime Seconds */
+            uptime_seconds: number;
         };
         /** ProfileUpdate */
         ProfileUpdate: {
@@ -7454,6 +7829,17 @@ export interface components {
             /** Word Limit */
             word_limit?: number | null;
         };
+        /** QueueStatsOut */
+        QueueStatsOut: {
+            /** Available */
+            available: boolean;
+            /** Depth */
+            depth?: number | null;
+            /** Queue */
+            queue?: string | null;
+            /** Reason */
+            reason?: string | null;
+        };
         /** ReassignBody */
         ReassignBody: {
             /** Assignee User Id */
@@ -7462,6 +7848,25 @@ export interface components {
             due_at?: string | null;
             /** Question */
             question?: string | null;
+        };
+        /** RedisStatsOut */
+        RedisStatsOut: {
+            /** Available */
+            available: boolean;
+            /** Connected Clients */
+            connected_clients?: number | null;
+            /** Evicted Keys */
+            evicted_keys?: number | null;
+            /** Max Memory Bytes */
+            max_memory_bytes?: number | null;
+            /** Reason */
+            reason?: string | null;
+            /** Rejected Connections */
+            rejected_connections?: number | null;
+            /** Uptime Seconds */
+            uptime_seconds?: number | null;
+            /** Used Memory Bytes */
+            used_memory_bytes?: number | null;
         };
         /** RegenerateBody */
         RegenerateBody: {
@@ -7547,6 +7952,27 @@ export interface components {
             new_password: string;
             /** Otp */
             otp: string;
+        };
+        /** RevenueOut */
+        RevenueOut: {
+            /** Active Subscriptions */
+            active_subscriptions: number;
+            /** Arr Cents */
+            arr_cents: number;
+            /** By Plan */
+            by_plan: {
+                [key: string]: number;
+            };
+            /** Monthly */
+            monthly: {
+                [key: string]: unknown;
+            }[];
+            /** Mrr Cents */
+            mrr_cents: number;
+            /** Outstanding Cents */
+            outstanding_cents: number;
+            /** Total Paid Cents */
+            total_paid_cents: number;
         };
         /** ReviewBody */
         ReviewBody: {
@@ -7907,10 +8333,127 @@ export interface components {
             /** Enabled */
             enabled: boolean;
         };
+        /** SupportConversationOut */
+        SupportConversationOut: {
+            /** Created At */
+            created_at: string | null;
+            /** Id */
+            id: string;
+            /** User Id */
+            user_id: string;
+        };
+        /** SupportDiscrepanciesOut */
+        SupportDiscrepanciesOut: {
+            /** Items */
+            items: components["schemas"]["SupportDiscrepancyOut"][];
+            /** Projects */
+            projects: components["schemas"]["SupportDiscrepancyProjectOut"][];
+            /** Total */
+            total: number;
+        };
+        /** SupportDiscrepancyOut */
+        SupportDiscrepancyOut: {
+            /** Claimed At */
+            claimed_at: string | null;
+            /** Class */
+            class: string;
+            /** Class Label */
+            class_label: string;
+            /** Evidence At */
+            evidence_at: string | null;
+            /** Occurred At */
+            occurred_at: string | null;
+            /** Project Key */
+            project_key: string | null;
+            /** Ref */
+            ref: string | null;
+            /** Severity */
+            severity: string;
+            /** Sources */
+            sources: components["schemas"]["SupportDiscrepancySourceOut"][];
+            /** Summary */
+            summary: string;
+            /** Title */
+            title: string;
+        };
+        /** SupportDiscrepancyProjectOut */
+        SupportDiscrepancyProjectOut: {
+            /** Count */
+            count: number;
+            /** Key */
+            key: string;
+        };
+        /** SupportDiscrepancySourceOut */
+        SupportDiscrepancySourceOut: {
+            /** Actor */
+            actor: string;
+            /** External Id */
+            external_id: string;
+            /** Occurred At */
+            occurred_at: string | null;
+            /** Source */
+            source: string;
+            /** Source Label */
+            source_label: string;
+            /** Url */
+            url: string | null;
+        };
+        /** SupportMessageOut */
+        SupportMessageOut: {
+            /** Created At */
+            created_at: string | null;
+            /** Role */
+            role: string;
+            /** Text */
+            text: string;
+        };
+        /** SupportWorkerSummaryOut */
+        SupportWorkerSummaryOut: {
+            /** Atype */
+            atype: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Tenant Id */
+            tenant_id: string;
+        };
+        /** SystemOut */
+        SystemOut: {
+            /** Checks */
+            checks: components["schemas"]["ProbeOut"][];
+            database: components["schemas"]["DatabaseStatsOut"];
+            /** Environment */
+            environment: string;
+            process: components["schemas"]["ProcessStatsOut"];
+            queue: components["schemas"]["QueueStatsOut"];
+            /** Ready */
+            ready: boolean;
+            redis: components["schemas"]["RedisStatsOut"];
+            /** Version */
+            version: string;
+        };
         /** TeamsWebhookBody */
         TeamsWebhookBody: {
             /** Webhook Url */
             webhook_url: string;
+        };
+        /** TenantDirectoryRow */
+        TenantDirectoryRow: {
+            /** Earnings Cents */
+            earnings_cents: number;
+            /** Email */
+            email: string;
+            /** Is Studio */
+            is_studio: boolean;
+            /** Plan */
+            plan: string;
+            /** Tenant Id */
+            tenant_id: string;
+            /** User Count */
+            user_count: number;
+            /** Worker Count */
+            worker_count: number;
         };
         /** TenantRoleBody */
         TenantRoleBody: {
@@ -7918,6 +8461,28 @@ export interface components {
             reason?: string | null;
             /** Role */
             role: string;
+        };
+        /** TenantRoleChangeOut */
+        TenantRoleChangeOut: {
+            /** Email */
+            email: string;
+            /** Id */
+            id: string;
+            /** Previous Role */
+            previous_role: string;
+            /** Role */
+            role: string;
+            /** Role Label */
+            role_label: string;
+            /** Tenant Id */
+            tenant_id: string | null;
+        };
+        /** TopPageOut */
+        TopPageOut: {
+            /** Pagepath */
+            pagePath: string | null;
+            /** Sessions */
+            sessions: number;
         };
         /** TransitionBody */
         TransitionBody: {
@@ -8034,6 +8599,29 @@ export interface components {
             /** Status */
             status: string;
         };
+        /** UserDirectoryRow */
+        UserDirectoryRow: {
+            /** Email */
+            email: string;
+            /** Id */
+            id: string;
+            /** Is Platform Admin */
+            is_platform_admin: boolean;
+            /** Name */
+            name: string | null;
+            /** Platform Capabilities */
+            platform_capabilities: string[];
+            /** Platform Role */
+            platform_role: string | null;
+            /** Role */
+            role: string;
+            /** Role Label */
+            role_label: string;
+            /** Tenant Id */
+            tenant_id: string | null;
+            /** Twofa Enabled */
+            twofa_enabled: boolean;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -8145,12 +8733,79 @@ export interface components {
             /** Generated At */
             generated_at?: string | null;
         };
+        /** WorkerDirectoryRow */
+        WorkerDirectoryRow: {
+            /** Config */
+            config: {
+                [key: string]: string | boolean | number;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Status */
+            status: string;
+            /** Tenant Id */
+            tenant_id: string;
+            /** Type */
+            type: string;
+        };
         /** WorkerEnabledBody */
         WorkerEnabledBody: {
             /** Enabled */
             enabled: boolean;
             /** Reason */
             reason?: string | null;
+        };
+        /** WorkerMonitoringOut */
+        WorkerMonitoringOut: {
+            /** Cost Visible */
+            cost_visible: boolean;
+            /** Items */
+            items: components["schemas"]["WorkerMonitoringRow"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+            /** Window Days */
+            window_days: number;
+        };
+        /** WorkerMonitoringRow */
+        WorkerMonitoringRow: {
+            /** Calls */
+            calls: number;
+            /** Cost Nano Usd */
+            cost_nano_usd?: number | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Id */
+            id: string;
+            /** Input Tokens */
+            input_tokens?: number | null;
+            /** Last Seen */
+            last_seen: string | null;
+            /** Name */
+            name: string;
+            /** Output Tokens */
+            output_tokens?: number | null;
+            /** Status */
+            status: string;
+            /** Tenant Id */
+            tenant_id: string | null;
         };
         /** WorkerSel */
         WorkerSel: {
@@ -8183,6 +8838,32 @@ export interface components {
             reason?: string | null;
             /** Status */
             status: string;
+        };
+        /** WorkerStatusChangeOut */
+        WorkerStatusChangeOut: {
+            /** Changed */
+            changed: boolean;
+            /** Config */
+            config: {
+                [key: string]: string | boolean | number;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Status */
+            status: string;
+            /** Tenant Id */
+            tenant_id: string;
+            /** Type */
+            type: string;
         };
         /** _SignalContext */
         _SignalContext: {
@@ -8336,9 +9017,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AiCostOut"];
                 };
             };
             /** @description Validation Error */
@@ -8371,9 +9050,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AnalyticsOut"];
                 };
             };
             /** @description Validation Error */
@@ -8414,9 +9091,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AuditListOut"];
                 };
             };
             /** @description Validation Error */
@@ -8445,9 +9120,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AuditActionCatalogueOut"];
                 };
             };
         };
@@ -8477,9 +9150,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AuditEraseAcceptedOut"];
                 };
             };
             /** @description Validation Error */
@@ -8508,9 +9179,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AuditRetentionOut"];
                 };
             };
         };
@@ -8530,9 +9199,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["CostCapsListOut"];
                 };
             };
         };
@@ -8566,9 +9233,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["CostCapOut"];
                 };
             };
             /** @description Validation Error */
@@ -8607,9 +9272,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["CostCapRemovedOut"];
                 };
             };
             /** @description Validation Error */
@@ -8645,9 +9308,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PaginatedOut_CustomerDirectoryRow_"];
                 };
             };
             /** @description Validation Error */
@@ -8847,9 +9508,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AdminListOut"];
                 };
             };
         };
@@ -8873,9 +9532,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AdminAcceptOut"];
                 };
             };
             /** @description Validation Error */
@@ -8906,9 +9563,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AdminAuditListOut"];
                 };
             };
             /** @description Validation Error */
@@ -8937,9 +9592,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AdminBootstrapOut"];
                 };
             };
         };
@@ -8969,9 +9622,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AdminInviteOut"];
                 };
             };
             /** @description Validation Error */
@@ -9002,9 +9653,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AdminRoleOfOut"];
                 };
             };
             /** @description Validation Error */
@@ -9045,9 +9694,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AdminIdentityOut"];
                 };
             };
             /** @description Validation Error */
@@ -9084,9 +9731,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["AdminRemovedOut"];
                 };
             };
             /** @description Validation Error */
@@ -9115,9 +9760,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["OverviewOut"];
                 };
             };
         };
@@ -9137,9 +9780,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["RevenueOut"];
                 };
             };
         };
@@ -9161,9 +9802,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SupportWorkerSummaryOut"];
                 };
             };
             /** @description Validation Error */
@@ -9194,9 +9833,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["SupportConversationOut"][];
                 };
             };
             /** @description Validation Error */
@@ -9228,9 +9865,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["SupportMessageOut"][];
                 };
             };
             /** @description Validation Error */
@@ -9261,9 +9896,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SupportDiscrepanciesOut"];
                 };
             };
             /** @description Validation Error */
@@ -9292,9 +9925,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SystemOut"];
                 };
             };
         };
@@ -9321,9 +9952,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PaginatedOut_TenantDirectoryRow_"];
                 };
             };
             /** @description Validation Error */
@@ -9362,9 +9991,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PaginatedOut_UserDirectoryRow_"];
                 };
             };
             /** @description Validation Error */
@@ -9405,9 +10032,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["TenantRoleChangeOut"];
                 };
             };
             /** @description Validation Error */
@@ -9445,9 +10070,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["WorkerMonitoringOut"];
                 };
             };
             /** @description Validation Error */
@@ -9485,9 +10108,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PaginatedOut_WorkerDirectoryRow_"];
                 };
             };
             /** @description Validation Error */
@@ -9529,9 +10150,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["WorkerStatusChangeOut"];
                 };
             };
             /** @description Validation Error */

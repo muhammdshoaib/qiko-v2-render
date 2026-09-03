@@ -9,7 +9,10 @@ tenant" and not "any conversation id in the same tenant is fair game once you kn
 """
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.deps import current_claims, get_agents, get_chat, require_platform_capability
 from app.modules.agents.service import Agent, AgentService
@@ -22,6 +25,66 @@ from app.modules.intelligence.discrepancies import DiscrepancyEngine
 router = APIRouter(prefix="/admin/support", tags=["admin-support"])
 
 SUPPORTED_ATYPE = "intelligence"
+
+
+class SupportWorkerSummaryOut(BaseModel):
+    id: str
+    tenant_id: str
+    name: str
+    atype: str
+
+
+class SupportConversationOut(BaseModel):
+    id: str
+    user_id: str
+    # ConversationSummary.created_at is "datetime | None" (SQL-backed stores populate it,
+    # in-memory does not need to) - Optional here for the same reason.
+    created_at: datetime | None
+
+
+class SupportMessageOut(BaseModel):
+    role: str
+    text: str
+    # Message.created_at is "datetime | None" for the same reason as above.
+    created_at: datetime | None
+
+
+class SupportDiscrepancySourceOut(BaseModel):
+    source: str
+    source_label: str
+    external_id: str
+    url: str | None
+    actor: str
+    occurred_at: str | None
+
+
+class SupportDiscrepancyOut(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    # "class" is a Python reserved word, so Discrepancy.to_dict()'s literal "class" key needs an
+    # aliased field name here rather than being usable directly.
+    class_: str = Field(alias="class")
+    class_label: str
+    severity: str
+    ref: str | None
+    project_key: str | None
+    title: str
+    summary: str
+    claimed_at: str | None
+    evidence_at: str | None
+    occurred_at: str | None
+    sources: list[SupportDiscrepancySourceOut]
+
+
+class SupportDiscrepancyProjectOut(BaseModel):
+    key: str
+    count: int
+
+
+class SupportDiscrepanciesOut(BaseModel):
+    items: list[SupportDiscrepancyOut]
+    total: int
+    projects: list[SupportDiscrepancyProjectOut]
 
 
 async def _resolve_intelligence_worker(agents: AgentService, agent_id: str) -> Agent:
@@ -62,7 +125,7 @@ async def _audit(request: Request, claims: dict, agent: Agent, view: str) -> Non
     ), request=request)
 
 
-@router.get("/workers/{agent_id}")
+@router.get("/workers/{agent_id}", response_model=SupportWorkerSummaryOut)
 async def worker_summary(
     agent_id: str, request: Request,
     claims: dict = Depends(current_claims),
@@ -74,7 +137,7 @@ async def worker_summary(
     return {"id": agent.id, "tenant_id": agent.tenant, "name": agent.name, "atype": agent.atype}
 
 
-@router.get("/workers/{agent_id}/conversations")
+@router.get("/workers/{agent_id}/conversations", response_model=list[SupportConversationOut])
 async def worker_conversations(
     agent_id: str, request: Request,
     claims: dict = Depends(current_claims),
@@ -88,7 +151,8 @@ async def worker_conversations(
     return [{"id": c.id, "user_id": c.user_id, "created_at": c.created_at} for c in conversations]
 
 
-@router.get("/workers/{agent_id}/conversations/{conversation_id}")
+@router.get("/workers/{agent_id}/conversations/{conversation_id}",
+           response_model=list[SupportMessageOut])
 async def worker_conversation_history(
     agent_id: str, conversation_id: str, request: Request,
     claims: dict = Depends(current_claims),
@@ -103,7 +167,7 @@ async def worker_conversation_history(
     return [{"role": m.role, "text": m.text, "created_at": m.created_at} for m in messages]
 
 
-@router.get("/workers/{agent_id}/discrepancies")
+@router.get("/workers/{agent_id}/discrepancies", response_model=SupportDiscrepanciesOut)
 async def worker_discrepancies(
     agent_id: str, request: Request,
     claims: dict = Depends(current_claims),
