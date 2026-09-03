@@ -1,6 +1,8 @@
+import asyncio
 import json
 
 from app.core.config import get_settings
+from app.modules.agents.service import Agent
 
 
 def _headers(api_key: str = "test-key") -> dict:
@@ -101,6 +103,55 @@ def test_insight_is_idempotent_on_request_id(client, monkeypatch):
     )
     assert first.json()["summary"] == second.json()["summary"]
     assert call_count["n"] == 1
+
+
+def test_insight_uses_the_provisioned_agents_guardrails_over_the_hardcoded_default(client, monkeypatch):
+    # 3 Sep, Razvan: the Creator Agent's config must actually control generation, not sit
+    # disconnected from it.
+    _enable_api_key(monkeypatch)
+    asyncio.run(client.app.state.agents.store.add(Agent(
+        id="joseph-mews", tenant="joseph-mews", name="Joseph Mews",
+        config={"guardrails": ["Never mention a specific currency symbol."]},
+    )))
+    captured = {}
+
+    class Provider:
+        def generate(self, prompt, *, system=None, **_kwargs):
+            captured["system"] = system
+            return type("R", (), {"text": json.dumps({"summary": "Strong yield here."})})()
+
+    import app.modules.joseph_mews.router as router_module
+    monkeypatch.setattr(router_module, "get_provider", lambda: Provider())
+
+    response = client.post(
+        "/api/v1/tenants/joseph-mews/insights/property", json=_payload("req-agent-config"),
+        headers=_headers(),
+    )
+    assert response.status_code == 200
+    assert "Never mention a specific currency symbol." in captured["system"]
+    # The fixed safety constraint survives even when the Agent's own guardrails replace the
+    # hardcoded default text.
+    assert "not suggest any action" in captured["system"]
+
+
+def test_insight_falls_back_to_the_hardcoded_default_when_the_agent_is_not_provisioned(client, monkeypatch):
+    _enable_api_key(monkeypatch)
+    captured = {}
+
+    class Provider:
+        def generate(self, prompt, *, system=None, **_kwargs):
+            captured["system"] = system
+            return type("R", (), {"text": json.dumps({"summary": "Strong yield here."})})()
+
+    import app.modules.joseph_mews.router as router_module
+    monkeypatch.setattr(router_module, "get_provider", lambda: Provider())
+
+    response = client.post(
+        "/api/v1/tenants/joseph-mews/insights/property", json=_payload("req-no-agent"),
+        headers=_headers(),
+    )
+    assert response.status_code == 200
+    assert "Use ONLY the facts explicitly supplied to you" in captured["system"]
 
 
 def test_insight_and_signal_caches_are_independent_for_the_same_request_id(client, monkeypatch):

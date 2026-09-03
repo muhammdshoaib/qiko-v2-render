@@ -1,6 +1,8 @@
+import asyncio
 import json
 
 from app.core.config import get_settings
+from app.modules.agents.service import Agent
 
 
 def _headers(api_key: str = "test-key") -> dict:
@@ -92,6 +94,32 @@ def test_summarize_returns_an_error_shape_on_generation_failure(client, monkeypa
     body = response.json()
     assert body["requestId"] == "req-fail"
     assert body["error"]["code"] == "GENERATION_FAILED"
+
+
+def test_summarize_uses_the_provisioned_agents_guardrails_over_the_hardcoded_default(client, monkeypatch):
+    _enable_api_key(monkeypatch)
+    asyncio.run(client.app.state.agents.store.add(Agent(
+        id="joseph-mews", tenant="joseph-mews", name="Joseph Mews",
+        config={"guardrails": ["Never mention a specific currency symbol."]},
+    )))
+    captured = {}
+
+    class Provider:
+        def generate(self, prompt, *, system=None, **_kwargs):
+            captured["system"] = system
+            return type("R", (), {"text": json.dumps({
+                "summary": "Jane viewed Marina Heights.", "suggestedNextAction": "Call Jane.",
+            })})()
+
+    import app.modules.joseph_mews.router as router_module
+    monkeypatch.setattr(router_module, "get_provider", lambda: Provider())
+
+    response = client.post(
+        "/api/v1/tenants/joseph-mews/signals/summarize", json=_payload("req-agent-config"),
+        headers=_headers(),
+    )
+    assert response.status_code == 200
+    assert "Never mention a specific currency symbol." in captured["system"]
 
 
 def test_summarize_is_idempotent_on_request_id(client, monkeypatch):

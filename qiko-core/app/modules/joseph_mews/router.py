@@ -14,6 +14,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from app.core.config import Settings, get_settings
+from app.core.deps import get_agents
+from app.modules.agents.service import AgentService
 from app.modules.ai.gateway import get_provider
 from app.modules.joseph_mews.portfolio_insights import (
     PropertyInsightRequest,
@@ -25,12 +27,24 @@ from app.modules.joseph_mews.signal_summary import (
     SignalSummaryResult,
     summarize_signal,
 )
+from app.modules.joseph_mews.worker import AGENT_ID, TENANT
 
 router = APIRouter(prefix="/tenants/{tenant_id}", tags=["joseph-mews-worker"])
 
 # Only tenant this worker API serves today; the contract's {tenantId} path segment is forward
 # looking (JM2-1066: "propose this ourselves, not yet allocated" beyond this one client).
 _KNOWN_TENANT = "joseph-mews"
+
+
+async def _agent_config(agents: AgentService) -> dict | None:
+    """The joseph-mews Creator Agent's config (Rules/Guardrails/Prompts), or None before it's
+    provisioned. Never raises: a lookup failure here must not block generation, it should just
+    fall back to guardrails.py's SHARED_GUARDRAILS like the Agent never existed."""
+    try:
+        agent = await agents.get(TENANT, AGENT_ID)
+    except Exception:  # noqa: BLE001 - config lookup must not break generation
+        return None
+    return agent.config if agent is not None else None
 
 
 @dataclass
@@ -80,23 +94,31 @@ async def require_jm_backend(
 
 
 @router.post("/signals/summarize", dependencies=[Depends(require_jm_backend)])
-async def summarize_signal_endpoint(tenant_id: str, body: SignalSummarizeRequest) -> dict:
+async def summarize_signal_endpoint(
+    tenant_id: str, body: SignalSummarizeRequest,
+    agents: Annotated[AgentService, Depends(get_agents)],
+) -> dict:
     seen, cached = _cache.get(body.requestId)
     if seen:
         return _signal_response(body.requestId, cached)
 
-    result = await asyncio.to_thread(summarize_signal, body, get_provider())
+    config = await _agent_config(agents)
+    result = await asyncio.to_thread(summarize_signal, body, get_provider(), config)
     _cache.put(body.requestId, result)
     return _signal_response(body.requestId, result)
 
 
 @router.post("/insights/property", dependencies=[Depends(require_jm_backend)])
-async def property_insight_endpoint(tenant_id: str, body: PropertyInsightRequest) -> dict:
+async def property_insight_endpoint(
+    tenant_id: str, body: PropertyInsightRequest,
+    agents: Annotated[AgentService, Depends(get_agents)],
+) -> dict:
     seen, cached = _insight_cache.get(body.requestId)
     if seen:
         return _insight_response(body.requestId, cached)
 
-    result = await asyncio.to_thread(generate_property_insight, body, get_provider())
+    config = await _agent_config(agents)
+    result = await asyncio.to_thread(generate_property_insight, body, get_provider(), config)
     _insight_cache.put(body.requestId, result)
     return _insight_response(body.requestId, result)
 

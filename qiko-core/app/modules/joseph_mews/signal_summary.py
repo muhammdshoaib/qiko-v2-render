@@ -17,23 +17,27 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 from app.core.tenancy import reset_tenant, set_tenant
 from app.modules.ai import usage
 from app.modules.ai.gateway import LLMProvider
-from app.modules.joseph_mews.guardrails import SHARED_GUARDRAILS
+from app.modules.joseph_mews.guardrails import resolve_guardrails
 from app.modules.joseph_mews.worker import AGENT_ID, TENANT
 
 _JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
 _MAX_ATTEMPTS = 2
 
-SYSTEM = (
-    "You are drafting a one-paragraph summary and a suggested next action for a property "
-    "investment agent, describing why a specific investor's behaviour just triggered an intent "
-    "signal.\n\n" + SHARED_GUARDRAILS + "\n\n"
-    "Return ONLY a JSON object (no prose, no markdown fences) with exactly these keys:\n"
-    '"summary": a 1-3 sentence, agent-facing summary of what the investor did and why it '
-    "matters, grounded only in the supplied data.\n"
-    '"suggestedNextAction": a short, concrete action for the agent to take next.\n'
-    '"groundedIn": a JSON array of dotted field paths (e.g. "investor.investmentPreferences", '
-    '"property.projectedGrossYield") for every fact the summary or action actually relies on.'
-)
+
+def _build_system_prompt(agent_config: dict | None) -> str:
+    # Rebuilt per call (not a module constant) so an edit to the Agent's Rules/Guardrails in the
+    # Creator UI takes effect on the next request, no redeploy needed.
+    return (
+        "You are drafting a one-paragraph summary and a suggested next action for a property "
+        "investment agent, describing why a specific investor's behaviour just triggered an "
+        "intent signal.\n\n" + resolve_guardrails(agent_config) + "\n\n"
+        "Return ONLY a JSON object (no prose, no markdown fences) with exactly these keys:\n"
+        '"summary": a 1-3 sentence, agent-facing summary of what the investor did and why it '
+        "matters, grounded only in the supplied data.\n"
+        '"suggestedNextAction": a short, concrete action for the agent to take next.\n'
+        '"groundedIn": a JSON array of dotted field paths (e.g. "investor.investmentPreferences", '
+        '"property.projectedGrossYield") for every fact the summary or action actually relies on.'
+    )
 
 
 class _SignalContext(BaseModel):
@@ -85,11 +89,17 @@ def _context_block(request: SignalSummarizeRequest) -> str:
     return "\n".join(parts)
 
 
-def summarize_signal(request: SignalSummarizeRequest, provider: LLMProvider) -> SignalSummaryResult | None:
+def summarize_signal(
+    request: SignalSummarizeRequest, provider: LLMProvider, agent_config: dict | None = None,
+) -> SignalSummaryResult | None:
     """Best-effort: returns None (never raises) on a malformed or empty response after
     _MAX_ATTEMPTS, matching the contract's failure shape - jm-backend stores the signal with a
-    blank summary and moves on rather than blocking on this call."""
+    blank summary and moves on rather than blocking on this call.
+
+    agent_config is the joseph-mews Creator Agent's config dict (None if not yet provisioned),
+    used only to resolve the current Rules/Guardrails/Prompts for this call - see guardrails.py."""
     prompt = _context_block(request)
+    system = _build_system_prompt(agent_config)
     # Same tenant/agent binding Worker.answer() uses (2 Sep: "same worker, same config, one cost
     # bucket") - without this, generate() calls here are recorded as unattributed spend.
     agent_token = usage.set_agent(AGENT_ID)
@@ -97,7 +107,7 @@ def summarize_signal(request: SignalSummarizeRequest, provider: LLMProvider) -> 
     try:
         for _attempt in range(_MAX_ATTEMPTS):
             try:
-                response = provider.generate(prompt, system=SYSTEM, temperature=0.0, prefill="{")
+                response = provider.generate(prompt, system=system, temperature=0.0, prefill="{")
                 raw = _parse_llm_json_object(response.text)
                 extracted = _ExtractedSummary.model_validate(raw)
             except (json.JSONDecodeError, ValidationError, AttributeError):

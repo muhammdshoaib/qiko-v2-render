@@ -12,10 +12,12 @@ class _CannedProvider:
         self.text = text
         self.seen_agent: str | None = "not called"
         self.seen_tenant: str | None = "not called"
+        self.seen_system: str | None = None
 
     def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
         self.seen_agent = usage.get_agent()
         self.seen_tenant = get_tenant()
+        self.seen_system = system
         return LLMResponse(text=self.text)
 
 
@@ -100,3 +102,16 @@ def test_summarize_signal_resets_the_binding_after_returning():
     summarize_signal(_request(), provider)
     assert usage.get_agent() is None
     assert get_tenant() is None
+
+
+def test_summarize_signal_uses_the_agents_config_when_supplied():
+    provider = _CannedProvider(json.dumps({"summary": "Strong interest.", "suggestedNextAction": "Follow up."}))
+    agent_config = {"guardrails": ["Never mention a competitor by name."]}
+    summarize_signal(_request(), provider, agent_config)
+    assert "Never mention a competitor by name." in provider.seen_system
+
+
+def test_summarize_signal_falls_back_when_agent_config_is_none():
+    provider = _CannedProvider(json.dumps({"summary": "Strong interest.", "suggestedNextAction": "Follow up."}))
+    summarize_signal(_request(), provider, None)
+    assert "Use ONLY the facts explicitly supplied to you" in provider.seen_system
