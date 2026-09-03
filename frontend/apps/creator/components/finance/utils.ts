@@ -376,15 +376,17 @@ export function trendSections(payload: FinanceTrends | undefined): TrendSection[
 }
 
 // ── File month options + date helpers ------------------------------------------------------------
-/** Turns the backend's `availableMonths` ("YYYY-MM", derived from the real income/expense
- * transaction dates) into dropdown options. EL-1014: this used to be derived from each uploaded
- * file's *upload* timestamp instead, so a workbook's real period was ignored, and two files
- * uploaded together (sharing an upload timestamp) could collapse to a single wrong month option.
- *
- * Most-recent-first: a real "YTD" workbook can carry individual invoices going back years
- * (arrears, historic maintenance records), so this list can legitimately span many years for one
- * upload. Oldest-first opened the dropdown on ancient, irrelevant entries instead of the recent
- * reporting periods a user actually wants. */
+/** Turns the backend's `availableMonths` ("YYYY-MM") into dropdown options. EL-1014: this used to
+ * be derived from each uploaded file's *upload* timestamp, so a workbook's real period was
+ * ignored, and two files uploaded together (sharing an upload timestamp) could collapse to a
+ * single wrong month option. That was fixed by reading every transaction date out of the
+ * workbook instead -- which then surfaced EL-1021/EL-1024: a real "YTD" workbook can carry
+ * individual invoices going back years (arrears, historic maintenance records) alongside its
+ * current reporting period, so scanning every row made this list span a decade or more for one
+ * upload. The backend now derives one entry per uploaded file from the file's own declared
+ * period (its name) instead of its row-level dates, so this list is expected to normally have
+ * one entry per upload. Kept most-recent-first regardless, as defense in depth (and for the
+ * rare file whose declared period doesn't sort chronologically first by upload order). */
 export function monthOptionsFromAvailableMonths(months?: string[]): { label: string; value: string }[] {
   const opts: { label: string; value: string }[] = [{ label: "All time", value: "all" }];
   if (!months) return opts;

@@ -141,16 +141,18 @@ test("kpiMetricDrilldown shows missing values as -", () => {
 
 // EL-1014: the dropdown used to be built from each uploaded file's *upload* timestamp, so two
 // files uploaded together on the same day collapsed to one (wrong) month option no matter which
-// real periods their data covered. Options must come straight from the backend's availableMonths
-// (derived from the real transaction dates), not from any client-side file metadata.
+// real periods their data covered. Options must come straight from the backend's availableMonths,
+// not from any client-side file metadata.
 //
-// Once that was fixed, QA found a follow-on UX problem: a real "YTD" workbook can carry
-// individual outstanding/settled invoices going back *years* (arrears, historic maintenance
-// records), so availableMonths can legitimately span 2019-2026 for one upload. Sorted oldest
-// first, the dropdown opened on ancient, irrelevant entries ("Jun 2005", "Apr 2019", ...)
-// instead of the recent reporting periods a user actually wants, which read as broken even
-// though the months were all real. Most-recent-first matches finance-shell's own year-group
-// header sort (see the el-1014-upload-month-reset.test.ts regression test for that side).
+// Once that was fixed with a row-level transaction-date scan, QA found a follow-on problem
+// (EL-1021/EL-1024): a real "YTD" workbook can carry individual outstanding/settled invoices
+// going back *years* (arrears, historic maintenance records), so scanning every row made
+// availableMonths legitimately span 2019-2026 for one upload even though only its own current
+// period was ever "uploaded" from the user's point of view. The backend now derives
+// availableMonths from each file's own declared period (its name) instead, so this list is
+// expected to normally have one entry per upload. Most-recent-first is kept regardless, as
+// defense in depth, and matches finance-shell's own year-group header sort (see the
+// el-1014-upload-month-reset.test.ts regression test for that side).
 test("monthOptionsFromAvailableMonths builds one option per distinct backend month, most recent first, plus All time", () => {
   const opts = monthOptionsFromAvailableMonths(["2026-02", "2025-12"]);
   assert.deepEqual(opts, [

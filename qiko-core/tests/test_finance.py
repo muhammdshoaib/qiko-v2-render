@@ -301,6 +301,43 @@ async def test_service_analytics_month_filter_narrows_to_that_month():
     assert feb["summary"]["totalIncome"] == 1000.0
 
 
+async def test_service_analytics_all_time_date_range_uses_file_declared_periods_not_row_dates():
+    # EL-1024: with no month filter ("All time"), dateRange used to fall back to the earliest and
+    # latest *row* date across every upload, so a YTD workbook with arrears back to 2005 made the
+    # Financial Chat's "Period: ..." line (built from this field, see chat.py _summary_lines) claim
+    # a 21-year range for a portfolio that only ever had February 2026 and December 2025 uploaded.
+    # It must instead span the files' own declared periods, exactly like availableMonths.
+    svc = FinanceService(provider=StubProvider(canned="ok"))
+    wb = Workbook()
+    exp = wb.active
+    exp.title = "Exp YTD"
+    exp.append(_EXPENSE_HEADER)
+    exp.append(["A001", "12 High Street", "A001/1", "Flat 1, 12 High Street", "Repairs",
+               "Acme Maintenance", 100.0, 20.0, 120.0, "12/06/2005"])
+    inc = wb.create_sheet("Income Receivable YTD")
+    inc.append(_INCOME_HEADER)
+    buf = io.BytesIO()
+    wb.save(buf)
+    await svc.upload("acme", "agent-dr", buf.getvalue(),
+                     filename="Touchstone_Income_and_Exp_YTD_December_2025.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    await svc.upload("acme", "agent-dr", _single_month_workbook("15/02/2026"),
+                     filename="Touchstone_Income_and_Exp_February_2026.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+    full = await svc.analytics("acme", "agent-dr")
+    assert full["dateRange"]["from"] == "2025-12-01"
+    assert full["dateRange"]["to"] == "2026-02-28"
+    # The actual 2005 arrears row must still be counted in the totals -- only the reported *label*
+    # changes, real financial figures are never silently dropped from the sums.
+    assert full["summary"]["totalExpenses"] == 120.0
+
+    # An explicit month filter is unaffected: it still narrows to exactly that month.
+    narrowed = await svc.analytics("acme", "agent-dr", month="2026-02")
+    assert narrowed["dateRange"]["from"] == "2026-02-01"
+    assert narrowed["dateRange"]["to"] == "2026-02-28"
+
+
 # --- service (with injected stub LLM) --------------------------------------------------------
 
 def _single_month_workbook(income_date: str) -> bytes:
@@ -320,30 +357,133 @@ def _single_month_workbook(income_date: str) -> bytes:
     return buf.getvalue()
 
 
-async def test_service_list_files_reports_available_months_from_real_data_not_upload_time():
-    # EL-1014: the month dropdown used to be built from each file's *upload* timestamp
-    # (FinanceFile.uploaded_at), not the period its data actually covers. Two files uploaded in the
-    # same test run (same wall-clock day) used to collapse to at most one upload-timestamp month,
-    # even though their real data is for February 2026 and December 2025. availableMonths must
-    # reflect the real transaction dates, independent of when the files were uploaded.
+async def test_service_list_files_reports_available_months_from_each_files_own_name():
+    # EL-1014 (part 1): the month dropdown used to be built from each file's *upload* timestamp
+    # (FinanceFile.uploaded_at), not the period its data actually covers. That was fixed by reading
+    # every transaction date out of the workbook instead.
+    #
+    # EL-1021/EL-1024 (follow-up): that row-scan fix then surfaced a *different* problem. A real
+    # "YTD" workbook can carry individual invoices going back years (arrears, historic maintenance
+    # records) alongside its current reporting period, so scanning every row's date made
+    # availableMonths span a decade or more for a single upload -- e.g. two files nominally
+    # "February 2026" and "December 2025" produced a dropdown (and a chat "Period: ..." line)
+    # spanning back to 2005, even though only those two periods were ever uploaded. availableMonths
+    # must instead reflect the ONE period each uploaded workbook itself declares (its own file
+    # name, which this client's exports consistently end in, e.g.
+    # "Touchstone_Income_and_Exp_February_2026.xlsx" or "..._YTD_December_2025.xlsx"), independent
+    # of both upload time and how far back its row-level data happens to reach.
     svc = FinanceService(provider=StubProvider(canned="ok"))
-    await svc.upload("acme", "agent-1", _single_month_workbook("15/02/2026"), filename="feb.xlsx",
+    await svc.upload("acme", "agent-1", _single_month_workbook("15/02/2026"),
+                     filename="Touchstone_Income_and_Exp_February_2026.xlsx",
                      content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-    await svc.upload("acme", "agent-1", _single_month_workbook("20/12/2025"), filename="dec.xlsx",
+    await svc.upload("acme", "agent-1", _single_month_workbook("20/12/2025"),
+                     filename="Touchstone_Income_and_Exp_YTD_December_2025.xlsx",
                      content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
     listing = await svc.list_files("acme", "agent-1")
     assert listing["availableMonths"] == ["2025-12", "2026-02"]
 
 
-async def test_service_available_months_rejects_out_of_range_month_digits():
-    # A garbled/day-month-swapped date in the tenant's own workbook must not surface a
-    # calendar-invalid token like "2026-13" in the dropdown.
+async def test_service_available_months_ignores_historic_rows_scattered_inside_a_ytd_file():
+    # The exact EL-1021 scenario: a YTD workbook's own row data spans years (arrears/historic
+    # invoices) even though the file itself is nominally for one period. Only the file's own
+    # declared period should surface, not every year its rows happen to touch.
     svc = FinanceService(provider=StubProvider(canned="ok"))
-    await svc.upload("acme", "agent-1", _single_month_workbook("31/13/2026"), filename="bad.xlsx",
+    wb = Workbook()
+    exp = wb.active
+    exp.title = "Exp YTD"
+    exp.append(_EXPENSE_HEADER)
+    exp.append(["A001", "12 High Street", "A001/1", "Flat 1, 12 High Street", "Repairs",
+               "Acme Maintenance", 100.0, 20.0, 120.0, "12/06/2005"])  # old arrears row
+    exp.append(["A001", "12 High Street", "A001/1", "Flat 1, 12 High Street", "Repairs",
+               "Acme Maintenance", 50.0, 10.0, 60.0, "20/12/2025"])  # the file's real period
+    inc = wb.create_sheet("Income Receivable YTD")
+    inc.append(_INCOME_HEADER)
+    buf = io.BytesIO()
+    wb.save(buf)
+
+    await svc.upload("acme", "agent-1", buf.getvalue(),
+                     filename="Touchstone_Income_and_Exp_YTD_December_2025.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    listing = await svc.list_files("acme", "agent-1")
+    assert listing["availableMonths"] == ["2025-12"]
+
+
+async def test_service_available_months_does_not_match_a_month_name_mid_word():
+    # "SummaryMay_2026.xlsx" must not be misread as May 2026: "May" is preceded by a letter
+    # ("...aryMay"), not a real separator, so it is part of a different word ("Summary").
+    svc = FinanceService(provider=StubProvider(canned="ok"))
+    await svc.upload("acme", "agent-1", _single_month_workbook("15/02/2026"), filename="SummaryMay_2026.xlsx",
                      content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     listing = await svc.list_files("acme", "agent-1")
     assert listing["availableMonths"] == []
+
+
+async def test_service_available_months_skips_a_file_with_no_recognizable_period_in_its_name():
+    # A file whose name carries no Month/Year (e.g. a day-rates reference sheet) contributes
+    # nothing to the dropdown rather than guessing from its row data.
+    svc = FinanceService(provider=StubProvider(canned="ok"))
+    await svc.upload("acme", "agent-1", _single_month_workbook("31/13/2026"), filename="Day_Rates.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    listing = await svc.list_files("acme", "agent-1")
+    assert listing["availableMonths"] == []
+
+
+async def test_service_available_months_matches_month_and_year_with_no_separator():
+    svc = FinanceService(provider=StubProvider(canned="ok"))
+    await svc.upload("acme", "agent-1", _single_month_workbook("15/09/2026"), filename="September2026.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    listing = await svc.list_files("acme", "agent-1")
+    assert listing["availableMonths"] == ["2026-09"]
+
+
+async def test_service_available_months_rejects_an_implausible_year_next_to_a_month_name():
+    # A month-like substring next to an unrelated 4-digit number (a reference/serial code, not a
+    # year) must not fabricate a bogus period like "0007-09" -- the same class of "wildly wrong
+    # date range" bug this whole fix removes, just inverted.
+    svc = FinanceService(provider=StubProvider(canned="ok"))
+    await svc.upload("acme", "agent-1", _single_month_workbook("15/09/2026"), filename="September_0007.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    listing = await svc.list_files("acme", "agent-1")
+    assert listing["availableMonths"] == []
+
+
+async def test_service_available_months_uses_the_rightmost_period_in_a_dual_dated_name():
+    # Documents a known, accepted limitation: a filename naming two periods (e.g. a "compare this
+    # month against last year" export) resolves to whichever Month/Year comes last in the name.
+    # This client's actual naming convention only ever has one, but if it ever names a range or
+    # comparison report, this is the current behavior rather than an ambiguity error.
+    svc = FinanceService(provider=StubProvider(canned="ok"))
+    await svc.upload("acme", "agent-1", _single_month_workbook("15/09/2026"),
+                     filename="September_2025_vs_September_2026.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    listing = await svc.list_files("acme", "agent-1")
+    assert listing["availableMonths"] == ["2026-09"]
+
+
+async def test_service_available_months_prefers_source_name_over_file_name():
+    # A curated display title (source_name, from the upload's "title" field) takes precedence
+    # over the raw stored file_name when both are present and disagree.
+    svc = FinanceService(provider=StubProvider(canned="ok"))
+    await svc.upload("acme", "agent-1", _single_month_workbook("15/02/2026"), filename="Day_Rates.xlsx",
+                     source_name="Touchstone_Income_and_Exp_February_2026.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    listing = await svc.list_files("acme", "agent-1")
+    assert listing["availableMonths"] == ["2026-02"]
+
+
+async def test_service_analytics_all_time_date_range_is_blank_when_no_file_has_a_declared_period():
+    # If not one uploaded file's name carries a recognizable period, the reported range must be
+    # blank rather than silently falling back to compute_analytics's row-scan value -- that
+    # fallback is exactly the multi-year-spread bug EL-1021/EL-1024 removes, so resurrecting it
+    # here (even only for this rare case) would defeat the fix.
+    svc = FinanceService(provider=StubProvider(canned="ok"))
+    await svc.upload("acme", "agent-nn", _single_month_workbook("12/06/2005"), filename="portfolio.xlsx",
+                     content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    full = await svc.analytics("acme", "agent-nn")
+    assert full["dateRange"] == {"from": "", "to": "", "label": ""}
+    # The row is still fully counted in the totals -- only the reported range is withheld.
+    assert full["summary"]["totalIncome"] == 1000.0
 
 
 async def test_service_upload_parse_store_and_analytics():
