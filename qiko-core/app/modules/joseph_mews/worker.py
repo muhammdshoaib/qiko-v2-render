@@ -400,6 +400,12 @@ other without skipping steps, only giving informations that you already have etc
 If you do some kind of follow-up messaging, need to repeat yourself, ALWAYS stay friendly."""
 
 
+AGENT_ID = "joseph-mews"
+
+
 def joseph_mews_worker_config(*, gate_threshold: float = DEFAULT_THRESHOLD) -> WorkerConfig:
-    return WorkerConfig(name="joe-joseph-mews", tenant=TENANT, gate_threshold=gate_threshold,
-                        system_prompt=_JOE_PROMPT)
+    # AGENT_ID is shared with signal_summary.py and portfolio_insights.py (2 Sep, Razvan: "same
+    # worker, same config, one cost bucket") - all three Joseph Mews AI capabilities attribute
+    # spend to this one id rather than three separately-tracked, effectively unattributed ones.
+    return WorkerConfig(name="joe-joseph-mews", tenant=TENANT, agent_id=AGENT_ID,
+                        gate_threshold=gate_threshold, system_prompt=_JOE_PROMPT)

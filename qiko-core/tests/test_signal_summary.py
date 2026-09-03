@@ -1,14 +1,21 @@
 import json
 
+from app.core.tenancy import get_tenant
+from app.modules.ai import usage
 from app.modules.ai.gateway import LLMResponse
 from app.modules.joseph_mews.signal_summary import SignalSummarizeRequest, summarize_signal
+from app.modules.joseph_mews.worker import AGENT_ID, TENANT
 
 
 class _CannedProvider:
     def __init__(self, text: str):
         self.text = text
+        self.seen_agent: str | None = "not called"
+        self.seen_tenant: str | None = "not called"
 
     def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
+        self.seen_agent = usage.get_agent()
+        self.seen_tenant = get_tenant()
         return LLMResponse(text=self.text)
 
 
@@ -77,3 +84,19 @@ def test_request_accepts_a_signal_with_no_property_or_development():
     request = _request(property=None)
     assert request.property is None
     assert request.development is None
+
+
+def test_summarize_signal_attributes_cost_to_the_shared_joseph_mews_agent():
+    # 2 Sep, Razvan: "same worker, same config, one cost bucket" - generate() must see the same
+    # agent_id/tenant Worker.answer() binds, or this spend is recorded as unattributed.
+    provider = _CannedProvider(json.dumps({"summary": "Strong interest.", "suggestedNextAction": "Follow up."}))
+    summarize_signal(_request(), provider)
+    assert provider.seen_agent == AGENT_ID == "joseph-mews"
+    assert provider.seen_tenant == TENANT == "joseph-mews"
+
+
+def test_summarize_signal_resets_the_binding_after_returning():
+    provider = _CannedProvider(json.dumps({"summary": "Strong interest.", "suggestedNextAction": "Follow up."}))
+    summarize_signal(_request(), provider)
+    assert usage.get_agent() is None
+    assert get_tenant() is None

@@ -1,9 +1,16 @@
-from app.modules.joseph_mews.worker import TENANT, joseph_mews_worker_config
+from app.modules.joseph_mews.worker import AGENT_ID, TENANT, joseph_mews_worker_config
 
 
 def test_config_is_scoped_to_the_joseph_mews_tenant():
     cfg = joseph_mews_worker_config()
     assert cfg.tenant == TENANT == "joseph-mews"
+
+
+def test_config_carries_the_shared_agent_id_for_cost_attribution():
+    # 2 Sep, Razvan: signal_summary.py and portfolio_insights.py attribute spend to this same
+    # id, so all three Joseph Mews AI capabilities land in one cost bucket, not three.
+    cfg = joseph_mews_worker_config()
+    assert cfg.agent_id == AGENT_ID == "joseph-mews"
 
 
 def test_prompt_enforces_english_only_regardless_of_lead_language():
