@@ -107,7 +107,7 @@ def plans() -> list[dict]:
     return out
 
 
-@router.post("/checkout")
+@router.post("/checkout", openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
 def checkout(request: Request, body: CheckoutBody, tenant: str = Depends(authed_tenant),
              _role: dict = Depends(require_role(Role.admin)),
              subs=Depends(get_subscriptions)) -> dict:
@@ -136,7 +136,7 @@ def portal(tenant: str = Depends(authed_tenant),
         raise HTTPException(status_code=502, detail="payment provider error") from e
 
 
-@router.post("/subscription/cancel")
+@router.post("/subscription/cancel", openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
 def cancel(request: Request, tenant: str = Depends(authed_tenant),
            _role: dict = Depends(require_role(Role.admin)),
            subs=Depends(get_subscriptions)) -> dict:
@@ -150,7 +150,7 @@ def cancel(request: Request, tenant: str = Depends(authed_tenant),
     return {"customer_id": tenant, "status": sub.status, "cancel_at_period_end": sub.cancel_at_period_end}
 
 
-@router.post("/subscription/resume")
+@router.post("/subscription/resume", openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
 def resume(request: Request, tenant: str = Depends(authed_tenant),
            _role: dict = Depends(require_role(Role.admin)),
            subs=Depends(get_subscriptions)) -> dict:
@@ -187,7 +187,7 @@ class PaymentLinkBody(BaseModel):
         return value
 
 
-@router.post("/payment-links")
+@router.post("/payment-links", openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
 def create_payment_link(body: PaymentLinkBody, request: Request,
                         claims: dict = Depends(current_claims),
                         _tenant: str = Depends(authed_tenant),
@@ -229,7 +229,7 @@ class MarkPaidBody(BaseModel):
     customer_email: str = Field(min_length=3)
 
 
-@router.post("/payment-links/mark-paid")
+@router.post("/payment-links/mark-paid", openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
 def mark_paid(body: MarkPaidBody, request: Request, claims: dict = Depends(current_claims),
               _tenant: str = Depends(authed_tenant),
               _identity=Depends(require_platform_capability(Capability.manage_billing)), links=Depends(get_payment_links)) -> dict:
@@ -309,8 +309,19 @@ class CreateInvoiceBody(BaseModel):
     description: str = Field(default="", max_length=500)
     send: bool = False
 
+    @field_validator("currency")
+    @classmethod
+    def validate_currency(cls, value: str) -> str:
+        # Stripe's own currency codes are lowercase ISO 4217 alpha-3 (ISO's own codes are
+        # uppercase; Stripe lowercases them). max_length=3 alone still let through any
+        # 3-character string, e.g. "123" or "XY!".
+        value = value.strip().lower()
+        if len(value) != 3 or not value.isascii() or not value.isalpha():
+            raise ValueError("currency must be a 3-letter ISO 4217 code")
+        return value
 
-@router.post("/invoices")
+
+@router.post("/invoices", openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
 def create_invoice(request: Request, body: CreateInvoiceBody,
                    claims: dict = Depends(current_claims),
                    _identity=Depends(require_platform_capability(Capability.manage_billing)),
@@ -346,7 +357,7 @@ def create_invoice(request: Request, body: CreateInvoiceBody,
     return asdict(stored)
 
 
-@router.post("/invoices/reconcile")
+@router.post("/invoices/reconcile", openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
 def reconcile_invoices_route(request: Request, claims: dict = Depends(current_claims),
                              _identity=Depends(require_platform_capability(Capability.manage_billing))) -> dict:
     csrf.require_csrf(request)

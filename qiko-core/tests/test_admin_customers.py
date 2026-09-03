@@ -39,3 +39,11 @@ def test_studio_toggle_and_soft_delete_anonymises():
     assert d.details("u2") is None                       # excluded once deleted
     assert "anonymized.invalid" in d._by_id["u2"].email  # PII anonymised
     assert all(r.user_id != "u2" for r in d.list()["items"])
+
+
+def test_count_matches_list_total_and_excludes_deleted():
+    # QIKO-1055: /admin/overview only ever needs this number, not a sorted, paginated list.
+    d = _dir()
+    assert d.count() == d.list()["total"] == 3
+    d.soft_delete("u2")
+    assert d.count() == d.list()["total"] == 2

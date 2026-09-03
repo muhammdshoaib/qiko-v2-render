@@ -13,6 +13,27 @@ from app.core.config import Environment, get_settings
 CSRF_COOKIE = "qiko_csrf"
 CSRF_HEADER = "x-csrf-token"
 
+# For routes that call require_csrf(request) imperatively (a body model can't carry a header/
+# cookie requirement) instead of through a dependency: pass this as the route decorator's
+# openapi_extra=, or the generated OpenAPI spec/TS client omit the requirement entirely.
+# The header name here is the display form already committed to the OpenAPI spec/TS client by
+# the first route that declared it (set_worker_enabled) - CSRF_HEADER is HTTP-header-compared
+# case-insensitively, so this differs from it in casing only, not in the actual header matched.
+CSRF_OPENAPI_EXTRA = {
+    "parameters": [
+        {
+            "name": "X-CSRF-Token", "in": "header", "required": True,
+            "schema": {"type": "string"},
+            "description": "Must match the qiko_csrf cookie.",
+        },
+        {
+            "name": CSRF_COOKIE, "in": "cookie", "required": True,
+            "schema": {"type": "string"},
+            "description": "Double-submit CSRF cookie.",
+        },
+    ]
+}
+
 
 def generate_csrf_token() -> str:
     return secrets.token_urlsafe(32)

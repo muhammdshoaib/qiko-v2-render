@@ -11285,9 +11285,15 @@ export interface operations {
     checkout_api_v1_billing_checkout_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Must match the qiko_csrf cookie. */
+                "X-CSRF-Token": string;
+            };
             path?: never;
-            cookie?: never;
+            cookie: {
+                /** @description Double-submit CSRF cookie. */
+                qiko_csrf: string;
+            };
         };
         requestBody: {
             content: {
@@ -11359,9 +11365,15 @@ export interface operations {
     create_invoice_api_v1_billing_invoices_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Must match the qiko_csrf cookie. */
+                "X-CSRF-Token": string;
+            };
             path?: never;
-            cookie?: never;
+            cookie: {
+                /** @description Double-submit CSRF cookie. */
+                qiko_csrf: string;
+            };
         };
         requestBody: {
             content: {
@@ -11394,9 +11406,15 @@ export interface operations {
     reconcile_invoices_route_api_v1_billing_invoices_reconcile_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Must match the qiko_csrf cookie. */
+                "X-CSRF-Token": string;
+            };
             path?: never;
-            cookie?: never;
+            cookie: {
+                /** @description Double-submit CSRF cookie. */
+                qiko_csrf: string;
+            };
         };
         requestBody?: never;
         responses: {
@@ -11449,9 +11467,15 @@ export interface operations {
     create_payment_link_api_v1_billing_payment_links_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Must match the qiko_csrf cookie. */
+                "X-CSRF-Token": string;
+            };
             path?: never;
-            cookie?: never;
+            cookie: {
+                /** @description Double-submit CSRF cookie. */
+                qiko_csrf: string;
+            };
         };
         requestBody: {
             content: {
@@ -11484,9 +11508,15 @@ export interface operations {
     mark_paid_api_v1_billing_payment_links_mark_paid_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Must match the qiko_csrf cookie. */
+                "X-CSRF-Token": string;
+            };
             path?: never;
-            cookie?: never;
+            cookie: {
+                /** @description Double-submit CSRF cookie. */
+                qiko_csrf: string;
+            };
         };
         requestBody: {
             content: {
@@ -11620,9 +11650,15 @@ export interface operations {
     cancel_api_v1_billing_subscription_cancel_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Must match the qiko_csrf cookie. */
+                "X-CSRF-Token": string;
+            };
             path?: never;
-            cookie?: never;
+            cookie: {
+                /** @description Double-submit CSRF cookie. */
+                qiko_csrf: string;
+            };
         };
         requestBody?: never;
         responses: {
@@ -11642,9 +11678,15 @@ export interface operations {
     resume_api_v1_billing_subscription_resume_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                /** @description Must match the qiko_csrf cookie. */
+                "X-CSRF-Token": string;
+            };
             path?: never;
-            cookie?: never;
+            cookie: {
+                /** @description Double-submit CSRF cookie. */
+                qiko_csrf: string;
+            };
         };
         requestBody?: never;
         responses: {

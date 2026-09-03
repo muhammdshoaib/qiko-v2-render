@@ -139,11 +139,18 @@ def test_worker_toggle_requires_super_admin_csrf_and_exact_customer_ownership(cl
         "/api/v1/admin/customers/acme/workers/missing/enabled",
         json={"enabled": False}, cookies=admin_with_csrf, headers=headers,
     )
+    # QIKO-1055: a customer that does not exist at all must not be reported as a missing worker.
+    missing_customer = client.patch(
+        "/api/v1/admin/customers/no-such-customer/workers/a1/enabled",
+        json={"enabled": False}, cookies=admin_with_csrf, headers=headers,
+    )
 
     assert changed.status_code == 200 and changed.json()["enabled"] is False
     assert repeated.status_code == 200
     assert cross_tenant.status_code == 404
-    assert missing_worker.status_code == 404
+    assert missing_worker.status_code == 404 and missing_worker.json()["detail"] == "worker not found"
+    assert (missing_customer.status_code == 404
+            and missing_customer.json()["detail"] == "customer not found")
     assert client.post(
         "/api/v1/admin/customers/acme/studio", json={"enabled": True}, cookies=admin
     ).status_code == 403
@@ -300,6 +307,15 @@ def test_openapi_artifacts_document_worker_controls_and_csrf(client):
         ]["patch"],
         runtime["paths"]["/api/v1/admin/customers/{user_id}/studio"]["post"],
         runtime["paths"]["/api/v1/admin/customers/{user_id}"]["delete"],
+        # QIKO-1055/QIKO-1048: these call csrf.require_csrf(request) imperatively (same as the
+        # three above), and previously did not declare it in openapi_extra either.
+        runtime["paths"]["/api/v1/billing/checkout"]["post"],
+        runtime["paths"]["/api/v1/billing/subscription/cancel"]["post"],
+        runtime["paths"]["/api/v1/billing/subscription/resume"]["post"],
+        runtime["paths"]["/api/v1/billing/payment-links"]["post"],
+        runtime["paths"]["/api/v1/billing/payment-links/mark-paid"]["post"],
+        runtime["paths"]["/api/v1/billing/invoices"]["post"],
+        runtime["paths"]["/api/v1/billing/invoices/reconcile"]["post"],
     ]
     for operation in operations:
         parameters = operation["parameters"]
