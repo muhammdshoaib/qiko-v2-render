@@ -61,7 +61,11 @@ def _actor_email(claims: dict) -> str:
     return email
 
 
-@router.post("/bootstrap")
+class AdminBootstrapOut(BaseModel):
+    super_admin: str
+
+
+@router.post("/bootstrap", response_model=AdminBootstrapOut)
 async def bootstrap(claims: dict = Depends(current_claims), org=Depends(get_admin_org)) -> dict:
     """Development-only bootstrap. Non-dev platform admins are provisioned by an operator, never by
     the first public tenant user to reach an endpoint."""
@@ -79,7 +83,11 @@ class InviteBody(BaseModel):
     role: AdminRole = AdminRole.viewer
 
 
-@router.post("/invite", openapi_extra=_CSRF_OPENAPI)
+class AdminInviteOut(BaseModel):
+    token: str
+
+
+@router.post("/invite", response_model=AdminInviteOut, openapi_extra=_CSRF_OPENAPI)
 async def invite(body: InviteBody, request: Request, claims: dict = Depends(current_claims),
                  _role=Depends(require_platform_super_admin()), org=Depends(get_admin_org)) -> dict:
     """Mint an invite token. DEV-ONLY on purpose.
@@ -107,7 +115,11 @@ class AcceptBody(BaseModel):
     token: str = Field(min_length=1)
 
 
-@router.post("/accept")
+class AdminAcceptOut(BaseModel):
+    role: str
+
+
+@router.post("/accept", response_model=AdminAcceptOut)
 async def accept(body: AcceptBody, claims: dict = Depends(current_claims),
                  org=Depends(get_admin_org)) -> dict:
     """Redeem a platform-admin invite. DEV-ONLY, see invite() for why.
@@ -132,7 +144,11 @@ async def accept(body: AcceptBody, claims: dict = Depends(current_claims),
         raise HTTPException(status_code=400, detail=str(e)) from e
 
 
-@router.delete("/{email}", openapi_extra=_CSRF_OPENAPI)
+class AdminRemovedOut(BaseModel):
+    removed: str
+
+
+@router.delete("/{email}", response_model=AdminRemovedOut, openapi_extra=_CSRF_OPENAPI)
 async def remove(email: str, request: Request,
                  claims: dict = Depends(current_claims),
                  _identity=Depends(require_platform_capability(Capability.manage_admins)),
@@ -154,7 +170,12 @@ async def remove(email: str, request: Request,
     return {"removed": email}
 
 
-@router.get("/role/{email}")
+class AdminRoleOfOut(BaseModel):
+    email: str
+    role: str | None
+
+
+@router.get("/role/{email}", response_model=AdminRoleOfOut)
 async def role_of(email: str, _role=Depends(require_platform_admin()), org=Depends(get_admin_org)) -> dict:
     """Whether an arbitrary email is a platform admin (and which role) is only the platform
     admin org's own business -- any authenticated tenant customer being able to query it would
@@ -177,7 +198,17 @@ def _invited_email(token: str) -> str | None:
     return str(email).lower() if email else None
 
 
-@router.get("")
+class AdminIdentityOut(BaseModel):
+    email: str
+    role: str
+    capabilities: list[str]
+
+
+class AdminListOut(BaseModel):
+    admins: list[AdminIdentityOut]
+
+
+@router.get("", response_model=AdminListOut)
 async def list_admins(_identity=Depends(require_platform_capability(Capability.manage_admins)),
                       org=Depends(get_admin_org)) -> dict:
     """The platform-admin directory. There was no way to enumerate platform admins at all, so the
@@ -194,7 +225,7 @@ class GrantBody(BaseModel):
     reason: str | None = Field(default=None, max_length=1000)
 
 
-@router.put("/{email}", openapi_extra=_CSRF_OPENAPI)
+@router.put("/{email}", response_model=AdminIdentityOut, openapi_extra=_CSRF_OPENAPI)
 async def grant(email: str, body: GrantBody, request: Request,
                 claims: dict = Depends(current_claims),
                 _identity=Depends(require_platform_capability(Capability.manage_admins)),
@@ -215,7 +246,23 @@ async def grant(email: str, body: GrantBody, request: Request,
     return _identity_json(identity)
 
 
-@router.get("/audit")
+class AdminAuditEntryOut(BaseModel):
+    id: int | None
+    email: str
+    changed_by_email: str
+    previous_role: str | None
+    role: str | None
+    previous_capabilities: list[str] | None
+    capabilities: list[str] | None
+    reason: str | None
+    created_at: str
+
+
+class AdminAuditListOut(BaseModel):
+    entries: list[AdminAuditEntryOut]
+
+
+@router.get("/audit", response_model=AdminAuditListOut)
 async def audit(limit: int = Query(default=50, ge=1, le=200),
                 _identity=Depends(require_platform_capability(Capability.manage_admins)),
                 org=Depends(get_admin_org)) -> dict:

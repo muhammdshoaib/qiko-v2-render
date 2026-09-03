@@ -4,12 +4,14 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Generic, TypeVar
 
 import httpx
 
 from fastapi.responses import JSONResponse
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, ConfigDict, Field
 
 from app import __version__ as app_version
@@ -50,6 +52,18 @@ from app.modules.identity.team_access import ROLE_LABELS
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
+
+_T = TypeVar("_T")
+
+
+class PaginatedOut(BaseModel, Generic[_T]):
+    """The {total, page, page_size, items} envelope repeated across the directory/audit list
+    routes. Concretize per route: response_model=PaginatedOut[CustomerDirectoryRow]."""
+
+    total: int
+    page: int
+    page_size: int
+    items: list[_T]
 
 
 class AdminSelfOut(BaseModel):
@@ -93,7 +107,18 @@ class CustomerDetailOut(CustomerOut):
     worker_state_audit: list[WorkerStateAuditOut]
 
 
-@router.get("/revenue")
+class RevenueOut(BaseModel):
+    total_paid_cents: int
+    outstanding_cents: int
+    mrr_cents: int
+    arr_cents: int
+    active_subscriptions: int
+    by_plan: dict[str, int]
+    monthly: list[dict]  # [{"month": str, "paid_cents": int}] - one shared shape, not worth a
+                          # named model for two fields; keep as list[dict] rather than inventing one.
+
+
+@router.get("/revenue", response_model=RevenueOut)
 def revenue(request: Request, _tenant: str = Depends(authed_tenant),
             _identity=Depends(require_platform_capability(Capability.view_customers))) -> dict:
     return revenue_report_dict(
@@ -101,7 +126,14 @@ def revenue(request: Request, _tenant: str = Depends(authed_tenant),
         subscriptions=request.app.state.subscriptions.store)
 
 
-@router.get("/customers")
+class CustomerDirectoryRow(BaseModel):
+    user_id: str
+    email: str
+    plan: str
+    earnings_cents: int
+
+
+@router.get("/customers", response_model=PaginatedOut[CustomerDirectoryRow])
 def customers(request: Request, _tenant: str = Depends(authed_tenant),
               _identity=Depends(require_platform_capability(Capability.view_customers)),
               search: str | None = Query(default=None, max_length=200),
@@ -272,7 +304,13 @@ async def customer_delete(user_id: str, request: Request,
         raise HTTPException(status_code=404, detail="customer not found") from exc
 
 
-@router.get("/overview")
+class OverviewOut(BaseModel):
+    customers_total: int
+    active_subscriptions: int
+    by_plan: dict[str, int]
+
+
+@router.get("/overview", response_model=OverviewOut)
 def overview(request: Request, _tenant: str = Depends(authed_tenant),
              _identity=Depends(require_platform_capability(Capability.view_customers))) -> dict:
     subs = request.app.state.subscriptions.summary()
@@ -288,7 +326,19 @@ def _default_analytics_range() -> tuple[str, str, str]:
     return start.isoformat(), today.isoformat(), fallback.isoformat()
 
 
-@router.get("/analytics")
+class TopPageOut(BaseModel):
+    pagePath: str | None
+    sessions: float
+
+
+class AnalyticsOut(BaseModel):
+    sessions: float
+    active_users: float
+    top_pages: list[TopPageOut]
+    had_data: bool
+
+
+@router.get("/analytics", response_model=AnalyticsOut)
 def analytics(request: Request, _tenant: str = Depends(authed_tenant),
               _identity=Depends(require_platform_capability(Capability.view_customers)),
               start: str | None = Query(default=None, max_length=10),
@@ -321,7 +371,7 @@ class TenantDirectoryRow(BaseModel):
     is_studio: bool
 
 
-@router.get("/tenants")
+@router.get("/tenants", response_model=PaginatedOut[TenantDirectoryRow])
 def tenants(request: Request, _tenant: str = Depends(authed_tenant),
             _identity=Depends(require_platform_capability(Capability.view_customers)),
             search: str | None = Query(default=None, max_length=200),
@@ -375,7 +425,7 @@ class UserDirectoryRow(BaseModel):
     platform_capabilities: list[str]
 
 
-@router.get("/users")
+@router.get("/users", response_model=PaginatedOut[UserDirectoryRow])
 async def users(request: Request, _tenant: str = Depends(authed_tenant),
                 identity=Depends(require_platform_capability(Capability.view_customers)),
                 search: str | None = Query(default=None, max_length=200),
@@ -438,7 +488,7 @@ class WorkerDirectoryRow(AdminWorkerOut):
     tenant_id: str
 
 
-@router.get("/workers")
+@router.get("/workers", response_model=PaginatedOut[WorkerDirectoryRow])
 async def workers(request: Request, _tenant: str = Depends(authed_tenant),
                   _identity=Depends(require_platform_capability(Capability.view_customers)),
                   search: str | None = Query(default=None, max_length=200),
@@ -494,7 +544,24 @@ def _totals_json(totals) -> dict:
             "unpriced_calls": totals.unpriced_calls}
 
 
-@router.get("/ai-cost")
+class AiCostTotalsOut(BaseModel):
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    cost_nano_usd: int
+    unpriced_calls: int
+
+
+class AiCostOut(BaseModel):
+    window_days: int
+    totals: AiCostTotalsOut
+    tenant: dict[str, AiCostTotalsOut]
+    model: dict[str, AiCostTotalsOut]
+    operation: dict[str, AiCostTotalsOut]
+    day: dict[str, AiCostTotalsOut]
+
+
+@router.get("/ai-cost", response_model=AiCostOut)
 async def ai_cost(request: Request, _tenant: str = Depends(authed_tenant),
                   _identity=Depends(require_platform_capability(Capability.view_ai_cost)),
                   days: int = Query(default=30, ge=1, le=_MAX_WINDOW_DAYS)) -> dict:
@@ -515,7 +582,26 @@ async def ai_cost(request: Request, _tenant: str = Depends(authed_tenant),
     return {"window_days": days, "totals": _totals_json(totals), **breakdowns}
 
 
-@router.get("/worker-monitoring")
+class WorkerMonitoringRow(BaseModel):
+    tenant_id: str | None
+    id: str
+    name: str
+    status: str
+    enabled: bool
+    created_at: datetime
+    calls: int
+    last_seen: datetime | None
+    cost_nano_usd: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+
+
+class WorkerMonitoringOut(PaginatedOut[WorkerMonitoringRow]):
+    window_days: int
+    cost_visible: bool
+
+
+@router.get("/worker-monitoring", response_model=WorkerMonitoringOut)
 async def worker_monitoring(request: Request, _tenant: str = Depends(authed_tenant),
                             identity=Depends(require_platform_capability(Capability.view_customers)),
                             days: int = Query(default=30, ge=1, le=_MAX_WINDOW_DAYS),
@@ -527,7 +613,7 @@ async def worker_monitoring(request: Request, _tenant: str = Depends(authed_tena
                             sort: str | None = Query(default=None, max_length=32),
                             order: str = Query(default="desc", pattern="^(asc|desc)$"),
                             page: int = Query(default=1, ge=1),
-                            page_size: int = Query(default=PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE)) -> dict:
+                            page_size: int = Query(default=PAGE_SIZE, ge=1, le=MAX_PAGE_SIZE)) -> JSONResponse:
     """Every worker with its state and recent activity (QIK-521).
 
     Answers "is this worker alive and being used", which previously required opening each customer and
@@ -537,6 +623,16 @@ async def worker_monitoring(request: Request, _tenant: str = Depends(authed_tena
     Visible to view_customers because worker state is operational, but the COST columns are returned
     only to a view_ai_cost holder. Ungating spend here would have made this endpoint a way around the
     /admin/ai-cost gate, which is the mistake QIK-515/516 made with platform authority.
+
+    Returns a JSONResponse directly rather than a plain dict: response_model's field-level typing
+    cannot express "these 3 fields are omitted entirely for some callers, while last_seen (also
+    Optional) must always stay present, even as null" in one static schema.
+    response_model_exclude_none would drop last_seen too, which test_ai_cost_and_monitoring.py's
+    existing test_monitoring_lists_every_worker_with_activity already depends on reading directly
+    (row["last_seen"], no .get()). WorkerMonitoringOut above still documents the real shape in
+    OpenAPI; this bypasses it only for the actual runtime serialization, the same established
+    pattern as erase_subject() below for the same reason (a Response subclass returned from a
+    handler is passed through unchanged).
     """
     show_cost = identity is not None and identity.can(Capability.view_ai_cost)
     start, end = _window(days)
@@ -572,11 +668,70 @@ async def worker_monitoring(request: Request, _tenant: str = Depends(authed_tena
     rows.sort(key=lambda row: (-row["calls"], row["tenant_id"] or "", row["id"]))
     rows = apply_sort(rows, MONITORING_SORTS, sort, order)
     result = paginate(rows, page=page, page_size=page_size)
-    return {"total": result["total"], "page": result["page"], "page_size": page_size,
-            "window_days": days, "cost_visible": show_cost, "items": result["items"]}
+    payload = {"total": result["total"], "page": result["page"], "page_size": page_size,
+               "window_days": days, "cost_visible": show_cost, "items": result["items"]}
+    return JSONResponse(content=jsonable_encoder(payload))
 
 
-@router.get("/system")
+class ProbeOut(BaseModel):
+    name: str
+    ok: bool
+    detail: str | None
+    latency_ms: int | None
+
+
+class ProcessStatsOut(BaseModel):
+    uptime_seconds: int
+    started_at: str
+    pid: int
+    python: str
+    platform: str
+    max_rss_kb: int
+    cpu_user_seconds: float
+    cpu_system_seconds: float
+    load_average: list[float] | None
+    cpu_count: int | None
+
+
+class DatabaseStatsOut(BaseModel):
+    available: bool
+    reason: str | None = None
+    size_bytes: int | None = None
+    connections_total: int | None = None
+    connections_active: int | None = None
+    connections_limit: int | None = None
+
+
+class RedisStatsOut(BaseModel):
+    available: bool
+    reason: str | None = None
+    used_memory_bytes: int | None = None
+    max_memory_bytes: int | None = None
+    connected_clients: int | None = None
+    evicted_keys: int | None = None
+    rejected_connections: int | None = None
+    uptime_seconds: int | None = None
+
+
+class QueueStatsOut(BaseModel):
+    available: bool
+    reason: str | None = None
+    queue: str | None = None
+    depth: int | None = None
+
+
+class SystemOut(BaseModel):
+    ready: bool
+    checks: list[ProbeOut]
+    process: ProcessStatsOut
+    database: DatabaseStatsOut
+    redis: RedisStatsOut
+    queue: QueueStatsOut
+    environment: str
+    version: str
+
+
+@router.get("/system", response_model=SystemOut)
 async def system(request: Request, _tenant: str = Depends(authed_tenant),
                  _identity=Depends(require_platform_capability(Capability.view_system_stats))) -> dict:
     """Infrastructure health and capacity (QIK-518).
@@ -639,7 +794,22 @@ def _cap_json(cap) -> dict:
             "updated_at": cap.updated_at.isoformat()}
 
 
-@router.get("/cost-caps")
+class CostCapOut(BaseModel):
+    tenant_id: str
+    agent_id: str | None
+    monthly_cap_nano_usd: int
+    unlimited: bool
+    alert_threshold_pct: int
+    updated_by_email: str | None
+    updated_at: str
+
+
+class CostCapsListOut(BaseModel):
+    platform_key: str
+    items: list[CostCapOut]
+
+
+@router.get("/cost-caps", response_model=CostCapsListOut)
 async def cost_caps(request: Request, _tenant: str = Depends(authed_tenant),
                     _identity=Depends(require_platform_capability(Capability.view_ai_cost))) -> dict:
     """Every configured cap. Readable with view_ai_cost, since a cap is part of the spend picture."""
@@ -647,7 +817,7 @@ async def cost_caps(request: Request, _tenant: str = Depends(authed_tenant),
     return {"platform_key": PLATFORM, "items": [_cap_json(cap) for cap in caps]}
 
 
-@router.put("/cost-caps/{tenant_id}", openapi_extra=_CSRF_OPENAPI)
+@router.put("/cost-caps/{tenant_id}", response_model=CostCapOut, openapi_extra=_CSRF_OPENAPI)
 async def set_cost_cap(tenant_id: str, body: CostCapBody, request: Request,
                        agent_id: str | None = Query(default=None, max_length=64),
                        claims: dict = Depends(current_claims),
@@ -690,7 +860,12 @@ async def set_cost_cap(tenant_id: str, body: CostCapBody, request: Request,
     return _cap_json(saved)
 
 
-@router.delete("/cost-caps/{tenant_id}", openapi_extra=_CSRF_OPENAPI)
+class CostCapRemovedOut(BaseModel):
+    removed: str
+    agent_id: str | None
+
+
+@router.delete("/cost-caps/{tenant_id}", response_model=CostCapRemovedOut, openapi_extra=_CSRF_OPENAPI)
 async def delete_cost_cap(tenant_id: str, request: Request,
                           agent_id: str | None = Query(default=None, max_length=64),
                           claims: dict = Depends(current_claims),
@@ -721,7 +896,16 @@ class TenantRoleBody(BaseModel):
     reason: str | None = Field(default=None, max_length=1000)
 
 
-@router.put("/users/{user_id}/role", openapi_extra=_CSRF_OPENAPI)
+class TenantRoleChangeOut(BaseModel):
+    id: str
+    email: str
+    tenant_id: str | None
+    role: str
+    role_label: str
+    previous_role: str
+
+
+@router.put("/users/{user_id}/role", response_model=TenantRoleChangeOut, openapi_extra=_CSRF_OPENAPI)
 async def set_tenant_role(user_id: str, body: TenantRoleBody, request: Request,
                           claims: dict = Depends(current_claims),
                           _tenant: str = Depends(authed_tenant),
@@ -791,7 +975,13 @@ class WorkerStatusBody(BaseModel):
     reason: str | None = Field(default=None, max_length=1000)
 
 
-@router.put("/workers/{tenant_id}/{agent_id}/status", openapi_extra=_CSRF_OPENAPI)
+class WorkerStatusChangeOut(AdminWorkerOut):
+    tenant_id: str
+    changed: bool
+
+
+@router.put("/workers/{tenant_id}/{agent_id}/status", response_model=WorkerStatusChangeOut,
+           openapi_extra=_CSRF_OPENAPI)
 async def set_worker_status(tenant_id: str, agent_id: str, body: WorkerStatusBody, request: Request,
                             claims: dict = Depends(current_claims),
                             _tenant: str = Depends(authed_tenant),
@@ -844,7 +1034,52 @@ async def set_worker_status(tenant_id: str, agent_id: str, body: WorkerStatusBod
     return _worker_json(updated) | {"tenant_id": tenant_id, "changed": True}
 
 
-@router.get("/audit")
+class AuditEventOut(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    event_id: str
+    action: str
+    category: str
+    outcome: str
+    message: str
+    occurred_at: str
+    actor_type: str
+    actor_id: str | None
+    actor_label: str | None
+    on_behalf_of: str | None
+    target_type: str
+    target_id: str | None
+    target_label: str | None
+    tenant_id: str | None
+    request_id: str | None
+    source_ip: str | None
+    user_agent: str | None
+    route: str | None
+    service: str
+    environment: str
+    changes: dict
+    metadata: dict
+    reason: str | None
+    # A field starting with "_" is a private attribute in Pydantic and is NOT serialized by
+    # default; the store's own row key is literally "_cursor" (app/modules/audit/service.py's
+    # list()), so this must be aliased rather than named directly, or the key silently vanishes
+    # from the response. Verified: response_model_by_alias defaults to True in FastAPI, so this
+    # round-trips as "_cursor" over the wire with no extra route configuration.
+    cursor: str = Field(alias="_cursor")
+
+
+class AuditListOut(BaseModel):
+    items: list[AuditEventOut]
+    next_cursor: str | None
+    has_more: bool
+    # Optional: admin_audit()'s own defensive early return (request.app.state has no "audit"
+    # attribute at all) produces a shorter dict missing these two - a state this test suite
+    # never wires, but the model should describe every real return path, not just the common one.
+    window_days: int | None = None
+    hidden_actions: int | None = None
+
+
+@router.get("/audit", response_model=AuditListOut)
 async def admin_audit(request: Request, _tenant: str = Depends(authed_tenant),
                       identity=Depends(require_platform_capability(Capability.view_audit)),
                       action: str | None = Query(default=None, max_length=64),
@@ -910,7 +1145,18 @@ async def admin_audit(request: Request, _tenant: str = Depends(authed_tenant),
             "hidden_actions": len(hidden)}
 
 
-@router.get("/audit/actions")
+class AuditActionOut(BaseModel):
+    action: str
+    category: str
+    target_type: str
+
+
+class AuditActionCatalogueOut(BaseModel):
+    categories: list[str]
+    actions: list[AuditActionOut]
+
+
+@router.get("/audit/actions", response_model=AuditActionCatalogueOut)
 async def audit_action_catalogue(
         _tenant: str = Depends(authed_tenant),
         identity=Depends(require_platform_capability(Capability.view_audit))) -> dict:
@@ -939,7 +1185,14 @@ class EraseSubjectBody(BaseModel):
     request_ref: str = Field(min_length=1, max_length=64)
 
 
-@router.post("/audit/erase", openapi_extra=_CSRF_OPENAPI)
+class AuditEraseAcceptedOut(BaseModel):
+    pseudonym: str
+    request_ref: str
+    status: str
+    where_to_check: str
+
+
+@router.post("/audit/erase", response_model=AuditEraseAcceptedOut, openapi_extra=_CSRF_OPENAPI)
 async def erase_subject(body: EraseSubjectBody, request: Request,
                         claims: dict = Depends(current_claims),
                         _tenant: str = Depends(authed_tenant),
@@ -990,7 +1243,14 @@ async def erase_subject(body: EraseSubjectBody, request: Request,
         "where_to_check": f"/audit?q={body.request_ref}"})
 
 
-@router.get("/audit/retention")
+class AuditRetentionOut(BaseModel):
+    event_retention_days: int
+    network_retention_days: int
+    erasure: str
+    archive: str
+
+
+@router.get("/audit/retention", response_model=AuditRetentionOut)
 async def audit_retention_policy(_tenant: str = Depends(authed_tenant),
                                  _identity=Depends(require_platform_capability(Capability.view_audit))) -> dict:
     """The retention policy as the code enforces it, not as a document claims.
