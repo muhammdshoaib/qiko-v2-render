@@ -14,8 +14,16 @@ from app.core.config import Environment, Settings
 from app.core.db import build_engine, build_sessionmaker
 from app.db.provisioning import ProvisioningError, ProvisioningResult, TenantManifest, provision_tenant
 
-
-_REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+# One level up from scripts/provision_tenant.py: the qiko-core package root (pyproject.toml,
+# app/, scripts/). NOT parents[2] -- that was the outer QIKO_V2/platform monorepo root, which
+# only exists in a local git checkout. Every deployed container (preprod, live) builds from the
+# qiko-core/ directory as its own image context, so /app *is* qiko-core's root with nothing
+# above it; parents[2] resolved to "/" there, which made every possible manifest path compare
+# equal-or-under _REPOSITORY_ROOT and get rejected as "inside the repository" -- this script
+# could not run in any deployed environment until this was caught (discovered while actually
+# running it against preprod, JM2-1042). qiko-core/ is still a safe boundary for this check: any
+# manifest inside it is necessarily inside the outer monorepo too, so nothing to weaken here.
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 _MAX_MANIFEST_BYTES = 1024 * 1024
 
 

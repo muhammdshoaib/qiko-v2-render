@@ -56,8 +56,18 @@ def _counts(engine):
         )
 
 
+def test_repository_root_is_qiko_core_not_the_outer_monorepo():
+    """Regression for the bug found running this against a deployed container (JM2-1042):
+    every container builds from qiko-core/ as its own image root, so a repo-root computed as
+    "two levels up" resolved to "/" there -- rejecting every possible manifest path as "inside
+    the repository". qiko-core/ (one level up, with its own pyproject.toml) is the correct
+    boundary in both a local monorepo checkout and a deployed container."""
+    assert (provision_tenant._REPOSITORY_ROOT / "pyproject.toml").is_file()
+    assert (provision_tenant._REPOSITORY_ROOT / "scripts" / "provision_tenant.py").is_file()
+
+
 def test_manifest_inside_git_repository_is_rejected(monkeypatch, capsys):
-    repository_root = Path(provision_tenant.__file__).resolve().parents[2]
+    repository_root = Path(provision_tenant.__file__).resolve().parents[1]
     path = repository_root / "operator-test-manifest.json"
     path.write_text("{}", encoding="utf-8")
     try:
