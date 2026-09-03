@@ -8,7 +8,7 @@ import {
   AlertTriangle, ArrowLeft, BarChart3, Bot, BrainCircuit, Calendar, ChevronDown, ChevronUp, CircleCheck,
   Copy, Database, ExternalLink, FileText, GraduationCap, HelpCircle, KeyRound, Library, Link2, ListChecks,
   Loader2, Lock, Mail, MessageCircle,
-  MessageSquare, Phone, Plus, Search, SendHorizonal, Settings, Share2, Smartphone, Sparkles, Trash2, Upload, Users, Zap,
+  MessageSquare, Phone, Plus, Search, SendHorizonal, Settings, Share2, Sparkles, Trash2, Upload, Users, Zap,
   type LucideIcon,
 } from "lucide-react";
 import { Badge, Button, Card, CardContent, Dialog, Input, Label, Skeleton, cn } from "@qiko/ui";
@@ -28,7 +28,7 @@ import {
   disconnectGmail, disconnectSlack,
   deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, financeChat, generateWorkerApiKey, getAgentAnalytics,
   getCalendlyCredentials,
-  getClickUpCredentials, getFinanceHistory, getGmailCredentials, getInteraktStatus, getIntelligenceChatHistory,
+  getClickUpCredentials, getFinanceHistory, getGmailCredentials, getIntelligenceChatHistory,
   getSalesforceCredentials, getSlackCredentials,
   getTeamsWebhookStatus, getVapiCredentials, getWorkerApiKeyStatus, ingest, ingestFile, listAgents, listDocuments,
   markReady, me, revokeWorkerApiKey,
@@ -317,13 +317,17 @@ function CrmTab({ id, readOnly }: { id: string; readOnly?: boolean }) {
   );
 }
 
+// WhatsApp/Interakt is deliberately NOT here: it will live on its own worker under the
+// joseph-mews tenant (a separate Agent, not a connection on this one), so it does not belong
+// on this generic per-worker Connections tab. See GET /agents/{id}/interakt-status on the
+// backend, kept as-is for that future worker to use once it exists.
 const CONNECTIONS_SUBTABS = [
-  "Voice", "Calendly", "ClickUp", "Slack", "Gmail", "Teams", "Salesforce", "WhatsApp", "API Access",
+  "Voice", "Calendly", "ClickUp", "Slack", "Gmail", "Teams", "Salesforce", "API Access",
 ] as const;
 // Icon per connection (a map, not a nested ternary, so this stays readable as connections grow).
 const CONNECTION_ICONS: Record<(typeof CONNECTIONS_SUBTABS)[number], LucideIcon> = {
   Voice: Phone, Calendly: Calendar, ClickUp: ListChecks, Slack: MessageCircle, Gmail: Mail,
-  Teams: Users, Salesforce: Share2, WhatsApp: Smartphone, "API Access": KeyRound,
+  Teams: Users, Salesforce: Share2, "API Access": KeyRound,
 };
 
 function ConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
@@ -346,7 +350,6 @@ function ConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
       {sub === "Gmail" && <GmailSubTab id={id} />}
       {sub === "Teams" && <TeamsSubTab id={id} />}
       {sub === "Salesforce" && <SalesforceSubTab id={id} />}
-      {sub === "WhatsApp" && <InteraktSubTab id={id} />}
       {sub === "API Access" && <WorkerApiKeySubTab id={id} />}
     </div>
   );
@@ -424,43 +427,6 @@ function SalesforceSubTab({ id }: { id: string }) {
         )}
         {testResult === "ok" && <p className="text-xs text-emerald-600">Connection works.</p>}
         {testResult === "error" && <p className="text-xs text-red-500">Couldn&apos;t authenticate with Salesforce -- check the client id/secret and instance URL.</p>}
-      </CardContent></Card>
-    </div>
-  );
-}
-
-// Read-only: interakt_api_key/interakt_webhook_secret/whatsapp_phone_number_id are global env
-// config shared by the whole deployment (app/core/config.py on the backend), not a per-worker
-// credential like the connections above -- so there is nothing here to save, test or disconnect.
-function InteraktSubTab({ id }: { id: string }) {
-  const status = useQuery({ queryKey: ["interakt-status", id], queryFn: () => getInteraktStatus(id) });
-  const connected = !!status.data?.configured && !!status.data?.phone_number_configured;
-  return (
-    <div className="space-y-4">
-      <div>
-        <p className="font-medium">Interakt / WhatsApp</p>
-        <p className="text-sm text-muted-foreground">Lets this worker receive and reply to WhatsApp messages through Interakt.</p>
-      </div>
-      <Card><CardContent className="space-y-3 pt-6">
-        <div className="flex items-center gap-2">
-          <span className="text-sm">Status:</span>
-          {status.isLoading ? (
-            <span className="text-sm text-muted-foreground">Checking...</span>
-          ) : (
-            <Badge variant={connected ? "success" : "muted"} dot={connected}>
-              {connected ? "Connected" : "Not configured"}
-            </Badge>
-          )}
-        </div>
-        <p className="text-xs text-muted-foreground">
-          Configured by the platform team via environment settings, not from here. This is a single,
-          shared WhatsApp connection for the whole deployment, not a per-worker credential.
-        </p>
-        {status.isError && (
-          <p className="text-xs text-red-500">
-            Couldn&apos;t load the Interakt/WhatsApp status. <button className="underline" onClick={() => status.refetch()}>Retry</button>
-          </p>
-        )}
       </CardContent></Card>
     </div>
   );
