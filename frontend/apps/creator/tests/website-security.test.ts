@@ -57,17 +57,19 @@ test("preprod and live expose one strict creator CSP without unsafe eval or broa
     assert.match(caddy, /frame-ancestors 'self'/, filename);
     // frame-ancestors * is allowed in exactly ONE CSP header value (the public embed surface).
     assert.equal((caddy.match(/Content-Security-Policy "[^"]*frame-ancestors \*/g) ?? []).length, 1, filename);
-    // An external scan flagged 'unsafe-inline' in script-src as "CSP implemented unsafely."
-    // Neither app/admin CSP needs it (no inline <script> tags in either app -- the
-    // dangerouslySetInnerHTML content on app/page.tsx and qiko-website-v2's HtmlPage.tsx is
-    // style-attribute-only, no <script>), so it's removed from script-src for both. style-src
-    // keeps 'unsafe-inline' -- both apps use React's style={{...}} prop extensively, and CSP
-    // nonces don't cover inline style attributes, only <style>/<script> elements; removing it
-    // would need a much larger CSS-classes refactor, tracked separately.
+    // #205 removed 'unsafe-inline' from script-src on the theory that neither app has any
+    // inline <script> tag of its own. That missed that the App Router's OWN streaming/RSC
+    // hydration mechanism injects several inline `self.__next_f.push(...)` <script> tags into
+    // every page, on every Next.js app, regardless of what the app's own source contains --
+    // CSP has no way to distinguish those from any other inline script. Deployed to preprod,
+    // this blocked every one of those on every page load: Next.js could never hydrate, so
+    // every page (creator, admin, marketing) rendered a permanently blank screen. Restored
+    // here; a nonce-based CSP (Next.js supports emitting its own nonce'd scripts if the
+    // response carries one) is the real fix for the original scan finding, tracked separately
+    // since it needs middleware changes in three Next.js apps, not just this file.
     for (const directive of caddy.matchAll(/Content-Security-Policy "([^"]+)"/g)) {
       const scriptSrc = /script-src ([^;]+)/.exec(directive[1])?.[1] ?? "";
-      const isEmbed = directive[1].includes("frame-ancestors *");
-      if (!isEmbed) assert.doesNotMatch(scriptSrc, /unsafe-inline/, `${filename}: ${directive[1]}`);
+      assert.match(scriptSrc, /'unsafe-inline'/, `${filename}: ${directive[1]}`);
       assert.match(directive[1], /style-src 'self' 'unsafe-inline'/, filename);
     }
   }
