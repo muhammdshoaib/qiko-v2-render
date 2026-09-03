@@ -15,6 +15,11 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 
 from app.core.config import Settings, get_settings
 from app.modules.ai.gateway import get_provider
+from app.modules.joseph_mews.portfolio_insights import (
+    PropertyInsightRequest,
+    PropertyInsightResult,
+    generate_property_insight,
+)
 from app.modules.joseph_mews.signal_summary import (
     SignalSummarizeRequest,
     SignalSummaryResult,
@@ -30,26 +35,31 @@ _KNOWN_TENANT = "joseph-mews"
 
 @dataclass
 class _ResultCache:
-    """Caches a completed summarize result per requestId so a retried call after a client-side
-    timeout returns the same result instead of drafting a second, possibly different, summary.
-    Same bounded/in-memory tradeoff as channels.webhooks.IdempotencyGuard: fine for a single
-    replica, needs Redis before scaling out."""
+    """Caches a completed generation result per requestId so a retried call after a
+    client-side timeout returns the same result instead of drafting a second, possibly
+    different, one. Shared by both generation endpoints below (signal summaries, property
+    insights) since both need exactly the same idempotency behaviour. Same bounded/in-memory
+    tradeoff as channels.webhooks.IdempotencyGuard: fine for a single replica, needs Redis
+    before scaling out."""
 
     max_entries: int = 10_000
-    _results: OrderedDict[str, SignalSummaryResult | None] = field(default_factory=OrderedDict)
+    _results: OrderedDict[str, SignalSummaryResult | PropertyInsightResult | None] = field(
+        default_factory=OrderedDict
+    )
 
-    def get(self, request_id: str) -> tuple[bool, SignalSummaryResult | None]:
+    def get(self, request_id: str) -> tuple[bool, SignalSummaryResult | PropertyInsightResult | None]:
         if request_id in self._results:
             return True, self._results[request_id]
         return False, None
 
-    def put(self, request_id: str, result: SignalSummaryResult | None) -> None:
+    def put(self, request_id: str, result: SignalSummaryResult | PropertyInsightResult | None) -> None:
         self._results[request_id] = result
         while len(self._results) > self.max_entries:
             self._results.popitem(last=False)
 
 
 _cache = _ResultCache()
+_insight_cache = _ResultCache()
 
 
 async def require_jm_backend(
@@ -73,14 +83,25 @@ async def require_jm_backend(
 async def summarize_signal_endpoint(tenant_id: str, body: SignalSummarizeRequest) -> dict:
     seen, cached = _cache.get(body.requestId)
     if seen:
-        return _response(body.requestId, cached)
+        return _signal_response(body.requestId, cached)
 
     result = await asyncio.to_thread(summarize_signal, body, get_provider())
     _cache.put(body.requestId, result)
-    return _response(body.requestId, result)
+    return _signal_response(body.requestId, result)
 
 
-def _response(request_id: str, result: SignalSummaryResult | None) -> dict:
+@router.post("/insights/property", dependencies=[Depends(require_jm_backend)])
+async def property_insight_endpoint(tenant_id: str, body: PropertyInsightRequest) -> dict:
+    seen, cached = _insight_cache.get(body.requestId)
+    if seen:
+        return _insight_response(body.requestId, cached)
+
+    result = await asyncio.to_thread(generate_property_insight, body, get_provider())
+    _insight_cache.put(body.requestId, result)
+    return _insight_response(body.requestId, result)
+
+
+def _signal_response(request_id: str, result: SignalSummaryResult | None) -> dict:
     if result is None:
         return {
             "requestId": request_id,
@@ -92,3 +113,12 @@ def _response(request_id: str, result: SignalSummaryResult | None) -> dict:
         "suggestedNextAction": result.suggestedNextAction,
         "groundedIn": result.groundedIn,
     }
+
+
+def _insight_response(request_id: str, result: PropertyInsightResult | None) -> dict:
+    if result is None:
+        return {
+            "requestId": request_id,
+            "error": {"code": "GENERATION_FAILED", "message": "could not draft a grounded insight"},
+        }
+    return {"requestId": request_id, "summary": result.summary, "groundedIn": result.groundedIn}
