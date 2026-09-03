@@ -108,6 +108,21 @@ def test_system_prompt_forbids_suggested_actions_and_mortgage_or_projection_deta
     assert "mortgage" in provider.seen_system.lower()
 
 
+def test_generate_property_insight_uses_the_agents_config_when_supplied():
+    provider = _CannedProvider(json.dumps({"summary": "Strong yield here."}))
+    agent_config = {"guardrails": ["Never mention a competitor by name."]}
+    generate_property_insight(_request(), provider, agent_config)
+    assert "Never mention a competitor by name." in provider.seen_system
+    # the fixed safety constraint is never displaced by the agent's own guardrails
+    assert "not suggest any action" in provider.seen_system
+
+
+def test_generate_property_insight_falls_back_when_agent_config_is_none():
+    provider = _CannedProvider(json.dumps({"summary": "Strong yield here."}))
+    generate_property_insight(_request(), provider, None)
+    assert "Use ONLY the facts explicitly supplied to you" in provider.seen_system
+
+
 def test_request_defaults_investor_and_portfolio_averages_to_empty():
     request = PropertyInsightRequest.model_validate({
         "requestId": "req-2", "property": {"id": 1, "grossYieldPct": 5.0},
