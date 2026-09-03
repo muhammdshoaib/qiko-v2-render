@@ -5,14 +5,19 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowLeft, Bot, BrainCircuit, Calendar, ChevronDown, ChevronUp, CircleCheck,
-  Database, ExternalLink, FileText, GraduationCap, HelpCircle, Library, Link2, ListChecks, Loader2, Lock, Mail, MessageCircle,
-  MessageSquare, Phone, Plus, Search, SendHorizonal, Settings, Share2, Sparkles, Trash2, Upload, Users, Zap,
+  AlertTriangle, ArrowLeft, BarChart3, Bot, BrainCircuit, Calendar, ChevronDown, ChevronUp, CircleCheck,
+  Copy, Database, ExternalLink, FileText, GraduationCap, HelpCircle, KeyRound, Library, Link2, ListChecks,
+  Loader2, Lock, Mail, MessageCircle,
+  MessageSquare, Phone, Plus, Search, SendHorizonal, Settings, Share2, Smartphone, Sparkles, Trash2, Upload, Users, Zap,
   type LucideIcon,
 } from "lucide-react";
 import { Badge, Button, Card, CardContent, Dialog, Input, Label, Skeleton, cn } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import { useConfirmActionDialog } from "@/components/confirm-action-dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { WorkerAvatar } from "@/components/worker-avatar";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import { CrmPipeline } from "@/components/crm-pipeline";
@@ -21,9 +26,12 @@ import { WorkerVoiceCall } from "@/components/worker-voice-call";
 import {
   addFaq, addPolicy, addWebsite, ask, askIntelligence, connectTeamsWebhook, disconnectCalendly, disconnectClickUp,
   disconnectGmail, disconnectSlack,
-  deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, financeChat, getCalendlyCredentials,
-  getClickUpCredentials, getFinanceHistory, getGmailCredentials, getIntelligenceChatHistory, getSalesforceCredentials, getSlackCredentials,
-  getTeamsWebhookStatus, getVapiCredentials, ingest, ingestFile, listAgents, listDocuments, markReady, me,
+  deleteDocument, disconnectSalesforce, disconnectTeamsWebhook, financeChat, generateWorkerApiKey, getAgentAnalytics,
+  getCalendlyCredentials,
+  getClickUpCredentials, getFinanceHistory, getGmailCredentials, getInteraktStatus, getIntelligenceChatHistory,
+  getSalesforceCredentials, getSlackCredentials,
+  getTeamsWebhookStatus, getVapiCredentials, getWorkerApiKeyStatus, ingest, ingestFile, listAgents, listDocuments,
+  markReady, me, revokeWorkerApiKey,
   saveCalendlyCredentials, saveClickUpCredentials, saveGmailCredentials, saveSalesforceCredentials,
   saveSlackCredentials, saveVapiCredentials,
   testCalendlyConnection, testClickUpConnection, testGmailConnection, testSalesforceConnection,
@@ -37,9 +45,10 @@ import {
 } from "@/lib/behavior-config";
 import { workerTypeLabel } from "@/lib/stringUtils";
 
-type Tab = "Overview" | "Chat" | "Train" | "Sources" | "CRM" | "Connections" | "Settings";
+type Tab = "Overview" | "Analytics" | "Chat" | "Train" | "Sources" | "CRM" | "Connections" | "Settings";
 const TABS: { id: Tab; icon: LucideIcon; locked?: boolean }[] = [
   { id: "Overview", icon: Sparkles },
+  { id: "Analytics", icon: BarChart3 },
   { id: "Chat", icon: MessageSquare },
   { id: "Train", icon: GraduationCap },
   { id: "Sources", icon: Database },
@@ -179,6 +188,7 @@ export default function WorkerDetailPage() {
 
         <div className="min-w-0 flex-1 overflow-x-hidden overflow-y-auto p-4 sm:p-6">
           {tab === "Overview" && <OverviewTab id={id} worker={worker} />}
+          {tab === "Analytics" && <AnalyticsTab id={id} />}
           {tab === "Train" && !isViewer && (
             <TrainTab id={id} worker={worker} docs={docs.data} loading={docs.isLoading}
               onKnowledgeChange={refresh} onWorkerChange={refreshAgents} />
@@ -260,6 +270,45 @@ function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
   );
 }
 
+// Usage volume for this worker -- calls and tokens, deliberately not cost. Cost stays admin-only
+// (see AgentUsageStats on the backend); this is the view every tenant role, including a viewer,
+// should always be able to see for their own worker.
+const ANALYTICS_STATS: { key: "calls" | "input_tokens" | "output_tokens" | "unpriced_calls"; label: string }[] = [
+  { key: "calls", label: "Total calls" },
+  { key: "input_tokens", label: "Input tokens" },
+  { key: "output_tokens", label: "Output tokens" },
+  { key: "unpriced_calls", label: "Calls pending pricing data" },
+];
+
+function AnalyticsTab({ id }: { id: string }) {
+  const analytics = useQuery({ queryKey: ["agent-analytics", id], queryFn: () => getAgentAnalytics(id) });
+  return (
+    <div className="min-w-0 space-y-6">
+      <div>
+        <h1 className="text-xl font-bold text-foreground sm:text-2xl">Analytics</h1>
+        <p className="text-sm text-muted-foreground sm:text-base">Usage volume for this worker -- calls and tokens, not cost.</p>
+      </div>
+      {analytics.isError && (
+        <div className="text-sm text-slate-300">
+          Couldn&apos;t load usage analytics. <button className="text-cyan-300 underline" onClick={() => analytics.refetch()}>Retry</button>
+        </div>
+      )}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {ANALYTICS_STATS.map((s) => (
+          <Card key={s.key}><CardContent className="space-y-1 pt-6">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{s.label}</p>
+            {analytics.isLoading ? (
+              <Skeleton className="h-8 w-20" />
+            ) : (
+              <p className="text-2xl font-bold text-white">{(analytics.data?.[s.key] ?? 0).toLocaleString()}</p>
+            )}
+          </CardContent></Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function CrmTab({ id, readOnly }: { id: string; readOnly?: boolean }) {
   return (
     <div className="h-[70vh]">
@@ -268,18 +317,20 @@ function CrmTab({ id, readOnly }: { id: string; readOnly?: boolean }) {
   );
 }
 
-const CONNECTIONS_SUBTABS = ["Voice", "Calendly", "ClickUp", "Slack", "Gmail", "Teams", "Salesforce"] as const;
+const CONNECTIONS_SUBTABS = [
+  "Voice", "Calendly", "ClickUp", "Slack", "Gmail", "Teams", "Salesforce", "WhatsApp", "API Access",
+] as const;
 // Icon per connection (a map, not a nested ternary, so this stays readable as connections grow).
 const CONNECTION_ICONS: Record<(typeof CONNECTIONS_SUBTABS)[number], LucideIcon> = {
   Voice: Phone, Calendly: Calendar, ClickUp: ListChecks, Slack: MessageCircle, Gmail: Mail,
-  Teams: Users, Salesforce: Share2,
+  Teams: Users, Salesforce: Share2, WhatsApp: Smartphone, "API Access": KeyRound,
 };
 
 function ConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
   const [sub, setSub] = useState<(typeof CONNECTIONS_SUBTABS)[number]>("Voice");
   return (
     <div className="space-y-4">
-      <div className="flex gap-1 rounded-lg bg-muted p-1">
+      <div className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">
         {CONNECTIONS_SUBTABS.map((s) => (
           <button key={s} onClick={() => setSub(s)}
             className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
@@ -295,6 +346,8 @@ function ConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
       {sub === "Gmail" && <GmailSubTab id={id} />}
       {sub === "Teams" && <TeamsSubTab id={id} />}
       {sub === "Salesforce" && <SalesforceSubTab id={id} />}
+      {sub === "WhatsApp" && <InteraktSubTab id={id} />}
+      {sub === "API Access" && <WorkerApiKeySubTab id={id} />}
     </div>
   );
 }
@@ -373,6 +426,154 @@ function SalesforceSubTab({ id }: { id: string }) {
         {testResult === "error" && <p className="text-xs text-red-500">Couldn&apos;t authenticate with Salesforce -- check the client id/secret and instance URL.</p>}
       </CardContent></Card>
     </div>
+  );
+}
+
+// Read-only: interakt_api_key/interakt_webhook_secret/whatsapp_phone_number_id are global env
+// config shared by the whole deployment (app/core/config.py on the backend), not a per-worker
+// credential like the connections above -- so there is nothing here to save, test or disconnect.
+function InteraktSubTab({ id }: { id: string }) {
+  const status = useQuery({ queryKey: ["interakt-status", id], queryFn: () => getInteraktStatus(id) });
+  const connected = !!status.data?.configured && !!status.data?.phone_number_configured;
+  return (
+    <div className="space-y-4">
+      <div>
+        <p className="font-medium">Interakt / WhatsApp</p>
+        <p className="text-sm text-muted-foreground">Lets this worker receive and reply to WhatsApp messages through Interakt.</p>
+      </div>
+      <Card><CardContent className="space-y-3 pt-6">
+        <div className="flex items-center gap-2">
+          <span className="text-sm">Status:</span>
+          {status.isLoading ? (
+            <span className="text-sm text-muted-foreground">Checking...</span>
+          ) : (
+            <Badge variant={connected ? "success" : "muted"} dot={connected}>
+              {connected ? "Connected" : "Not configured"}
+            </Badge>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Configured by the platform team via environment settings, not from here. This is a single,
+          shared WhatsApp connection for the whole deployment, not a per-worker credential.
+        </p>
+        {status.isError && (
+          <p className="text-xs text-red-500">
+            Couldn&apos;t load the Interakt/WhatsApp status. <button className="underline" onClick={() => status.refetch()}>Retry</button>
+          </p>
+        )}
+      </CardContent></Card>
+    </div>
+  );
+}
+
+// Self-service worker API key: the credential external systems (jm-backend, joseph-mews-backend, or
+// any other authorised system) send back as X-Api-Key to call this tenant's insights/property and
+// signals/summarize endpoints on this worker's behalf. Shown once at generation; only its hash is
+// stored server-side, so a lost key means rotating it, not recovering the old one.
+function WorkerApiKeySubTab({ id }: { id: string }) {
+  const qc = useQueryClient();
+  const status = useQuery({ queryKey: ["worker-api-key", id], queryFn: () => getWorkerApiKeyStatus(id) });
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["worker-api-key", id] });
+  const [revealedKey, setRevealedKey] = useState<string | null>(null);
+  const generate = useMutation({
+    mutationFn: () => generateWorkerApiKey(id),
+    onSuccess: (data) => { setRevealedKey(data.api_key); invalidate(); },
+  });
+  const { openConfirmationDialog, closeConfirmationDialog, setPending, ConfirmActionDialog } = useConfirmActionDialog();
+  const revoke = useMutation({ mutationFn: () => revokeWorkerApiKey(id), onSuccess: invalidate });
+  const configured = status.data?.configured;
+
+  return (
+    <div className="space-y-4">
+      {ConfirmActionDialog}
+      <div>
+        <p className="font-medium">API Access</p>
+        <p className="text-sm text-muted-foreground">
+          Lets an external system (jm-backend, joseph-mews-backend, or any other authorised system)
+          call this tenant&apos;s insights and signals endpoints on this worker&apos;s behalf, using this
+          key as the <code className="rounded bg-white/10 px-1 py-0.5 text-xs">X-Api-Key</code> header.
+        </p>
+      </div>
+      <Card><CardContent className="space-y-4 pt-6">
+        <p className="text-sm">
+          Status:{" "}
+          {status.isLoading ? (
+            "Checking..."
+          ) : configured ? (
+            <span className="font-medium text-emerald-600">
+              API key configured{status.data?.generated_at ? `, generated ${new Date(status.data.generated_at).toLocaleString()}` : ""}
+            </span>
+          ) : (
+            <span className="font-medium">No API key configured</span>
+          )}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" disabled={generate.isPending} onClick={() => generate.mutate()}>
+            {generate.isPending ? "Generating..." : configured ? "Rotate key" : "Generate key"}
+          </Button>
+          {configured && (
+            <Button variant="outline" disabled={revoke.isPending}
+              onClick={(e) => openConfirmationDialog({
+                title: "Revoke this API key?",
+                description: "Any external system using this key to call this worker's insights/signals endpoints will stop working immediately. This cannot be undone.",
+                confirmLabel: "Revoke",
+                isDestructive: true,
+                onConfirm: () => {
+                  setPending(true);
+                  revoke.mutate(undefined, {
+                    onSuccess: () => closeConfirmationDialog(),
+                    onSettled: () => setPending(false),
+                  });
+                },
+              }, e.currentTarget)}>
+              Revoke
+            </Button>
+          )}
+        </div>
+        {generate.isError && <p className="text-xs text-red-500">Couldn&apos;t generate a key (needs editor role). Please try again.</p>}
+        {revoke.isError && <p className="text-xs text-red-500">Couldn&apos;t revoke the key (needs editor role). Please try again.</p>}
+      </CardContent></Card>
+      <WorkerApiKeyRevealDialog apiKey={revealedKey} onAcknowledge={() => setRevealedKey(null)} />
+    </div>
+  );
+}
+
+// The plaintext key is present in exactly one response (the POST above) and never again -- same
+// "shown once" contract as a GitHub/AWS token. This uses the raw AlertDialog primitives (rather than
+// useConfirmActionDialog) because it needs to render the key itself plus a copy button, not just a
+// title/description/confirm button.
+function WorkerApiKeyRevealDialog({ apiKey, onAcknowledge }: { apiKey: string | null; onAcknowledge: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const copyKey = async () => {
+    if (!apiKey) return;
+    try { await navigator.clipboard.writeText(apiKey); } catch { /* clipboard blocked; ignore */ }
+    setCopied(true);
+  };
+  return (
+    <AlertDialog open={!!apiKey} onOpenChange={(open) => { if (!open) { setCopied(false); onAcknowledge(); } }}>
+      <AlertDialogContent className="border-white/10 bg-[#0a0f1a] text-white">
+        <AlertDialogHeader>
+          <AlertDialogTitle>Copy this API key now</AlertDialogTitle>
+          <AlertDialogDescription className="text-slate-300">
+            This is the only time the full key is shown. Once you close this dialog it cannot be
+            retrieved again -- generating a new one is the only way back if you lose it.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="space-y-2">
+          <pre className="overflow-x-auto rounded bg-black/40 p-3 text-xs text-emerald-300"><code>{apiKey}</code></pre>
+          <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={copyKey}>
+            <Copy className="size-3.5" /> {copied ? "Copied" : "Copy key"}
+          </Button>
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogAction
+            className="bg-emerald-600 text-white hover:bg-emerald-500"
+            onClick={(event: React.MouseEvent) => { event.preventDefault(); setCopied(false); onAcknowledge(); }}>
+            I&apos;ve copied it, done
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

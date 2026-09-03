@@ -117,9 +117,14 @@ def test_the_router_writes_no_credential_without_auditing_it():
 
     router = (Path(__file__).resolve().parents[1] / "app" / "modules" / "agents" / "router.py").read_text()
     encrypt_writes = router.count("_encrypted\": encrypt(")
+    # worker-api-key is the one credential that is HASHED, not encrypted (it is verified by
+    # comparison, never decrypted/used elsewhere), so it never matches the "_encrypted": encrypt(
+    # shape above -- counted separately rather than widening that marker to match a pattern that
+    # is not actually an encrypted-at-rest secret.
+    hash_writes = router.count("worker_api_key_hash\": hash_password(")
     audited = router.count("CREDENTIAL_SET")
-    assert encrypt_writes == audited, (
-        f"{encrypt_writes} credential writes but {audited} audit calls")
+    assert encrypt_writes + hash_writes == audited, (
+        f"{encrypt_writes} encrypted + {hash_writes} hashed credential writes but {audited} audit calls")
 
 
 def test_the_credential_row_is_written_in_the_same_transaction(client):

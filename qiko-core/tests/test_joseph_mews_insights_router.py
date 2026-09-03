@@ -105,6 +105,45 @@ def test_insight_is_idempotent_on_request_id(client, monkeypatch):
     assert call_count["n"] == 1
 
 
+def test_insight_accepts_the_agents_own_generated_worker_api_key(client, monkeypatch):
+    # No settings.jm_backend_api_key configured at all -- only the Agent's self-service key.
+    from app.modules.agents.router import hash_password
+
+    asyncio.run(client.app.state.agents.store.add(Agent(
+        id="joseph-mews", tenant="joseph-mews", name="Joseph Mews",
+        config={"worker_api_key_hash": hash_password("agent-generated-key")},
+    )))
+
+    class Provider:
+        def generate(self, prompt, **_kwargs):
+            return type("R", (), {"text": json.dumps({"summary": "Strong yield here."})})()
+
+    import app.modules.joseph_mews.router as router_module
+    monkeypatch.setattr(router_module, "get_provider", lambda: Provider())
+
+    response = client.post(
+        "/api/v1/tenants/joseph-mews/insights/property", json=_payload("req-agent-key"),
+        headers={"X-Api-Key": "agent-generated-key", "X-Tenant-Id": "joseph-mews"},
+    )
+    assert response.status_code == 200
+    assert "error" not in response.json()
+
+
+def test_insight_rejects_the_wrong_key_even_when_the_agent_has_one_configured(client, monkeypatch):
+    from app.modules.agents.router import hash_password
+
+    asyncio.run(client.app.state.agents.store.add(Agent(
+        id="joseph-mews", tenant="joseph-mews", name="Joseph Mews",
+        config={"worker_api_key_hash": hash_password("agent-generated-key")},
+    )))
+
+    response = client.post(
+        "/api/v1/tenants/joseph-mews/insights/property", json=_payload("req-wrong-key"),
+        headers={"X-Api-Key": "totally-wrong-key", "X-Tenant-Id": "joseph-mews"},
+    )
+    assert response.status_code == 403
+
+
 def test_insight_uses_the_provisioned_agents_guardrails_over_the_hardcoded_default(client, monkeypatch):
     # 3 Sep, Razvan: the Creator Agent's config must actually control generation, not sit
     # disconnected from it.

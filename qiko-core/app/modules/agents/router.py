@@ -1,7 +1,9 @@
 """Agents HTTP API (tenant-scoped), gated by the subscription plan."""
 from __future__ import annotations
 
+import secrets
 from dataclasses import replace
+from datetime import UTC, datetime
 
 from urllib.parse import urlparse
 
@@ -25,6 +27,7 @@ from app.modules.audit import registry as audit_actions
 from app.modules.agents.service import AGENT_TYPES, Agent, PlanLimitError
 from app.modules.billing.plans import get_plan
 from app.modules.identity.rbac import Role
+from app.modules.identity.security import hash_password, verify_password
 from app.modules.workers.behavior import BEHAVIOR_CONFIG_KEYS, canonicalize_behavior_entries
 
 router = APIRouter(prefix="/agents", tags=["agents"])
@@ -38,7 +41,8 @@ router = APIRouter(prefix="/agents", tags=["agents"])
 _REDACTED_CONFIG_KEYS = ("vapi_api_key_encrypted", "salesforce_client_secret_encrypted",
                          "calendly_token_encrypted", "clickup_api_token_encrypted",
                          "slack_bot_token_encrypted", "gmail_app_password_encrypted",
-                         "github_token_encrypted", "qiko_track_token_encrypted")
+                         "github_token_encrypted", "qiko_track_token_encrypted",
+                         "worker_api_key_hash")
 
 
 # Keys the free-form patch must never WRITE. The list above already stops these being read back; not
@@ -63,6 +67,9 @@ _WRITE_ONLY_VIA_DEDICATED_ENDPOINT = frozenset(_REDACTED_CONFIG_KEYS) | {
     "clickup_credentials_added", "slack_credentials_added", "gmail_credentials_added",
     "github_credentials_added", "qiko_track_credentials_added",
     "slack_watched_channels", "slack_team_id",
+    # Server-generated only (POST/DELETE .../worker-api-key), never something a caller should be
+    # able to set to an arbitrary value through the free-form patch.
+    "worker_api_key_generated_at",
 }
 
 # Config keys whose change is worth recording, split by whether the VALUE is safe to keep.
@@ -209,6 +216,156 @@ async def mark_ready(agent_id: str, tenant: str = Depends(authed_tenant),
         return _redact(await svc.mark_ready(tenant, agent_id))
     except KeyError as e:
         raise HTTPException(status_code=404, detail="agent not found") from e
+
+
+class WorkerApiKeyStatus(BaseModel):
+    configured: bool
+    generated_at: str | None = None
+
+
+class WorkerApiKeyGenerated(WorkerApiKeyStatus):
+    # Present ONLY in the response to the generate call, never again -- same "shown once" contract
+    # as a GitHub/AWS token. GET never returns this field, and it is never written into audit.
+    api_key: str
+
+
+def _worker_api_key_status(agent: Agent) -> WorkerApiKeyStatus:
+    cfg = agent.config
+    return WorkerApiKeyStatus(
+        configured=bool(cfg.get("worker_api_key_hash")),
+        generated_at=cfg.get("worker_api_key_generated_at"),
+    )
+
+
+@router.post("/{agent_id}/worker-api-key")
+async def generate_worker_api_key(agent_id: str, request: Request,
+                                  claims: dict = Depends(current_claims),
+                                  tenant: str = Depends(authed_tenant),
+                                  _role: dict = Depends(require_role(Role.editor)),
+                                  svc=Depends(get_agents)) -> WorkerApiKeyGenerated:
+    """Generate (or rotate) this worker's inbound API key -- the credential external callers
+    (jm-backend, joseph-mews-backend, or any other authorised system) send back as X-Api-Key to
+    reach this agent's generation endpoints (see joseph_mews/router.py). Server-generated and
+    shown exactly once: only its hash is stored, so a lost key means generating a new one, not
+    recovering the old one. Every call here is by definition a rotation -- there is no
+    "re-saved unchanged" case the way there is for a caller-typed credential, so no fingerprint
+    diff is recorded, only that a rotation happened and by whom."""
+    plaintext = secrets.token_urlsafe(32)
+    generated_at = datetime.now(UTC).isoformat()
+    actor = str(claims.get("email") or "")
+
+    def build_record(_previous: dict) -> dict:
+        return audit.build_row(audit.AuditEvent(
+            action=audit_actions.CREDENTIAL_SET, target_id=agent_id, target_label=agent_id,
+            tenant_id=tenant, actor_type=audit.USER, actor_id=str(claims.get("sub") or ""),
+            actor_label=actor, changes={"provider": "worker_api_key", "key": "worker_api_key_hash"},
+        ), request=request)
+
+    try:
+        agent = await svc.update_config(tenant, agent_id, {
+            "worker_api_key_hash": hash_password(plaintext),
+            "worker_api_key_generated_at": generated_at,
+        }, audit=build_record)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="agent not found") from e
+    return WorkerApiKeyGenerated(**_worker_api_key_status(agent).model_dump(), api_key=plaintext)
+
+
+@router.get("/{agent_id}/worker-api-key")
+async def get_worker_api_key_status(agent_id: str, tenant: str = Depends(authed_tenant),
+                                    svc=Depends(get_agents)) -> WorkerApiKeyStatus:
+    agent = await svc.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    return _worker_api_key_status(agent)
+
+
+@router.delete("/{agent_id}/worker-api-key")
+async def revoke_worker_api_key(agent_id: str, request: Request,
+                                claims: dict = Depends(current_claims),
+                                tenant: str = Depends(authed_tenant),
+                                _role: dict = Depends(require_role(Role.editor)),
+                                svc=Depends(get_agents)) -> WorkerApiKeyStatus:
+    actor = str(claims.get("email") or "")
+
+    def build_record(_previous: dict) -> dict:
+        return audit.build_row(audit.AuditEvent(
+            action=audit_actions.CREDENTIAL_REMOVED, target_id=agent_id, target_label=agent_id,
+            tenant_id=tenant, actor_type=audit.USER, actor_id=str(claims.get("sub") or ""),
+            actor_label=actor, changes={"provider": "worker_api_key", "key": "worker_api_key_hash"},
+        ), request=request)
+
+    try:
+        agent = await svc.update_config(tenant, agent_id, {
+            "worker_api_key_hash": None, "worker_api_key_generated_at": None,
+        }, audit=build_record)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="agent not found") from e
+    return _worker_api_key_status(agent)
+
+
+class AgentUsageStats(BaseModel):
+    """Volume, not spend -- this is the tenant-facing view. Cost stays admin-only
+    (GET /admin/workers, Capability.view_ai_cost) since per-account spend is sensitive in a
+    different way from a call count the worker's own owner should always be able to see."""
+
+    calls: int
+    input_tokens: int
+    output_tokens: int
+    unpriced_calls: int
+
+
+@router.get("/{agent_id}/analytics")
+async def agent_usage_analytics(agent_id: str, request: Request,
+                                tenant: str = Depends(authed_tenant),
+                                svc=Depends(get_agents)) -> AgentUsageStats:
+    if await svc.get(tenant, agent_id) is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    by_agent = await request.app.state.ai_usage.totals_by_agent(tenant)
+    totals = by_agent.get(agent_id)
+    if totals is None:
+        return AgentUsageStats(calls=0, input_tokens=0, output_tokens=0, unpriced_calls=0)
+    return AgentUsageStats(calls=totals.calls, input_tokens=totals.input_tokens,
+                           output_tokens=totals.output_tokens, unpriced_calls=totals.unpriced_calls)
+
+
+class InteraktStatus(BaseModel):
+    """Read-only status for the Interakt/WhatsApp channel connection. Deliberately NOT a
+    per-agent credential like Vapi/Calendly/etc.: interakt_api_key/interakt_webhook_secret/
+    whatsapp_phone_number_id/whatsapp_app_secret are global env config (app/core/config.py),
+    the same one qiko-core's single joseph-mews WhatsApp integration has always used. This
+    endpoint reports on that existing configuration rather than introducing a second place to
+    store the same secrets against one Agent's config -- avoiding exactly the duplication this
+    would otherwise create."""
+
+    configured: bool
+    phone_number_configured: bool
+
+
+@router.get("/{agent_id}/interakt-status")
+async def interakt_status(agent_id: str, tenant: str = Depends(authed_tenant),
+                          svc=Depends(get_agents)) -> InteraktStatus:
+    from app.core.config import get_settings
+
+    if await svc.get(tenant, agent_id) is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    settings = get_settings()
+    return InteraktStatus(
+        configured=bool(settings.interakt_api_key and settings.interakt_webhook_secret),
+        phone_number_configured=bool(settings.whatsapp_phone_number_id),
+    )
+
+
+def verify_worker_api_key(agent: Agent | None, candidate: str) -> bool:
+    """Used by joseph_mews/router.py (and any future worker-caller check) to authenticate an
+    inbound X-Api-Key against the agent's stored hash. False for a not-yet-provisioned agent or
+    one with no key generated -- callers fall back to their own legacy check in that case."""
+    if agent is None or not candidate:
+        return False
+    stored = agent.config.get("worker_api_key_hash")
+    if not stored:
+        return False
+    return verify_password(candidate, stored)
 
 
 class VapiCredentialsBody(BaseModel):
