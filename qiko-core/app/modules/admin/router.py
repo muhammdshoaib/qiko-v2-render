@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Generic, TypeVar
 
 import httpx
 
@@ -35,7 +34,7 @@ from app.modules.health.system import (
     readiness,
     redis_stats,
 )
-from app.modules.admin.pagination import MAX_PAGE_SIZE, PAGE_SIZE, paginate
+from app.modules.admin.pagination import MAX_PAGE_SIZE, PAGE_SIZE, PaginatedOut, paginate
 from app.modules.admin.sorting import (
     MONITORING_SORTS,
     TENANT_SORTS,
@@ -52,18 +51,6 @@ from app.modules.identity.team_access import ROLE_LABELS
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
-
-_T = TypeVar("_T")
-
-
-class PaginatedOut(BaseModel, Generic[_T]):
-    """The {total, page, page_size, items} envelope repeated across the directory/audit list
-    routes. Concretize per route: response_model=PaginatedOut[CustomerDirectoryRow]."""
-
-    total: int
-    page: int
-    page_size: int
-    items: list[_T]
 
 
 class AdminSelfOut(BaseModel):

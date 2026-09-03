@@ -5807,6 +5807,11 @@ export interface components {
             /** Promo */
             promo?: string | null;
         };
+        /** CheckoutOut */
+        CheckoutOut: {
+            /** Url */
+            url: string;
+        };
         /** ClickUpCredentialsBody */
         ClickUpCredentialsBody: {
             /** Api Token */
@@ -7358,6 +7363,29 @@ export interface components {
             /** Phone Number Configured */
             phone_number_configured: boolean;
         };
+        /** InvoiceOut */
+        InvoiceOut: {
+            /** Amount Cents */
+            amount_cents: number;
+            /** Currency */
+            currency?: string | null;
+            /** Customer Id */
+            customer_id: string;
+            /** Hosted Invoice Url */
+            hosted_invoice_url?: string | null;
+            /** Invoice Pdf */
+            invoice_pdf?: string | null;
+            /** Number */
+            number?: string | null;
+            /** Period End */
+            period_end?: string | null;
+            /** Period Start */
+            period_start?: string | null;
+            /** Status */
+            status: string;
+            /** Stripe Invoice Id */
+            stripe_invoice_id: string;
+        };
         /** LabsContactBody */
         LabsContactBody: {
             /** Build Request */
@@ -7567,6 +7595,17 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** PaginatedOut[InvoiceOut] */
+        PaginatedOut_InvoiceOut_: {
+            /** Items */
+            items: components["schemas"]["InvoiceOut"][];
+            /** Page */
+            page: number;
+            /** Page Size */
+            page_size: number;
+            /** Total */
+            total: number;
+        };
         /** PaginatedOut[TenantDirectoryRow] */
         PaginatedOut_TenantDirectoryRow_: {
             /** Items */
@@ -7612,6 +7651,33 @@ export interface components {
              */
             recurring: boolean;
         };
+        /** PaymentLinkLogOut */
+        PaymentLinkLogOut: {
+            /** Amount Cents */
+            amount_cents: number;
+            /** Customer Email */
+            customer_email: string;
+            /** Session Id */
+            session_id: string;
+            /** Status */
+            status: string;
+            /** Url */
+            url: string;
+        };
+        /** PaymentLinkMarkPaidOut */
+        PaymentLinkMarkPaidOut: {
+            /** Marked */
+            marked: number;
+        };
+        /** PaymentLinkOut */
+        PaymentLinkOut: {
+            /** Session Id */
+            session_id: string;
+            /** Status */
+            status: string;
+            /** Url */
+            url: string;
+        };
         /** PersonaBody */
         PersonaBody: {
             /** Fields */
@@ -7649,6 +7715,29 @@ export interface components {
             /** Verdict */
             verdict?: string | null;
         };
+        /** PlanOut */
+        PlanOut: {
+            /** Amount */
+            amount: number;
+            /** Display Name */
+            display_name: string;
+            /** Display Price */
+            display_price: string;
+            /** Features */
+            features: string[];
+            /** Id */
+            id: number;
+            /** Interval */
+            interval: string;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Price Id */
+            price_id: string;
+            /** Worker Limit */
+            worker_limit: number;
+        };
         /** PolicyBody */
         PolicyBody: {
             /** Body */
@@ -7657,6 +7746,11 @@ export interface components {
             source_id: string;
             /** Title */
             title: string;
+        };
+        /** PortalOut */
+        PortalOut: {
+            /** Url */
+            url: string;
         };
         /** ProbeOut */
         ProbeOut: {
@@ -7848,6 +7942,13 @@ export interface components {
             due_at?: string | null;
             /** Question */
             question?: string | null;
+        };
+        /** ReconcileOut */
+        ReconcileOut: {
+            /** Open */
+            open: number;
+            /** Recent */
+            recent: number;
         };
         /** RedisStatsOut */
         RedisStatsOut: {
@@ -8328,10 +8429,44 @@ export interface components {
             /** Source Key */
             source_key: string;
         };
+        /** StripeWebhookOut */
+        StripeWebhookOut: {
+            /** Action */
+            action: string;
+        };
         /** StudioBody */
         StudioBody: {
             /** Enabled */
             enabled: boolean;
+        };
+        /** SubscriptionActionOut */
+        SubscriptionActionOut: {
+            /** Cancel At Period End */
+            cancel_at_period_end: boolean;
+            /** Customer Id */
+            customer_id: string;
+            /** Status */
+            status: string;
+        };
+        /** SubscriptionActivateOut */
+        SubscriptionActivateOut: {
+            /** Customer Id */
+            customer_id: string;
+            /** Plan */
+            plan: string;
+            /** Status */
+            status: string;
+        };
+        /** SubscriptionStatusOut */
+        SubscriptionStatusOut: {
+            /** Cancel At Period End */
+            cancel_at_period_end?: boolean | null;
+            /** Customer Id */
+            customer_id: string;
+            /** Plan */
+            plan?: string | null;
+            /** Status */
+            status: string;
         };
         /** SupportConversationOut */
         SupportConversationOut: {
@@ -8432,6 +8567,13 @@ export interface components {
             redis: components["schemas"]["RedisStatsOut"];
             /** Version */
             version: string;
+        };
+        /** TeamPlanOut */
+        TeamPlanOut: {
+            /** Plan */
+            plan: string;
+            /** Team Id */
+            team_id: string;
         };
         /** TeamsWebhookBody */
         TeamsWebhookBody: {
@@ -12270,9 +12412,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["CheckoutOut"];
                 };
             };
             /** @description Validation Error */
@@ -12309,9 +12449,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PaginatedOut_InvoiceOut_"];
                 };
             };
             /** @description Validation Error */
@@ -12350,9 +12488,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["InvoiceOut"];
                 };
             };
             /** @description Validation Error */
@@ -12387,9 +12523,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["ReconcileOut"];
                 };
             };
         };
@@ -12411,9 +12545,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["PaymentLinkLogOut"][];
                 };
             };
             /** @description Validation Error */
@@ -12452,9 +12584,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PaymentLinkOut"];
                 };
             };
             /** @description Validation Error */
@@ -12493,9 +12623,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PaymentLinkMarkPaidOut"];
                 };
             };
             /** @description Validation Error */
@@ -12524,9 +12652,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["PlanOut"][];
                 };
             };
         };
@@ -12546,9 +12672,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PortalOut"];
                 };
             };
         };
@@ -12568,9 +12692,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SubscriptionStatusOut"];
                 };
             };
         };
@@ -12594,9 +12716,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SubscriptionActivateOut"];
                 };
             };
             /** @description Validation Error */
@@ -12631,9 +12751,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SubscriptionActionOut"];
                 };
             };
         };
@@ -12659,9 +12777,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["SubscriptionActionOut"];
                 };
             };
         };
@@ -12683,9 +12799,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["TeamPlanOut"];
                 };
             };
             /** @description Validation Error */
@@ -12716,9 +12830,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["StripeWebhookOut"];
                 };
             };
             /** @description Validation Error */

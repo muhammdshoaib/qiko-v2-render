@@ -8,12 +8,25 @@ customer list would have seen either nothing or the wrong end of the list with n
 """
 from __future__ import annotations
 
-from typing import Sequence, TypeVar
+from typing import Generic, Sequence, TypeVar
+
+from pydantic import BaseModel
 
 PAGE_SIZE = 20
 MAX_PAGE_SIZE = 100
 
 T = TypeVar("T")
+_ItemT = TypeVar("_ItemT")
+
+
+class PaginatedOut(BaseModel, Generic[_ItemT]):
+    """The {total, page, page_size, items} envelope repeated across the admin and billing list
+    routes. Concretize per route: response_model=PaginatedOut[CustomerDirectoryRow]."""
+
+    total: int
+    page: int
+    page_size: int
+    items: list[_ItemT]
 
 
 def paginate(rows: Sequence[T], *, page: int = 1, page_size: int = PAGE_SIZE) -> dict:

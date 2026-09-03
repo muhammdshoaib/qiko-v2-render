@@ -5,7 +5,7 @@ EXACT current response body of one route before a response_model is attached to 
 re-run unchanged after the model is added. If a shape-parity test needs to change to keep
 passing once a response_model exists, the model is wrong, not the test.
 """
-from app.modules.admin.router import PaginatedOut
+from app.modules.admin.pagination import PaginatedOut
 from app.modules.identity import csrf
 from app.modules.identity.admin_rbac import Capability
 from tests.helpers import auth_cookies, bootstrap_admin

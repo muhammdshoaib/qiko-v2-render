@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from datetime import datetime
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Query
@@ -24,7 +25,7 @@ from app.modules.billing.webhook import Invoice, verify_stripe_signature
 from app.modules.audit import registry as audit_actions
 from app.modules.audit import service as audit
 from app.modules.identity import csrf
-from app.modules.admin.pagination import MAX_PAGE_SIZE, PAGE_SIZE, paginate
+from app.modules.admin.pagination import MAX_PAGE_SIZE, PAGE_SIZE, PaginatedOut, paginate
 from app.modules.admin.sorting import INVOICE_SORTS, apply_sort
 from app.modules.identity.admin_rbac import Capability
 from app.modules.identity.rbac import Role
@@ -32,7 +33,11 @@ from app.modules.identity.rbac import Role
 router = APIRouter(prefix="/billing", tags=["billing"])
 
 
-@router.post("/webhook/stripe")
+class StripeWebhookOut(BaseModel):
+    action: str
+
+
+@router.post("/webhook/stripe", response_model=StripeWebhookOut)
 async def stripe_webhook(request: Request, stripe_signature: str = Header(default=""),
                          handler=Depends(get_stripe_webhook)) -> dict:
     body = await request.body()
@@ -50,12 +55,19 @@ class ActivateBody(BaseModel):
     plan: str = "pro"
 
 
+class SubscriptionStatusOut(BaseModel):
+    customer_id: str
+    status: str
+    plan: str | None = None
+    cancel_at_period_end: bool | None = None
+
+
 # Every lifecycle endpoint below derives its subject from `authed_tenant` (the verified token
 # claim) and NEVER from a client-supplied id. That structurally closes the cross-tenant BOLA
 # (OWASP A01/API1): there is simply no request field a caller could set to act on another
 # tenant's subscription. The `customer_id` echoed back in responses is the tenant, kept only for
 # client-shape continuity.
-@router.get("/subscription")
+@router.get("/subscription", response_model=SubscriptionStatusOut, response_model_exclude_none=True)
 def subscription_status(tenant: str = Depends(authed_tenant),
                         _role: dict = Depends(require_role(Role.admin)),
                         subs=Depends(get_subscriptions)) -> dict:
@@ -66,7 +78,13 @@ def subscription_status(tenant: str = Depends(authed_tenant),
             "cancel_at_period_end": sub.cancel_at_period_end}
 
 
-@router.post("/subscription/activate")
+class SubscriptionActivateOut(BaseModel):
+    customer_id: str
+    plan: str
+    status: str
+
+
+@router.post("/subscription/activate", response_model=SubscriptionActivateOut)
 def activate(body: ActivateBody, tenant: str = Depends(authed_tenant),
              _role: dict = Depends(require_role(Role.admin)), subs=Depends(get_subscriptions)) -> dict:
     # Development helper only. Production subscription activation comes from a verified Stripe
@@ -85,7 +103,20 @@ class CheckoutBody(BaseModel):
     promo: str | None = None
 
 
-@router.get("/plans")
+class PlanOut(BaseModel):
+    key: str
+    id: int
+    name: str
+    display_name: str
+    price_id: str
+    amount: int
+    interval: str
+    display_price: str
+    worker_limit: int
+    features: list[str]
+
+
+@router.get("/plans", response_model=list[PlanOut])
 def plans() -> list[dict]:
     """Public pricing catalog (for the onboarding plan step and the Pricing page). Real product
     shows Premium + Enterprise as self-serve/contact-sales tiers (verified live on
@@ -107,7 +138,11 @@ def plans() -> list[dict]:
     return out
 
 
-@router.post("/checkout", openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
+class CheckoutOut(BaseModel):
+    url: str
+
+
+@router.post("/checkout", response_model=CheckoutOut, openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
 def checkout(request: Request, body: CheckoutBody, tenant: str = Depends(authed_tenant),
              _role: dict = Depends(require_role(Role.admin)),
              subs=Depends(get_subscriptions)) -> dict:
@@ -126,7 +161,11 @@ def checkout(request: Request, body: CheckoutBody, tenant: str = Depends(authed_
         raise HTTPException(status_code=502, detail="payment provider error") from e
 
 
-@router.get("/portal")
+class PortalOut(BaseModel):
+    url: str
+
+
+@router.get("/portal", response_model=PortalOut)
 def portal(tenant: str = Depends(authed_tenant),
            _role: dict = Depends(require_role(Role.admin)),
            subs=Depends(get_subscriptions)) -> dict:
@@ -136,7 +175,13 @@ def portal(tenant: str = Depends(authed_tenant),
         raise HTTPException(status_code=502, detail="payment provider error") from e
 
 
-@router.post("/subscription/cancel", openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
+class SubscriptionActionOut(BaseModel):
+    customer_id: str
+    status: str
+    cancel_at_period_end: bool
+
+
+@router.post("/subscription/cancel", response_model=SubscriptionActionOut, openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
 def cancel(request: Request, tenant: str = Depends(authed_tenant),
            _role: dict = Depends(require_role(Role.admin)),
            subs=Depends(get_subscriptions)) -> dict:
@@ -150,7 +195,7 @@ def cancel(request: Request, tenant: str = Depends(authed_tenant),
     return {"customer_id": tenant, "status": sub.status, "cancel_at_period_end": sub.cancel_at_period_end}
 
 
-@router.post("/subscription/resume", openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
+@router.post("/subscription/resume", response_model=SubscriptionActionOut, openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
 def resume(request: Request, tenant: str = Depends(authed_tenant),
            _role: dict = Depends(require_role(Role.admin)),
            subs=Depends(get_subscriptions)) -> dict:
@@ -187,7 +232,13 @@ class PaymentLinkBody(BaseModel):
         return value
 
 
-@router.post("/payment-links", openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
+class PaymentLinkOut(BaseModel):
+    session_id: str
+    url: str
+    status: str
+
+
+@router.post("/payment-links", response_model=PaymentLinkOut, openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
 def create_payment_link(body: PaymentLinkBody, request: Request,
                         claims: dict = Depends(current_claims),
                         _tenant: str = Depends(authed_tenant),
@@ -229,7 +280,11 @@ class MarkPaidBody(BaseModel):
     customer_email: str = Field(min_length=3)
 
 
-@router.post("/payment-links/mark-paid", openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
+class PaymentLinkMarkPaidOut(BaseModel):
+    marked: int
+
+
+@router.post("/payment-links/mark-paid", response_model=PaymentLinkMarkPaidOut, openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
 def mark_paid(body: MarkPaidBody, request: Request, claims: dict = Depends(current_claims),
               _tenant: str = Depends(authed_tenant),
               _identity=Depends(require_platform_capability(Capability.manage_billing)), links=Depends(get_payment_links)) -> dict:
@@ -252,13 +307,26 @@ def mark_paid(body: MarkPaidBody, request: Request, claims: dict = Depends(curre
     return {"marked": marked}
 
 
-@router.get("/payment-links")
+class PaymentLinkLogOut(BaseModel):
+    session_id: str
+    customer_email: str
+    amount_cents: int
+    url: str
+    status: str
+
+
+@router.get("/payment-links", response_model=list[PaymentLinkLogOut])
 def list_payment_links(email: str, _tenant: str = Depends(authed_tenant),
                        _identity=Depends(require_platform_capability(Capability.manage_billing)), links=Depends(get_payment_links)) -> list[dict]:
     return [asdict(x) for x in links.logs_for(email)]
 
 
-@router.get("/team/{team_id}/plan")
+class TeamPlanOut(BaseModel):
+    team_id: str
+    plan: str
+
+
+@router.get("/team/{team_id}/plan", response_model=TeamPlanOut)
 async def team_billing_plan(team_id: str, tenant: str = Depends(authed_tenant),
                             subs=Depends(get_subscriptions), teams=Depends(get_teams)) -> dict:
     # Same cross-tenant BOLA class as teams/router.py: TeamService.members() takes a bare team_id
@@ -270,7 +338,20 @@ async def team_billing_plan(team_id: str, tenant: str = Depends(authed_tenant),
     return {"team_id": team_id, "plan": team_plan(list(team.members), subs).name}
 
 
-@router.get("/invoices")
+class InvoiceOut(BaseModel):
+    stripe_invoice_id: str
+    customer_id: str
+    amount_cents: int
+    status: str
+    currency: str | None = None
+    number: str | None = None
+    hosted_invoice_url: str | None = None
+    invoice_pdf: str | None = None
+    period_start: datetime | None = None
+    period_end: datetime | None = None
+
+
+@router.get("/invoices", response_model=PaginatedOut[InvoiceOut])
 def invoices(_tenant: str = Depends(authed_tenant),
              _identity=Depends(require_platform_capability(Capability.manage_billing)),
              handler=Depends(get_stripe_webhook), customer_id: str | None = None,
@@ -321,7 +402,7 @@ class CreateInvoiceBody(BaseModel):
         return value
 
 
-@router.post("/invoices", openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
+@router.post("/invoices", response_model=InvoiceOut, openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
 def create_invoice(request: Request, body: CreateInvoiceBody,
                    claims: dict = Depends(current_claims),
                    _identity=Depends(require_platform_capability(Capability.manage_billing)),
@@ -357,7 +438,12 @@ def create_invoice(request: Request, body: CreateInvoiceBody,
     return asdict(stored)
 
 
-@router.post("/invoices/reconcile", openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
+class ReconcileOut(BaseModel):
+    open: int
+    recent: int
+
+
+@router.post("/invoices/reconcile", response_model=ReconcileOut, openapi_extra=csrf.CSRF_OPENAPI_EXTRA)
 def reconcile_invoices_route(request: Request, claims: dict = Depends(current_claims),
                              _identity=Depends(require_platform_capability(Capability.manage_billing))) -> dict:
     csrf.require_csrf(request)
