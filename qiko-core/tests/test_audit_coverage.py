@@ -28,6 +28,12 @@ NOT_AUDITED: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/tenants/{tenant_id}/insights/property"): (
         "service-to-service AI draft for jm-backend (JM2-1042); persists nothing durable here, "
         "only an in-memory idempotency cache, the resulting cached insight lives in jm-backend"),
+    ("POST", "/api/v1/tenants/{tenant_id}/signals/{request_id}/outcome"): (
+        "quality-tracking log, not a security-relevant event; in-memory only, same durability as "
+        "the summarize/insight caches it reports against"),
+    ("POST", "/api/v1/tenants/{tenant_id}/insights/{request_id}/outcome"): (
+        "quality-tracking log, not a security-relevant event; in-memory only, same durability as "
+        "the summarize/insight caches it reports against"),
 
     # Volume. These are 99% of writes and close to 0% of evidential value; auditing them would drown
     # the trail that the CRITICAL events live in. Content is already durable in its own tables.
@@ -92,7 +98,7 @@ AUDIT_WRITERS: dict[str, int] = {
     # property that made them worth folding in rather than re-instrumenting at the call site.
     "identity/admin_org_router.py": 2,
     "billing/router.py": 4,
-    "agents/router.py": 17,
+    "agents/router.py": 19,
     "identity/users_router.py": 3,
     "teams/router.py": 3,
     "knowledge/router.py": 1,
@@ -133,7 +139,10 @@ def test_the_instrumented_set_matches_the_source():
             # row itself is written by the worker inside the maintenance transaction.
             '"erase_audit_subject"',
             # The store-side writers, for the routes audited inside a transaction.
-            "_platform_access_row(", "_worker_availability_row("))
+            "_platform_access_row(", "_worker_availability_row(",
+            # worker-api-key generate/revoke always audit (no "if audited" gate: unlike the
+            # free-form config patch, every call here is a real change worth recording).
+            "audit=build_record)"))
         assert writes >= count, f"{relative} declares {count} audited routes but writes {writes} times"
 
     # /auth routes are split across three modules, so the first path segment is not enough on its own.
@@ -363,6 +372,8 @@ INSTRUMENTED: set[tuple[str, str]] = {
     ("DELETE", "/api/v1/agents/{agent_id}/slack-credentials"),
     ("POST", "/api/v1/agents/{agent_id}/gmail-credentials"),
     ("DELETE", "/api/v1/agents/{agent_id}/gmail-credentials"),
+    ("POST", "/api/v1/agents/{agent_id}/worker-api-key"),
+    ("DELETE", "/api/v1/agents/{agent_id}/worker-api-key"),
     ("PUT", "/api/v1/identity/users/{user_id}/role"),
     ("DELETE", "/api/v1/identity/users/{user_id}"),
     ("POST", "/api/v1/identity/users/invite"),

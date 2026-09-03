@@ -881,6 +881,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agent_id}/analytics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Agent Usage Analytics */
+        get: operations["agent_usage_analytics_api_v1_agents__agent_id__analytics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agent_id}/calendly-credentials": {
         parameters: {
             query?: never;
@@ -1034,6 +1051,23 @@ export interface paths {
         put?: never;
         /** Test Gmail Credentials */
         post: operations["test_gmail_credentials_api_v1_agents__agent_id__gmail_credentials_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agent_id}/interakt-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Interakt Status */
+        get: operations["interakt_status_api_v1_agents__agent_id__interakt_status_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1253,6 +1287,34 @@ export interface paths {
          */
         post: operations["save_vapi_credentials_api_v1_agents__agent_id__vapi_credentials_post"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agent_id}/worker-api-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Worker Api Key Status */
+        get: operations["get_worker_api_key_status_api_v1_agents__agent_id__worker_api_key_get"];
+        put?: never;
+        /**
+         * Generate Worker Api Key
+         * @description Generate (or rotate) this worker's inbound API key -- the credential external callers
+         *     (jm-backend, joseph-mews-backend, or any other authorised system) send back as X-Api-Key to
+         *     reach this agent's generation endpoints (see joseph_mews/router.py). Server-generated and
+         *     shown exactly once: only its hash is stored, so a lost key means generating a new one, not
+         *     recovering the old one. Every call here is by definition a rotation -- there is no
+         *     "re-saved unchanged" case the way there is for a caller-typed credential, so no fingerprint
+         *     diff is recorded, only that a rotation happened and by whom.
+         */
+        post: operations["generate_worker_api_key_api_v1_agents__agent_id__worker_api_key_post"];
+        /** Revoke Worker Api Key */
+        delete: operations["revoke_worker_api_key_api_v1_agents__agent_id__worker_api_key_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -5005,6 +5067,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tenants/{tenant_id}/insights/{request_id}/outcome": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Report Insight Outcome */
+        post: operations["report_insight_outcome_api_v1_tenants__tenant_id__insights__request_id__outcome_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenants/{tenant_id}/outcomes/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Outcomes Summary */
+        get: operations["outcomes_summary_api_v1_tenants__tenant_id__outcomes_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tenants/{tenant_id}/signals/summarize": {
         parameters: {
             query?: never;
@@ -5016,6 +5112,30 @@ export interface paths {
         put?: never;
         /** Summarize Signal Endpoint */
         post: operations["summarize_signal_endpoint_api_v1_tenants__tenant_id__signals_summarize_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenants/{tenant_id}/signals/{request_id}/outcome": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report Signal Outcome
+         * @description Backward data flow (3 Sep, Razvan): a consumer that generated a signal summary reports
+         *     whether it turned out accurate once a human could judge it. Any authorised caller can report
+         *     an outcome, not only the one that requested the original summary -- outcomes commonly surface
+         *     downstream of where the generation happened (e.g. an admin acting on the signal in
+         *     joseph-mews-backend, not jm-backend).
+         */
+        post: operations["report_signal_outcome_api_v1_tenants__tenant_id__signals__request_id__outcome_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5217,6 +5337,22 @@ export interface components {
             used_count: number;
             /** Worker Limit */
             worker_limit: number;
+        };
+        /**
+         * AgentUsageStats
+         * @description Volume, not spend -- this is the tenant-facing view. Cost stays admin-only
+         *     (GET /admin/workers, Capability.view_ai_cost) since per-account spend is sensitive in a
+         *     different way from a call count the worker's own owner should always be able to see.
+         */
+        AgentUsageStats: {
+            /** Calls */
+            calls: number;
+            /** Input Tokens */
+            input_tokens: number;
+            /** Output Tokens */
+            output_tokens: number;
+            /** Unpriced Calls */
+            unpriced_calls: number;
         };
         /** AnalyticsBody */
         AnalyticsBody: {
@@ -6857,6 +6993,18 @@ export interface components {
             /** Email */
             email: string;
         };
+        /**
+         * GenerationOutcome
+         * @description Whether a previously-generated summary/insight turned out to be accurate once a human (or
+         *     the downstream system tracking the investor's actual response) could judge it. This is
+         *     QUALITY tracking for the analytics view, not a grounding input -- unlike AgentCore's
+         *     verified-answers flywheel (Worker.approve()), each signal/insight is about a unique
+         *     investor+property+moment, so there is no recurring "same topic" for an approved answer to
+         *     usefully override next time. Recorded so "how often is this worker right" is an answerable
+         *     question, not fed back into future prompts.
+         * @enum {string}
+         */
+        GenerationOutcome: "accurate" | "inaccurate";
         /** GmailCredentialsBody */
         GmailCredentialsBody: {
             /** Address */
@@ -6907,6 +7055,22 @@ export interface components {
             query_enabled?: boolean | null;
             /** Query Keyword */
             query_keyword?: string | null;
+        };
+        /**
+         * InteraktStatus
+         * @description Read-only status for the Interakt/WhatsApp channel connection. Deliberately NOT a
+         *     per-agent credential like Vapi/Calendly/etc.: interakt_api_key/interakt_webhook_secret/
+         *     whatsapp_phone_number_id/whatsapp_app_secret are global env config (app/core/config.py),
+         *     the same one qiko-core's single joseph-mews WhatsApp integration has always used. This
+         *     endpoint reports on that existing configuration rather than introducing a second place to
+         *     store the same secrets against one Agent's config -- avoiding exactly the duplication this
+         *     would otherwise create.
+         */
+        InteraktStatus: {
+            /** Configured */
+            configured: boolean;
+            /** Phone Number Configured */
+            phone_number_configured: boolean;
         };
         /** LabsContactBody */
         LabsContactBody: {
@@ -7010,6 +7174,15 @@ export interface components {
             reason: string;
             /** Value */
             value?: number | null;
+        };
+        /** OutcomeReport */
+        OutcomeReport: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            outcome: components["schemas"]["GenerationOutcome"];
         };
         /** PackRequirement */
         PackRequirement: {
@@ -7955,6 +8128,22 @@ export interface components {
             source_id: string;
             /** Url */
             url: string;
+        };
+        /** WorkerApiKeyGenerated */
+        WorkerApiKeyGenerated: {
+            /** Api Key */
+            api_key: string;
+            /** Configured */
+            configured: boolean;
+            /** Generated At */
+            generated_at?: string | null;
+        };
+        /** WorkerApiKeyStatus */
+        WorkerApiKeyStatus: {
+            /** Configured */
+            configured: boolean;
+            /** Generated At */
+            generated_at?: string | null;
         };
         /** WorkerEnabledBody */
         WorkerEnabledBody: {
@@ -9530,6 +9719,37 @@ export interface operations {
             };
         };
     };
+    agent_usage_analytics_api_v1_agents__agent_id__analytics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentUsageStats"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_calendly_credentials_api_v1_agents__agent_id__calendly_credentials_get: {
         parameters: {
             query?: never;
@@ -9995,6 +10215,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    interakt_status_api_v1_agents__agent_id__interakt_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InteraktStatus"];
                 };
             };
             /** @description Validation Error */
@@ -10588,6 +10839,99 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_worker_api_key_status_api_v1_agents__agent_id__worker_api_key_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkerApiKeyStatus"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_worker_api_key_api_v1_agents__agent_id__worker_api_key_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkerApiKeyGenerated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_worker_api_key_api_v1_agents__agent_id__worker_api_key_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkerApiKeyStatus"];
                 };
             };
             /** @description Validation Error */
@@ -18205,6 +18549,83 @@ export interface operations {
             };
         };
     };
+    report_insight_outcome_api_v1_tenants__tenant_id__insights__request_id__outcome_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+                "x-tenant-id"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutcomeReport"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    outcomes_summary_api_v1_tenants__tenant_id__outcomes_summary_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+                "x-tenant-id"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     summarize_signal_endpoint_api_v1_tenants__tenant_id__signals_summarize_post: {
         parameters: {
             query?: never;
@@ -18220,6 +18641,47 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SignalSummarizeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_signal_outcome_api_v1_tenants__tenant_id__signals__request_id__outcome_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+                "x-tenant-id"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OutcomeReport"];
             };
         };
         responses: {

@@ -256,6 +256,28 @@ export const testTeamsWebhook = (workerId: string) =>
     body: JSON.stringify({ worker: workerId }),
   });
 
+// Self-service worker API key: the credential external systems (jm-backend, joseph-mews-backend, or
+// any other authorised system) send back as X-Api-Key to reach this worker's generation endpoints.
+// Server-generated and shown exactly once on POST -- only its hash is stored, so a lost key means
+// generating a new one, not recovering the old one.
+export type WorkerApiKeyStatus = { configured: boolean; generated_at: string | null };
+export type WorkerApiKeyGenerated = WorkerApiKeyStatus & { api_key: string };
+export const getWorkerApiKeyStatus = (agentId: string) => request<WorkerApiKeyStatus>(`/agents/${agentId}/worker-api-key`);
+export const generateWorkerApiKey = (agentId: string) =>
+  request<WorkerApiKeyGenerated>(`/agents/${agentId}/worker-api-key`, { method: "POST" });
+export const revokeWorkerApiKey = (agentId: string) =>
+  request<WorkerApiKeyStatus>(`/agents/${agentId}/worker-api-key`, { method: "DELETE" });
+
+// Usage analytics: volume only (calls + tokens), deliberately not cost -- per-account spend stays
+// admin-only, this is the tenant-facing view of how much a worker has been used.
+export type AgentAnalytics = { calls: number; input_tokens: number; output_tokens: number; unpriced_calls: number };
+export const getAgentAnalytics = (agentId: string) => request<AgentAnalytics>(`/agents/${agentId}/analytics`);
+
+// Connections: Interakt/WhatsApp. Read-only -- the underlying secrets are global environment
+// configuration shared across the whole deployment, not a per-worker credential like the others above.
+export type InteraktStatus = { configured: boolean; phone_number_configured: boolean };
+export const getInteraktStatus = (agentId: string) => request<InteraktStatus>(`/agents/${agentId}/interakt-status`);
+
 // Knowledge + chat
 export type Doc = { doc_id: string; name?: string; chunks: number; agent_id?: string };
 // agentId scopes knowledge to a single worker (QIK-315). Pass the worker id from the worker/studio
