@@ -78,7 +78,7 @@ def _setup_pack_with_requirements(client, monkeypatch, tenant: str, *, answer: s
                 return LLMResponse(text=payload)
         return P()
 
-    monkeypatch.setattr("app.modules.rfp.generation.get_provider", fake_get_provider)
+    monkeypatch.setattr("app.modules.rfp.generation.document_provider", fake_get_provider)
     monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _drafting_worker(answer))
     client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
                 files={"file": ("t.txt", io.BytesIO(b"tender text"), "text/plain")})

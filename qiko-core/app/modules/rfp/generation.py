@@ -37,7 +37,7 @@ from datetime import datetime, timezone
 
 from app.core.deps import WorkerRecheck, WorkerUnavailable, assemble_worker, resolve_available_worker
 from app.modules.agentcore.models import Decision
-from app.modules.ai.gateway import get_provider
+from app.modules.ai.gateway import document_provider
 from app.modules.rfp.brief import extract_brief
 from app.modules.rfp.compliance import extract_compliance
 from app.modules.rfp.extraction import (
@@ -120,7 +120,7 @@ async def extract_requirements_chunked(
     if len(text) <= MAX_CONTEXT_CHARS:
         await recheck()
         extracted = await asyncio.to_thread(extract_requirements, text,
-                                            get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT),
+                                            document_provider(read_timeout=_DOCUMENT_READ_TIMEOUT),
                                             max_chars=MAX_CONTEXT_CHARS)
         await recheck()
         return extracted
@@ -134,7 +134,7 @@ async def extract_requirements_chunked(
                 await recheck()
                 extracted = await asyncio.to_thread(
                     extract_requirements, chunk,
-                    get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT), id_prefix=f"c{i}-")
+                    document_provider(read_timeout=_DOCUMENT_READ_TIMEOUT), id_prefix=f"c{i}-")
                 await recheck()
                 return extracted
             except WorkerUnavailable:
@@ -287,7 +287,7 @@ async def run_generation(*, tenant: str, pack_id: str, agent_id: str | None,
     try:
         await recheck()
         brief = await asyncio.to_thread(extract_brief, document_text,
-                                        get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+                                        document_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
         await recheck()
         await packs.set_brief(tenant, pack_id, brief)
         await recheck()
@@ -305,7 +305,7 @@ async def run_generation(*, tenant: str, pack_id: str, agent_id: str | None,
     try:
         await recheck()
         items = await asyncio.to_thread(extract_compliance, document_text,
-                                        get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+                                        document_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
         await recheck()
         await packs.set_compliance(tenant, pack_id, items)
         await recheck()

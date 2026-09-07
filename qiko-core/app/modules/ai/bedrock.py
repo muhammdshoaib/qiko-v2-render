@@ -43,6 +43,12 @@ class BedrockProvider:
     # longer to read tens of thousands of chars and produce a complete structured response; those
     # call sites build their own BedrockProvider(read_timeout=...) instead of using this default.
     read_timeout: int = 20
+    # Output ceiling. 1024 suits the hot path (one short per-requirement answer) and is far too
+    # small for a one-shot structured call over a whole document: requirements extraction on a
+    # 2 KB tender already returned exactly 1024 tokens, cut mid-key, and surfaced as "model did
+    # not return valid JSON" -- a config ceiling of ours misreported as a model fault (QIKO-1081).
+    # Configurable for the same reason read_timeout is, and set by the same call sites.
+    max_tokens: int = 1024
 
     def __post_init__(self) -> None:
         s = get_settings()
@@ -77,7 +83,7 @@ class BedrockProvider:
         kwargs = {
             "modelId": self.model_id,
             "messages": messages,
-            "inferenceConfig": {"temperature": temperature, "maxTokens": 1024},
+            "inferenceConfig": {"temperature": temperature, "maxTokens": self.max_tokens},
         }
         if system:
             kwargs["system"] = [{"text": system}]
@@ -85,6 +91,10 @@ class BedrockProvider:
         text = resp["output"]["message"]["content"][0]["text"]
         if seed:
             text = seed + text
+        # Bedrock reports WHY generation stopped. "max_tokens" means the reply is a prefix, not an
+        # answer. Read defensively like the usage block below: an unexpected shape must never turn
+        # a good answer into an error.
+        truncated = str(resp.get("stopReason") or "") == "max_tokens"
         # Read defensively: FallbackProvider swallows any exception from here and silently returns a
         # stub answer, so a shape surprise in the usage block must never be able to degrade a real
         # answer into a fabricated one.
@@ -93,5 +103,5 @@ class BedrockProvider:
         output_tokens = int(reported.get("outputTokens") or 0)
         usage.record(self.model_id, "generate",
                      input_tokens=input_tokens, output_tokens=output_tokens)
-        return LLMResponse(text=text, model=self.model_id,
+        return LLMResponse(text=text, model=self.model_id, truncated=truncated,
                            input_tokens=input_tokens, output_tokens=output_tokens)

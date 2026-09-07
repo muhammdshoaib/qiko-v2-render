@@ -53,7 +53,7 @@ async def _stub_assemble_worker(**_kw):
 def _patch_generation(monkeypatch, provider):
     """Point the background job's extraction/brief/compliance at `provider` and its drafts stage at
     the stub worker, so an eager /extract runs fast and offline."""
-    monkeypatch.setattr("app.modules.rfp.generation.get_provider", lambda **_kw: provider)
+    monkeypatch.setattr("app.modules.rfp.generation.document_provider", lambda **_kw: provider)
     monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _stub_assemble_worker)
 
 
@@ -392,7 +392,7 @@ def test_rfp_extract_source_documents_survive_gen_status_update():
 
 
 def test_rfp_extract_rejects_unsupported_file_type(client, monkeypatch):
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _CannedProvider(SAMPLE_JSON))
+    monkeypatch.setattr("app.modules.rfp.router.document_provider", lambda **_kw: _CannedProvider(SAMPLE_JSON))
     c = auth_cookies("extractco2", "owner")
     pack = client.post("/api/v1/rfp/packs", json={"agent_id": "w1", "title": "Tender Y"}, cookies=c).json()
     r = client.post(f"/api/v1/rfp/packs/{pack['id']}/extract", cookies=c,
@@ -401,7 +401,7 @@ def test_rfp_extract_rejects_unsupported_file_type(client, monkeypatch):
 
 
 def test_rfp_extract_404_for_missing_pack(client, monkeypatch):
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _CannedProvider(SAMPLE_JSON))
+    monkeypatch.setattr("app.modules.rfp.router.document_provider", lambda **_kw: _CannedProvider(SAMPLE_JSON))
     c = auth_cookies("extractco3", "owner")
     r = client.post("/api/v1/rfp/packs/missing/extract", cookies=c,
                     files={"file": ("tender.txt", io.BytesIO(b"text"), "text/plain")})

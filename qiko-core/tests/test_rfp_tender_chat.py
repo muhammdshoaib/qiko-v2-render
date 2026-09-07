@@ -30,7 +30,7 @@ class _CannedProvider:
 
 
 def _canned(monkeypatch, text: str) -> None:
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _CannedProvider(text))
+    monkeypatch.setattr("app.modules.rfp.router.document_provider", lambda **_kw: _CannedProvider(text))
 
 
 def test_tender_chat_persists_both_turns_and_history_reads_in_order(client, monkeypatch):

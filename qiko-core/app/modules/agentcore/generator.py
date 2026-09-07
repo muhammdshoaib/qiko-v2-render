@@ -70,7 +70,19 @@ _OUTPUT_CONTRACT = (
     "preamble, no leading markdown title (no '# ...' or '## ...' first line), and no "
     "'Company Response:' or 'Client Response:' style labels. Write it as the words you would send to the recipient. "
     '"confidence" is your own read of how well the evidence lets you answer. '
-    '"gaps" is a short note of what the evidence did not let you support, or "" if none.'
+    '"gaps" is a short note of what the evidence did not let you support, or "" if none. '
+    # QIKO-1082. Retrieval hands over the passages that best match the question's WORDS, which is
+    # not the same as passages that answer it. Told only to answer from the evidence, the model
+    # dutifully summarised whatever it was given: asked for incorporation documents it described a
+    # project handover dossier, and because that text came straight out of the evidence the
+    # grounding critic scored it 1.0 and the gate auto-accepted it. The critic compares the answer
+    # against the evidence and never against the question, so nothing downstream can catch this.
+    # Refusing has to be an explicit, permitted option or the model will always prefer to answer.
+    "Before writing, check the evidence actually addresses THE QUESTION ASKED. If it does not, do "
+    "not answer from whatever the evidence happens to discuss and do not stretch loosely related "
+    'material to fit: say plainly in "answer" that the supplied evidence does not cover this '
+    'question, set "confidence" at or below 0.2, and name the mismatch in "gaps". A short, honest '
+    "statement that the evidence does not cover the question is a correct and expected response."
 )
 
 # Default prompt = identity + " " + contract. The identity is now worker-neutral rather than

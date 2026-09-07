@@ -120,8 +120,8 @@ def test_score_endpoint_uses_the_pack_worker_configured_criteria(client, monkeyp
         return _W()
 
     # /score reads router.get_provider; the background /extract job reads generation.get_provider.
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", lambda **_kw: _RespondingByPrompt())
-    monkeypatch.setattr("app.modules.rfp.generation.get_provider", lambda **_kw: _RespondingByPrompt())
+    monkeypatch.setattr("app.modules.rfp.router.document_provider", lambda **_kw: _RespondingByPrompt())
+    monkeypatch.setattr("app.modules.rfp.generation.document_provider", lambda **_kw: _RespondingByPrompt())
     monkeypatch.setattr("app.modules.rfp.generation.assemble_worker", _stub_worker)
     c = auth_cookies("scoreco", "owner")
     agent = client.post("/api/v1/agents", json={"name": "IDG Sales"}, cookies=c).json()

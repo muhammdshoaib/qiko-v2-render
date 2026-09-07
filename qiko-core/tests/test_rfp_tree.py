@@ -602,7 +602,7 @@ def test_extract_populates_tree_and_lock_all(client, monkeypatch):
                 return LLMResponse(text=payload)
         return P()
 
-    monkeypatch.setattr("app.modules.rfp.generation.get_provider", fake_get_provider)
+    monkeypatch.setattr("app.modules.rfp.generation.document_provider", fake_get_provider)
     _patch_worker(monkeypatch, _fake_worker_factory(stub=True))
     c, pid = _pack(client, "extrco1")
     client.post(f"/api/v1/rfp/packs/{pid}/extract", cookies=c,
@@ -631,7 +631,7 @@ def test_manual_section_does_not_block_finalize_api(client, monkeypatch):
                 return LLMResponse(text=payload)
         return P()
 
-    monkeypatch.setattr("app.modules.rfp.generation.get_provider", fake_get_provider)
+    monkeypatch.setattr("app.modules.rfp.generation.document_provider", fake_get_provider)
     _patch_worker(monkeypatch, _fake_worker_factory(stub=True))
     c, pid = _pack(client, "finalmanual1")
     client.post(f"/api/v1/rfp/packs/{pid}/extract", cookies=c,
@@ -667,7 +667,7 @@ def test_sections_backfill_lazily_for_old_pack(client, monkeypatch):
                 return LLMResponse(text=payload)
         return P()
 
-    monkeypatch.setattr("app.modules.rfp.generation.get_provider", fake_get_provider)
+    monkeypatch.setattr("app.modules.rfp.generation.document_provider", fake_get_provider)
     _patch_worker(monkeypatch, _fake_worker_factory(stub=True))
     c, pid = _pack(client, "backfillco1")
     client.post(f"/api/v1/rfp/packs/{pid}/extract", cookies=c,
@@ -704,7 +704,7 @@ def test_export_overlay_locked_user_draft_overrides_ai(client, monkeypatch):
                 return LLMResponse(text=payload)
         return P()
 
-    monkeypatch.setattr("app.modules.rfp.generation.get_provider", fake_get_provider)
+    monkeypatch.setattr("app.modules.rfp.generation.document_provider", fake_get_provider)
     _patch_worker(monkeypatch, _fake_worker_factory(stub=True))
     _patch_worker(monkeypatch, _fake_worker_factory(answer="AI generated answer"))
     c, pid = _pack(client, "ovlyco1")

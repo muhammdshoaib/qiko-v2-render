@@ -24,7 +24,7 @@ from app.core.deps import (
     require_role,
     resolve_tenant_worker,
 )
-from app.modules.ai.gateway import get_provider
+from app.modules.ai.gateway import document_provider
 from app.modules.chat.files import build_docx, build_xlsx
 from app.modules.identity.rbac import Role, role_allows
 from app.modules.knowledge.parsing import MAX_UPLOAD_BYTES, UnsupportedDocumentError, extract_text
@@ -444,7 +444,7 @@ async def ask_bid_context(pack_id: str, body: AskBody, request: Request,
              "qualification rules and risks. If the document doesn't state it, say so -- do not guess.")
     prompt = f"TENDER DOCUMENT:\n{pack.document_text[:60_000]}\n\nQUESTION: {body.question}\n\nAnswer from the document only."
     await recheck()
-    response = await asyncio.to_thread(get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT).generate,
+    response = await asyncio.to_thread(document_provider(read_timeout=_DOCUMENT_READ_TIMEOUT).generate,
                                        prompt, system=system, temperature=0.0)
     await recheck()
     return {"question": body.question, "answer": response.text}
@@ -521,7 +521,7 @@ async def tender_chat(pack_id: str, body: AskBody, request: Request,
     prompt = (f"TENDER CONTEXT:\n{tender_ctx}\n\nCOMPANY KNOWLEDGE BASE:\n{kb_block}\n\n"
               f"QUESTION: {body.question}\n\nAnswer, grounded in the above.")
     await recheck()
-    response = await asyncio.to_thread(get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT).generate,
+    response = await asyncio.to_thread(document_provider(read_timeout=_DOCUMENT_READ_TIMEOUT).generate,
                                        prompt, system=system, temperature=0.2)
     await recheck()
     # Fail closed: never surface StubProvider echo text as a real answer during a provider outage.
@@ -646,7 +646,7 @@ async def compliance_check(pack_id: str, request: Request, file: UploadFile = Fi
     text = await _read_tender_text(pack_id, tenant, file, packs)
     try:
         await recheck()
-        items = await asyncio.to_thread(extract_compliance, text, get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+        items = await asyncio.to_thread(extract_compliance, text, document_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
         await recheck()
     except ComplianceError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
@@ -668,7 +668,7 @@ async def tender_brief(pack_id: str, request: Request, file: UploadFile = File(.
     text = await _read_tender_text(pack_id, tenant, file, packs)
     try:
         await recheck()
-        brief = await asyncio.to_thread(extract_brief, text, get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+        brief = await asyncio.to_thread(extract_brief, text, document_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
         await recheck()
     except BriefError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
@@ -698,7 +698,7 @@ async def score(pack_id: str, request: Request, tenant: str = Depends(authed_ten
     criteria = list(agent.config.get("opportunity_criteria") or [])
     try:
         result = await asyncio.to_thread(score_opportunity, pack.document_text, criteria,
-                                         get_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
+                                         document_provider(read_timeout=_DOCUMENT_READ_TIMEOUT))
         await recheck()
         return result
     except ScoringError as e:

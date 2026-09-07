@@ -69,7 +69,7 @@ def _patch_worker(monkeypatch, builder):
 
 
 def _patch(monkeypatch, *, stub=False):
-    monkeypatch.setattr("app.modules.rfp.generation.get_provider", lambda **_kw: _RoutingProvider())
+    monkeypatch.setattr("app.modules.rfp.generation.document_provider", lambda **_kw: _RoutingProvider())
     _patch_worker(monkeypatch, _worker_factory(stub=stub))
 
 
@@ -175,7 +175,7 @@ async def _make_pack(document_text="tender doc"):
 def _stub_supporting_stages(monkeypatch):
     """Make the provider + brief + compliance stages trivially succeed so a run_generation test can
     focus on the drafts stage."""
-    monkeypatch.setattr(generation, "get_provider", lambda **_kw: object())
+    monkeypatch.setattr(generation, "document_provider", lambda **_kw: object())
     monkeypatch.setattr(generation, "extract_brief", lambda *_a, **_kw: {"summary": "s"})
     monkeypatch.setattr(generation, "extract_compliance", lambda *_a, **_kw: [])
 
@@ -290,7 +290,7 @@ async def test_per_stage_errors_are_attributed_not_clobbered(monkeypatch):
     """M3: each failing stage records its own message under errors[stage] so a poller can tell WHICH
     stage failed, instead of one shared `error` field clobbering the others."""
     packs, reqs, answers, tree, pack = await _make_pack()
-    monkeypatch.setattr(generation, "get_provider", lambda **_kw: object())
+    monkeypatch.setattr(generation, "document_provider", lambda **_kw: object())
 
     async def _req_boom(_text, **_kwargs):
         raise ExtractionError("req boom")

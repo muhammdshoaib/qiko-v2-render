@@ -143,13 +143,22 @@ class ExtractedSection(BaseModel):
         return (v or "").strip()
 
 
-def _parse_llm_json_array(text: str) -> list[dict]:
-    """LLMs often wrap JSON in prose or markdown fences; pull out the first array and parse it."""
+def _parse_llm_json_array(text: str, *, truncated: bool = False) -> list[dict]:
+    """LLMs often wrap JSON in prose or markdown fences; pull out the first array and parse it.
+
+    `truncated` says the provider stopped at its output ceiling, so the text is a prefix and the
+    parse was never going to succeed. Saying that plainly matters: the previous message blamed the
+    model's JSON for a limit we set, which sent people looking for a prompt or model problem
+    (QIKO-1081)."""
     match = _JSON_ARRAY.search(text)
     candidate = match.group(0) if match else text
     try:
         parsed = json.loads(candidate)
     except json.JSONDecodeError as e:
+        if truncated:
+            raise ExtractionError(
+                "the model hit its output-token ceiling and the response was cut off mid-document; "
+                "raise max_tokens for this call rather than retrying") from e
         raise ExtractionError(f"model did not return valid JSON: {e}") from e
     if not isinstance(parsed, list):
         raise ExtractionError("model did not return a JSON array")
@@ -248,7 +257,8 @@ def extract_requirements(tender_text: str, provider: LLMProvider, *, max_chars: 
     for _attempt in range(_MAX_ATTEMPTS):
         try:
             response = provider.generate(f"TENDER DOCUMENT:\n{truncated}", system=SYSTEM, temperature=0.0)
-            raw_items = _parse_llm_json_array(response.text)
+            raw_items = _parse_llm_json_array(
+                response.text, truncated=getattr(response, "truncated", False))
             out = _validate_sections(raw_items, id_prefix=id_prefix)
             if out:
                 return out[:MAX_ITEMS]

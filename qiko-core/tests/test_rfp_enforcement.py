@@ -73,7 +73,7 @@ def test_disabled_worker_blocks_extract_chat_feedback_tree_and_generation(client
         "disabled-matrix", "w1", False, changed_by_email="admin@invalid"))
     provider_calls = []
     monkeypatch.setattr(
-        "app.modules.rfp.router.get_provider",
+        "app.modules.rfp.router.document_provider",
         lambda **kwargs: provider_calls.append(kwargs) or pytest.fail("provider called"),
     )
     responses = [
@@ -124,7 +124,7 @@ def test_child_ids_are_scoped_to_exact_pack_and_provider_is_not_called(client, m
         provider_calls += 1
         raise AssertionError("provider must not be called")
 
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", provider)
+    monkeypatch.setattr("app.modules.rfp.router.document_provider", provider)
     responses = [
         client.patch(f"/api/v1/rfp/packs/{first['id']}/sections/{section['id']}",
                      cookies=cookies, json={"name": "Injected"}),
@@ -250,7 +250,7 @@ async def test_actual_disable_while_question_provider_blocked_persists_nothing(m
     monkeypatch.setattr(generation, "extract_requirements_chunked", extract)
     monkeypatch.setattr(generation, "extract_brief", lambda *_args: {})
     monkeypatch.setattr(generation, "extract_compliance", lambda *_args: [])
-    monkeypatch.setattr(generation, "get_provider", lambda **_kwargs: object())
+    monkeypatch.setattr(generation, "document_provider", lambda **_kwargs: object())
 
     async def resolve(**kwargs):
         async def recheck():

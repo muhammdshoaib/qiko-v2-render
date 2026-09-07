@@ -24,6 +24,11 @@ class LLMResponse:
     # they used to be discarded. Defaulted so the stub and every test fake stay valid.
     input_tokens: int = 0
     output_tokens: int = 0
+    # True when the provider stopped because it hit the output-token ceiling rather than because
+    # the answer was finished. The text is then a PREFIX of the intended reply, which for a
+    # structured (JSON) call means it cannot parse. Callers that require a complete document need
+    # to be able to say "truncated" instead of blaming the model's JSON (QIKO-1081).
+    truncated: bool = False
 
 
 class LLMProvider(Protocol):
@@ -74,23 +79,49 @@ class FallbackProvider:
             return self.fallback.generate(prompt, system=system, temperature=temperature, prefill=prefill)
 
 
-def _build_one(name: str, *, read_timeout: int | None = None) -> LLMProvider:
+def _build_one(name: str, *, read_timeout: int | None = None,
+               max_tokens: int | None = None) -> LLMProvider:
     if name == "bedrock":
         from app.modules.ai.bedrock import BedrockProvider
 
-        return BedrockProvider() if read_timeout is None else BedrockProvider(read_timeout=read_timeout)
+        overrides = {k: v for k, v in
+                     (("read_timeout", read_timeout), ("max_tokens", max_tokens)) if v is not None}
+        return BedrockProvider(**overrides)
     return StubProvider()
 
 
-def get_provider(*, read_timeout: int | None = None) -> LLMProvider:
+def get_provider(*, read_timeout: int | None = None,
+                 max_tokens: int | None = None) -> LLMProvider:
     """Build the provider from config: primary (default Bedrock) wrapped with a configured
     fallback. Model, Region and inference profile are config, not code (ADR-007/008).
 
-    `read_timeout` overrides the default (tuned for the fast per-requirement answering hot path)
-    for one-shot, whole-document calls (extraction/compliance/brief) that legitimately need
-    longer -- see BedrockProvider.read_timeout."""
+    `read_timeout` and `max_tokens` both override defaults tuned for the fast per-requirement
+    answering hot path. One-shot, whole-document calls (extraction/compliance/brief) need more of
+    each: longer to read tens of thousands of characters, and a bigger output ceiling because they
+    must return a COMPLETE structured document rather than one short answer. Raising only the
+    timeout leaves those calls silently truncated (QIKO-1081)."""
     s = get_settings()
-    primary = _build_one(s.ai_provider, read_timeout=read_timeout)
+    primary = _build_one(s.ai_provider, read_timeout=read_timeout, max_tokens=max_tokens)
     if s.ai_fallback_provider and s.ai_fallback_provider != s.ai_provider:
-        return FallbackProvider(primary, _build_one(s.ai_fallback_provider, read_timeout=read_timeout))
+        return FallbackProvider(primary, _build_one(s.ai_fallback_provider,
+                                                    read_timeout=read_timeout,
+                                                    max_tokens=max_tokens))
     return primary
+
+
+# Output ceiling for a one-shot call that must return a COMPLETE structured document. A ten-section
+# extraction already needs well over the 1024 default; twenty coarse sections with their
+# sub-sections need several times that. Still bounded, so a runaway response cannot bill without
+# limit.
+DOCUMENT_MAX_TOKENS = 8192
+
+
+def document_provider(*, read_timeout: int) -> LLMProvider:
+    """Provider for a one-shot call over a whole document (extraction, brief, compliance, scoring).
+
+    Exists so the two ceilings such a call needs, a longer read timeout and a bigger output
+    budget, are raised TOGETHER. They were not: the timeout was made configurable and the token
+    ceiling was left at the hot-path default, so extraction returned a truncated document and
+    reported it as invalid JSON (QIKO-1081). Anything document-scale should call this rather than
+    get_provider, so a new call site cannot repeat the omission."""
+    return get_provider(read_timeout=read_timeout, max_tokens=DOCUMENT_MAX_TOKENS)
