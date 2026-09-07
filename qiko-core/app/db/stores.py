@@ -342,13 +342,27 @@ class SqlVectorStore:
             s.add_all([PassageRow(id=p.id, tenant_id=p.tenant, agent_id=p.agent_id,
                                    doc_id=p.doc_id, text=p.text, embedding=p.embedding) for p in passages])
 
-    async def get(self, tenant: str, agent_id: str | None = None) -> list[Passage]:
+    async def get(self, tenant: str, agent_id: str | None = None,
+                  doc_id: str | None = None) -> list[Passage]:
         async with self.sessionmaker() as s:
             stmt = select(PassageRow).where(PassageRow.tenant_id == tenant)
-            if agent_id is not None:
+            if agent_id is not None and doc_id is None:
                 # Worker-scoped retrieval includes legacy tenant-wide (agent_id=None) passages
                 # so shared knowledge is not orphaned by per-worker scoping.
                 stmt = stmt.where(or_(PassageRow.agent_id == agent_id, PassageRow.agent_id.is_(None)))
+            elif agent_id is not None:
+                # Reference-document scoping deliberately drops the tenant-wide disjunct. The
+                # picker only offers this worker's own documents (service.list_documents hides
+                # tenant-wide ones from a per-worker listing), so a tenant-wide document sharing
+                # the same doc_id would otherwise slip into the answer while the cockpit tells the
+                # reviewer "No other knowledge base document was used". Fail closed instead.
+                stmt = stmt.where(PassageRow.agent_id == agent_id)
+            if doc_id is not None:
+                # Reference-document scoping (IDG-1000): NARROWS within the tenant/agent filters
+                # above, never widens, so it cannot reach another tenant's document sharing the
+                # same user-visible doc_id. Also strictly cheaper than the unscoped read: fewer
+                # rows loaded and fewer scored.
+                stmt = stmt.where(PassageRow.doc_id == doc_id)
             rows = (await s.execute(stmt)).scalars().all()
             return [Passage(id=r.id, tenant=r.tenant_id, doc_id=r.doc_id, text=r.text,
                             embedding=list(r.embedding or []), agent_id=r.agent_id) for r in rows]
@@ -585,6 +599,7 @@ class SqlRfpPackStore:
                        client_name=r.client_name, deadline=r.deadline, stage=r.stage,
                        created_at=r.created_at, document_text=r.document_text or "",
                        source_documents=list(r.source_documents or []),
+                       reference_doc_id=r.reference_doc_id,
                        outcome=r.outcome, outcome_reason=r.outcome_reason or "",
                        outcome_value=r.outcome_value, outcome_at=r.outcome_at,
                        brief=r.brief, compliance=r.compliance, gen_status=r.gen_status)
@@ -629,6 +644,12 @@ class SqlRfpPackStore:
         async with self.sessionmaker() as s, s.begin():
             row = await _lock_enabled_pack(s, tenant, pack_id)
             row.source_documents = list(docs or [])
+            return self._to_domain(row)
+
+    async def set_reference_doc(self, tenant: str, pack_id: str, doc_id: str | None) -> RfpPack:
+        async with self.sessionmaker() as s, s.begin():
+            row = await _lock_enabled_pack(s, tenant, pack_id)
+            row.reference_doc_id = doc_id
             return self._to_domain(row)
 
     async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,

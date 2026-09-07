@@ -86,7 +86,7 @@ class Worker:
             await recheck_worker()
         passages = await self.knowledge.retrieve(
             self.config.tenant, requirement_text, k=self.config.retrieval_k,
-            agent_id=self.config.agent_id)
+            agent_id=self.config.agent_id, doc_id=self.config.reference_doc_id)
         if recheck_worker is not None:
             await recheck_worker()
         req = Requirement(id=requirement_id, text=requirement_text,
@@ -114,7 +114,9 @@ def build_worker(config: WorkerConfig, *, provider=None, embeddings=None,
     (defaults come from the ai gateway); the gate threshold and retrieval depth come from config.
     A pre-built knowledge service can be passed in so the worker shares the same vector store as
     the rest of the app (e.g. the intelligence chat endpoint)."""
-    generator = Generator(provider=provider) if provider is not None else Generator()
+    scoped = bool(config.reference_doc_id)
+    generator = (Generator(provider=provider, reference_scoped=scoped) if provider is not None
+                 else Generator(reference_scoped=scoped))
     knowledge_service = knowledge if knowledge is not None else (
         KnowledgeService(embeddings=embeddings) if embeddings is not None else KnowledgeService())
     agent = AgentCore(generator=generator, threshold=config.gate_threshold)

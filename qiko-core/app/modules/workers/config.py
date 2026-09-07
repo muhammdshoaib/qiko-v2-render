@@ -23,3 +23,8 @@ class WorkerConfig:
     retrieval_k: int = 5
     system_prompt: str | None = None
     region_profile: str | None = None  # overrides the default Bedrock inference profile
+    # Restricts answering to ONE knowledge base document (IDG-1000). Unlike every other field
+    # here this is per-JOB, not per-worker: it is supplied when a Worker is assembled for a
+    # scoped RFP pack and must never be written into the persisted agent config, or one tender's
+    # scope would silently apply to every later one.
+    reference_doc_id: str | None = None

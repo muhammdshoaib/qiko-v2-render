@@ -249,7 +249,7 @@ def test_migration_is_single_head_with_enabled_backfill_and_audit_indexes():
     config = Config(str(root / "alembic.ini"))
     config.set_main_option("script_location", str(root / "alembic"))
     scripts = ScriptDirectory.from_config(config)
-    assert scripts.get_heads() == ["0046_intelligence_pipeline_runs"]
+    assert scripts.get_heads() == ["0047_rfp_reference_doc"]
 
     migration = root / "alembic/versions/0025_agent_enabled_audit.py"
     source = migration.read_text()

@@ -60,3 +60,52 @@ async def test_db_backed_agent_scoped_doc_id(tmp_path):
     assert await svc.delete_document("acme", "tenant-policy") == 1
     assert {d["doc_id"] for d in await svc.list_documents("acme", agent_id="a2")} == {"shared-name", "tenant-policy"}
 
+
+# --- IDG-1001: single reference-document retrieval scoping, through the SQL store ---
+async def test_db_backed_retrieve_scoped_to_a_single_document(tmp_path):
+    svc = await _db_knowledge(tmp_path / "k.db")
+    await svc.ingest("acme", "bid-2024", ISO)
+    await svc.ingest("acme", "hse-policy", "Health and safety covers incident reporting.")
+
+    hits = await svc.retrieve("acme", "ISO 9001 certification", k=5, doc_id="bid-2024")
+    assert hits and {p.doc_id for p in hits} == {"bid-2024"}
+
+    # No fallback: scoping to the document that does NOT answer the question returns nothing,
+    # rather than the document that does.
+    assert await svc.retrieve("acme", "incident reporting", k=5, doc_id="bid-2024") == []
+    # ... and unscoped, that same question does reach hse-policy.
+    assert {p.doc_id for p in await svc.retrieve("acme", "incident reporting", k=5)} == {"hse-policy"}
+
+    assert await svc.retrieve("acme", "anything", k=5, doc_id="never-ingested") == []
+
+
+async def test_db_backed_scoped_retrieve_never_crosses_tenants(tmp_path):
+    """Both copies are relevant to the query on purpose: an empty result would satisfy a
+    "no leakage" assertion for the wrong reason."""
+    svc = await _db_knowledge(tmp_path / "k.db")
+    await svc.ingest("acme", "shared-name", "Acme publishes its pricing structure openly.")
+    await svc.ingest("beta", "shared-name", "Beta confidential pricing structure.")
+
+    hits = await svc.retrieve("acme", "pricing structure", k=5, doc_id="shared-name")
+    assert [p.text for p in hits] == ["Acme publishes its pricing structure openly."]
+
+
+async def test_db_backed_scoped_retrieve_excludes_a_tenant_wide_doc_id_collision(tmp_path):
+    svc = await _db_knowledge(tmp_path / "k.db")
+    await svc.ingest("acme", "policy", "Worker copy: ISO 9001 certification is held.", agent_id="a1")
+    await svc.ingest("acme", "policy", "Tenant-wide copy: ISO 9001 certification is held.")
+
+    hits = await svc.retrieve("acme", "ISO 9001 certification", k=5, agent_id="a1", doc_id="policy")
+    assert [p.text for p in hits] == ["Worker copy: ISO 9001 certification is held."]
+
+    assert len(await svc.retrieve("acme", "ISO 9001 certification", k=5, agent_id="a1")) == 2
+
+
+async def test_db_backed_scoped_retrieve_respects_the_agent_scope(tmp_path):
+    svc = await _db_knowledge(tmp_path / "k.db")
+    await svc.ingest("acme", "shared-name", ISO, agent_id="a1")
+    await svc.ingest("acme", "shared-name", "Health and safety incident reporting.", agent_id="a2")
+
+    a1 = await svc.retrieve("acme", "certification", k=5, agent_id="a1", doc_id="shared-name")
+    assert a1 and all("Health and safety" not in p.text for p in a1)
+

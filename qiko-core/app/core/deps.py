@@ -266,7 +266,7 @@ def get_task_queue(request: Request):
 
 
 async def assemble_worker(*, sessionmaker, agents, knowledge, tenant: str, agent_id: str | None = None,
-                          cost_guard=None):
+                          cost_guard=None, reference_doc_id: str | None = None):
     """Assemble a Worker over the shared knowledge service + agentcore (agentic-first).
 
     Request-free core of build_tenant_worker: takes the raw collaborators (a DB sessionmaker for
@@ -299,6 +299,10 @@ async def assemble_worker(*, sessionmaker, agents, knowledge, tenant: str, agent
             cfg = agent.config
     kwargs = {"name": f"w-{tenant}-{agent_id}" if agent_id else f"w-{tenant}", "tenant": tenant,
               "agent_id": agent_id}
+    # Per-JOB reference document (IDG-1000). Read from the caller, never from `cfg`: the agent's
+    # persisted config must not be able to pin a scope onto every future job.
+    if reference_doc_id:
+        kwargs["reference_doc_id"] = reference_doc_id
     if "gate_threshold" in cfg:
         kwargs["gate_threshold"] = cfg["gate_threshold"]
     if "retrieval_k" in cfg:
@@ -321,7 +325,9 @@ async def assemble_worker(*, sessionmaker, agents, knowledge, tenant: str, agent
             kwargs["system_prompt"] = persona
     worker_config = WorkerConfig(**kwargs)
     return Worker(config=worker_config, knowledge=knowledge,
-                  agent=AgentCore(generator=Generator(system_prompt=worker_config.system_prompt),
+                  agent=AgentCore(generator=Generator(
+                                      system_prompt=worker_config.system_prompt,
+                                      reference_scoped=bool(worker_config.reference_doc_id)),
                                   threshold=worker_config.gate_threshold, verified=verified),
                   # None in dev and in tests, so an uncapped environment behaves exactly as before.
                   cost_guard=cost_guard)
@@ -329,25 +335,28 @@ async def assemble_worker(*, sessionmaker, agents, knowledge, tenant: str, agent
 
 async def resolve_available_worker(*, sessionmaker, agents, knowledge, tenant: str,
                                    agent_id: str, assembler=None,
-                                   cost_guard=None) -> tuple[object, WorkerRecheck]:
+                                   cost_guard=None,
+                                   reference_doc_id: str | None = None) -> tuple[object, WorkerRecheck]:
     async def recheck() -> None:
         await require_available_worker(agents=agents, tenant=tenant, agent_id=agent_id)
 
     await recheck()
     worker = await (assembler or assemble_worker)(
         sessionmaker=sessionmaker, agents=agents, knowledge=knowledge,
-        tenant=tenant, agent_id=agent_id, cost_guard=cost_guard)
+        tenant=tenant, agent_id=agent_id, cost_guard=cost_guard,
+        reference_doc_id=reference_doc_id)
     await recheck()
     return worker, recheck
 
 
-async def resolve_tenant_worker(request: Request, tenant: str,
-                                agent_id: str) -> tuple[object, WorkerRecheck]:
+async def resolve_tenant_worker(request: Request, tenant: str, agent_id: str,
+                                reference_doc_id: str | None = None) -> tuple[object, WorkerRecheck]:
     return await resolve_available_worker(
         sessionmaker=getattr(request.app.state, "sessionmaker", None),
         agents=request.app.state.agents, knowledge=request.app.state.knowledge,
         tenant=tenant, agent_id=agent_id,
-        cost_guard=getattr(request.app.state, "cost_guard", None))
+        cost_guard=getattr(request.app.state, "cost_guard", None),
+        reference_doc_id=reference_doc_id)
 
 
 async def build_tenant_worker(request: Request, tenant: str, agent_id: str | None = None):

@@ -81,8 +81,11 @@ class KnowledgeService:
         return await self.store.delete_doc(tenant, doc_id, agent_id)
 
     async def retrieve(self, tenant: str, query: str, *, k: int = 5,
-                       agent_id: str | None = None) -> list[Passage]:
-        passages = await self.store.get(tenant, agent_id)  # tenant- (and optionally agent-) scoped
+                       agent_id: str | None = None, doc_id: str | None = None) -> list[Passage]:
+        """`doc_id` restricts retrieval to a single reference document (IDG-1000). There is no
+        fallback: if that document holds nothing relevant, this returns nothing, and the caller's
+        gate escalates rather than an answer being sourced from the wider knowledge base."""
+        passages = await self.store.get(tenant, agent_id, doc_id)  # tenant/agent/document scoped
         if not passages:
             return []
         # Query embedding + cosine/bm25 scoring are network-/CPU-bound pure Python; run them off

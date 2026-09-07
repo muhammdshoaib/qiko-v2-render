@@ -2,8 +2,10 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
-  AlertTriangle, ArrowRight, Building2, CalendarClock, CheckCircle2, FileText, Files, Sparkles,
+  AlertTriangle, ArrowRight, BookMarked, Building2, CalendarClock, CheckCircle2, FileText, Files,
+  Sparkles,
 } from "lucide-react";
+import { cn } from "@qiko/ui";
 import { getBrief, getPackOverview, getRfpPack, getTenderStatus } from "@/lib/api";
 import { formatShortDate } from "@/lib/stringUtils";
 import { OutcomesStrip, type OutcomeTile } from "@/components/cockpit/outcomes-strip";
@@ -151,6 +153,28 @@ export function OverviewTab({ packId, onOpenSections, onOpenBrief }: {
           <Files className="size-3.5" /> Source documents
         </div>
         <p className="mt-1 text-[12px] text-slate-500">Documents used to parse and answer this tender.</p>
+
+        {/* Knowledge Base Reference (IDG-1000). Absence is rendered explicitly rather than left
+            blank: a reviewer has to be able to tell at a glance whether a draft was allowed to
+            draw on the whole knowledge base or only one document. */}
+        {!packQ.isLoading && (
+          <div className={cn(
+            "mt-4 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[12px]",
+            pack?.reference_doc_id
+              ? "border-indigo-500/20 bg-indigo-500/[0.06] text-indigo-200"
+              : "border-white/[0.06] bg-white/[0.02] text-slate-400",
+          )}>
+            <BookMarked className="mt-0.5 size-3.5 shrink-0" />
+            {pack?.reference_doc_id ? (
+              <span className="min-w-0">
+                Answers restricted to <span className="font-semibold">{pack.reference_doc_id}</span>.
+                No other knowledge base document was used.
+              </span>
+            ) : (
+              <span className="min-w-0">Answers drew on the full knowledge base.</span>
+            )}
+          </div>
+        )}
 
         {packQ.isLoading ? (
           <div className="mt-4 space-y-2">

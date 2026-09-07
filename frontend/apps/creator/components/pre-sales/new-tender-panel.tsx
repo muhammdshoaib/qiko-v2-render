@@ -5,6 +5,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, FileUp, Loader2, Sparkles, X } from "lucide-react";
 import { createRfpPack, extractPack } from "@/lib/api";
 import { Input } from "@/components/cockpit/controls";
+import { KnowledgeReferencePicker } from "@/components/pre-sales/knowledge-reference-picker";
 
 // Create a tender pack and immediately extract its sections/questions from an uploaded RFP. Used
 // both as the empty state (no packs yet) and the "Add tender" flow from the cockpit header.
@@ -17,12 +18,14 @@ export function NewTenderPanel({ agentId, onCreated, onCancel }: {
   const [buyer, setBuyer] = useState("");
   const [deadline, setDeadline] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  // Optional. null means the full knowledge base, which is the existing behaviour.
+  const [referenceDocId, setReferenceDocId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const create = useMutation({
     mutationFn: async () => {
       const pack = await createRfpPack(agentId, title.trim(), buyer.trim(), deadline || null);
-      if (files.length > 0) await extractPack(pack.id, files);
+      if (files.length > 0) await extractPack(pack.id, files, referenceDocId);
       return pack;
     },
     onSuccess: (pack) => {
@@ -113,6 +116,20 @@ export function NewTenderPanel({ agentId, onCreated, onCancel }: {
                 ))}
               </ul>
             )}
+          </div>
+
+          <div>
+            <label className="mb-1 block text-[12px] font-medium text-slate-300">
+              Knowledge Base Reference <span className="text-slate-500">(optional)</span>
+            </label>
+            <KnowledgeReferencePicker
+              agentId={agentId} value={referenceDocId} onChange={setReferenceDocId}
+            />
+            <p className="mt-1.5 text-[11px] text-slate-500">
+              {referenceDocId
+                ? "Answers for this tender will come only from this document. Nothing else in the knowledge base will be used."
+                : "Answers will draw on the whole knowledge base. Pick a document to restrict them to a single past response."}
+            </p>
           </div>
 
           {error && (

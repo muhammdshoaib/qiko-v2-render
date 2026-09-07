@@ -182,6 +182,12 @@ class RfpPack(Base):
     # Source document(s) the tender was parsed from -- one entry per successfully-read uploaded
     # file ({"name", "chars", "uploaded_at"}). Nullable JSON; read back as [] when unset.
     source_documents: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    # Knowledge Base Reference (IDG-1000): when set, this job's answers are drafted ONLY from this
+    # one knowledge base document, with no fallback to the wider corpus. NULL is the default and
+    # means the full knowledge base, exactly as before. Set once at upload and never edited, so a
+    # reviewer can always tell what a given draft was allowed to draw on. Width matches
+    # Passage.doc_id, which is what it refers to.
+    reference_doc_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Win/Loss Analysis (app.modules.rfp.service.OUTCOMES/LOSS_REASONS)
     outcome: Mapped[str | None] = mapped_column(String(16), nullable=True)
     outcome_reason: Mapped[str] = mapped_column(String(32), default="")

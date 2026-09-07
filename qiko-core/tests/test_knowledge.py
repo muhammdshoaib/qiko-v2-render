@@ -182,3 +182,100 @@ async def test_tenant_wide_knowledge_is_visible_to_all_workers():
     assert {d["doc_id"] for d in await svc.list_documents("acme")} == {"company-policy"}
 
 
+# --- IDG-1001: single reference-document retrieval scoping ---
+async def test_store_get_filters_by_doc_id():
+    s = InMemoryVectorStore()
+    await s.add(Passage(id="1", tenant="acme", doc_id="bid-2024", text="x"))
+    await s.add(Passage(id="2", tenant="acme", doc_id="policies", text="y"))
+    assert [p.id for p in await s.get("acme", None, "bid-2024")] == ["1"]
+    assert await s.get("acme", None, "no-such-doc") == []
+    # Unscoped stays exactly as before.
+    assert {p.id for p in await s.get("acme")} == {"1", "2"}
+
+
+async def test_retrieve_scoped_to_a_single_document():
+    svc = await _service()
+    hits = await svc.retrieve("acme", "ISO 9001 certification", k=5, doc_id="iso")
+    assert hits and {p.doc_id for p in hits} == {"iso"}
+
+
+async def test_scoped_retrieve_has_no_fallback_to_the_wider_knowledge_base():
+    """The acceptance criterion that matters most. When the reference document is a poor match
+    for the question, retrieval must stay inside it rather than quietly returning the document
+    that answers the question better. A silent fallback here would produce an answer that reads
+    as correct while being sourced from outside the bid the customer scoped to.
+
+    Note the scoped result here is EMPTY rather than weak: retrieval._rank keeps only positive
+    scores, so a reference document with no relevance to the question contributes nothing. That
+    is the intended "insufficient detail in the reference document" path -- no evidence reaches
+    the generator, so the gate escalates instead of an answer being invented."""
+    svc = await _service()
+    # "hse" is the document that actually answers this; scoped to "iso", nothing may come back.
+    hits = await svc.retrieve("acme", "health and safety incident reporting", k=5, doc_id="iso")
+    assert hits == []
+
+    # Unscoped, the very same question does reach "hse" -- which is what makes the assertion
+    # above meaningful rather than an accident of the corpus.
+    unscoped = await svc.retrieve("acme", "health and safety incident reporting", k=5)
+    assert {p.doc_id for p in unscoped} == {"hse"}
+
+
+async def test_scoped_retrieve_never_crosses_tenants():
+    """A doc_id is only unique within a tenant, so scoping must never become a way to name
+    another tenant's document. Both copies are made relevant to the query on purpose: an empty
+    result would pass this assertion for the wrong reason, so the caller's copy must actually
+    come back while the other tenant's stays invisible."""
+    svc = KnowledgeService(store=InMemoryVectorStore())
+    await svc.ingest("acme", "shared-name", "Acme publishes its pricing structure openly.")
+    await svc.ingest("beta", "shared-name", "Beta confidential pricing structure.")
+
+    hits = await svc.retrieve("acme", "pricing structure", k=5, doc_id="shared-name")
+    assert [p.text for p in hits] == ["Acme publishes its pricing structure openly."]
+    assert await svc.retrieve("nobody", "anything", doc_id="shared-name") == []
+
+
+async def test_scoped_retrieve_still_respects_the_agent_scope():
+    """doc_id narrows within the worker's corpus; it does not widen it. Two workers holding the
+    same doc_id must not see each other's copy."""
+    svc = KnowledgeService(store=InMemoryVectorStore())
+    await svc.ingest("acme", "shared-name", ISO, agent_id="a1")
+    await svc.ingest("acme", "shared-name", HSE, agent_id="a2")
+
+    a1 = await svc.retrieve("acme", "certification", k=5, agent_id="a1", doc_id="shared-name")
+    assert a1 and all("health and safety" not in p.text for p in a1)
+
+
+async def test_scoped_retrieve_excludes_a_tenant_wide_document_sharing_the_doc_id():
+    """A scoped job must draw on ONE document, and the picker only ever offers the worker's own
+    (list_documents hides tenant-wide ones from a per-worker listing). Unscoped worker retrieval
+    deliberately also sees tenant-wide passages, so without an explicit carve-out a scope would
+    quietly pull in a tenant-wide document that happens to share the doc_id -- while the cockpit
+    tells the reviewer nothing else was used."""
+    svc = KnowledgeService(store=InMemoryVectorStore())
+    await svc.ingest("acme", "policy", "Worker copy: ISO 9001 certification is held.", agent_id="a1")
+    await svc.ingest("acme", "policy", "Tenant-wide copy: ISO 9001 certification is held.")
+
+    hits = await svc.retrieve("acme", "ISO 9001 certification", k=5, agent_id="a1", doc_id="policy")
+    assert [p.text for p in hits] == ["Worker copy: ISO 9001 certification is held."]
+
+    # Unscoped worker retrieval is unchanged: it still sees the shared tenant-wide passage.
+    unscoped = await svc.retrieve("acme", "ISO 9001 certification", k=5, agent_id="a1")
+    assert len(unscoped) == 2
+
+
+async def test_scoped_retrieve_to_an_empty_document_returns_nothing():
+    """No passages in scope means no evidence, which is what lets the gate escalate rather than
+    the generator inventing an answer."""
+    svc = await _service()
+    assert await svc.retrieve("acme", "anything at all", k=5, doc_id="never-ingested") == []
+
+
+async def test_unscoped_retrieve_is_unchanged_by_the_scoping_feature():
+    """Regression guard: the default path must behave exactly as it did before doc_id existed.
+    Each question reaches the document that answers it, and only that one, because zero-relevance
+    passages are dropped by retrieval._rank."""
+    svc = await _service()
+    assert {p.doc_id for p in await svc.retrieve("acme", "ISO 9001 certification", k=5)} == {"iso"}
+    assert {p.doc_id for p in await svc.retrieve("acme", "health and safety incident reporting", k=5)} == {"hse"}
+
+

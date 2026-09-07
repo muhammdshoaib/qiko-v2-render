@@ -32,8 +32,29 @@ from app.modules.agentcore.models import Requirement
 _IDENTITY_DEFAULT = (
     "You are a helpful AI assistant. Answer using ONLY the supplied evidence. "
     "Do not invent facts, dates, names, or figures. "
-    "If the context contains no relevant evidence, clearly state that no knowledge base has been "
-    "uploaded and you cannot answer yet."
+    "If the context contains no relevant evidence, clearly state that the available evidence does "
+    "not cover this and you cannot answer it yet."
+)
+
+# The extra constraint for a job restricted to ONE reference document (IDG-1000).
+#
+# Applied as its OWN layer rather than folded into the identity, because a worker with a
+# synthesized persona (QIK-315) replaces the identity entirely -- and the IDG pre-sales worker has
+# one. Folding the scope into the identity would silently drop it for exactly the workers this
+# feature was built for. Layered like the output contract, it holds for persona and default
+# workers alike.
+#
+# Note the wording of the no-evidence case. The default identity above used to assert "no
+# knowledge base has been uploaded", a claim the model is in no position to make: it sees
+# retrieved passages, not the corpus. On a scoped job it is flatly wrong -- the customer's
+# knowledge base is full, the selected document simply does not cover the question -- and telling
+# a customer their knowledge base is empty when it is not is worse than saying nothing.
+_REFERENCE_SCOPE_CONSTRAINT = (
+    "SCOPE: every piece of evidence you have been given comes from ONE reference document the "
+    "user selected for this job, and it is the only permitted source. Never draw on, refer to, or "
+    "speculate about anything outside it. If that evidence does not cover the question, say "
+    "plainly that the selected reference document does not contain enough detail to answer it, "
+    "and do not answer from general knowledge."
 )
 
 # The OUTPUT CONTRACT (JSON shape + no-scaffolding). This is ALWAYS enforced, for every worker,
@@ -162,6 +183,10 @@ class Generator:
     # tender-answering worker and a pre-sales-writing worker are the same engine but must not
     # sound like the same person. Falls back to the generic bid-response-writer prompt.
     system_prompt: str | None = None
+    # True when this worker is answering a job restricted to one reference document (IDG-1000).
+    # Retrieval already enforces the restriction; this only makes the model describe the limit
+    # honestly instead of implying the knowledge base is empty.
+    reference_scoped: bool = False
 
     def __post_init__(self) -> None:
         if self.provider is None:
@@ -169,12 +194,16 @@ class Generator:
 
     @property
     def system(self) -> str:
-        """The full SYSTEM prompt: the worker's persona (or the default identity) followed by the
-        ALWAYS-enforced output contract. A custom persona replaces only the identity, so every
-        worker keeps the structured JSON (confidence/gaps) the gate relies on -- QIK-315."""
-        if self.system_prompt:
-            return f"{self.system_prompt}\n\n{_OUTPUT_CONTRACT}"
-        return SYSTEM
+        """The full SYSTEM prompt: the worker's persona (or the default identity), then the
+        reference-document scope constraint when the job is scoped, then the ALWAYS-enforced
+        output contract. A custom persona replaces only the identity, so every worker keeps both
+        the scope constraint and the structured JSON (confidence/gaps) the gate relies on."""
+        identity = self.system_prompt if self.system_prompt else _IDENTITY_DEFAULT
+        if not self.reference_scoped:
+            # Unchanged from before this feature, including the single-space join on the default
+            # path, so an unscoped job sends a byte-identical prompt to the one it always sent.
+            return f"{identity}\n\n{_OUTPUT_CONTRACT}" if self.system_prompt else SYSTEM
+        return f"{identity}\n\n{_REFERENCE_SCOPE_CONSTRAINT}\n\n{_OUTPUT_CONTRACT}"
 
     def build_prompt(self, req: Requirement, verified: list[str] | None = None) -> str:
         evidence = list(req.context) + list(verified or [])

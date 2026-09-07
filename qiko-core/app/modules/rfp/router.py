@@ -5,7 +5,7 @@ import asyncio
 import io
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -52,12 +52,38 @@ _DOCUMENT_READ_TIMEOUT = 90
 
 
 async def _resolve_pack_worker(request: Request, tenant: str, pack_id: str, packs):
+    """Every answer-producing path in this module goes through here, which is what makes the
+    Knowledge Base Reference (IDG-1000) apply uniformly: the pack's own reference_doc_id is bound
+    into the Worker, so per-question, per-section, whole-pack and regenerate-all are all scoped
+    without each call site having to remember. The background drafts job does the same in
+    rfp.generation.run_generation, and /chat retrieves directly so it passes doc_id itself."""
     try:
         pack = await packs.get(tenant, pack_id)
     except RfpPackNotFound as e:
         raise HTTPException(status_code=404, detail="RFP pack not found") from e
-    worker, recheck = await resolve_tenant_worker(request, tenant, pack.agent_id)
+    worker, recheck = await resolve_tenant_worker(
+        request, tenant, pack.agent_id, reference_doc_id=pack.reference_doc_id)
     return pack, worker, recheck
+
+
+async def _validated_reference_doc(request: Request, tenant: str, agent_id: str,
+                                   reference_doc_id: str | None) -> str | None:
+    """Resolve the requested Knowledge Base Reference to a document the caller's worker actually
+    holds, or 422.
+
+    Fails closed on purpose. An unknown id would otherwise scope the job to nothing, every
+    question would come back flagged as unanswerable, and that reads as the product being broken
+    rather than as a bad input. list_documents is already tenant- and agent-scoped, so this is
+    also what stops one tenant naming another's document."""
+    doc_id = (reference_doc_id or "").strip()
+    if not doc_id:
+        return None
+    known = await request.app.state.knowledge.list_documents(tenant, agent_id=agent_id)
+    if doc_id not in {d["doc_id"] for d in known}:
+        raise HTTPException(
+            status_code=422,
+            detail="that knowledge base reference is not a document this worker can use")
+    return doc_id
 
 
 async def _resolve_pack(request: Request, tenant: str, pack_id: str, packs):
@@ -227,7 +253,8 @@ async def delete_pack(pack_id: str, request: Request,
 
 async def _start_generation(request: Request, tenant: str, pack_id: str, text: str, packs,
                             reqs, answers, tree, *, agent_id: str,
-                            recheck: WorkerRecheck) -> dict:
+                            recheck: WorkerRecheck,
+                            reference_doc_id: str | None = None) -> dict:
     """Persist the uploaded tender text, mark every artifact pending, and kick off the background
     job that produces requirements/sections/brief/compliance/drafts -- then return immediately so
     the upload doesn't block on a full generation pass. The frontend polls GET .../status.
@@ -238,6 +265,11 @@ async def _start_generation(request: Request, tenant: str, pack_id: str, text: s
     serializable ids are put on the wire in that case."""
     await recheck()
     await packs.set_document_text(tenant, pack_id, text)
+    await recheck()
+    # Written BEFORE the job is enqueued, and written even when it is None, so the eager and arq
+    # backends both read the same scope and a re-upload without a reference clears a previous one
+    # instead of silently inheriting it.
+    await packs.set_reference_doc(tenant, pack_id, reference_doc_id)
     await recheck()
     await packs.set_gen_status(tenant, pack_id, initial_gen_status())
     await recheck()
@@ -257,6 +289,9 @@ async def _start_generation(request: Request, tenant: str, pack_id: str, text: s
 async def extract(pack_id: str, request: Request,
                   files: list[UploadFile] | None = File(default=None),
                   file: UploadFile | None = File(default=None),
+                  # Bounded here, before _validated_reference_doc reads the corpus to check it, so
+                  # an oversized value is rejected without that read. Matches Passage.doc_id.
+                  reference_doc_id: str | None = Form(default=None, max_length=128),
                   tenant: str = Depends(authed_tenant),
                   _role: dict = Depends(require_role(Role.editor)), packs=Depends(get_rfp_packs),
                   reqs=Depends(get_requirements), answers=Depends(get_pack_answers),
@@ -268,9 +303,16 @@ async def extract(pack_id: str, request: Request,
     recorded per file so the cockpit can show what went in. Returns immediately with
     {"status": "processing"}; poll GET /rfp/packs/{id}/status for per-artifact progress.
 
+    Optionally scoped: `reference_doc_id` restricts this job's answers to that ONE knowledge base
+    document, with no fallback to the wider corpus (IDG-1000). Omitting it keeps today's behaviour
+    exactly. The scope is fixed here and never edited afterwards, so re-scoping means a new upload.
+
     Backward compatible: accepts many files under the `files` field, and also a single legacy
     `file` field, so an older single-file client still works."""
     pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
+    # Validated before anything is persisted, so a bad reference fails the upload outright rather
+    # than producing a job whose every answer is silently unanswerable.
+    reference = await _validated_reference_doc(request, tenant, pack.agent_id, reference_doc_id)
 
     uploads: list[UploadFile] = list(files or [])
     if file is not None:
@@ -305,11 +347,15 @@ async def extract(pack_id: str, request: Request,
     await recheck()
     await packs.set_source_documents(tenant, pack_id, source_documents)
     return await _start_generation(request, tenant, pack_id, "\n\n".join(parts), packs, reqs,
-                                   answers, tree, agent_id=pack.agent_id, recheck=recheck)
+                                   answers, tree, agent_id=pack.agent_id, recheck=recheck,
+                                   reference_doc_id=reference)
 
 
 class ExtractUrlBody(BaseModel):
     url: str = Field(min_length=1, pattern=r"^https?://")
+    # Same optional Knowledge Base Reference as /extract, so a tender sourced from a URL can be
+    # scoped identically to an uploaded one.
+    reference_doc_id: str | None = Field(default=None, max_length=128)
 
 
 def _assert_public_url(url: str) -> None:
@@ -345,6 +391,8 @@ async def extract_from_url(pack_id: str, body: ExtractUrlBody, request: Request,
     extract_text dispatches on the response's actual content type), then kicks off the same
     BACKGROUND generation job. Returns immediately with {"status": "processing"}."""
     pack, recheck = await _resolve_pack(request, tenant, pack_id, packs)
+    reference = await _validated_reference_doc(
+        request, tenant, pack.agent_id, body.reference_doc_id)
 
     import httpx
 
@@ -371,7 +419,8 @@ async def extract_from_url(pack_id: str, body: ExtractUrlBody, request: Request,
         raise HTTPException(status_code=422, detail="that URL had no extractable text")
 
     return await _start_generation(request, tenant, pack_id, text, packs, reqs, answers, tree,
-                                   agent_id=pack.agent_id, recheck=recheck)
+                                   agent_id=pack.agent_id, recheck=recheck,
+                                   reference_doc_id=reference)
 
 
 class AskBody(BaseModel):
@@ -429,10 +478,16 @@ async def tender_chat(pack_id: str, body: AskBody, request: Request,
     /rfp/packs/{id}/chat/history reads back in order."""
     pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
     await recheck()
+    # Scoped like every other answer on a scoped job (IDG-1000): the cockpit chat develops the
+    # answers that go into the same submission, so letting it read the wider knowledge base would
+    # reintroduce exactly the inconsistency the reference document exists to prevent.
     passages = await worker.knowledge.retrieve(tenant, body.question, k=worker.config.retrieval_k,
-                                               agent_id=worker.config.agent_id)
+                                               agent_id=worker.config.agent_id,
+                                               doc_id=pack.reference_doc_id)
     await recheck()
-    kb_block = "\n\n".join(f"[{i + 1}] {p.text}" for i, p in enumerate(passages)) or "(no matching company documents)"
+    no_kb_match = ("(the reference document for this tender contains nothing relevant)"
+                   if pack.reference_doc_id else "(no matching company documents)")
+    kb_block = "\n\n".join(f"[{i + 1}] {p.text}" for i, p in enumerate(passages)) or no_kb_match
 
     # Tender context must answer TENDER questions (deadline, scope, submission rules, key dates), so
     # include the whole brief (summary/scope/format/key_dates/etc.) AND a generous slice of the
@@ -687,7 +742,7 @@ async def _regenerate_tree(request: Request, tenant: str, pack_id: str, tree,
     onto its tree question. Fails closed with 503 on a StubProvider fallback (mirroring
     generation.generate_question) so echo text is never persisted or exported. Locked questions
     (human sign-off) and manual sections are left untouched."""
-    _pack, worker, recheck = await _resolve_pack_worker(
+    pack, worker, recheck = await _resolve_pack_worker(
         request, tenant, pack_id, packs)
     await recheck()
     manual_sections = {s.id for s in await tree.sections.list(tenant, pack_id) if s.manual}
@@ -698,7 +753,8 @@ async def _regenerate_tree(request: Request, tenant: str, pack_id: str, tree,
     async def _regen(q):
         async with semaphore:
             return await generate_question_core(
-                tenant, q, worker, tree, recheck_worker=recheck)
+                tenant, q, worker, tree, recheck_worker=recheck,
+                reference_doc_id=pack.reference_doc_id)
 
     try:
         await asyncio.gather(*(_regen(q) for q in to_draft))
@@ -1161,14 +1217,16 @@ async def lock_all_in_section(pack_id: str, section_id: str, request: Request,
         raise HTTPException(status_code=404, detail="section not found") from e
 
 
-async def _generate_question(tenant: str, question, worker, tree, recheck: WorkerRecheck):
+async def _generate_question(tenant: str, question, worker, tree, recheck: WorkerRecheck,
+                             reference_doc_id: str | None = None):
     """Draft one question with agentcore (shared with the background job's drafts stage -- see
     app.modules.rfp.generation.generate_question). A StubProvider fallback (e.g. Bedrock outage)
     echoes context rather than a real grounded answer, so it is never persisted; fail closed with
     503 so the reviewer sees an outage, not a fabricated-looking draft they might lock and submit."""
     try:
         return await generate_question_core(
-            tenant, question, worker, tree, recheck_worker=recheck)
+            tenant, question, worker, tree, recheck_worker=recheck,
+            reference_doc_id=reference_doc_id)
     except StubProviderUnavailable as e:
         raise HTTPException(status_code=503, detail="answer generation is temporarily unavailable") from e
 
@@ -1178,12 +1236,13 @@ async def generate_question(pack_id: str, question_id: str, request: Request,
                             tenant: str = Depends(authed_tenant),
                             _role: dict = Depends(require_role(Role.editor)),
                             packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)):
-    _pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
+    pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
     try:
         question = await tree.get_question_for_pack(tenant, pack_id, question_id)
     except PackQuestionNotFound as e:
         raise HTTPException(status_code=404, detail="question not found") from e
-    return await _generate_question(tenant, question, worker, tree, recheck)
+    return await _generate_question(tenant, question, worker, tree, recheck,
+                                    pack.reference_doc_id)
 
 
 @router.post("/{pack_id}/sections/{section_id}/generate")
@@ -1191,7 +1250,7 @@ async def generate_section(pack_id: str, section_id: str, request: Request,
                            tenant: str = Depends(authed_tenant),
                            _role: dict = Depends(require_role(Role.editor)),
                            packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)) -> list:
-    _pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
+    pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
     try:
         section = await tree.get_section_for_pack(tenant, pack_id, section_id)
     except PackSectionNotFound as e:
@@ -1202,7 +1261,8 @@ async def generate_section(pack_id: str, section_id: str, request: Request,
     out = []
     for q in await tree.questions.list_for_section(tenant, section_id):
         await tree.get_question_for_pack(tenant, pack_id, q.id)
-        out.append(await _generate_question(tenant, q, worker, tree, recheck))
+        out.append(await _generate_question(tenant, q, worker, tree, recheck,
+                                            pack.reference_doc_id))
     return out
 
 
@@ -1211,14 +1271,15 @@ async def generate_pack(pack_id: str, request: Request, tenant: str = Depends(au
                         _role: dict = Depends(require_role(Role.editor)),
                         packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)) -> list:
     """Whole-pack draft: every non-locked question in every non-manual section, via agentcore."""
-    _pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
+    pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
     manual_sections = {s.id for s in await tree.sections.list(tenant, pack_id) if s.manual}
     out = []
     for q in await tree.questions.list(tenant, pack_id):
         if q.section_id in manual_sections:
             continue
         await tree.get_question_for_pack(tenant, pack_id, q.id)
-        out.append(await _generate_question(tenant, q, worker, tree, recheck))
+        out.append(await _generate_question(tenant, q, worker, tree, recheck,
+                                            pack.reference_doc_id))
     return out
 
 

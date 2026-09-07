@@ -494,6 +494,9 @@ export type RfpPack = {
   id: string; tenant: string; agent_id: string; title: string; client_name: string; deadline: string | null;
   stage: string; created_at: string;
   source_documents?: SourceDocument[];
+  /** Knowledge Base Reference (IDG-1000): doc_id this job's answers are restricted to, or null
+   * for the full knowledge base. Fixed at upload; there is no endpoint that edits it. */
+  reference_doc_id?: string | null;
   outcome: "won" | "lost" | "withdrawn" | null; outcome_reason: string; outcome_value: number | null; outcome_at: string | null;
   gen_status?: TenderGenStatus | null;
 };
@@ -769,11 +772,17 @@ export const generatePack = (packId: string) =>
   request<PackQuestion[]>(`/rfp/packs/${packId}/generate`, { method: "POST" });
 
 /** Upload one OR MANY RFP/tender documents to a pack: extracts requirements and (re)builds the
- * section tree. Every file is sent under the `files` field, so a single file works too. */
-export async function extractPack(packId: string, files: File | File[]): Promise<PackRequirement[]> {
+ * section tree. Every file is sent under the `files` field, so a single file works too.
+ *
+ * `referenceDocId` restricts this job's answers to that ONE knowledge base document, with no
+ * fallback (IDG-1000). Omitting it keeps the existing behaviour. The scope is fixed by this call
+ * and cannot be edited afterwards, so re-scoping means uploading again. */
+export async function extractPack(packId: string, files: File | File[],
+                                  referenceDocId?: string | null): Promise<PackRequirement[]> {
   const csrf = csrfToken();
   const form = new FormData();
   for (const f of Array.isArray(files) ? files : [files]) form.append("files", f);
+  if (referenceDocId) form.append("reference_doc_id", referenceDocId);
   const res = await fetch(`${BASE}/rfp/packs/${packId}/extract`, {
     method: "POST", credentials: "include", body: form,
     headers: csrf ? { "x-csrf-token": csrf } : undefined,

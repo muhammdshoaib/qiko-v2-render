@@ -3983,6 +3983,10 @@ export interface paths {
          *     recorded per file so the cockpit can show what went in. Returns immediately with
          *     {"status": "processing"}; poll GET /rfp/packs/{id}/status for per-artifact progress.
          *
+         *     Optionally scoped: `reference_doc_id` restricts this job's answers to that ONE knowledge base
+         *     document, with no fallback to the wider corpus (IDG-1000). Omitting it keeps today's behaviour
+         *     exactly. The scope is fixed here and never edited afterwards, so re-scoping means a new upload.
+         *
          *     Backward compatible: accepts many files under the `files` field, and also a single legacy
          *     `file` field, so an older single-file client still works.
          */
@@ -5682,6 +5686,8 @@ export interface components {
             file?: string | null;
             /** Files */
             files?: string[] | null;
+            /** Reference Doc Id */
+            reference_doc_id?: string | null;
         };
         /** Body_ingest_file_api_v1_knowledge_ingest_file_post */
         Body_ingest_file_api_v1_knowledge_ingest_file_post: {
@@ -6234,6 +6240,8 @@ export interface components {
         };
         /** ExtractUrlBody */
         ExtractUrlBody: {
+            /** Reference Doc Id */
+            reference_doc_id?: string | null;
             /** Url */
             url: string;
         };
@@ -8136,6 +8144,8 @@ export interface components {
             outcome_reason: string;
             /** Outcome Value */
             outcome_value?: number | null;
+            /** Reference Doc Id */
+            reference_doc_id?: string | null;
             /** Source Documents */
             source_documents?: unknown[];
             /**

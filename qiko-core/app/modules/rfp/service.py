@@ -41,6 +41,10 @@ class RfpPack:
     # ({"name", "chars", "uploaded_at"}). Persisted separately from document_text/gen_status so the
     # cockpit can always show WHICH files went in, even after gen_status is reset by a re-extract.
     source_documents: list = field(default_factory=list)
+    # Knowledge Base Reference (IDG-1000). None means the full knowledge base (unchanged default).
+    # Set once, at upload, and never edited: re-scoping requires a new upload, so a reviewer can
+    # always tell what a given draft was allowed to draw on.
+    reference_doc_id: str | None = None
     # Win/Loss Analysis -- see OUTCOMES/LOSS_REASONS above.
     outcome: str | None = None
     outcome_reason: str = ""
@@ -64,6 +68,7 @@ class RfpPackStore(Protocol):
     async def set_stage(self, tenant: str, pack_id: str, stage: str) -> RfpPack: ...
     async def set_document_text(self, tenant: str, pack_id: str, text: str) -> RfpPack: ...
     async def set_source_documents(self, tenant: str, pack_id: str, docs: list) -> RfpPack: ...
+    async def set_reference_doc(self, tenant: str, pack_id: str, doc_id: str | None) -> RfpPack: ...
     async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,
                           reason: str, value: float | None) -> RfpPack: ...
     async def set_outcome_for_enabled_agent(
@@ -112,6 +117,13 @@ class InMemoryRfpPackStore:
         if pack is None:
             raise RfpPackNotFound(pack_id)
         pack.source_documents = list(docs or [])
+        return pack
+
+    async def set_reference_doc(self, tenant: str, pack_id: str, doc_id: str | None) -> RfpPack:
+        pack = await self.get(tenant, pack_id)
+        if pack is None:
+            raise RfpPackNotFound(pack_id)
+        pack.reference_doc_id = doc_id
         return pack
 
     async def set_outcome(self, tenant: str, pack_id: str, *, outcome: str | None,
@@ -190,6 +202,11 @@ class RfpPackService:
 
     async def set_source_documents(self, tenant: str, pack_id: str, docs: list) -> RfpPack:
         return await self.store.set_source_documents(tenant, pack_id, docs)
+
+    async def set_reference_doc(self, tenant: str, pack_id: str, doc_id: str | None) -> RfpPack:
+        """Record (or clear) this job's Knowledge Base Reference. Only ever called from the upload
+        path: there is deliberately no endpoint that edits it on an existing job."""
+        return await self.store.set_reference_doc(tenant, pack_id, doc_id)
 
     def _validate_outcome(self, outcome: str | None, reason: str, value: float | None) -> None:
         if outcome is not None and outcome not in OUTCOMES:

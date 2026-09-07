@@ -151,6 +151,7 @@ async def extract_requirements_chunked(
 
 async def generate_question(
     tenant: str, question, worker, tree, *, recheck_worker: WorkerRecheck | None = None,
+    reference_doc_id: str | None = None,
 ):
     """Draft one question with agentcore -- the SAME LLM path as /answers: worker.answer() ->
     grounded generator + independent grounding critic + gate decision. kb_gap flips when nothing
@@ -174,10 +175,29 @@ async def generate_question(
     # DISTINCT values; persist both plus the writer's gaps note. kb_gap keeps its meaning: no
     # citations OR the gate escalated to human review.
     await recheck()
+    # Passed in by the caller rather than read off worker.config. The scope is ENFORCED on the
+    # WorkerConfig, which is the single seam every generation path shares; this argument only
+    # drives the reviewer-facing note, so it stays out of the worker contract -- which every
+    # caller in this codebase duck-types as just .answer().
+    gaps = result.gaps
+    unsupported = not result.citations or result.decision == Decision.human_review
+    if reference_doc_id and unsupported:
+        # On a scoped job, an open question has one specific cause worth naming: the reference
+        # document could not support it. Stating that here means the reviewer sees WHY, rather
+        # than a bare gap flag they have to go and diagnose.
+        #
+        # Deliberately covers BOTH the empty retrieval and the escalated-by-the-gate case. Empty
+        # retrieval is the rarer one: BM25 applies no stopword list, so a real question usually
+        # shares some common word with the document and pulls back weak passages rather than
+        # nothing. Keying the note on "no citations" alone would therefore have missed the case
+        # that actually occurs most often -- evidence retrieved, grounding too low, escalated.
+        gaps = (f"The selected reference document ({reference_doc_id}) does not contain enough "
+                f"detail to answer this confidently. Nothing outside it was used."
+                + (f" {gaps}" if gaps else ""))
     updated = await tree.apply_generation(
         tenant, question.id, ai_answer=result.answer, ai_sources=result.citations,
         confidence=round(result.confidence, 2), grounding=round(result.critique.grounding, 2),
-        gaps=result.gaps, decision=result.decision.value,
+        gaps=gaps, decision=result.decision.value,
         kb_gap=not result.citations or result.decision == Decision.human_review)
     await recheck()
     return updated
@@ -224,7 +244,11 @@ async def run_generation(*, tenant: str, pack_id: str, agent_id: str | None,
         raise WorkerUnavailable
     worker, recheck = await resolve_available_worker(
         sessionmaker=sessionmaker, agents=agents, knowledge=knowledge,
-        tenant=tenant, agent_id=pack.agent_id, assembler=assemble_worker)
+        tenant=tenant, agent_id=pack.agent_id, assembler=assemble_worker,
+        # Knowledge Base Reference (IDG-1000). Read off the pack here rather than passed in, so
+        # the arq path -- which only carries serializable ids over Redis and rebuilds its own
+        # stores -- gets the same scope as the eager path with nothing extra on the wire.
+        reference_doc_id=pack.reference_doc_id)
 
     async def save() -> None:
         await recheck()
@@ -317,7 +341,8 @@ async def run_generation(*, tenant: str, pack_id: str, agent_id: str | None,
             try:
                 await recheck()
                 await generate_question(
-                    tenant, q, worker, tree, recheck_worker=recheck)
+                    tenant, q, worker, tree, recheck_worker=recheck,
+                    reference_doc_id=pack.reference_doc_id)
                 await recheck()
             except WorkerUnavailable:
                 raise

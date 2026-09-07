@@ -75,6 +75,46 @@ async def test_workers_are_tenant_isolated():
     assert await b.knowledge.retrieve("essential", "ISO 9001") == []
 
 
+# --- IDG-1001: a worker carrying a reference document scopes every answer to it ---
+HSE = "The health and safety policy covers site risk assessments and incident reporting."
+
+
+async def test_reference_doc_scopes_every_answer_the_worker_produces():
+    """WorkerConfig.reference_doc_id is the single seam every generation path goes through
+    (background drafts, per-question, per-section, whole pack, regenerate-all), so proving it
+    here proves the scope for all of them."""
+    cfg = WorkerConfig(name="idg", tenant="idg", reference_doc_id="bid-2024")
+    w = build_worker(cfg, provider=StubProvider())
+    await w.knowledge.ingest("idg", "bid-2024", ISO)
+    await w.knowledge.ingest("idg", "hse-policy", HSE)
+
+    # A question the reference document DOES answer stays inside it.
+    result = await w.answer("B1", "Describe your ISO 9001 certification.")
+    assert result.citations == ["bid-2024"]
+
+    # A question only the wider knowledge base answers must not reach it: no citations at all,
+    # and the gate escalates rather than an answer being sourced from outside the scope.
+    result = await w.answer("B2", "Describe your incident reporting arrangements.")
+    assert result.citations == []
+    assert result.decision is Decision.human_review
+    assert "incident reporting" not in result.answer
+
+
+async def test_no_reference_doc_leaves_the_worker_on_the_full_knowledge_base():
+    """Regression guard for every existing worker: an unset reference_doc_id must behave
+    exactly as before."""
+    w = _worker()
+    await w.knowledge.ingest("idg", "bid-2024", ISO)
+    await w.knowledge.ingest("idg", "hse-policy", HSE)
+
+    result = await w.answer("B1", "Describe your incident reporting arrangements.")
+    assert "hse-policy" in result.citations
+
+
+async def test_reference_doc_defaults_to_none():
+    assert WorkerConfig(name="w", tenant="t").reference_doc_id is None
+
+
 def test_registry():
     reg = WorkerRegistry()
     reg.register(WorkerConfig(name="idg", tenant="idg"), provider=StubProvider())

@@ -183,13 +183,19 @@ async def test_runtime_confidence_falls_back_to_grounding_without_selfreport():
 
 
 def test_default_system_prompt_is_neutral_and_warns_without_knowledge():
-    """The default identity must not be client-specific and must tell the model to admit when no
-    knowledge base has been uploaded, so an empty-context question cannot be answered with IDG
-    or any other client's details."""
+    """The default identity must not be client-specific and must tell the model to admit when the
+    evidence does not cover the question, so an empty-context question cannot be answered with IDG
+    or any other client's details.
+
+    It must NOT claim the knowledge base is empty (IDG-1003). The model sees retrieved passages,
+    not the corpus, so it cannot know that -- and on a job scoped to one reference document the
+    claim is simply false: the customer's knowledge base is full, the selected document just does
+    not cover this question."""
     gen = Generator(provider=StubProvider())
     assert "IDG" not in gen.system
     assert "bid-response writer" not in gen.system.lower()
-    assert "no knowledge base" in gen.system.lower()
+    assert "does not cover this and you cannot answer it yet" in gen.system.lower()
+    assert "no knowledge base" not in gen.system.lower()
 
 
 # --- critic ---
