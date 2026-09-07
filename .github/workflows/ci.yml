@@ -4,7 +4,7 @@ name: CI
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, dev, preprod, production]
   pull_request:
 
 permissions:
@@ -24,6 +24,53 @@ jobs:
       compose: ${{ steps.filter.outputs.compose }}
     steps:
       - uses: actions/checkout@v4
+
+      # Every new commit must be authored by the release owner. Deliberately a step in this
+      # already-running job rather than its own job, because a separate job bills a whole extra
+      # minute per CI run. Commits authored before CUTOFF are grandfathered: this repo predates
+      # the rule and rewriting shared history that 8 collaborators have cloned is more dangerous
+      # than the drift. Uses the API, so the shallow checkout above is enough.
+      - name: Verify commit identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CUTOFF: '2026-09-07'
+          ALLOWED_EMAILS: 'razvan.baba@icloud.com,80892626+pixelartisanag@users.noreply.github.com'
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            COMMITS=$(gh api --paginate \
+              "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/commits" \
+              --jq '.[] | "\(.sha[0:8])|\(.commit.author.date)|\(.commit.author.email)|\(.commit.author.name)"')
+          else
+            BEFORE="${{ github.event.before }}"
+            if [[ -z "$BEFORE" || "$BEFORE" == "0000000000000000000000000000000000000000" ]]; then
+              echo "Branch created or no before-SHA to compare against; nothing to check."
+              exit 0
+            fi
+            COMMITS=$(gh api "repos/${{ github.repository }}/compare/${BEFORE}...${{ github.sha }}" \
+              --jq '.commits[] | "\(.sha[0:8])|\(.commit.author.date)|\(.commit.author.email)|\(.commit.author.name)"')
+          fi
+          BAD=""
+          while IFS='|' read -r sha date email name; do
+            if [[ -z "${sha:-}" ]]; then
+              continue
+            fi
+            if [[ "${date%%T*}" < "$CUTOFF" ]]; then
+              continue
+            fi
+            if [[ ",$ALLOWED_EMAILS," != *",$email,"* ]]; then
+              BAD+="  $sha  $name <$email>"$'\n'
+            fi
+          done <<< "$COMMITS"
+          if [[ -n "$BAD" ]]; then
+            echo "::error::These commits are not authored by the release owner:"
+            printf '%s' "$BAD"
+            echo "Allowed: $ALLOWED_EMAILS"
+            echo "Set GIT_AUTHOR_NAME/GIT_AUTHOR_EMAIL (and the COMMITTER equivalents) when committing."
+            exit 1
+          fi
+          echo "Commit identity OK."
+
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -89,7 +136,14 @@ jobs:
   backend:
     needs: changes
     if: ${{ needs.changes.outputs.backend == 'true' }}
-    runs-on: ubuntu-latest
+    # Self-hosted on purpose. This job is ~17 min of pytest-with-coverage and, at ~200 runs a
+    # month, was on its own about 3,600 GitHub-hosted minutes, which alone blew past the Actions
+    # allowance. Self-hosted minutes are free, and the preprod box it runs on sits at ~5% CPU with
+    # its burst credits permanently maxed out. The runner is an unprivileged `ghrunner` user whose
+    # only extra group is `docker` (needed for the postgres:18 service container below, since
+    # AL2023 packages no Postgres 18 and the box has no rootless Docker). Deploy workflows
+    # deliberately stay on GitHub-hosted runners so AWS credentials never land on this box.
+    runs-on: [self-hosted, qiko-preprod]
     defaults:
       run:
         working-directory: qiko-core
@@ -115,15 +169,17 @@ jobs:
       QIKO_TEST_POSTGRES_URL: postgresql+asyncpg://qiko:qiko-ci@localhost:5432/qiko_test
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
+      # No actions/setup-python here on purpose: it ships no build for Amazon Linux 2023 (the
+      # self-hosted runner's OS) and fails with "version '3.11' ... was not found for this
+      # operating system". uv provisions and pins the interpreter itself, which is what it is
+      # for, and behaves identically on GitHub-hosted runners.
       - uses: astral-sh/setup-uv@v6
         with:
           version: "0.11.23"
           enable-cache: true
           cache-dependency-glob: qiko-core/uv.lock
-      - run: uv sync --frozen --extra dev
+      - run: uv python install 3.11
+      - run: uv sync --frozen --extra dev --python 3.11
       - run: uv run ruff check . ../scripts/check_local_contract.py ../scripts/sync_openapi.py
       - run: uv run pytest   # enforces --cov-fail-under=80 from pyproject.toml
 

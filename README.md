@@ -167,7 +167,8 @@ gated in the UI until the client release enables them.
 Deployments use Docker Compose behind Caddy, with environment configuration injected separately
 from application artifacts. The automated preprod pipeline follows this release history:
 
-1. A push to `main` runs `.github/workflows/deploy-preprod.yml` for that exact commit SHA.
+1. A merge into `preprod` (promoted from `main`) runs `.github/workflows/deploy-preprod.yml` for
+   that exact commit SHA. Pushing to `main` deploys nothing.
 2. CI creates a tracked-files-only `git archive`, computes its SHA-256 checksum, and publishes both
    under immutable, commit-SHA-addressed artifact names.
 3. The deployment receives the release SHA and checksum, fetches that exact artifact, verifies its

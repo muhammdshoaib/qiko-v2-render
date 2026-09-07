@@ -11,7 +11,8 @@ sets `ENVIRONMENT=preprod`, and the base compose sets `USE_DB_STORES=true` and `
 so the startup guard is satisfied and data persists to named volumes.
 
 ## Deploy (automated)
-Every push to `main` triggers `.github/workflows/deploy-preprod.yml`. Because the org disables
+Development lands on `main`, which deploys nothing. Promoting `main` into `preprod` by PR is what
+triggers `.github/workflows/deploy-preprod.yml`. Because the org disables
 deploy keys and port 22 is closed on the SSM-managed boxes, code is shipped to the host via **S3**,
 not a host-side git pull:
 

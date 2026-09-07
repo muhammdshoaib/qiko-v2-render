@@ -25,8 +25,18 @@ def test_release_workflows_require_oidc_sha_and_checksum_provenance():
     assert "PREPROD_DEPLOY_ROLE_ARN" in preprod_workflow and "aws-access-key-id" not in preprod_workflow
     assert "LIVE_DEPLOY_ROLE_ARN" in live_workflow and "aws-access-key-id" not in live_workflow
     assert "release_sha" in live_workflow and "/qiko/preprod/DEPLOYED_SHA" in live_workflow
-    assert "deploy-${{ inputs.release_sha }}.tar.gz" in live_workflow
+    # The live artifact must stay addressed by the exact release SHA, never a floating name. The
+    # SHA now comes from either the release_sha input (manual run) or github.sha (a merge into
+    # `production`), so the workflow resolves it into $RELEASE_SHA rather than interpolating the
+    # input directly.
+    assert "deploy-${RELEASE_SHA}.tar.gz" in live_workflow
     assert "deploy-latest.tar.gz" not in live_workflow
+    # Promotion is PR-based, so the production tip is a merge commit whose SHA differs from the
+    # preprod-verified one. The gate must therefore compare content (trees) and refuse a mismatch,
+    # otherwise anything could be merged straight into `production` and deployed.
+    assert "^{tree}" in live_workflow
+    assert "differs from what was verified on preprod" in live_workflow
+    assert "--is-ancestor" in live_workflow
     assert "head -n 1 .github/deploy/redeploy-preprod.sh" in preprod_workflow
     assert "head -n 1 .github/deploy/redeploy-live.sh" in live_workflow
     for script in (preprod_script, live_script):

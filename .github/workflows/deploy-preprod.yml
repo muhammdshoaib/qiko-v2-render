@@ -5,7 +5,7 @@ name: Deploy Preprod
 # the redeploy via SSM Run Command, health-checks, and rolls back to the previous artifact on failure.
 on:
   push:
-    branches: [main]
+    branches: [preprod]
   workflow_dispatch: {}
 
 permissions:

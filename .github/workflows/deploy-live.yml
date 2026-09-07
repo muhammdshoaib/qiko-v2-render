@@ -14,6 +14,8 @@ name: Deploy Live (production)
 # The production box is NOT hardcoded: its SSM instance id comes from the secret
 # LIVE_SSM_INSTANCE_ID (documented in docs/playbooks/live.md). Set it before the first run.
 on:
+  push:
+    branches: [production]
   workflow_dispatch:
     inputs:
       confirm:
@@ -46,7 +48,10 @@ jobs:
     # human must approve every production run. Production secrets can be scoped to this environment.
     environment: live
     steps:
-      - name: Guard - require explicit confirmation
+      # Only applies to the manual escape hatch: a merge into `production` is itself the
+      # confirmation, gated by branch protection on that branch.
+      - name: Guard - require explicit confirmation (manual runs only)
+        if: github.event_name == 'workflow_dispatch'
         env:
           DEPLOY_CONFIRM: ${{ inputs.confirm }}
         run: |
@@ -55,9 +60,24 @@ jobs:
             exit 1
           fi
 
+      - name: Resolve the commit being deployed
+        id: rel
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            SHA="${{ inputs.release_sha }}"
+          else
+            SHA="${{ github.sha }}"
+          fi
+          if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::release SHA must be 40 lowercase hex characters, got '$SHA'"
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_sha }}
+          ref: ${{ steps.rel.outputs.sha }}
           fetch-depth: 0
 
       - name: Configure AWS credentials
@@ -66,33 +86,64 @@ jobs:
           role-to-assume: ${{ secrets.LIVE_DEPLOY_ROLE_ARN }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Verify immutable release provenance
+      # Promotion is PR-based, so the commit landing on `production` is a merge commit with its
+      # own SHA, not the preprod SHA. What has to match is the CONTENT: this commit's tree must be
+      # byte-identical to the tree of the commit deployed and verified on preprod, and must
+      # descend from it. That still refuses anything preprod has not validated, and additionally
+      # refuses a promotion PR that introduces a change of its own.
+      - name: Verify release provenance against preprod
         env:
-          RELEASE_SHA: ${{ inputs.release_sha }}
+          RELEASE_SHA: ${{ steps.rel.outputs.sha }}
         run: |
-          set -e
-          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::release_sha must be 40 lowercase hex characters"; exit 1; }
-          [[ "$(git rev-parse HEAD)" == "$RELEASE_SHA" ]] || { echo "::error::checked out SHA mismatch"; exit 1; }
-          git fetch origin main
-          git merge-base --is-ancestor "$RELEASE_SHA" origin/main || { echo "::error::release SHA is not reachable from origin/main"; exit 1; }
+          set -euo pipefail
+          if [[ "$(git rev-parse HEAD)" != "$RELEASE_SHA" ]]; then
+            echo "::error::checked out SHA mismatch"
+            exit 1
+          fi
           PREPROD_SHA=$(aws ssm get-parameter --name /qiko/preprod/DEPLOYED_SHA --query Parameter.Value --output text)
-          [[ "$PREPROD_SHA" == "$RELEASE_SHA" ]] || { echo "::error::release SHA was not verified in preprod"; exit 1; }
+          if [[ ! "$PREPROD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::no valid preprod-verified SHA recorded (got '$PREPROD_SHA'); deploy to preprod first"
+            exit 1
+          fi
+          git fetch origin "$PREPROD_SHA" --depth=1 2>/dev/null || git fetch origin
+          if ! git cat-file -e "${PREPROD_SHA}^{commit}" 2>/dev/null; then
+            echo "::error::the preprod-verified commit $PREPROD_SHA is not present in this repository"
+            exit 1
+          fi
+          RELEASE_TREE=$(git rev-parse "${RELEASE_SHA}^{tree}")
+          PREPROD_TREE=$(git rev-parse "${PREPROD_SHA}^{tree}")
+          echo "release $RELEASE_SHA tree=$RELEASE_TREE"
+          echo "preprod $PREPROD_SHA tree=$PREPROD_TREE"
+          if [[ "$RELEASE_TREE" != "$PREPROD_TREE" ]]; then
+            echo "::error::this commit's content differs from what was verified on preprod ($PREPROD_SHA)."
+            echo "::error::Promote through preprod first; do not add changes in the production PR."
+            git --no-pager diff --stat "$PREPROD_SHA" "$RELEASE_SHA" || true
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$PREPROD_SHA" "$RELEASE_SHA"; then
+            echo "::error::$RELEASE_SHA does not descend from the preprod-verified commit $PREPROD_SHA"
+            exit 1
+          fi
 
       - name: Package immutable code artifact and checksum
+        env:
+          RELEASE_SHA: ${{ steps.rel.outputs.sha }}
         run: |
-          set -e
-          # Publish only the exact preprod-verified SHA and checksum.
-          git archive --format=tar.gz -o /tmp/qiko-v2.tar.gz "${{ inputs.release_sha }}"
+          set -euo pipefail
+          # Publish only the exact commit whose content preprod verified.
+          git archive --format=tar.gz -o /tmp/qiko-v2.tar.gz "$RELEASE_SHA"
           sha256sum /tmp/qiko-v2.tar.gz | cut -d ' ' -f1 > /tmp/qiko-v2.tar.gz.sha256
-          aws s3 cp /tmp/qiko-v2.tar.gz "s3://$DEPLOY_BUCKET/live/deploy-${{ inputs.release_sha }}.tar.gz"
-          aws s3 cp /tmp/qiko-v2.tar.gz.sha256 "s3://$DEPLOY_BUCKET/live/deploy-${{ inputs.release_sha }}.tar.gz.sha256"
+          aws s3 cp /tmp/qiko-v2.tar.gz "s3://$DEPLOY_BUCKET/live/deploy-${RELEASE_SHA}.tar.gz"
+          aws s3 cp /tmp/qiko-v2.tar.gz.sha256 "s3://$DEPLOY_BUCKET/live/deploy-${RELEASE_SHA}.tar.gz.sha256"
 
       - name: Deploy via SSM
         id: deploy
+        env:
+          RELEASE_SHA: ${{ steps.rel.outputs.sha }}
         run: |
           set -e
           ARTIFACT_SHA256=$(cat /tmp/qiko-v2.tar.gz.sha256)
-          { head -n 1 .github/deploy/redeploy-live.sh; printf 'export RELEASE_SHA=%q RELEASE_SHA256=%q\n' '${{ inputs.release_sha }}' "$ARTIFACT_SHA256"; tail -n +2 .github/deploy/redeploy-live.sh; } | jq -Rs '{commands: [.]}' > /tmp/redeploy.json
+          { head -n 1 .github/deploy/redeploy-live.sh; printf 'export RELEASE_SHA=%q RELEASE_SHA256=%q\n' "$RELEASE_SHA" "$ARTIFACT_SHA256"; tail -n +2 .github/deploy/redeploy-live.sh; } | jq -Rs '{commands: [.]}' > /tmp/redeploy.json
           CMD_ID=$(aws ssm send-command --instance-ids "${{ secrets.LIVE_SSM_INSTANCE_ID }}" \
             --document-name AWS-RunShellScript \
             --parameters file:///tmp/redeploy.json \

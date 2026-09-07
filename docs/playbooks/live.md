@@ -19,10 +19,19 @@ is closed, so there is no host-side git pull). The pipeline is `.github/workflow
 + `.github/deploy/redeploy-live.sh`, pointed at the live S3 bucket, the `qiko-live` project and the
 live compose overlay.
 
-**Production never auto-deploys.** `deploy-live.yml` has NO `push` trigger. It runs only on a
-manual `workflow_dispatch`, requires typing `deploy-live` in the confirm input, and is gated by
-the `live` GitHub Environment (configure required reviewers on it). Preprod, by contrast, deploys
-on every push to `main`.
+**Production only deploys from the `production` branch.** `deploy-live.yml` triggers on a push to
+`production`, which is only reached by promoting `preprod` through a PR, and keeps
+`workflow_dispatch` (typed `deploy-live` confirmation plus an explicit `release_sha`) as a manual
+escape hatch for redeploying an already-promoted commit.
+
+Because promotion is PR-based, the commit landing on `production` is a merge commit with its own
+SHA. The provenance gate therefore compares **content**: this commit's tree must be identical to
+the tree of the SHA recorded in `/qiko/preprod/DEPLOYED_SHA`, and must descend from it. A
+promotion PR that introduces any change of its own is refused, so nothing reaches live without
+going through preprod first.
+
+The release flow end to end: `main` --PR--> `preprod` (deploys preprod) --PR--> `production`
+(deploys live). Pushing to `main` deploys nothing.
 
 ## One-time setup (before the first live deploy)
 1. **Production box:** provision the EC2 host (SSM-managed, Docker + compose installed, an IAM role
