@@ -100,7 +100,7 @@ jobs:
             echo "::error::checked out SHA mismatch"
             exit 1
           fi
-          PREPROD_SHA=$(aws ssm get-parameter --name /qiko/preprod/DEPLOYED_SHA --query Parameter.Value --output text)
+          PREPROD_SHA=$(aws ssm get-parameter --name /qiko-deploy/qiko-v2/preprod/DEPLOYED_SHA --query Parameter.Value --output text)
           if [[ ! "$PREPROD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::no valid preprod-verified SHA recorded (got '$PREPROD_SHA'); deploy to preprod first"
             exit 1

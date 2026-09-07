@@ -24,7 +24,7 @@ def test_release_workflows_require_oidc_sha_and_checksum_provenance():
     live_script = (root / ".github/deploy/redeploy-live.sh").read_text()
     assert "PREPROD_DEPLOY_ROLE_ARN" in preprod_workflow and "aws-access-key-id" not in preprod_workflow
     assert "LIVE_DEPLOY_ROLE_ARN" in live_workflow and "aws-access-key-id" not in live_workflow
-    assert "release_sha" in live_workflow and "/qiko/preprod/DEPLOYED_SHA" in live_workflow
+    assert "release_sha" in live_workflow and "/qiko-deploy/qiko-v2/preprod/DEPLOYED_SHA" in live_workflow
     # The live artifact must stay addressed by the exact release SHA, never a floating name. The
     # SHA now comes from either the release_sha input (manual run) or github.sha (a merge into
     # `production`), so the workflow resolves it into $RELEASE_SHA rather than interpolating the

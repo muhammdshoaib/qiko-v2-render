@@ -88,7 +88,7 @@ jobs:
           fi
 
       - name: Record verified preprod SHA
-        run: aws ssm put-parameter --name /qiko/preprod/DEPLOYED_SHA --type String --value "${{ github.sha }}" --overwrite
+        run: aws ssm put-parameter --name /qiko-deploy/qiko-v2/preprod/DEPLOYED_SHA --type String --value "${{ github.sha }}" --overwrite
 
       - name: Report controlled failure
         if: failure()

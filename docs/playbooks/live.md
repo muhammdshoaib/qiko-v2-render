@@ -26,7 +26,7 @@ escape hatch for redeploying an already-promoted commit.
 
 Because promotion is PR-based, the commit landing on `production` is a merge commit with its own
 SHA. The provenance gate therefore compares **content**: this commit's tree must be identical to
-the tree of the SHA recorded in `/qiko/preprod/DEPLOYED_SHA`, and must descend from it. A
+the tree of the SHA recorded in `/qiko-deploy/qiko-v2/preprod/DEPLOYED_SHA`, and must descend from it. A
 promotion PR that introduces any change of its own is refused, so nothing reaches live without
 going through preprod first.
 
