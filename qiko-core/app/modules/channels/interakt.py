@@ -58,13 +58,23 @@ class InteraktClient(Protocol):
 
 @dataclass(frozen=True)
 class WorkerReply:
-    """What the worker decided to do with a generated turn."""
+    """What the worker decided to do with a generated turn.
+
+    The handoff_* fields (JM2-1031) are the structured packet a human agent actually needs to
+    act on a handoff, matching api-spec-whatsapp-joe-agent.md section 3.4: a short reason code
+    (as opposed to handoff_reason, which stays free text for backward compatibility), the traits
+    Joe already extracted, a suggested next action, and a priority. All optional so every
+    existing caller/reply_mode keeps working unchanged."""
 
     reply_mode: ReplyMode
     template_name: str | None = None
     template_params: tuple[str, ...] = field(default_factory=tuple)
     draft_text: str | None = None
     handoff_reason: str | None = None
+    handoff_reason_code: str | None = None
+    handoff_extracted_traits: dict[str, object] | None = None
+    handoff_suggested_next_action: str | None = None
+    handoff_priority: str | None = None
 
     def __post_init__(self) -> None:
         if self.reply_mode is ReplyMode.template and not self.template_name:
