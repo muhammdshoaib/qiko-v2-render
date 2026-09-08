@@ -84,17 +84,24 @@ class KnowledgeService:
                        agent_id: str | None = None, doc_id: str | None = None) -> list[Passage]:
         """`doc_id` restricts retrieval to a single reference document (IDG-1000). There is no
         fallback: if that document holds nothing relevant, this returns nothing, and the caller's
-        gate escalates rather than an answer being sourced from the wider knowledge base."""
-        passages = await self.store.get(tenant, agent_id, doc_id)  # tenant/agent/document scoped
+        gate escalates rather than an answer being sourced from the wider knowledge base.
+
+        The candidate set comes from the store's ANN path rather than a full corpus scan, and
+        `doc_id` is pushed down into it. Scoping must happen in the store, not here: filtering an
+        already-truncated top-k would silently return fewer passages than asked for, or none at
+        all, whenever the reference document is not among the corpus-wide nearest neighbours."""
+        qvec = await asyncio.to_thread(self.embeddings.embed, query)
+        candidate_n = max(100, k * 10)
+        passages = await self.store.search(tenant, qvec, k=candidate_n,
+                                           agent_id=agent_id, doc_id=doc_id)
         if not passages:
             return []
         # Query embedding + cosine/bm25 scoring are network-/CPU-bound pure Python; run them off
         # the event loop so a large tenant corpus can't freeze the loop for the whole scoring pass.
-        order = await asyncio.to_thread(self._rank, query, passages)
+        order = await asyncio.to_thread(self._rank, qvec, query, passages)
         return [passages[i] for i in order[:k]]
 
-    def _rank(self, query: str, passages: list[Passage]) -> list[int]:
-        qvec = self.embeddings.embed(query)
+    def _rank(self, qvec: list[float], query: str, passages: list[Passage]) -> list[int]:
         dense = [retrieval.cosine(qvec, p.embedding) for p in passages]
         sparse = retrieval.bm25_scores(query, [p.text for p in passages])
         return retrieval.hybrid_order(dense, sparse)

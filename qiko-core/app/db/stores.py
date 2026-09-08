@@ -330,6 +330,13 @@ class SqlVerifiedStore:
             return list(rows)
 
 
+def _pgvector_literal(embedding: list[float]) -> str:
+    """A Python embedding as pgvector's own literal text form (e.g. "[0.1,0.2,0.3]"). Passed as
+    a plain string query parameter and cast with `CAST(:x AS vector)` in SQL - asyncpg needs no
+    special type adapter for this because the cast happens in Postgres, not in the driver."""
+    return "[" + ",".join(repr(float(x)) for x in embedding) + "]"
+
+
 @dataclass
 class SqlVectorStore:
     sessionmaker: async_sessionmaker[AsyncSession]
@@ -339,8 +346,17 @@ class SqlVectorStore:
 
     async def add_all(self, passages: list[Passage]) -> None:
         async with self.sessionmaker() as s, s.begin():
-            s.add_all([PassageRow(id=p.id, tenant_id=p.tenant, agent_id=p.agent_id,
-                                   doc_id=p.doc_id, text=p.text, embedding=p.embedding) for p in passages])
+            is_postgres = s.bind.dialect.name == "postgresql"
+            for p in passages:
+                row = PassageRow(id=p.id, tenant_id=p.tenant, agent_id=p.agent_id,
+                                 doc_id=p.doc_id, text=p.text, embedding=p.embedding)
+                s.add(row)
+            if is_postgres:
+                await s.flush()
+                for p in passages:
+                    await s.execute(text(
+                        "UPDATE passages SET embedding_vec = CAST(:emb AS vector) WHERE id = :id"),
+                        {"emb": _pgvector_literal(p.embedding), "id": p.id})
 
     async def get(self, tenant: str, agent_id: str | None = None,
                   doc_id: str | None = None) -> list[Passage]:
@@ -366,6 +382,41 @@ class SqlVectorStore:
             rows = (await s.execute(stmt)).scalars().all()
             return [Passage(id=r.id, tenant=r.tenant_id, doc_id=r.doc_id, text=r.text,
                             embedding=list(r.embedding or []), agent_id=r.agent_id) for r in rows]
+
+    async def search(self, tenant: str, query_embedding: list[float], *, k: int,
+                     agent_id: str | None = None, doc_id: str | None = None) -> list[Passage]:
+        async with self.sessionmaker() as s:
+            if s.bind.dialect.name != "postgresql":
+                # No vector type, no embedding_vec column on SQLite: fall back to the full-scan
+                # get() so dev/tests keep today's exact ranking behavior over the whole corpus,
+                # including its doc_id scoping.
+                return await self.get(tenant, agent_id, doc_id)
+            agent_clause = ""
+            params: dict = {"tenant": tenant, "qvec": _pgvector_literal(query_embedding), "k": k}
+            if agent_id is not None:
+                agent_clause = "AND (agent_id = :agent_id OR agent_id IS NULL)"
+                params["agent_id"] = agent_id
+            # doc_id is filtered INSIDE the query, before ORDER BY ... LIMIT. Filtering the
+            # returned top-k instead would quietly drop to zero rows whenever the reference
+            # document is not among the corpus-wide nearest neighbours, turning IDG-1000's
+            # "answer only from this document" into "answer from nothing" at scale.
+            doc_clause = ""
+            if doc_id is not None:
+                # A doc_id scope deliberately does NOT keep the tenant-wide (agent_id IS NULL)
+                # disjunct above: same reasoning as InMemoryVectorStore.get, the picker only ever
+                # offers this worker's own documents.
+                agent_clause = "AND agent_id = :agent_id" if agent_id is not None else ""
+                doc_clause = "AND doc_id = :doc_id"
+                params["doc_id"] = doc_id
+            rows = (await s.execute(text(
+                "SELECT id, tenant_id, agent_id, doc_id, text, embedding FROM passages "
+                "WHERE tenant_id = :tenant AND embedding_vec IS NOT NULL "
+                f"{agent_clause} {doc_clause} "
+                "ORDER BY embedding_vec <=> CAST(:qvec AS vector) LIMIT :k"),
+                params)).mappings().all()
+            return [Passage(id=r["id"], tenant=r["tenant_id"], doc_id=r["doc_id"], text=r["text"],
+                            embedding=list(r["embedding"] or []), agent_id=r["agent_id"])
+                    for r in rows]
 
     async def delete_doc(self, tenant: str, doc_id: str, agent_id: str | None = None) -> int:
         async with self.sessionmaker() as s, s.begin():

@@ -44,3 +44,20 @@ def test_conversation_crm_eligibility_migration_backfills_existing_rows(tmp_path
     con.close()
     assert values == {"internal": 0, "visitor": 1}
     assert columns["user_id"] == "VARCHAR(320)"
+
+
+def test_passage_embedding_vector_migration_is_a_noop_on_sqlite(tmp_path):
+    db = tmp_path / "vec.db"
+    os.environ["ALEMBIC_URL"] = f"sqlite:///{db}"
+    try:
+        cfg = Config("alembic.ini")
+        command.upgrade(cfg, "head")
+    finally:
+        os.environ.pop("ALEMBIC_URL", None)
+
+    con = sqlite3.connect(db)
+    columns = {row[1] for row in con.execute("pragma table_info(passages)")}
+    con.close()
+    # SQLite never gets embedding_vec - the migration's dialect guard must skip it entirely,
+    # not fail, not add a differently-typed column.
+    assert "embedding_vec" not in columns

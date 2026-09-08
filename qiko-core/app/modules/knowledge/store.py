@@ -13,6 +13,9 @@ class VectorStore(Protocol):
     async def add_all(self, passages: list[Passage]) -> None: ...
     async def get(self, tenant: str, agent_id: str | None = None,
                   doc_id: str | None = None) -> list[Passage]: ...
+    async def search(self, tenant: str, query_embedding: list[float], *, k: int,
+                     agent_id: str | None = None,
+                     doc_id: str | None = None) -> list[Passage]: ...
     async def delete_doc(self, tenant: str, doc_id: str, agent_id: str | None = None) -> int: ...
 
 
@@ -48,6 +51,12 @@ class InMemoryVectorStore:
         if doc_id is not None:
             passages = [p for p in passages if p.doc_id == doc_id]
         return list(passages)
+
+    async def search(self, tenant: str, query_embedding: list[float], *, k: int,
+                     agent_id: str | None = None, doc_id: str | None = None) -> list[Passage]:
+        # No ANN index in memory - there is nothing to bound, so this is exactly today's get(),
+        # including its doc_id scoping rules.
+        return await self.get(tenant, agent_id, doc_id)
 
     async def delete_doc(self, tenant: str, doc_id: str, agent_id: str | None = None) -> int:
         current = self._by_tenant.get(tenant, [])

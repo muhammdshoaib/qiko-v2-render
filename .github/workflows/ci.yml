@@ -153,7 +153,7 @@ jobs:
     # race and disable-vs-persistence. The guarantees the code relies on were verified nowhere.
     services:
       postgres:
-        image: postgres:18
+        image: pgvector/pgvector:pg18
         env:
           POSTGRES_USER: qiko
           POSTGRES_PASSWORD: qiko-ci
