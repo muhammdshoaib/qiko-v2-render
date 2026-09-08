@@ -49,12 +49,20 @@ export function useConfirmActionDialog() {
     setDialog({ ...config, open: true, pending: false });
   }, []);
 
+  // EL-1023: this used to refuse to close while `pending` was still true ("if (prev.pending)
+  // return prev"), to stop a user dismissing the dialog (Escape) mid-action. But most callers'
+  // own onConfirm call this *itself* right after a successful mutation
+  // (`onSuccess: () => closeConfirmationDialog()`), and React Query always runs onSuccess before
+  // onSettled, so `pending` is still true at that exact call -- the same guard meant to protect
+  // against a *user* dismissing early silently also swallowed the caller's own "we're done, close
+  // now" call, leaving the dialog stuck open (data deleted, modal still showing). A couple of
+  // callers (worker archive, opportunity delete) instead navigate away on success and never called
+  // this while pending, so they were unaffected either way. The pending guard now lives only in
+  // onOpenChange below, where it belongs: it blocks a *user-initiated* dismiss attempt, but never
+  // blocks an explicit call from the caller.
   const closeConfirmationDialog = useCallback(() => {
-    setDialog((prev) => {
-      if (prev.pending) return prev;
-      requestAnimationFrame(() => openerRef.current?.focus());
-      return CLOSED;
-    });
+    requestAnimationFrame(() => openerRef.current?.focus());
+    setDialog(CLOSED);
   }, []);
 
   const setPending = useCallback((pending: boolean) => {
@@ -65,7 +73,12 @@ export function useConfirmActionDialog() {
     <AlertDialog
       open={dialog.open}
       onOpenChange={(open: boolean) => {
-        if (!open) closeConfirmationDialog();
+        // A user-initiated dismiss via Escape is blocked while pending (Radix's AlertDialog
+        // already never dismisses on backdrop/outside click by design) -- the Cancel button
+        // already disables itself the same way. An explicit close from the caller
+        // (closeConfirmationDialog() called directly, e.g. after a successful mutation) bypasses
+        // this entirely, since it doesn't go through onOpenChange at all.
+        if (!open && !dialog.pending) closeConfirmationDialog();
       }}
     >
       <AlertDialogContent className="border-white/10 bg-[#0a0f1a] text-white">
