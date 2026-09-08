@@ -28,6 +28,7 @@ from app.db.models import Conversation as ConversationRow
 from app.db.models import CrmAction as CrmActionRow
 from app.db.models import FinanceChatMessage as FinanceChatMessageRow
 from app.db.models import FinanceFile as FinanceFileRow
+from app.db.models import InvestorActivityEvent as InvestorActivityEventRow
 from app.db.models import Lead as LeadRow
 from app.db.models import Message as MessageRow
 from app.db.models import MfaBackupCode as MfaBackupCodeRow
@@ -49,6 +50,7 @@ from app.db.models import PlatformAdminAudit as PlatformAdminAuditRow
 from app.db.models import PolicyRelease as PolicyReleaseRow
 from app.db.models import RfpPack as RfpPackRow
 
+from app.modules.joseph_mews.activity import ActivityEvent
 from app.modules.channels.slack_store import (
     DEFAULT_MESSAGE_LIMIT,
     SlackMessage,
@@ -281,6 +283,43 @@ class SqlUserStore:
             row = await s.get(UserRow, user_id)
             if row:
                 await s.delete(row)
+
+
+@dataclass
+class SqlInvestorActivityStore:
+    """Backs JM2-1131's activity endpoints. Callers must never pass a property/development/
+    document id in property_name/location/postcode -- this store persists exactly what it is
+    given, so that identity rule is enforced by the router/schema layer, not re-checked here."""
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def record(
+        self, tenant: str, investor_ref: str, *, category: str, label: str,
+        property_name: str | None = None, location: str | None = None, postcode: str | None = None,
+        occurred_at: datetime | None = None,
+    ) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(InvestorActivityEventRow(
+                tenant_id=tenant, investor_ref=investor_ref, category=category, label=label,
+                property_name=property_name, location=location, postcode=postcode,
+                occurred_at=occurred_at or datetime.now(timezone.utc),
+            ))
+
+    async def list_for_investor(self, tenant: str, investor_ref: str) -> list[ActivityEvent]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(InvestorActivityEventRow).where(
+                    InvestorActivityEventRow.tenant_id == tenant,
+                    InvestorActivityEventRow.investor_ref == investor_ref,
+                ).order_by(InvestorActivityEventRow.occurred_at)
+            )).scalars().all()
+            return [
+                ActivityEvent(
+                    category=r.category, label=r.label, property_name=r.property_name,
+                    location=r.location, postcode=r.postcode, occurred_at=r.occurred_at,
+                )
+                for r in rows
+            ]
 
 
 @dataclass

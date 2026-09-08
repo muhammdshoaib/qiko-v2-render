@@ -72,6 +72,7 @@ from app.modules.admin.router import router as admin_router
 from app.modules.admin.support import router as admin_support_router
 from app.modules.agents.router import router as agents_router
 from app.modules.agents.service import AgentService
+from app.modules.joseph_mews.activity import InMemoryInvestorActivityStore
 from app.modules.audit.service import InMemoryAuditStore
 from app.modules.ai.caps import CostCapExceeded, CostGuard, InMemoryCostCapStore
 from app.modules.ai.usage import InMemoryUsageStore
@@ -151,6 +152,7 @@ async def lifespan(app: FastAPI):
             SqlFinanceFileStore,
             SqlIngestFilterSettingStore,
             SqlIngestionSourceStore,
+            SqlInvestorActivityStore,
             SqlLeadStore,
             SqlNotificationStore,
             SqlOpportunityStore,
@@ -221,6 +223,7 @@ async def lifespan(app: FastAPI):
         # redeploy. The LLM provider is the same configured gateway used elsewhere.
         app.state.finance = FinanceService(files=SqlFinanceFileStore(sm), chats=SqlFinanceChatStore(sm))
         app.state.agents = AgentService(store=SqlAgentStore(sm))  # workers survive a redeploy
+        app.state.investor_activity = SqlInvestorActivityStore(sm)  # JM2-1131
         app.state.rfp_packs = RfpPackService(store=SqlRfpPackStore(sm))
         app.state.requirements = RequirementService(store=SqlRequirementStore(sm))
         app.state.pack_answers = PackAnswerService(store=SqlPackAnswerStore(sm))
@@ -462,6 +465,7 @@ def create_app() -> FastAPI:
     app.state.assignments = AssignmentService()
     app.state.chat = ChatService()
     app.state.crm = CrmService(app.state.chat)
+    app.state.investor_activity = InMemoryInvestorActivityStore()
     # Generic in-app notification inbox (reusable across verticals) + the SI trigger wrapper.
     app.state.ai_usage = InMemoryUsageStore()
     app.state.cost_caps = InMemoryCostCapStore()

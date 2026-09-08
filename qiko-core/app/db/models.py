@@ -1003,3 +1003,26 @@ class WebhookEvent(Base):
     source: Mapped[str] = mapped_column(String(32), primary_key=True)
     event_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class InvestorActivityEvent(Base):
+    """A single granular activity event synced directly from a client-side app (JM2-1131),
+    keyed by tenant + investor_ref (opaque, whichever investor-facing backend minted the
+    investor's activity token). category/label describe what happened (a screen visit, a
+    property visit, a calculator step); property_name/location/postcode are the ONLY way a
+    property may be identified here -- property_id/development_id/document_id/route params must
+    never appear in this table, matching the client's activity-tracking identity rule."""
+    __tablename__ = "investor_activity_events"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    investor_ref: Mapped[str] = mapped_column(String(128), index=True)
+    category: Mapped[str] = mapped_column(String(32))
+    label: Mapped[str] = mapped_column(String(255))
+    property_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    postcode: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    __table_args__ = (
+        Index("ix_investor_activity_tenant_investor", "tenant_id", "investor_ref"),
+    )
