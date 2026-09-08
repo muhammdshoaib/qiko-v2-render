@@ -15,6 +15,29 @@ test("StudioWorkerRouteGuard redirects bare /studio/:id to the worker's vertical
   assert.match(guardSource, /router\.replace\s*\(\s*expectedPath(?:!)?\s*\)/);
 });
 
+test("StudioWorkerRouteGuard only blocks on a first load, not on every refetch (QIKO-1089)", () => {
+  const guardSource = readFileSync(
+    resolve(process.cwd(), "components/studio/worker-route-guard.tsx"),
+    "utf8",
+  );
+  // isFetching is true for the background revalidation this query runs on every mount, so gating
+  // the full-screen spinner on it blanked a cockpit that already had its data. Only isPending,
+  // "no data yet", may block.
+  assert.match(guardSource, /if\s*\(\s*access\.isPending\s*\)/);
+  assert.doesNotMatch(guardSource, /access\.isFetching/);
+});
+
+test("StudioWorkerRouteGuard caches per worker, not per route (QIKO-1089)", () => {
+  const guardSource = readFileSync(
+    resolve(process.cwd(), "components/studio/worker-route-guard.tsx"),
+    "utf8",
+  );
+  // The request is listAgents(), which does not vary by path. Keying on pathname gave every tab
+  // inside a cockpit its own cache entry, making each in-cockpit navigation a cold fetch.
+  assert.match(guardSource, /queryKey:\s*\["studio-worker-access",\s*id\]/);
+  assert.doesNotMatch(guardSource, /queryKey:\s*\["studio-worker-access",\s*id,\s*pathname\]/);
+});
+
 test("Studio worker grid links intelligence workers to the intelligence cockpit", () => {
   const studioSource = readFileSync(
     resolve(process.cwd(), "app/studio/page.tsx"),

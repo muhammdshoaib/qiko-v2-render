@@ -20,14 +20,25 @@ export function StudioWorkerRouteGuard({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const access = useQuery({
-    queryKey: ["studio-worker-access", id, pathname],
+    // Keyed on the worker only. The request is listAgents(), which does not depend on the route,
+    // and keying on pathname too gave every tab inside a cockpit its own cache entry -- so moving
+    // from /studio/:id/finance to /finance/history was a cache miss and blanked the whole screen
+    // on a worker the user was already cleared for. The pathname is still used below, for the
+    // redirect and type-match checks, but those are derived from this data rather than fetched.
+    queryKey: ["studio-worker-access", id],
     queryFn: async () => (await listAgents()).find((candidate) => candidate.id === id) ?? null,
     refetchOnMount: "always",
     staleTime: 0,
   });
   const worker = access.data;
 
-  if (access.isPending || access.isFetching) {
+  // isPending only: "no data yet", which is the one case that has to block. isFetching is also
+  // true for the background revalidation this query does on every mount, and gating on it replaced
+  // a cockpit that had everything it needed with a full-screen spinner. The cost is that children
+  // render from cache while that revalidation is in flight, so a worker disabled mid-session keeps
+  // its cockpit for one request before this flips to Worker unavailable. Server-side authorization
+  // rejects the API calls from it either way, so that window is cosmetic.
+  if (access.isPending) {
     return (
       <div role="status" aria-live="polite" aria-busy="true" className="flex min-h-screen items-center justify-center bg-[#050810] text-slate-400">
         <Loader2 className="size-5 animate-spin" aria-hidden="true" />
