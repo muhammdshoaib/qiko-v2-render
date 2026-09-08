@@ -93,14 +93,20 @@ def _patch(monkeypatch, *, requirement=None, answer=None):
     # leaves the others talking to real Bedrock: the background pipelines use the one in
     # rfp.generation, a Worker's Generator the one in agentcore.generator, and the cockpit chat
     # the one in rfp.router.
+    #
+    # The names differ because QIKO-1081 split the document-scale calls out into
+    # `document_provider`, which raises the read timeout and the output token ceiling together.
+    # rfp.generation and rfp.router moved to it; agentcore.generator is a hot-path caller and
+    # still binds `get_provider`. Patch whichever name each module actually holds, or the stub
+    # silently misses and the test hits Bedrock for real.
     req_json = _req_json(requirement) if requirement else REQ_JSON
 
     def provider(**_kw):
         return _EchoProvider(req_json, answer)
 
-    monkeypatch.setattr(generation, "get_provider", provider)
+    monkeypatch.setattr(generation, "document_provider", provider)
     monkeypatch.setattr("app.modules.agentcore.generator.get_provider", provider)
-    monkeypatch.setattr("app.modules.rfp.router.get_provider", provider)
+    monkeypatch.setattr("app.modules.rfp.router.document_provider", provider)
 
 
 # --- persistence and the lock ------------------------------------------------------------------
