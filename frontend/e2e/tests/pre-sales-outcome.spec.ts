@@ -142,29 +142,12 @@ test("outcome requires confirmation, lost reason and preserves zero value", asyn
   expect(mock.outcomeBodies[0]).toEqual({ outcome: "lost", reason: "price", value: 0 });
 });
 
-// Expected to fail on a REAL defect, not a test problem: at 1024 and 390 the cookie consent
-// banner (`section[aria-label="Cookie consent"]`, `fixed bottom-3 z-[100]`) sits over the outcome
-// control and intercepts the pointer event, so the click times out. Same obstruction as QIKO-1090,
-// which was filed against the invite-signup checkbox. At the default desktop width the test above
-// clicks the identical button without trouble, so the layout, not the mock, is the cause.
-//
-// Marked `fail` rather than silenced. Deleting it or forcing the click through would hide a
-// usability bug that affects real tablet and mobile users, and leaving it red would make the whole
-// suite unusable as a signal. This way it is recorded, the suite stays green, and it turns into a
-// failure the moment QIKO-1090 is fixed, which is when someone should delete this annotation.
-//
-// Note `seedConsent` does not suppress the banner here even though the record it writes satisfies
-// `parseStoredConsent`. Worth understanding on QIKO-1090: the banner appears to be driven by
-// something other than the stored decision alone.
 test("outcome dialog is usable at tablet and mobile widths", async ({ page }) => {
-  test.fail();
   await mockApi(page);
   for (const viewport of [{ width: 1024, height: 768 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
     await page.goto("/studio/pre-1/pre-sales");
-    // Short timeout so the known obstruction fails in seconds rather than burning the test's whole
-    // 30s budget: test.fail() does not absolve a test timeout, only an assertion failure.
-    await page.getByRole("button", { name: "Edit outcome for Dubai Security Tender" }).click({ timeout: 4000 });
+    await page.getByRole("button", { name: "Edit outcome for Dubai Security Tender" }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
     const dimensions = await page.evaluate(() => ({
       width: document.documentElement.scrollWidth,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Settings2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,9 +21,39 @@ const CHOICE_BUTTON =
 
 export function ConsentBanner() {
   const { acceptAll, rejectNonEssential, openPreferences, consent } = useConsent();
+  const ref = useRef<HTMLElement>(null);
+
+  // Reserve the space the banner occupies instead of floating over whatever is underneath.
+  //
+  // The banner is `fixed`, so at narrow widths it has repeatedly landed on top of an interactive
+  // control and swallowed its clicks: the Logout button (fix/qiko-1005-cookie-logout), then the
+  // chat send button (EL-1001), then the invite-signup consent checkbox and the tender outcome
+  // button (QIKO-1090). Each was fixed by moving the cookie surface somewhere else, and each move
+  // found a new collision, because nothing was reserving room for it.
+  //
+  // Measured rather than hardcoded: the banner's height changes with viewport width (the buttons
+  // stack below `sm`) and with the GPC/DNT notice, so a constant would be wrong on most screens.
+  // The padding lands on <body> because the banner is rendered outside any page wrapper, and it is
+  // removed on unmount so accepting or rejecting gives the space straight back.
+  useEffect(() => {
+    const node = ref.current;
+    if (!node || typeof ResizeObserver === "undefined") return;
+    const apply = () => {
+      // 0.75rem matches the `bottom-3` offset, so content clears the banner's shadow too.
+      document.body.style.setProperty("padding-bottom", `calc(${node.offsetHeight}px + 0.75rem)`);
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      document.body.style.removeProperty("padding-bottom");
+    };
+  }, []);
 
   return (
     <section
+      ref={ref}
       aria-label="Cookie consent"
       className="fixed inset-x-3 bottom-3 z-[100] mx-auto max-w-5xl rounded-2xl border border-slate-700 bg-[#0b101b]/[0.98] p-5 text-slate-200 shadow-2xl shadow-black/60 backdrop-blur sm:inset-x-6 sm:p-6"
     >
