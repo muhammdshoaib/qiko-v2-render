@@ -113,3 +113,24 @@ def test_zero_score_qualification_handoff_gets_low_priority():
     qualification = LeadQualification(wants_human=True, timeline=Timeline.unknown)
     reply = to_worker_reply(result, qualification=qualification)
     assert reply.handoff_priority == "low"
+
+
+def test_non_english_answer_is_handed_off_instead_of_drafted():
+    """JM2-1030: an auto-accepted, well-grounded answer must still not reach the customer if it
+    is not actually in English - Interakt has no way to fix that after the fact, and the prompt's
+    own "speak only english" invariant has no other runtime enforcement."""
+    result = _result(
+        decision=Decision.auto_accept,
+        answer="Hola, ¿cómo puedo ayudarte con tu inversión en propiedades?",
+    )
+    reply = to_worker_reply(result)
+    assert reply.reply_mode == ReplyMode.handoff
+    assert reply.handoff_reason_code == "non_english_output"
+    assert reply.handoff_priority == "medium"
+
+
+def test_english_answer_is_still_drafted_normally():
+    result = _result(decision=Decision.auto_accept, answer="Manchester yields ~5.5-6.5%.")
+    reply = to_worker_reply(result)
+    assert reply.reply_mode == ReplyMode.draft_for_agent
+    assert reply.draft_text == "Manchester yields ~5.5-6.5%."
