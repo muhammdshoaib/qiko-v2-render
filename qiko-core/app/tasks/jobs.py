@@ -249,6 +249,77 @@ async def run_intelligence_pipeline(
     return {"run_id": run.run_id, "verdict": run.verdict, "status": run.status, "cost": run.cost}
 
 
+async def _build_idg_pipeline_deps(sessionmaker, tenant: str, agent_id: str, opportunity):
+    """Build a Postgres-backed Pipeline for IDG qualification, mirroring _build_pipeline_deps.
+
+    Takes the already-fetched Opportunity (the caller needs it anyway, to build this) so the
+    Scout adapter can close over it: IdgScout.gather() takes a single Opportunity, not the
+    (tenant, agent_id, subject) triple the generic Pipeline calls its scout with -- see
+    app.modules.sales_intelligence.orchestration._IdgScoutAdapter.
+    """
+    from app.core.deps import resolve_available_worker
+    from app.db.stores import SqlAgentStore, SqlPipelineRunStore, SqlVectorStore
+    from app.modules.agentcore.orchestration import Critic, Magistrate, Pipeline, Synthesizer
+    from app.modules.agents.service import AgentService
+    from app.modules.intelligence.orchestration import Specialist
+    from app.modules.knowledge.service import KnowledgeService
+    from app.modules.sales_intelligence.orchestration import _IdgScoutAdapter
+
+    knowledge = KnowledgeService(store=SqlVectorStore(sessionmaker))
+    agents = AgentService(store=SqlAgentStore(sessionmaker))
+    worker, _ = await resolve_available_worker(
+        sessionmaker=sessionmaker, agents=agents, knowledge=knowledge,
+        tenant=tenant, agent_id=agent_id)
+    return Pipeline(
+        scout=_IdgScoutAdapter(opportunity),
+        specialist=Specialist(worker),
+        synthesizer=Synthesizer(worker.agent.generator),
+        critic=Critic(),
+        magistrate=Magistrate(threshold=worker.agent.threshold),
+        store=SqlPipelineRunStore(sessionmaker),
+    )
+
+
+@registry.register("run_idg_qualification_pipeline")
+async def run_idg_qualification_pipeline(
+    *,
+    tenant: str,
+    agent_id: str,
+    opportunity_id: str,
+    run_id: str,
+    pipeline: object | None = None,
+    sessionmaker=None,
+) -> dict:
+    """Background job: execute an IDG qualification pipeline run, then apply its verdict to the
+    opportunity's stage. Mirrors run_intelligence_pipeline's eager-vs-arq dual path: the eager
+    dev/test path may pass a pre-built `Pipeline` directly; the arq worker tier passes only
+    `sessionmaker` and the ids, and this function fetches the Opportunity and rebuilds the
+    Pipeline (via _build_idg_pipeline_deps) from the worker's own DB connection."""
+    if pipeline is None:
+        if sessionmaker is None:
+            raise ValueError("run_idg_qualification_pipeline requires sessionmaker or pipeline")
+        from app.db.stores import SqlOpportunityStore
+
+        opportunity = await SqlOpportunityStore(sessionmaker).get(tenant, agent_id, opportunity_id)
+        if opportunity is None:
+            raise ValueError(f"opportunity {opportunity_id} not found")
+        pipeline = await _build_idg_pipeline_deps(sessionmaker, tenant, agent_id, opportunity)
+
+    run = await pipeline.resume(tenant, agent_id, run_id)
+    if run is None:
+        raise ValueError(f"pipeline run {run_id} not found")
+
+    if run.verdict == "accept" and sessionmaker is not None:
+        from app.db.stores import SqlOpportunityStore
+
+        opportunities = SqlOpportunityStore(sessionmaker)
+        opportunity = await opportunities.get(tenant, agent_id, opportunity_id)
+        if opportunity is not None and opportunity.stage == "awaiting_review":
+            opportunity.stage = "qualified"
+            await opportunities.update(opportunity)
+    return {"run_id": run.run_id, "verdict": run.verdict, "status": run.status}
+
+
 async def apply_audit_retention(store) -> dict:
     """Enforce the audit trail's retention policy.
 

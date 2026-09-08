@@ -41,6 +41,24 @@ class IdgScout:
         return EvidenceBundle(text_chunks=chunks, sources=sources)
 
 
+class _IdgScoutAdapter:
+    """Adapts `IdgScout.gather(opportunity)` to the signature the generic `Pipeline` calls its
+    scout with: `scout.gather(tenant, agent_id, subject, *, context)` (see
+    `Pipeline._scout_stage()` in `app.modules.agentcore.orchestration.runner`). `IdgScout` itself
+    stays a single-`Opportunity` reader (matching the design's contract), so this adapter is built
+    per pipeline run, closing over the one `Opportunity` that run is qualifying (see
+    `app.tasks.jobs._build_idg_pipeline_deps`). `context` (the Intelligence pipeline's revision-loop
+    extra evidence) has no equivalent here yet and is accepted but unused."""
+
+    def __init__(self, opportunity: Opportunity) -> None:
+        self._opportunity = opportunity
+        self._scout = IdgScout()
+
+    async def gather(self, tenant: str, agent_id: str, subject: str, *,
+                     context: list[str] | None = None) -> EvidenceBundle:
+        return await self._scout.gather(self._opportunity)
+
+
 def build_facets(qualification: dict) -> list[str]:
     """One facet per unresolved missing_field/risk from QualificationService.qualify()'s own
     output - never a fixed, re-derive-everything list. A confident qualify() result (no missing

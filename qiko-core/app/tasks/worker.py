@@ -43,6 +43,13 @@ async def run_intelligence_pipeline(ctx, **kwargs):  # pragma: no cover - invoke
     return await jobs.run_intelligence_pipeline(sessionmaker=ctx["sessionmaker"], **kwargs)
 
 
+async def run_idg_qualification_pipeline(ctx, **kwargs):  # pragma: no cover - invoked by the arq runtime
+    # Same reasoning as run_intelligence_pipeline above: only serialisable ids reach Redis
+    # (tenant/agent_id/opportunity_id/run_id), and the Pipeline (with its IdgScout adapter bound to
+    # the fetched Opportunity) is rebuilt here from the worker's own DB connection.
+    return await jobs.run_idg_qualification_pipeline(sessionmaker=ctx["sessionmaker"], **kwargs)
+
+
 async def generate_slack_digest(ctx, **kwargs):  # pragma: no cover - invoked by the arq runtime
     # The SYNC sessionmaker is what carries the Slack installation store (see sync_stores.py):
     # without it the job cannot resolve a bot token and could never post the digest it paid for.
@@ -115,7 +122,8 @@ async def reconcile_invoices(ctx) -> dict:  # pragma: no cover - invoked by the 
 
 
 FUNCTIONS = [ingest_document, process_uploaded_document, send_email, generate_tender_artifacts,
-             erase_audit_subject, generate_slack_digest, reconcile_invoices, run_intelligence_pipeline]
+             erase_audit_subject, generate_slack_digest, reconcile_invoices, run_intelligence_pipeline,
+             run_idg_qualification_pipeline]
 
 # arq cron is calendar-based (no native "every N minutes" interval). Rather than encode the
 # configured cadence into a minute-set at startup, the scan cron ticks once a minute and the sweep

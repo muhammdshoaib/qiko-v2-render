@@ -209,6 +209,17 @@ async def lifespan(app: FastAPI):
             scan_interval_minutes=get_settings().idg_sales_scan_interval_minutes,
             sources=si_sources, opportunities=si_opportunities, activity_logs=si_activity_logs,
             notifier=sales_notifier)
+        # app.state.task_queue already exists here (create_app() ran fully before this lifespan
+        # body does): it is assigned exactly once, in create_app(), shared by both branches. Wired
+        # only in THIS (use_db_stores) branch: in non-dev, TASK_BACKEND=arq, so an enqueue here
+        # only puts serialisable ids on Redis; the worker rebuilds the Pipeline from its own
+        # sessionmaker (app.tasks.jobs._build_idg_pipeline_deps). Wiring the same task_queue onto
+        # the in-memory create_app() branch's sales_intel would be wrong: that queue is an
+        # EagerTaskQueue, which runs the job inline with no sessionmaker and no pre-built Pipeline.
+        # app.state.pipeline_run_store does NOT exist yet in this branch (assigned below, once the
+        # SQL-backed store is built), so it is wired there instead, mirroring
+        # app.state.cost_guard.notifications above.
+        app.state.sales_intel.task_queue = app.state.task_queue
         app.state.sales_intel_mutation = OpportunityMutationService(
             opportunities=si_opportunities, activity_logs=si_activity_logs, notifier=sales_notifier)
         app.state.sales_intel_ingest_filters = SqlIngestFilterSettingStore(sm)
@@ -244,6 +255,7 @@ async def lifespan(app: FastAPI):
         app.state.intelligence_signal_store = SqlSignalStore(sm)
         app.state.intelligence_document_store = SqlDocumentStore(sm)
         app.state.pipeline_run_store = SqlPipelineRunStore(sm)
+        app.state.sales_intel.pipeline_run_store = app.state.pipeline_run_store
         app.state.document_service = DocumentService_(
             document_store=app.state.intelligence_document_store,
             knowledge=app.state.knowledge,
@@ -540,6 +552,12 @@ def create_app() -> FastAPI:
     from app.modules.intelligence.orchestration import InMemoryPipelineRunStore
     app.state.intelligence_document_store = InMemoryDocumentStore()
     app.state.pipeline_run_store = InMemoryPipelineRunStore()
+    # Deliberately NOT wired onto app.state.sales_intel here (unlike the durable branch below):
+    # this in-memory task_queue is an EagerTaskQueue, which runs an enqueued job inline with no
+    # sessionmaker and no pre-built Pipeline, so wiring it here would make every dev/test scan that
+    # produces a "Review" opportunity throw instead of enqueuing. Matches today's behaviour exactly
+    # (a service built without a task_queue never enqueues) until an eager-path Pipeline builder
+    # exists for IDG the way create_pipeline_run's EagerTaskQueue branch has one for Intelligence.
     # file_generator is built below; document_service is wired after it.
     app.state.intelligence_catalog = _build_intelligence_catalog()
     # S3 when configured, the dev dict otherwise. The guard in assert_secrets_set means a non-dev
@@ -548,6 +566,8 @@ def create_app() -> FastAPI:
     app.state.file_generator = FileGenerator(
         S3Storage(bucket=settings.s3_bucket) if settings.s3_bucket else InMemoryStorage())
     app.state.task_queue = build_task_queue(task_registry)
+    # Not wired onto app.state.sales_intel here either -- see the pipeline_run_store note above,
+    # same reasoning (this is an EagerTaskQueue in dev/test).
     app.state.document_service = DocumentService_(
         document_store=app.state.intelligence_document_store,
         knowledge=app.state.knowledge,
