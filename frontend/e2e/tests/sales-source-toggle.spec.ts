@@ -9,9 +9,15 @@ import { expect, test, type Page } from "@playwright/test";
 const AGENT_ID = "qa-agent";
 const BASE_URL = process.env.BASE_URL ?? "https://preprod.qiko.ai";
 
+const SOURCE_NAMES: Record<string, string> = { ted: "TED - EU Tenders", ungm: "UNGM Public Notices" };
+
 function source(sourceKey: string, status: string) {
   return {
-    sourceKey, name: sourceKey.toUpperCase(), status, scanCadence: "daily",
+    // The real API returns a human name, not the key: sales-source-catalog.spec.ts mocks
+    // "TED - EU Tenders" for the same source. This factory used sourceKey.toUpperCase(),
+    // so the fixture said "TED" while the assertions below looked for "TED - EU Tenders",
+    // and the test could never pass against its own mock.
+    sourceKey, name: SOURCE_NAMES[sourceKey] ?? sourceKey.toUpperCase(), status, scanCadence: "daily",
     lastScanAt: null, nextScanAt: null, lastScanStatus: null, opportunitiesFound: 0,
   };
 }
