@@ -8,6 +8,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import uuid
 
 from app.core.tenancy import reset_tenant, set_tenant
 from app.modules.ai import usage
@@ -280,6 +281,32 @@ async def _build_idg_pipeline_deps(sessionmaker, tenant: str, agent_id: str, opp
     )
 
 
+async def _record_idg_stage_promotion(sessionmaker, opportunity, run) -> None:
+    """Durable audit trail for an autonomous stage transition: the IDG qualification pipeline
+    accepting a notice moves its stage from awaiting_review to qualified with no human in the
+    loop, so this is the record that distinguishes an AI-driven qualification from a human one
+    (mirrors OpportunityService._log()'s ActivityLog shape -- see
+    app.modules.sales_intelligence.service.OpportunityService._log and .models.ActivityLog).
+
+    Reached directly via SqlActivityLogStore rather than through a full OpportunityService: this
+    job already builds the Sql*Store objects it needs inline (see _build_idg_pipeline_deps and
+    the SqlOpportunityStore use above), and OpportunityService itself needs connectors/qualifier/
+    notifier collaborators this job has no use for, so constructing one just to reach `_log()`
+    would be a bigger dependency than the write it performs."""
+    from app.db.stores import SqlActivityLogStore
+    from app.modules.sales_intelligence.models import ActivityLog
+
+    await SqlActivityLogStore(sessionmaker).add(ActivityLog(
+        id=uuid.uuid4().hex[:12], tenant=opportunity.tenant, agent_id=opportunity.agent_id,
+        action="opportunity_ai_qualified",
+        detail=f"AI qualification pipeline run {run.run_id} accepted this opportunity and "
+               "advanced it to qualified.",
+        tone="success", opportunity_id=opportunity.id,
+        metadata={"run_id": run.run_id, "verdict": run.verdict,
+                  "from": "awaiting_review", "to": "qualified"},
+    ))
+
+
 @registry.register("run_idg_qualification_pipeline")
 async def run_idg_qualification_pipeline(
     *,
@@ -294,18 +321,43 @@ async def run_idg_qualification_pipeline(
     opportunity's stage. Mirrors run_intelligence_pipeline's eager-vs-arq dual path: the eager
     dev/test path may pass a pre-built `Pipeline` directly; the arq worker tier passes only
     `sessionmaker` and the ids, and this function fetches the Opportunity and rebuilds the
-    Pipeline (via _build_idg_pipeline_deps) from the worker's own DB connection."""
-    if pipeline is None:
-        if sessionmaker is None:
-            raise ValueError("run_idg_qualification_pipeline requires sessionmaker or pipeline")
-        from app.db.stores import SqlOpportunityStore
+    Pipeline (via _build_idg_pipeline_deps) from the worker's own DB connection.
 
-        opportunity = await SqlOpportunityStore(sessionmaker).get(tenant, agent_id, opportunity_id)
-        if opportunity is None:
-            raise ValueError(f"opportunity {opportunity_id} not found")
-        pipeline = await _build_idg_pipeline_deps(sessionmaker, tenant, agent_id, opportunity)
+    Also mirrors run_intelligence_pipeline's usage-tracking wrapping (set_agent/set_tenant before
+    execution, usage.scope() around the pipeline.resume() call, the accumulated cost written onto
+    the run and flushed to the durable usage store in a `finally`): without it, every Specialist/
+    Synthesizer model call this pipeline makes runs with no usage scope open, so usage.record()
+    hits its "no scope open" fallback and the event is dropped rather than persisted -- this
+    pipeline's real AI spend would otherwise be invisible to cost accounting and PipelineRun.cost
+    would stay unset.
 
-    run = await pipeline.resume(tenant, agent_id, run_id)
+    An "accept" verdict promotes the opportunity's stage from awaiting_review to qualified with no
+    human in the loop; see _record_idg_stage_promotion for the activity-log entry that records it.
+    """
+    run = None
+    events: list = []
+    agent_token = usage.set_agent(agent_id)
+    tenant_token = set_tenant(tenant)
+    try:
+        with usage.scope() as events:
+            if pipeline is None:
+                if sessionmaker is None:
+                    raise ValueError("run_idg_qualification_pipeline requires sessionmaker or pipeline")
+                from app.db.stores import SqlOpportunityStore
+
+                opportunity = await SqlOpportunityStore(sessionmaker).get(tenant, agent_id, opportunity_id)
+                if opportunity is None:
+                    raise ValueError(f"opportunity {opportunity_id} not found")
+                pipeline = await _build_idg_pipeline_deps(sessionmaker, tenant, agent_id, opportunity)
+
+            run = await pipeline.resume(tenant, agent_id, run_id)
+    finally:
+        if run is not None and pipeline is not None:
+            run.cost = dataclasses.asdict(usage.accumulate(events))
+            await pipeline.store.update(run)
+        await usage.flush(_usage_store(sessionmaker), events)
+        usage.reset_agent(agent_token)
+        reset_tenant(tenant_token)
     if run is None:
         raise ValueError(f"pipeline run {run_id} not found")
 
@@ -317,7 +369,8 @@ async def run_idg_qualification_pipeline(
         if opportunity is not None and opportunity.stage == "awaiting_review":
             opportunity.stage = "qualified"
             await opportunities.update(opportunity)
-    return {"run_id": run.run_id, "verdict": run.verdict, "status": run.status}
+            await _record_idg_stage_promotion(sessionmaker, opportunity, run)
+    return {"run_id": run.run_id, "verdict": run.verdict, "status": run.status, "cost": run.cost}
 
 
 async def apply_audit_retention(store) -> dict:
