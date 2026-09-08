@@ -23,6 +23,8 @@ interface FinanceContextValue {
   setFilesOpen: React.Dispatch<React.SetStateAction<boolean>>;
   chatTab: boolean;
   setChatTab: React.Dispatch<React.SetStateAction<boolean>>;
+  historyTab: boolean;
+  setHistoryTab: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const FinanceContext = createContext<FinanceContextValue | null>(null);
@@ -33,6 +35,7 @@ export function FinanceProvider({ agentId, children }: { agentId: string; childr
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
   const [filesOpen, setFilesOpen] = useState(false);
   const [chatTab, setChatTab] = useState(false);
+  const [historyTab, setHistoryTab] = useState(false);
 
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const workerName = useMemo(() => agents.data?.find((a) => a.id === agentId)?.name ?? "Financial Analyst", [agents.data, agentId]);
@@ -70,7 +73,9 @@ export function FinanceProvider({ agentId, children }: { agentId: string; childr
     setFilesOpen,
     chatTab,
     setChatTab,
-  }), [agentId, workerName, analyticsQ.data, currency, analyticsQ.isLoading, filesQ.data, filesQ.isLoading, month, search, pendingPrompt, filesOpen, chatTab]);
+    historyTab,
+    setHistoryTab,
+  }), [agentId, workerName, analyticsQ.data, currency, analyticsQ.isLoading, filesQ.data, filesQ.isLoading, month, search, pendingPrompt, filesOpen, chatTab, historyTab]);
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
 }

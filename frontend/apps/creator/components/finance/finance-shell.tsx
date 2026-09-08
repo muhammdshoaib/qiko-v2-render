@@ -10,6 +10,7 @@ import { AppShell } from "@/components/app-shell";
 import { Badge } from "@/components/ui/badge";
 import { FinanceChatPanel } from "@/components/finance/chat-panel";
 import { FinanceFileManagerDialog } from "@/components/finance/file-manager";
+import { FinanceHistoryPanel } from "@/components/finance/history-panel";
 import { FinanceProvider, useFinance } from "./finance-context";
 import { InsightRail } from "./insight-rail";
 import {
@@ -31,7 +32,7 @@ function FinanceShellInner({ children }: { children: React.ReactNode }) {
   const { id: agentId } = useParams<{ id: string }>();
   const {
     workerName, month, setMonth, filesOpen, setFilesOpen, analytics, availableMonths,
-    search, setSearch, pendingPrompt, setPendingPrompt, chatTab, setChatTab,
+    search, setSearch, pendingPrompt, setPendingPrompt, chatTab, setChatTab, historyTab, setHistoryTab,
   } = useFinance();
   const router = useRouter();
   const pathname = usePathname();
@@ -43,9 +44,21 @@ function FinanceShellInner({ children }: { children: React.ReactNode }) {
 
   const dashboardHref = `/studio/${agentId}/finance`;
   const historyHref = `/studio/${agentId}/finance/history`;
-  const isHistory = pathname === historyHref;
   const isDashboard = pathname === dashboardHref;
-  const tab = chatTab ? "chat" : isHistory ? "history" : "feed";
+  // EL-1022: History used to be its own route (router.push(historyHref)), so switching to it was
+  // a genuine cross-route navigation -- unmounting/remounting whatever page you left and
+  // refetching History's own data every time, which read as "the page refreshes" even though
+  // EL-1011 had already removed *redundant* pushes (clicking a tab you're already on). It's now
+  // an in-page panel toggled by state, exactly like Chat (EL-1016/EL-1019), so switching to it
+  // never navigates at all. /finance/history itself still renders standalone (a direct link/
+  // bookmark still works), so seed the real historyTab state (not a separate frozen flag -- that
+  // would never clear once true, pinning the tab to "history" even after later clicking away)
+  // from the landing pathname once, so a direct link still starts with History active.
+  useEffect(() => {
+    if (pathname === historyHref) setHistoryTab(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- landing check only, not a sync effect
+  }, []);
+  const tab = chatTab ? "chat" : historyTab ? "history" : "feed";
 
   const summary = useMemo(() => normalizeFinanceSummary(analytics?.summary), [analytics]);
   const propertyCount = summary.propertyCount || activeProperties(analytics).length;
@@ -105,14 +118,16 @@ function FinanceShellInner({ children }: { children: React.ReactNode }) {
 
   function goFeed() {
     setChatTab(false);
+    setHistoryTab(false);
     if (!isDashboard) router.push(dashboardHref);
   }
   function goChat() {
     setChatTab(true);
+    setHistoryTab(false);
   }
   function goHistory() {
     setChatTab(false);
-    if (!isHistory) router.push(historyHref);
+    setHistoryTab(true);
   }
 
   return (
@@ -243,12 +258,14 @@ function FinanceShellInner({ children }: { children: React.ReactNode }) {
         )}
 
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          {/* EL-1016/EL-1019: this used to be a `tab === "chat" ? X : Y` ternary, which fully
-              unmounted whichever side wasn't active. That destroyed FinanceChatPanel's in-memory
-              messages every time you left the Chat tab (looked like the chat "clearing all the
-              data"), and dropped scroll position/local state on the dashboard side too (felt like
-              "the page refreshes"). Keep both sides mounted always and hide the inactive one with
-              CSS instead. */}
+          {/* EL-1016/EL-1019/EL-1022: this used to be a `tab === "chat" ? X : Y` ternary, which
+              fully unmounted whichever side wasn't active. That destroyed FinanceChatPanel's
+              in-memory messages every time you left the Chat tab (looked like the chat "clearing
+              all the data"), and dropped scroll position/local state on the dashboard side too
+              (felt like "the page refreshes"). History had the same problem via a different
+              mechanism (it was its own route, so switching to it was a real cross-route
+              navigation). Keep all three mounted always and hide the inactive ones with CSS
+              instead. */}
           <div className={cn("min-h-0 w-full min-w-0 flex-1 overflow-hidden p-4", tab === "chat" ? "flex" : "hidden")}>
             <FinanceChatPanel
               agentId={agentId}
@@ -257,7 +274,10 @@ function FinanceShellInner({ children }: { children: React.ReactNode }) {
               onPendingConsumed={() => setPendingPrompt(null)}
             />
           </div>
-          <div className={cn("flex min-h-0 min-w-0 flex-1 overflow-hidden", tab === "chat" && "hidden")}>
+          <div className={cn("min-h-0 w-full min-w-0 flex-1 overflow-hidden p-4", tab === "history" ? "flex" : "hidden")}>
+            <FinanceHistoryPanel agentId={agentId} />
+          </div>
+          <div className={cn("flex min-h-0 min-w-0 flex-1 overflow-hidden", tab !== "feed" && "hidden")}>
             <main className="flex min-h-0 min-w-0 w-full flex-1 flex-col overflow-hidden">
               {children}
             </main>

@@ -19,8 +19,9 @@ test("finance shell keeps both the chat panel and the dashboard side mounted, to
   // FinanceChatPanel's wrapper is hidden (not unmounted) when tab isn't "chat".
   const chatWrapper = src.slice(src.indexOf('<div className={cn("min-h-0 w-full min-w-0 flex-1'), src.indexOf("<FinanceChatPanel"));
   assert.match(chatWrapper, /tab === "chat" \? "flex" : "hidden"/);
-  // The dashboard/children side is hidden (not unmounted) when tab is "chat".
-  assert.match(src, /tab === "chat" && "hidden"/);
+  // The dashboard/children side is hidden (not unmounted) when tab is "chat" (or, since EL-1022,
+  // "history" -- both are now in-page panels, so children is hidden whenever tab isn't "feed").
+  assert.match(src, /tab !== "feed" && "hidden"/);
 });
 
 // EL-1019: even on a genuine remount (first load, full page refresh), the chat should rehydrate
