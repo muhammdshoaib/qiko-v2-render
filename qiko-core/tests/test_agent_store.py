@@ -9,6 +9,13 @@ from app.db.models import Tenant
 from app.db.stores import SqlAgentStore
 from app.modules.agents.service import Agent, PlanLimitError
 
+# These two modules each run Base.metadata.drop_all + create_all against the SAME test database,
+# so under xdist they must never land on different workers at the same time: one would drop the
+# other's tables mid-test. Same group name in both files keeps them on one worker, which also
+# serialises them relative to each other.
+pytestmark = pytest.mark.xdist_group("postgres_schema")
+
+
 
 async def _sm(path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{path}")

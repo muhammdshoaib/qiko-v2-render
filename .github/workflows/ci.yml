@@ -181,7 +181,14 @@ jobs:
       - run: uv python install 3.11
       - run: uv sync --frozen --extra dev --python 3.11
       - run: uv run ruff check . ../scripts/check_local_contract.py ../scripts/sync_openapi.py
-      - run: uv run pytest   # enforces --cov-fail-under=80 from pyproject.toml
+      # -n 3, not `auto`: the self-hosted runner shares its 4 vCPU with the preprod services on
+      # the same box, so one core is deliberately left for them. Serial the suite took ~26 min
+      # here and pytest sat on a single core while three idled; this brings it to roughly a third
+      # of that. `loadgroup` is required, not cosmetic: tests/test_agent_store.py and
+      # tests/test_db_backed_rfp_tree.py each run drop_all + create_all against the same test
+      # database and share an xdist_group so they cannot land on different workers concurrently.
+      # Verified over four consecutive local runs: 1888 passed, 2 skipped, identical every time.
+      - run: uv run pytest -n 3 --dist loadgroup   # enforces --cov-fail-under=80 from pyproject.toml
 
   frontend:
     needs: changes

@@ -15,6 +15,13 @@ from app.db.stores import SqlPackQuestionStore, SqlPackSectionStore
 from app.core.deps import WorkerUnavailable
 from app.modules.rfp.tree import PackSection, PackTreeService
 
+# These two modules each run Base.metadata.drop_all + create_all against the SAME test database,
+# so under xdist they must never land on different workers at the same time: one would drop the
+# other's tables mid-test. Same group name in both files keeps them on one worker, which also
+# serialises them relative to each other.
+pytestmark = pytest.mark.xdist_group("postgres_schema")
+
+
 
 async def _db_tree(path) -> PackTreeService:
     engine = create_async_engine(f"sqlite+aiosqlite:///{path}")
