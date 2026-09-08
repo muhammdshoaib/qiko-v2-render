@@ -5064,6 +5064,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tenants/{tenant_id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Activity */
+        get: operations["get_activity_api_v1_tenants__tenant_id__activity_get"];
+        put?: never;
+        /** Post Activity */
+        post: operations["post_activity_api_v1_tenants__tenant_id__activity_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenants/{tenant_id}/activity/intent-signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activity Intent Signals */
+        post: operations["activity_intent_signals_api_v1_tenants__tenant_id__activity_intent_signals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tenants/{tenant_id}/insights/property": {
         parameters: {
             query?: never;
@@ -7355,6 +7390,34 @@ export interface components {
             /** Query Keyword */
             query_keyword?: string | null;
         };
+        /** IntentSignalRequest */
+        IntentSignalRequest: {
+            /**
+             * Activity
+             * @default {}
+             */
+            activity: {
+                [key: string]: unknown;
+            };
+            /**
+             * Investor
+             * @default {}
+             */
+            investor: {
+                [key: string]: unknown;
+            };
+            /** Investorref */
+            investorRef: string;
+            /**
+             * Locale
+             * @default en-GB
+             */
+            locale: string;
+            /** Requestid */
+            requestId: string;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * InteraktStatus
          * @description Read-only status for the Interakt/WhatsApp channel connection. Deliberately NOT a
@@ -7759,6 +7822,24 @@ export interface components {
         PortalOut: {
             /** Url */
             url: string;
+        };
+        /**
+         * PostActivityRequest
+         * @description extra="forbid" is deliberate: a stray propertyId/developmentId/documentId must be a hard
+         *     422, not a silently-accepted-and-ignored field, so a client-side regression that starts
+         *     sending ids again is caught immediately rather than passing review by accident.
+         */
+        PostActivityRequest: {
+            /** Category */
+            category: string;
+            /** Label */
+            label: string;
+            /** Location */
+            location?: string | null;
+            /** Postcode */
+            postcode?: string | null;
+            /** Propertyname */
+            propertyName?: string | null;
         };
         /** ProbeOut */
         ProbeOut: {
@@ -19227,6 +19308,123 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_activity_api_v1_tenants__tenant_id__activity_get: {
+        parameters: {
+            query: {
+                investorRef: string;
+            };
+            header?: {
+                "x-api-key"?: string | null;
+                "x-tenant-id"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_activity_api_v1_tenants__tenant_id__activity_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostActivityRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activity_intent_signals_api_v1_tenants__tenant_id__activity_intent_signals_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+                "x-tenant-id"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IntentSignalRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

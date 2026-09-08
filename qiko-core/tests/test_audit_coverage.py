@@ -50,6 +50,12 @@ NOT_AUDITED: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/notifications/read-all"): "bulk read-tracking; nobody has ever litigated who marked a notification read",
     ("POST", "/api/v1/auth/refresh"): "one per token expiry per tab; the login itself is now audited, and a revoked session already logs",
     ("POST", "/api/v1/channels/slack/webhook"): "external Slack Events API callback; signature-verified and idempotent, payloads are stored in slack_channel_messages",
+    ("POST", "/api/v1/tenants/{tenant_id}/activity"): (
+        "volume (JM2-1131): one row per screen/property/calculator-step visit, thousands per "
+        "investor per day; content is already durable in investor_activity_events"),
+    ("POST", "/api/v1/tenants/{tenant_id}/activity/intent-signals"): (
+        "service-to-service AI draft (JM2-1131), same shape as signals/summarize; persists "
+        "nothing durable here, reads investor_activity_events and returns a generated result"),
 }
 
 
