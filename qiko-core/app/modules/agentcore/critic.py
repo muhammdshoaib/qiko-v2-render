@@ -24,9 +24,20 @@ def _content_words(text: str) -> list[str]:
 
 
 def grounding_score(answer: str, evidence: list[str], *, min_sentence_support: float = 0.6) -> Critique:
-    ev_words = set()
-    for e in evidence:
-        ev_words.update(_content_words(e))
+    """A sentence counts as grounded when ONE passage supports enough of its content words.
+
+    It used to be scored against the union of every passage's words, which made the score rise
+    with the number of passages retrieved rather than with the quality of the answer: a sentence
+    could be assembled from a word here and a word there and still clear the bar, so raising
+    `retrieval_k` pushed grounding to 1.0 and silently disabled the gate (QIKO-1086). Measured on
+    a real tender, going from k=5 to k=30 turned nine of fourteen escalations into auto-accepts.
+
+    Per-passage support is also the honest reading of "grounded": a claim should be traceable to
+    a source, not to a word cloud assembled from all of them. The cost is that a sentence which
+    genuinely synthesises two passages now scores as ungrounded, which is deliberate. That is a
+    claim no single source backs, and it is exactly the kind a reviewer should see.
+    """
+    passage_words = [set(_content_words(e)) for e in evidence]
 
     sentences = [s.strip() for s in _SENT.findall(answer) if s.strip()]
     if not sentences:
@@ -39,8 +50,9 @@ def grounding_score(answer: str, evidence: list[str], *, min_sentence_support: f
         if not words:
             grounded += 1  # no factual content to ground (e.g. a connective sentence)
             continue
-        supported = sum(1 for w in words if w in ev_words) / len(words)
-        if supported >= min_sentence_support:
+        best = max((sum(1 for w in words if w in ev) / len(words) for ev in passage_words),
+                   default=0.0)
+        if best >= min_sentence_support:
             grounded += 1
         else:
             issues.append(sent)

@@ -82,7 +82,22 @@ _OUTPUT_CONTRACT = (
     "not answer from whatever the evidence happens to discuss and do not stretch loosely related "
     'material to fit: say plainly in "answer" that the supplied evidence does not cover this '
     'question, set "confidence" at or below 0.2, and name the mismatch in "gaps". A short, honest '
-    "statement that the evidence does not cover the question is a correct and expected response."
+    "statement that the evidence does not cover the question is a correct and expected response. "
+    # QIKO-1087. The writer was also making claims ABOUT the source document, and getting them
+    # wrong. On a real tender it wrote "[2025 figure cut off in evidence]" for a value whose
+    # complete table row was in its context, and "Form B8-2 was not part of the source document"
+    # for a form that is in the document. Both blame the customer's own file, both read as
+    # findings, and nothing downstream can check them: grounding compares the answer to the
+    # evidence, and a claim about the corpus has nothing to compare against. Confidence was 0.85
+    # on the first one, so the model was not hedging. The distinction the model has to hold is
+    # that it only ever sees retrieved passages, never the document, so it is never in a position
+    # to know what the document contains.
+    "You are shown selected passages, never the whole source document, so you cannot know what "
+    "the document does or does not contain. Never state that the source lacks something, that a "
+    "table or form is absent from it, or that a value is missing, truncated or cut off. Say only "
+    "what is true: that YOU could not find it in the evidence you were given. If a figure you "
+    "need is not legible in your evidence, say you could not determine it rather than describing "
+    "the evidence as incomplete."
 )
 
 # Default prompt = identity + " " + contract. The identity is now worker-neutral rather than

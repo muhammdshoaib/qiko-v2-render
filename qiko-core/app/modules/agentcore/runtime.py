@@ -49,10 +49,12 @@ class AgentCore:
         # The critic scores against the retrieved evidence plus any verified prior answers. This is
         # the GROUNDING score and stays independent of the writer's self-reported confidence.
         critique = critic_mod.grounding_score(answer, list(req.context) + verified)
-        decision = gate_mod.decide(critique, threshold=self.threshold)
         # Confidence is the generator's own read of the evidence; when it did not self-report one
         # (plain-prose fallback) we derive it from grounding so the field is always populated.
+        # Resolved BEFORE the gate now, because the gate honours it: a writer reporting that it
+        # could not answer must not be auto-accepted on the strength of grounding alone.
         confidence = gen.confidence if gen.confidence is not None else critique.grounding
+        decision = gate_mod.decide(critique, threshold=self.threshold, confidence=confidence)
         # Citations are clean source labels (doc_id + short snippet) built by the worker; fall back
         # to the raw context only for callers that build a Requirement without sources.
         citations = list(req.sources) if req.sources else list(req.context)
