@@ -22,6 +22,11 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Scopes the preprod deploy credentials to this environment instead of leaving them readable
+    # by every workflow in the repo, and pins the environment to the `preprod` branch. Mirrors
+    # what `live` already does. Changes the OIDC subject claim from `ref:refs/heads/preprod` to
+    # `environment:preprod`; the IAM trust policy accepts both, so ordering did not matter.
+    environment: preprod
     steps:
       - uses: actions/checkout@v4
 
