@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from app.modules.agentcore.models import AgentResult, Decision
 from app.modules.channels.interakt import ReplyMode, WorkerReply
+from app.modules.joseph_mews.language import looks_non_english
 from app.modules.joseph_mews.qualification import FundingMethod, LeadQualification, Timeline, score
 from app.modules.workers.worker import Worker, WorkerRecheck
 
@@ -86,6 +87,22 @@ def to_worker_reply(result: AgentResult, qualification: LeadQualification | None
             handoff_suggested_next_action=(
                 "Joe could not answer confidently within approved knowledge - review the "
                 "conversation and reply manually."
+            ),
+            handoff_priority="medium",
+        )
+    if looks_non_english(result.answer):
+        # JM2-1030: the prompt's "speak only english" rule has no other runtime enforcement --
+        # grounding/gate checks say nothing about language, so a model that ignores the
+        # instruction would otherwise sail straight through as a normal draft. Interakt cannot
+        # correct this after the fact (it only ever sends a template or hands off), so this must
+        # be caught here, before the reply_mode decision is made, not downstream.
+        return WorkerReply(
+            reply_mode=ReplyMode.handoff,
+            handoff_reason="Joe's draft reply was not in English",
+            handoff_reason_code="non_english_output",
+            handoff_suggested_next_action=(
+                "Reply in English yourself, or edit Joe's draft before sending - see the "
+                "conversation for what Joe attempted to say."
             ),
             handoff_priority="medium",
         )
