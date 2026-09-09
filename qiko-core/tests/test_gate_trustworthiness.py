@@ -6,7 +6,7 @@ Both were found by running a real IDG tender through the pipeline on preprod. Ra
 change to the model, the prompts or the document.
 """
 from app.modules.agentcore.critic import grounding_score
-from app.modules.agentcore.gate import MIN_CONFIDENCE, decide
+from app.modules.agentcore.gate import claims_about_the_source, MIN_CONFIDENCE, decide
 from app.modules.agentcore.generator import _OUTPUT_CONTRACT, Generator
 from app.modules.agentcore.models import Critique, Decision
 from app.modules.ai.gateway import StubProvider
@@ -104,3 +104,59 @@ def test_persona_workers_get_the_rule_too():
     persona = Generator(provider=StubProvider(), system_prompt="You are IDG's bid writer.").system
     assert "Never state that the source lacks something" in persona
     assert "You are IDG's bid writer." in persona
+
+
+# --- QIKO-1087: the contract is now enforced, not only requested -------------------------------
+# The prompt tells the writer never to claim the source document lacks something. A prompt only
+# asks. These pin the check that makes it true, and the case Jake found is the first of them.
+
+def test_the_current_liabilities_row_cannot_be_reported_as_cut_off():
+    """The reported case. Asked for audited accounts, the answer gave 2023 and 2024 and wrote
+    "[2025 figure cut off in evidence]". The value is 2,311,636 and the complete row was in a
+    single 799-character passage, alongside three other rows the model read correctly. Grounding
+    was high and confidence 0.85, so nothing else in the pipeline could have caught it."""
+    answer = ("Current Liabilities: USD 2,706,689 (2023), USD 3,791,126 (2024) "
+              "[2025 figure cut off in evidence]")
+    assert claims_about_the_source(answer) == "cut off"
+    assert decide(Critique(grounding=1.0), confidence=0.85,
+                  source_claim=claims_about_the_source(answer)) == Decision.human_review
+
+
+def test_the_same_row_read_correctly_is_left_alone():
+    """The other half of the criterion: reading the value is the correct outcome and must not be
+    escalated. Only the claim about the evidence is the defect."""
+    answer = ("Current Liabilities: USD 2,706,689 (2023), USD 3,791,126 (2024), "
+              "USD 2,311,636 (2025)")
+    assert claims_about_the_source(answer) is None
+    assert decide(Critique(grounding=1.0), confidence=0.85) == Decision.auto_accept
+
+
+def test_saying_it_could_not_determine_the_value_is_allowed():
+    """What the contract tells the writer to say instead. It must not be escalated as a source
+    claim, or the guard would punish the correct behaviour."""
+    answer = "The 2025 Current Liabilities value could not be determined from the evidence given."
+    assert claims_about_the_source(answer) is None
+
+
+def test_a_form_reported_absent_from_the_document_is_escalated():
+    """The second observed case. Form B8-2 is in the ingested document, in Appendix B8, with
+    thirteen projects. Retrieval only had part of that table, which explains an incomplete answer
+    but not the assertion that the form is not in the document."""
+    answer = "Form B8-2 was not part of the source document."
+    assert claims_about_the_source(answer) == "not part of the source document"
+
+
+def test_the_gaps_note_is_checked_too():
+    """The claims landed in the gaps note as often as in the answer, and the reviewer reads it as
+    the authoritative statement of what is missing."""
+    gaps = "The 2025 Current Liabilities figure appears incomplete in the extracted data."
+    assert claims_about_the_source("A clean answer.", gaps) == "appears incomplete"
+
+
+def test_reporting_that_the_evidence_did_not_cover_it_is_still_allowed():
+    """Explicitly permitted by the criterion: a statement about the retrieved evidence is true and
+    useful, unlike a statement about the document. This is handled by the confidence veto, not by
+    treating it as a source claim."""
+    answer = "The supplied evidence does not contain company incorporation documents."
+    assert claims_about_the_source(answer) is None
+    assert decide(Critique(grounding=1.0), confidence=0.15) == Decision.human_review
