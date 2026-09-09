@@ -28,6 +28,9 @@ NOT_AUDITED: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/tenants/{tenant_id}/insights/property"): (
         "service-to-service AI draft for jm-backend (JM2-1042); persists nothing durable here, "
         "only an in-memory idempotency cache, the resulting cached insight lives in jm-backend"),
+    ("POST", "/api/v1/tenants/{tenant_id}/insights/portfolio"): (
+        "service-to-service AI draft (JM2-1132), same shape as insights/property; persists "
+        "nothing durable here, only an in-memory idempotency cache"),
     ("POST", "/api/v1/tenants/{tenant_id}/signals/{request_id}/outcome"): (
         "quality-tracking log, not a security-relevant event; in-memory only, same durability as "
         "the summarize/insight caches it reports against"),

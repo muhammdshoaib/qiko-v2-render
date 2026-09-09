@@ -57,6 +57,95 @@ def _build_system_prompt(agent_config: dict | None) -> str:
     )
 
 
+def _build_portfolio_system_prompt(agent_config: dict | None) -> str:
+    return (
+        "You are drafting Portfolio Insights for a property investor: a small set of "
+        "categorized cards about their WHOLE portfolio, to show them in their investment "
+        "app's overview screen.\n\n"
+        + resolve_guardrails(agent_config) + "\n\n" + _NO_ADVICE_CONSTRAINT + "\n\n"
+        "Use ONLY the categories that fit the supplied evidence, from this set: "
+        '"concentration" (properties clustered in one region/location), '
+        '"regional_performance" (yield/growth compared across regions), '
+        '"income_performance" (net cash flow level or trend), '
+        '"pipeline" (properties not yet completed/tenanted, e.g. reserved or in_build). '
+        "Never invent a card for a category the supplied data does not actually support - an "
+        "empty list is the correct answer when nothing is grounded enough to say.\n\n"
+        'Return ONLY a JSON object (no prose, no markdown fences) with exactly one key, '
+        '"cards": a JSON array, each item having these keys:\n'
+        '"category": one of the categories above (omit if none fits cleanly).\n'
+        '"metric": the specific field name this card is about, e.g. "netMonthly" (omit if none).\n'
+        '"headline": one short observational sentence.\n'
+        '"evidence": the specific supplied fact(s) that ground the headline.\n'
+        '"trend": one of "up", "down", "flat" (omit if not applicable).\n'
+        'If nothing is grounded enough to support any card, return {"cards": []}.'
+    )
+
+
+class PortfolioInsightsRequest(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    requestId: str
+    investor: dict = {}
+    properties: list[dict] = []
+    portfolioAverages: dict = {}
+    yieldAndCashflowDeltas: dict = {}
+    locale: str = "en-GB"
+
+
+class PortfolioInsightCard(BaseModel):
+    category: str | None = None
+    metric: str | None = None
+    headline: str
+    evidence: str
+    trend: str | None = None
+
+
+class PortfolioInsightsResult(BaseModel):
+    cards: list[PortfolioInsightCard] = []
+
+
+class _ExtractedCards(BaseModel):
+    cards: list[PortfolioInsightCard] = []
+
+
+def _portfolio_context_block(request: PortfolioInsightsRequest) -> str:
+    parts = [f"properties: {json.dumps(request.properties)}"]
+    if request.investor:
+        parts.append(f"investor: {json.dumps(request.investor)}")
+    if request.portfolioAverages:
+        parts.append(f"portfolioAverages: {json.dumps(request.portfolioAverages)}")
+    if request.yieldAndCashflowDeltas:
+        parts.append(f"yieldAndCashflowDeltas: {json.dumps(request.yieldAndCashflowDeltas)}")
+    return "\n".join(parts)
+
+
+def generate_portfolio_insights(
+    request: PortfolioInsightsRequest, provider: LLMProvider, agent_config: dict | None = None,
+) -> PortfolioInsightsResult | None:
+    """Best-effort, same shape as generate_property_insight: never raises, returns None after
+    _MAX_ATTEMPTS on a malformed response. Skips the model call entirely (returns an empty card
+    list) when there is no property to analyse -- an empty portfolio supports no card, and there
+    is no reason to spend a generation call finding that out."""
+    if not request.properties:
+        return PortfolioInsightsResult(cards=[])
+    prompt = _portfolio_context_block(request)
+    system = _build_portfolio_system_prompt(agent_config)
+    agent_token = usage.set_agent(AGENT_ID)
+    tenant_token = set_tenant(TENANT)
+    try:
+        for _attempt in range(_MAX_ATTEMPTS):
+            try:
+                response = provider.generate(prompt, system=system, temperature=0.0, prefill="{")
+                raw = _parse_llm_json_object(response.text)
+                extracted = _ExtractedCards.model_validate(raw)
+            except (json.JSONDecodeError, ValidationError, AttributeError):
+                continue
+            return PortfolioInsightsResult(cards=extracted.cards)
+        return None
+    finally:
+        usage.reset_agent(agent_token)
+        reset_tenant(tenant_token)
+
+
 class PropertyInsightRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
     requestId: str

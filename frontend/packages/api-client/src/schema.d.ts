@@ -5099,6 +5099,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tenants/{tenant_id}/insights/portfolio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Portfolio Insights Endpoint
+         * @description JM2-1132: categorized portfolio-level cards (Concentration, Regional Performance, Income
+         *     Performance, Pipeline), same idempotency-on-requestId behaviour as insights/property.
+         */
+        post: operations["portfolio_insights_endpoint_api_v1_tenants__tenant_id__insights_portfolio_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tenants/{tenant_id}/insights/property": {
         parameters: {
             query?: never;
@@ -7822,6 +7843,46 @@ export interface components {
         PortalOut: {
             /** Url */
             url: string;
+        };
+        /** PortfolioInsightsRequest */
+        PortfolioInsightsRequest: {
+            /**
+             * Investor
+             * @default {}
+             */
+            investor: {
+                [key: string]: unknown;
+            };
+            /**
+             * Locale
+             * @default en-GB
+             */
+            locale: string;
+            /**
+             * Portfolioaverages
+             * @default {}
+             */
+            portfolioAverages: {
+                [key: string]: unknown;
+            };
+            /**
+             * Properties
+             * @default []
+             */
+            properties: {
+                [key: string]: unknown;
+            }[];
+            /** Requestid */
+            requestId: string;
+            /**
+             * Yieldandcashflowdeltas
+             * @default {}
+             */
+            yieldAndCashflowDeltas: {
+                [key: string]: unknown;
+            };
+        } & {
+            [key: string]: unknown;
         };
         /**
          * PostActivityRequest
@@ -19423,6 +19484,46 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["IntentSignalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    portfolio_insights_endpoint_api_v1_tenants__tenant_id__insights_portfolio_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+                "x-tenant-id"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortfolioInsightsRequest"];
             };
         };
         responses: {

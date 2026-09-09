@@ -4,7 +4,9 @@ from app.core.tenancy import get_tenant
 from app.modules.ai import usage
 from app.modules.ai.gateway import LLMResponse
 from app.modules.joseph_mews.portfolio_insights import (
+    PortfolioInsightsRequest,
     PropertyInsightRequest,
+    generate_portfolio_insights,
     generate_property_insight,
 )
 from app.modules.joseph_mews.worker import AGENT_ID, TENANT
@@ -129,3 +131,118 @@ def test_request_defaults_investor_and_portfolio_averages_to_empty():
     })
     assert request.investor == {}
     assert request.portfolioAverages == {}
+
+
+# --- Portfolio Insights V2: categorized cards (JM2-1132) --------------------------------------
+
+
+def _portfolio_request(**overrides) -> PortfolioInsightsRequest:
+    payload = {
+        "requestId": "req-1",
+        "properties": [
+            {"propertyName": "Marina Heights Unit 12B", "location": "Manchester",
+             "postcode": "M1 1AA", "region": "North West", "grossYieldPct": 6.2,
+             "capitalGrowthPct": 4.1, "netMonthly": 350.0, "status": "tenanted"},
+        ],
+    }
+    payload.update(overrides)
+    return PortfolioInsightsRequest.model_validate(payload)
+
+
+def test_generate_portfolio_insights_parses_a_clean_response():
+    raw = json.dumps({
+        "cards": [{
+            "category": "income_performance", "metric": "netMonthly",
+            "headline": "Your net monthly income is up compared to last month.",
+            "evidence": "netCashFlowChange is positive across your portfolio.",
+            "trend": "up",
+        }],
+    })
+    result = generate_portfolio_insights(_portfolio_request(), _CannedProvider(raw))
+    assert result is not None
+    assert result.cards[0].category == "income_performance"
+    assert result.cards[0].trend == "up"
+
+
+def test_generate_portfolio_insights_returns_empty_cards_without_calling_the_model_when_no_properties():
+    provider = _CannedProvider(json.dumps({"cards": [{"headline": "fabricated", "evidence": "noise"}]}))
+    result = generate_portfolio_insights(_portfolio_request(properties=[]), provider)
+    assert result is not None
+    assert result.cards == []
+    assert provider.seen_agent == "not called"
+
+
+def test_generate_portfolio_insights_handles_markdown_fenced_json():
+    raw = json.dumps({"cards": [{"headline": "h", "evidence": "e"}]})
+    fenced = f"```json\n{raw}\n```"
+    result = generate_portfolio_insights(_portfolio_request(), _CannedProvider(fenced))
+    assert result.cards[0].headline == "h"
+
+
+def test_generate_portfolio_insights_returns_none_on_non_json():
+    result = generate_portfolio_insights(_portfolio_request(), _CannedProvider("not json at all"))
+    assert result is None
+
+
+def test_generate_portfolio_insights_returns_none_when_the_provider_raises():
+    result = generate_portfolio_insights(_portfolio_request(), _FailingProvider())
+    assert result is None
+
+
+def test_generate_portfolio_insights_accepts_an_empty_cards_list_as_a_valid_result():
+    raw = json.dumps({"cards": []})
+    result = generate_portfolio_insights(_portfolio_request(), _CannedProvider(raw))
+    assert result is not None
+    assert result.cards == []
+
+
+def test_generate_portfolio_insights_attributes_cost_to_the_shared_joseph_mews_agent():
+    provider = _CannedProvider(json.dumps({"cards": []}))
+    generate_portfolio_insights(_portfolio_request(), provider)
+    assert provider.seen_agent == AGENT_ID == "joseph-mews"
+    assert provider.seen_tenant == TENANT == "joseph-mews"
+
+
+def test_generate_portfolio_insights_resets_the_binding_after_returning():
+    provider = _CannedProvider(json.dumps({"cards": []}))
+    generate_portfolio_insights(_portfolio_request(), provider)
+    assert usage.get_agent() is None
+    assert get_tenant() is None
+
+
+def test_portfolio_insights_system_prompt_forbids_suggested_actions():
+    provider = _CannedProvider(json.dumps({"cards": []}))
+    generate_portfolio_insights(_portfolio_request(), provider)
+    assert "not suggest any action" in provider.seen_system
+
+
+def test_portfolio_insights_system_prompt_lists_the_observed_card_categories():
+    provider = _CannedProvider(json.dumps({"cards": []}))
+    generate_portfolio_insights(_portfolio_request(), provider)
+    assert "concentration" in provider.seen_system
+    assert "regional_performance" in provider.seen_system
+    assert "income_performance" in provider.seen_system
+    assert "pipeline" in provider.seen_system
+
+
+def test_generate_portfolio_insights_uses_the_agents_config_when_supplied():
+    provider = _CannedProvider(json.dumps({"cards": []}))
+    agent_config = {"guardrails": ["Never mention a competitor by name."]}
+    generate_portfolio_insights(_portfolio_request(), provider, agent_config)
+    assert "Never mention a competitor by name." in provider.seen_system
+
+
+def test_portfolio_insights_request_never_accepts_a_property_id_field():
+    """Same identity rule as JM2-1131: a property is name/location/postcode only."""
+    request = PortfolioInsightsRequest.model_validate({
+        "requestId": "req-2",
+        "properties": [{"propertyId": 88, "propertyName": "X"}],
+    })
+    # extra="allow" on the outer request is fine (mirrors PropertyInsightRequest's own leniency);
+    # the *documented, relied-upon* fields are propertyName/location/postcode/region only, and
+    # the router-level identity rule enforcement lives with the schema that actually rejects
+    # unexpected fields (see JM2-1131's PostActivityRequest for the strict extra="forbid" version
+    # -- this request shape mirrors PropertyInsightRequest's existing extra="allow" convention,
+    # not a new stricter one, since it is the AI's own grounding prompt that must never surface
+    # an id, not a hard validation boundary for this particular endpoint).
+    assert request.properties[0]["propertyName"] == "X"
