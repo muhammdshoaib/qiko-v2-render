@@ -133,6 +133,17 @@ def test_intent_signals_generates_from_stored_activity(client, monkeypatch):
 
 
 def test_intent_signals_returns_an_error_shape_on_generation_failure(client, monkeypatch):
+    # Needs to clear the deterministic signal-eligibility guardrail first, or the model is never
+    # called at all and the response is an empty signals list rather than a generation failure.
+    investor_headers = _investor_headers(monkeypatch)
+    for _ in range(3):
+        client.post(
+            "/api/v1/tenants/joseph-mews/activity",
+            json={"category": "property_visit", "label": "PropertyDetail",
+                 "propertyName": "Marina Heights", "location": "Manchester", "postcode": "M1 1AA"},
+            headers=investor_headers,
+        )
+
     class Provider:
         def generate(self, prompt, **_kwargs):
             return type("R", (), {"text": "not json at all"})()
@@ -148,3 +159,32 @@ def test_intent_signals_returns_an_error_shape_on_generation_failure(client, mon
     assert response.status_code == 200
     body = response.json()
     assert body["error"]["code"] == "GENERATION_FAILED"
+
+
+def test_intent_signals_returns_empty_signals_without_calling_the_llm_when_activity_is_sparse(client, monkeypatch):
+    investor_headers = _investor_headers(monkeypatch)
+    client.post(
+        "/api/v1/tenants/joseph-mews/activity",
+        json={"category": "screen", "label": "Dashboard"}, headers=investor_headers,
+    )
+
+    class Provider:
+        def __init__(self):
+            self.called = False
+
+        def generate(self, prompt, **_kwargs):
+            self.called = True
+            return type("R", (), {"text": '{"signals": [{"signal": "fabricated", "strength": "high", "evidence": "noise"}]}'})()
+
+    provider = Provider()
+    import app.modules.joseph_mews.router as router_module
+    monkeypatch.setattr(router_module, "get_provider", lambda: provider)
+
+    admin_headers = _admin_headers(monkeypatch)
+    response = client.post(
+        "/api/v1/tenants/joseph-mews/activity/intent-signals",
+        json={"requestId": "r1", "investorRef": "inv-1"}, headers=admin_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["signals"] == []
+    assert provider.called is False

@@ -32,6 +32,29 @@ from app.modules.joseph_mews.worker import AGENT_ID, TENANT
 _JSON_OBJECT = re.compile(r"\{.*\}", re.DOTALL)
 _MAX_ATTEMPTS = 2
 
+# Deterministic signal-eligibility guardrail: repeated engagement with a specific property or
+# with the calculator is what the client actually wants treated as an intent signal ("viewing a
+# property 10x = signal"); passive screen browsing alone, no matter how frequent, is explicitly
+# not ("viewing documents 10x = not a signal") -- see the module-level PDF reference for the
+# broader activity categories this mirrors. This is enforced BEFORE the LLM is ever called
+# (generate_intent_signals below), not left to the model's judgment, so noise cannot manufacture
+# a signal even if the model would otherwise be tempted to find a pattern in it. Thresholds are
+# a documented starting point (same spirit as qualification.py's scoring weights), meant to be
+# tuned once the client confirms real numbers, not a design that needs revisiting to change them.
+MIN_PROPERTY_VISITS_FOR_SIGNAL = 3
+MIN_CALCULATOR_VISITS_FOR_SIGNAL = 3
+
+
+def has_signal_worthy_evidence(aggregated: dict) -> bool:
+    """True if aggregated activity (the shape aggregate_activity returns) contains at least one
+    property or calculator step engaged with often enough to be worth asking the model about.
+    Screen visits are deliberately never considered on their own, at any count."""
+    properties = aggregated.get("properties") or []
+    if any(p.get("visitCount", 0) >= MIN_PROPERTY_VISITS_FOR_SIGNAL for p in properties):
+        return True
+    calculator_steps = aggregated.get("calculatorSteps") or {}
+    return any(count >= MIN_CALCULATOR_VISITS_FOR_SIGNAL for count in calculator_steps.values())
+
 
 @dataclass(frozen=True)
 class ActivityEvent:
@@ -156,7 +179,14 @@ def generate_intent_signals(
 ) -> IntentSignalResult | None:
     """Best-effort, mirrors signal_summary.summarize_signal: never raises, returns None after
     _MAX_ATTEMPTS on a malformed/unusable response rather than surfacing a partial or invented
-    result to the admin panel."""
+    result to the admin panel.
+
+    Checks has_signal_worthy_evidence() first and skips the model call entirely when nothing
+    clears it -- an empty signals list is the correct, honest answer for "activity too sparse",
+    and never calling the model for it is strictly better than calling it and hoping the prompt's
+    "if the activity is too sparse, return no signals" instruction is followed."""
+    if not has_signal_worthy_evidence(request.activity):
+        return IntentSignalResult(signals=[])
     prompt = json.dumps({"activity": request.activity, "investor": request.investor})
     system = _build_system_prompt(agent_config)
     agent_token = usage.set_agent(AGENT_ID)
