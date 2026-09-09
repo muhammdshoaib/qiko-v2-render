@@ -30,8 +30,11 @@ from app.modules.joseph_mews.activity import (
 )
 from app.modules.joseph_mews.investor_token import InvestorTokenError, decode_investor_activity_token
 from app.modules.joseph_mews.portfolio_insights import (
+    PortfolioInsightsRequest,
+    PortfolioInsightsResult,
     PropertyInsightRequest,
     PropertyInsightResult,
+    generate_portfolio_insights,
     generate_property_insight,
 )
 from app.modules.joseph_mews.signal_summary import (
@@ -84,6 +87,7 @@ class _ResultCache:
 
 _cache = _ResultCache()
 _insight_cache = _ResultCache()
+_portfolio_insight_cache = _ResultCache()
 
 
 class GenerationOutcome(StrEnum):
@@ -191,6 +195,32 @@ async def property_insight_endpoint(
     return _insight_response(body.requestId, result)
 
 
+def _portfolio_insight_response(request_id: str, result: PortfolioInsightsResult | None) -> dict:
+    if result is None:
+        return {
+            "requestId": request_id,
+            "error": {"code": "GENERATION_FAILED", "message": "could not draft portfolio insights"},
+        }
+    return {"requestId": request_id, "cards": [c.model_dump() for c in result.cards]}
+
+
+@router.post("/insights/portfolio")
+async def portfolio_insights_endpoint(
+    tenant_id: str, body: PortfolioInsightsRequest,
+    agent: Annotated[Agent | None, Depends(require_worker_caller)],
+) -> dict:
+    """JM2-1132: categorized portfolio-level cards (Concentration, Regional Performance, Income
+    Performance, Pipeline), same idempotency-on-requestId behaviour as insights/property."""
+    seen, cached = _portfolio_insight_cache.get(body.requestId)
+    if seen:
+        return _portfolio_insight_response(body.requestId, cached)
+
+    config = agent.config if agent is not None else None
+    result = await asyncio.to_thread(generate_portfolio_insights, body, get_provider(), config)
+    _portfolio_insight_cache.put(body.requestId, result)
+    return _portfolio_insight_response(body.requestId, result)
+
+
 @router.post("/signals/{request_id}/outcome")
 async def report_signal_outcome(
     tenant_id: str, request_id: str, body: OutcomeReport,
@@ -213,7 +243,12 @@ async def report_insight_outcome(
     tenant_id: str, request_id: str, body: OutcomeReport,
     _agent: Annotated[Agent | None, Depends(require_worker_caller)],
 ) -> dict:
+    # Covers both insight shapes (per-property, JM2-1042, and portfolio-level, JM2-1132) under
+    # one outcome log -- a requestId is unique to whichever one generated it, so there is no
+    # ambiguity in accepting a report against either cache here.
     seen, _ = _insight_cache.get(request_id)
+    if not seen:
+        seen, _ = _portfolio_insight_cache.get(request_id)
     if not seen:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown requestId")
     _insight_outcomes.record(request_id, body)
