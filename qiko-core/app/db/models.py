@@ -491,6 +491,8 @@ class Passage(Base):
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     agent_id: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
     doc_id: Mapped[str] = mapped_column(String(128))
+    # 0-based position within the document. See migration 0050 and knowledge.service._widen.
+    ordinal: Mapped[int | None] = mapped_column(nullable=True)
     text: Mapped[str] = mapped_column(String)
     embedding: Mapped[list] = mapped_column(JSON, default=list)
 
