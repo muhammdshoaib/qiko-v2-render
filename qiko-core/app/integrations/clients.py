@@ -158,11 +158,15 @@ def _split_phone_number(raw: str) -> tuple[str, str]:
     return f"+{parsed.country_code}", str(parsed.national_number)
 
 
+class InteraktAuthError(Exception):
+    pass
+
+
 class InteraktClient:
     """Implements channels.interakt.InteraktClient via Interakt's Template Message Send API.
 
-    Interakt has no free-text send endpoint at all (channels/interakt.py); this is the only
-    outbound call this integration ever makes.
+    Interakt has no free-text send endpoint at all (channels/interakt.py); send_template is the
+    only outbound call this integration makes to actually message a customer.
     """
 
     def __init__(self, api_key: str | None = None, client: httpx.Client | None = None):
@@ -178,6 +182,17 @@ class InteraktClient:
         })
         r.raise_for_status()
         return r.json()
+
+    def verify_credentials(self) -> None:
+        """JM2-1026: Get Users is the only read-only, side-effect-free call in Interakt's public
+        API (send_template above sends a real WhatsApp message, so it can never double as a
+        connection test) - limit=1 purely to keep the check cheap, the response body is otherwise
+        unused. Raises InteraktAuthError on a 401/403 so the credentials route can turn that into
+        an actionable 422 rather than a raw 5xx from a bad key."""
+        r = self._c.get("/apis/users/", params={"offset": 0, "limit": 1})
+        if r.status_code in (401, 403):
+            raise InteraktAuthError("Interakt rejected this API key")
+        r.raise_for_status()
 
 
 class SlackAuthError(Exception):
