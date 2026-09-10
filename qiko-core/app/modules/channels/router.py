@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import inspect
 import json
 import logging
 
@@ -162,7 +163,10 @@ async def interakt_inbound(
     parsed = parse_inbound(json.loads(body or b"{}"))
     if parsed is None:
         return {"processed": []}
-    if idempotency.is_duplicate(parsed.message_id):
+    # is_duplicate is sync on the in-memory guard, async on the Redis-backed one (JM2-1025) -
+    # same optionally-async pattern RateLimitMiddleware already uses for limiter.allow().
+    duplicate = idempotency.is_duplicate(parsed.message_id)
+    if await duplicate if inspect.isawaitable(duplicate) else duplicate:
         return {"processed": []}
 
     worker = build_worker(

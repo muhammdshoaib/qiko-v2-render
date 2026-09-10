@@ -50,7 +50,7 @@ from app.modules.joseph_mews.jm_backend_client import HttpJmBackendClient, Unava
 from app.modules.joseph_mews.router import router as joseph_mews_router
 from app.modules.channels.sessions import ChannelSessionStore
 from app.modules.channels.slack_events import SlackEventHandler
-from app.modules.channels.webhooks import IdempotencyGuard
+from app.modules.channels.webhooks import IdempotencyGuard, RedisIdempotencyGuard
 from app.modules.channels.slack_oauth import InstallationStore, SlackOAuth, WorkspaceLinkStore
 from app.modules.channels.slack_store import InMemorySlackChannelStore
 from app.modules.channels.teams_integration import TeamsNotifier
@@ -512,7 +512,14 @@ def create_app() -> FastAPI:
         WhatsAppClient() if settings.whatsapp_access_token else StubWhatsAppGateway())
     app.state.interakt = InteraktGateway(
         InteraktClient() if settings.interakt_api_key else StubInteraktClient())
-    app.state.interakt_idempotency = IdempotencyGuard()
+    # Redis-backed once Redis is configured (JM2-1025): the in-memory guard is per-process, so a
+    # duplicate delivery routed to a different replica wouldn't be caught by it. Reuses
+    # app.state.redis (set above) rather than opening a second connection.
+    app.state.interakt_idempotency = (
+        RedisIdempotencyGuard(redis=app.state.redis, namespace="qiko:idempotency:interakt")
+        if app.state.redis is not None
+        else IdempotencyGuard()
+    )
     app.state.jm_backend = (
         HttpJmBackendClient(settings.jm_backend_base_url, settings.jm_backend_shared_secret)
         if settings.jm_backend_base_url and settings.jm_backend_shared_secret
