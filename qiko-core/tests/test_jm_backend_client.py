@@ -7,6 +7,7 @@ import pytest
 
 from app.modules.joseph_mews.jm_backend_client import (
     ConversationTurn,
+    HandoffPacket,
     HttpJmBackendClient,
     JmBackendError,
     UnavailableJmBackendClient,
@@ -61,6 +62,53 @@ def test_record_turn_includes_optional_fields_only_when_given():
         "phone_number": "447700900000", "role": "joe", "text": "hello",
         "template_used": "greeting", "interakt_message_id": "msg-1",
     }
+
+
+def test_record_turn_includes_the_handoff_packet_when_given():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.read())
+        return httpx.Response(200, json={"conversation_id": "wa_1", "investor_id": None, "history": []})
+
+    client = HttpJmBackendClient(
+        "https://jm-backend.example.com", "secret",
+        client=httpx.Client(base_url="https://jm-backend.example.com", transport=httpx.MockTransport(handler)),
+    )
+    client.record_turn(
+        "447700900000", "joe", "handoff",
+        handoff=HandoffPacket(
+            reason_code="qualification_complete",
+            summary="Alex wants a 2-bed in Manchester.",
+            suggested_next_action="Call to discuss financing.",
+            priority="high",
+            extracted_traits={"city": "Manchester", "budget": 250000},
+        ),
+    )
+
+    assert captured["body"]["handoff"] == {
+        "reason_code": "qualification_complete",
+        "summary": "Alex wants a 2-bed in Manchester.",
+        "extracted_traits": {"city": "Manchester", "budget": 250000},
+        "suggested_next_action": "Call to discuss financing.",
+        "priority": "high",
+    }
+
+
+def test_record_turn_omits_handoff_when_not_given():
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.read())
+        return httpx.Response(200, json={"conversation_id": "wa_1", "investor_id": None, "history": []})
+
+    client = HttpJmBackendClient(
+        "https://jm-backend.example.com", "secret",
+        client=httpx.Client(base_url="https://jm-backend.example.com", transport=httpx.MockTransport(handler)),
+    )
+    client.record_turn("447700900000", "customer", "hi")
+
+    assert "handoff" not in captured["body"]
 
 
 def test_record_turn_raises_a_jm_backend_error_on_a_non_2xx_response():

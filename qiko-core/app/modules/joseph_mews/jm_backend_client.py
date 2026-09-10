@@ -28,10 +28,25 @@ class ConversationState:
     history: tuple[ConversationTurn, ...] = field(default_factory=tuple)
 
 
+@dataclass(frozen=True)
+class HandoffPacket:
+    """JM2-1031: Joe's structured handoff packet, matching api-spec-whatsapp-joe-agent.md 3.4
+    and jm-backend's HandoffPacket schema (app/api/internal_api.py) field-for-field. Sent
+    alongside a "joe" turn only when that turn is a handoff - jm-backend maps it onto an
+    Enquiry and notifies the assigned agent, it is not stored as conversation history text."""
+
+    reason_code: str
+    summary: str
+    suggested_next_action: str
+    priority: str
+    extracted_traits: dict[str, object] = field(default_factory=dict)
+
+
 class JmBackendClient(Protocol):
     def record_turn(
         self, phone_number: str, role: str, text: str, *,
         template_used: str | None = None, interakt_message_id: str | None = None,
+        handoff: HandoffPacket | None = None,
     ) -> ConversationState: ...
 
 
@@ -52,12 +67,21 @@ class HttpJmBackendClient:
     def record_turn(
         self, phone_number: str, role: str, text: str, *,
         template_used: str | None = None, interakt_message_id: str | None = None,
+        handoff: HandoffPacket | None = None,
     ) -> ConversationState:
         body = {"phone_number": phone_number, "role": role, "text": text}
         if template_used is not None:
             body["template_used"] = template_used
         if interakt_message_id is not None:
             body["interakt_message_id"] = interakt_message_id
+        if handoff is not None:
+            body["handoff"] = {
+                "reason_code": handoff.reason_code,
+                "summary": handoff.summary,
+                "extracted_traits": handoff.extracted_traits,
+                "suggested_next_action": handoff.suggested_next_action,
+                "priority": handoff.priority,
+            }
         try:
             r = self._c.post("/internal/whatsapp/conversations/turn", json=body)
             r.raise_for_status()
@@ -81,5 +105,6 @@ class UnavailableJmBackendClient:
     lead, empty history"."""
 
     def record_turn(self, phone_number: str, role: str, text: str, *,
-                    template_used: str | None = None, interakt_message_id: str | None = None) -> ConversationState:
+                    template_used: str | None = None, interakt_message_id: str | None = None,
+                    handoff: HandoffPacket | None = None) -> ConversationState:
         raise JmBackendError("jm-backend client is not configured (JOE_WORKER_JM_BACKEND_URL/SECRET)")
