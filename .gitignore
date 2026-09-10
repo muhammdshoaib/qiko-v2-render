@@ -21,6 +21,8 @@ dist/
 # Playwright
 frontend/e2e/test-results/
 frontend/e2e/playwright-report/
+frontend/e2e/test-results-ci/
+frontend/e2e/playwright-report-ci/
 
 # Env & secrets
 .env

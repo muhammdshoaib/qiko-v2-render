@@ -52,7 +52,9 @@ test("Settings: editable profile, billing section, integrations section", async 
 
   // Integrations section: Teams status + manage worker connections.
   await expect(page.getByText("Microsoft Teams notifications")).toBeVisible();
-  await expect(page.getByRole("button", { name: /Manage worker connections/ })).toBeVisible();
+  // Renamed with the Integrations tab restore: the card now opens an in-page tab rather than
+  // linking out to per-worker connections, so the button reads "Manage integrations".
+  await expect(page.getByRole("button", { name: /Manage integrations/ })).toBeVisible();
 
   expect(pageErrors).toEqual([]);
 });

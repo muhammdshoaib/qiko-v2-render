@@ -82,8 +82,10 @@ test("Ingestion catalog UI: dynamic list, catalog add, custom add, delete", asyn
     return j.source_key === "acme-portal" && j.name === "Acme Portal" && j.config?.url === "https://portal.example/search";
   })).toBe(true);
 
-  // Delete the TED source -> DELETE /sources/ted.
+  // Delete the TED source -> DELETE /sources/ted. Since the delete confirmation modal landed
+  // across every Creator delete flow, Remove only opens the dialog; the request fires on Delete.
   await page.getByRole("button", { name: "Remove TED - EU Tenders" }).click();
+  await page.getByRole("alertdialog").getByRole("button", { name: "Delete" }).click();
   await expect.poll(() => deleted.some((u) => /\/sources\/ted(\?|$)/.test(u))).toBe(true);
 
   expect(pageErrors).toEqual([]);

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import inspect
 import json
 import logging
 
@@ -30,11 +31,11 @@ from app.core.deps import (
 from app.modules.channels.teams_integration import TeamsWebhookError
 from app.modules.channels.webhooks import verify_hmac_signature
 from app.modules.channels.whatsapp import verify_webhook
-from app.modules.channels.interakt import parse_inbound
+from app.modules.channels.interakt import ReplyMode, parse_inbound
 from app.modules.identity.rbac import Role
 from app.modules.joseph_mews.conversation import advance_turn
 from app.modules.joseph_mews.extraction import extract_qualification
-from app.modules.joseph_mews.jm_backend_client import JmBackendError
+from app.modules.joseph_mews.jm_backend_client import HandoffPacket, JmBackendError
 from app.modules.joseph_mews.worker import joseph_mews_worker_config
 from app.modules.workers.worker import build_worker
 
@@ -162,7 +163,10 @@ async def interakt_inbound(
     parsed = parse_inbound(json.loads(body or b"{}"))
     if parsed is None:
         return {"processed": []}
-    if idempotency.is_duplicate(parsed.message_id):
+    # is_duplicate is sync on the in-memory guard, async on the Redis-backed one (JM2-1025) -
+    # same optionally-async pattern RateLimitMiddleware already uses for limiter.allow().
+    duplicate = idempotency.is_duplicate(parsed.message_id)
+    if await duplicate if inspect.isawaitable(duplicate) else duplicate:
         return {"processed": []}
 
     worker = build_worker(
@@ -193,11 +197,24 @@ async def interakt_inbound(
     )
     outcome = gateway.send(parsed.phone_number, reply)
 
+    handoff = None
+    if reply.reply_mode is ReplyMode.handoff:
+        # JM2-1031: only a genuine handoff carries a packet - draft_for_agent/template turns
+        # have no reason_code/summary/suggested_next_action to send, and jm-backend's own
+        # HandoffPacket schema requires all three.
+        handoff = HandoffPacket(
+            reason_code=reply.handoff_reason_code or "unspecified",
+            summary=reply.handoff_reason or "Joe handed this conversation off for human review.",
+            suggested_next_action=reply.handoff_suggested_next_action or "Review the conversation and reply manually.",
+            priority=reply.handoff_priority or "medium",
+            extracted_traits=reply.handoff_extracted_traits or {},
+        )
+
     try:
         jm_backend.record_turn(
             parsed.phone_number, "joe",
             reply.draft_text or reply.handoff_reason or reply.reply_mode.value,
-            template_used=reply.template_name,
+            template_used=reply.template_name, handoff=handoff,
         )
     except JmBackendError:
         logger.warning("jm-backend unavailable for %s, Joe's turn was not persisted", parsed.phone_number)

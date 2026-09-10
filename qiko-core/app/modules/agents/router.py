@@ -42,7 +42,8 @@ _REDACTED_CONFIG_KEYS = ("vapi_api_key_encrypted", "salesforce_client_secret_enc
                          "calendly_token_encrypted", "clickup_api_token_encrypted",
                          "slack_bot_token_encrypted", "gmail_app_password_encrypted",
                          "github_token_encrypted", "qiko_track_token_encrypted",
-                         "worker_api_key_hash")
+                         "worker_api_key_hash", "interakt_api_key_encrypted",
+                         "interakt_webhook_secret_encrypted")
 
 
 # Keys the free-form patch must never WRITE. The list above already stops these being read back; not
@@ -65,7 +66,7 @@ _WRITE_ONLY_VIA_DEDICATED_ENDPOINT = frozenset(_REDACTED_CONFIG_KEYS) | {
     # third party with an error the customer cannot act on.
     "vapi_credentials_added", "salesforce_credentials_added", "calendly_credentials_added",
     "clickup_credentials_added", "slack_credentials_added", "gmail_credentials_added",
-    "github_credentials_added", "qiko_track_credentials_added",
+    "github_credentials_added", "qiko_track_credentials_added", "interakt_credentials_added",
     "slack_watched_channels", "slack_team_id",
     # Server-generated only (POST/DELETE .../worker-api-key), never something a caller should be
     # able to set to an arbitrary value through the free-form patch.
@@ -959,4 +960,108 @@ async def test_gmail_credentials(agent_id: str, request: Request,
             await recheck()
         return result
     except GmailSmtpError as e:
+        raise HTTPException(status_code=502, detail=str(e)) from e
+
+
+# --- Per-worker Interakt connection --------------------------------------------------------------
+# JM2-1026: same native shape as Calendly/ClickUp/Slack/Gmail above - each tenant supplies its own
+# Interakt account's API key rather than a global Qiko-owned one, since a global credential would
+# push every customer's WhatsApp templates through the same Interakt account. Authenticates
+# outbound Template Send / Get Users calls (InteraktClient, app/integrations/clients.py).
+#
+# The webhook secret (verifying Interakt-Signature on INBOUND deliveries) deliberately stays a
+# global setting (interakt_webhook_secret) for now: interakt_inbound (channels/router.py) has no
+# per-tenant routing yet - there is one webhook URL, so there is nowhere to resolve "which
+# tenant's secret" from before the signature is even checked. Storing a per-tenant webhook secret
+# nobody can look up yet would be encryption theatre; making the inbound webhook itself
+# tenant-routed is a separate, larger change than adding a credential slot.
+
+class InteraktCredentialsBody(BaseModel):
+    api_key: str = Field(min_length=1)  # no max_length on secrets: a 422 would echo the value back
+
+
+def _interakt_view(agent: Agent) -> dict:
+    cfg = agent.config
+    return {
+        "interakt_credentials_added": bool(cfg.get("interakt_credentials_added")),
+        "api_key_masked": _mask(cfg.get("interakt_api_key_encrypted") or ""),
+    }
+
+
+@router.post("/{agent_id}/interakt-credentials")
+async def save_interakt_credentials(agent_id: str, body: InteraktCredentialsBody, request: Request,
+                                    claims: dict = Depends(current_claims),
+                                    tenant: str = Depends(authed_tenant),
+                                    _role: dict = Depends(require_role(Role.editor)),
+                                    svc=Depends(get_agents)) -> dict:
+    try:
+        agent = await svc.update_config(tenant, agent_id, {
+            "interakt_api_key_encrypted": encrypt(body.api_key),
+            "interakt_credentials_added": True,
+        }, audit=audit_credentials.credential_audit(
+            action=audit_actions.CREDENTIAL_SET, provider="interakt", tenant=tenant, agent_id=agent_id,
+            agent_name=agent_id, claims=claims, secret=body.api_key,
+            decrypt_previous=lambda cfg: _plaintext_of_config(cfg, "interakt_api_key_encrypted"), request=request))
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="agent not found") from e
+    return _interakt_view(agent)
+
+
+@router.get("/{agent_id}/interakt-credentials")
+async def get_interakt_credentials(agent_id: str, tenant: str = Depends(authed_tenant),
+                                   svc=Depends(get_agents)) -> dict:
+    agent = await svc.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    return _interakt_view(agent)
+
+
+@router.delete("/{agent_id}/interakt-credentials")
+async def disconnect_interakt(agent_id: str, request: Request,
+                              claims: dict = Depends(current_claims), tenant: str = Depends(authed_tenant),
+                              _role: dict = Depends(require_role(Role.editor)),
+                              svc=Depends(get_agents)) -> dict:
+    try:
+        await svc.update_config(tenant, agent_id, {
+            "interakt_api_key_encrypted": None,
+            "interakt_credentials_added": False,
+        }, audit=audit_credentials.credential_audit(
+            action=audit_actions.CREDENTIAL_REMOVED, provider="interakt", tenant=tenant, agent_id=agent_id,
+            agent_name=agent_id, claims=claims, secret=None,
+            decrypt_previous=lambda cfg: _plaintext_of_config(cfg, "interakt_api_key_encrypted"), request=request))
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="agent not found") from e
+    return {"disconnected": True}
+
+
+@router.post("/{agent_id}/interakt-credentials/test")
+async def test_interakt_credentials(agent_id: str, request: Request,
+                                    claims: dict = Depends(current_claims),
+                                    tenant: str = Depends(authed_tenant),
+                                    _role: dict = Depends(require_role(Role.editor)),
+                                    svc=Depends(get_agents)) -> dict:
+    import asyncio
+
+    from app.integrations.clients import InteraktAuthError, InteraktClient
+
+    agent = await svc.get(tenant, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="agent not found")
+    _worker, recheck = await resolve_tenant_worker(request, tenant, agent_id)
+    cfg = agent.config
+    client = InteraktClient(api_key=stored_credential(
+        cfg, flag="interakt_credentials_added", key="interakt_api_key_encrypted", label="Interakt"))
+    # After the credential is resolved, so the row means a stored secret was actually taken out and
+    # used. Emitted before it, this fired for any editor on a worker with no credential configured at
+    # all, which is not the signal the docstring claims.
+    await audit_credentials.record_credential_exercised(
+        request.app.state.audit, provider="interakt", tenant=tenant, agent_id=agent_id,
+        claims=claims, request=request)
+    try:
+        try:
+            await asyncio.to_thread(client.verify_credentials)
+        finally:
+            await recheck()
+        return {"verified": True}
+    except InteraktAuthError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e

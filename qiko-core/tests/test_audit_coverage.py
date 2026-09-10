@@ -28,6 +28,9 @@ NOT_AUDITED: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/tenants/{tenant_id}/insights/property"): (
         "service-to-service AI draft for jm-backend (JM2-1042); persists nothing durable here, "
         "only an in-memory idempotency cache, the resulting cached insight lives in jm-backend"),
+    ("POST", "/api/v1/tenants/{tenant_id}/insights/portfolio"): (
+        "service-to-service AI draft (JM2-1132), same shape as insights/property; persists "
+        "nothing durable here, only an in-memory idempotency cache"),
     ("POST", "/api/v1/tenants/{tenant_id}/signals/{request_id}/outcome"): (
         "quality-tracking log, not a security-relevant event; in-memory only, same durability as "
         "the summarize/insight caches it reports against"),
@@ -50,6 +53,12 @@ NOT_AUDITED: dict[tuple[str, str], str] = {
     ("POST", "/api/v1/notifications/read-all"): "bulk read-tracking; nobody has ever litigated who marked a notification read",
     ("POST", "/api/v1/auth/refresh"): "one per token expiry per tab; the login itself is now audited, and a revoked session already logs",
     ("POST", "/api/v1/channels/slack/webhook"): "external Slack Events API callback; signature-verified and idempotent, payloads are stored in slack_channel_messages",
+    ("POST", "/api/v1/tenants/{tenant_id}/activity"): (
+        "volume (JM2-1131): one row per screen/property/calculator-step visit, thousands per "
+        "investor per day; content is already durable in investor_activity_events"),
+    ("POST", "/api/v1/tenants/{tenant_id}/activity/intent-signals"): (
+        "service-to-service AI draft (JM2-1131), same shape as signals/summarize; persists "
+        "nothing durable here, reads investor_activity_events and returns a generated result"),
 }
 
 
@@ -98,7 +107,7 @@ AUDIT_WRITERS: dict[str, int] = {
     # property that made them worth folding in rather than re-instrumenting at the call site.
     "identity/admin_org_router.py": 2,
     "billing/router.py": 4,
-    "agents/router.py": 19,
+    "agents/router.py": 22,
     "identity/users_router.py": 3,
     "teams/router.py": 3,
     "knowledge/router.py": 1,
@@ -372,6 +381,8 @@ INSTRUMENTED: set[tuple[str, str]] = {
     ("DELETE", "/api/v1/agents/{agent_id}/slack-credentials"),
     ("POST", "/api/v1/agents/{agent_id}/gmail-credentials"),
     ("DELETE", "/api/v1/agents/{agent_id}/gmail-credentials"),
+    ("POST", "/api/v1/agents/{agent_id}/interakt-credentials"),
+    ("DELETE", "/api/v1/agents/{agent_id}/interakt-credentials"),
     ("POST", "/api/v1/agents/{agent_id}/worker-api-key"),
     ("DELETE", "/api/v1/agents/{agent_id}/worker-api-key"),
     ("PUT", "/api/v1/identity/users/{user_id}/role"),
@@ -385,6 +396,7 @@ INSTRUMENTED: set[tuple[str, str]] = {
     ("POST", "/api/v1/agents/{agent_id}/clickup-credentials/test"),
     ("POST", "/api/v1/agents/{agent_id}/slack-credentials/test"),
     ("POST", "/api/v1/agents/{agent_id}/gmail-credentials/test"),
+    ("POST", "/api/v1/agents/{agent_id}/interakt-credentials/test"),
     ("POST", "/api/v1/intelligence/agents/{agent_id}/sources/{key}"),
     ("DELETE", "/api/v1/intelligence/agents/{agent_id}/sources/{key}"),
     ("POST", "/api/v1/intelligence/agents/{agent_id}/sources/{key}/settings"),

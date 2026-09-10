@@ -210,3 +210,56 @@ jobs:
       - run: pnpm --filter @qiko/api-client generate
       - run: git diff --exit-code -- ../qiko-core/openapi.json packages/api-client/openapi.json packages/api-client/src/schema.d.ts
       - run: pnpm -r build   # typecheck + Next production build for creator + admin
+
+  e2e:
+    # The mocked end-to-end specs. They stub every backend call with page.route(), so they need
+    # the creator app and nothing else: no preprod, no credentials, no seeded data.
+    #
+    # They used to run only under the manual QA runner in .devin/qa. That went three weeks without
+    # a run, and in the meantime three intentional product changes moved past their specs: the
+    # delete confirmation modal, the Integrations tab rename, and a copy rename. The next QA run
+    # reported ten failures and not one was a real regression. Every one of them would have failed
+    # here, on the pull request that caused it.
+    #
+    # Specs that reach a real deployed environment (website-parity, the legal-consent suite) are
+    # deliberately NOT here: those stay behind the guarded runner that enforces the network
+    # allowlist.
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: {version: 9.12.0}
+      - uses: actions/setup-node@v4
+        with: {node-version: "20", cache: pnpm, cache-dependency-path: frontend/pnpm-lock.yaml}
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter creator build
+      - run: pnpm exec playwright install --with-deps chromium
+        working-directory: frontend/e2e
+      # Selected by title, not by line number. The QA runner selects by `spec:line` and its table
+      # silently rotted: three entries pointed at ordinary statements, so Playwright matched
+      # nothing and reported success having run zero of that spec. Titles survive edits.
+      - run: |
+          pnpm exec playwright test --config playwright.ci.config.ts \
+            tests/sales-pipeline-rail.spec.ts \
+            tests/sales-source-toggle.spec.ts \
+            tests/sales-scan-history.spec.ts \
+            tests/sales-activity-timeline.spec.ts \
+            tests/sales-ingest-filter.spec.ts \
+            tests/sales-source-catalog.spec.ts \
+            tests/qik313-settings.spec.ts \
+            tests/qik338-push-to-studio.spec.ts \
+            tests/finance-drilldown.spec.ts
+        working-directory: frontend/e2e
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-failure-evidence
+          path: |
+            frontend/e2e/test-results-ci
+            frontend/e2e/playwright-report-ci
+          retention-days: 7

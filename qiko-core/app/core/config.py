@@ -93,6 +93,14 @@ class Settings(BaseSettings):
     jm_backend_shared_secret: str = ""
     # The reverse direction (JM2-1065/1066): jm-backend calling INTO qiko-core's worker API.
     jm_backend_api_key: str = ""
+    # JM2-1131: investor activity tracking + intent signals. Mobile syncs directly to qiko-core
+    # (not through jm-backend), authenticated with a short-lived token minted by whichever
+    # investor-facing backend a client runs (jm-backend, joseph-mews-backend, or a future
+    # equivalent) and verified here statelessly (no round trip per activity event). Deliberately
+    # its own secret, not session_secret or jm_backend_shared_secret: different trust boundary,
+    # and named generically so it is not tied to one specific backend's identity.
+    investor_activity_token_secret: str = ""
+    investor_activity_token_ttl_seconds: int = 24 * 60 * 60
     slack_client_id: str = ""
     slack_client_secret: str = ""
     slack_signing_secret: str = ""   # Slack request signing for the inbound Events API

@@ -37,6 +37,22 @@ def test_handoff_never_calls_the_api():
     assert result == {"status": "handoff", "reason": "asked for legal advice"}
 
 
+def test_worker_reply_accepts_the_structured_handoff_packet_fields():
+    """JM2-1031: a bare handoff_reason string was not enough for a human agent to act on. These
+    fields are optional so every existing caller/test keeps working unchanged."""
+    reply = WorkerReply(
+        reply_mode=ReplyMode.handoff, handoff_reason="qualification complete",
+        handoff_reason_code="qualification_complete",
+        handoff_extracted_traits={"timeline": "soon"},
+        handoff_suggested_next_action="Call to discuss financing.",
+        handoff_priority="high",
+    )
+    assert reply.handoff_reason_code == "qualification_complete"
+    assert reply.handoff_extracted_traits == {"timeline": "soon"}
+    assert reply.handoff_suggested_next_action == "Call to discuss financing."
+    assert reply.handoff_priority == "high"
+
+
 def test_template_reply_requires_a_template_name():
     with pytest.raises(ValueError):
         WorkerReply(reply_mode=ReplyMode.template)

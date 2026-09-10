@@ -1067,6 +1067,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agent_id}/interakt-credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Interakt Credentials */
+        get: operations["get_interakt_credentials_api_v1_agents__agent_id__interakt_credentials_get"];
+        put?: never;
+        /** Save Interakt Credentials */
+        post: operations["save_interakt_credentials_api_v1_agents__agent_id__interakt_credentials_post"];
+        /** Disconnect Interakt */
+        delete: operations["disconnect_interakt_api_v1_agents__agent_id__interakt_credentials_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agent_id}/interakt-credentials/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Interakt Credentials */
+        post: operations["test_interakt_credentials_api_v1_agents__agent_id__interakt_credentials_test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agent_id}/interakt-status": {
         parameters: {
             query?: never;
@@ -5064,6 +5100,62 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tenants/{tenant_id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Activity */
+        get: operations["get_activity_api_v1_tenants__tenant_id__activity_get"];
+        put?: never;
+        /** Post Activity */
+        post: operations["post_activity_api_v1_tenants__tenant_id__activity_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenants/{tenant_id}/activity/intent-signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Activity Intent Signals */
+        post: operations["activity_intent_signals_api_v1_tenants__tenant_id__activity_intent_signals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenants/{tenant_id}/insights/portfolio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Portfolio Insights Endpoint
+         * @description JM2-1132: categorized portfolio-level cards (Concentration, Regional Performance, Income
+         *     Performance, Pipeline), same idempotency-on-requestId behaviour as insights/property.
+         */
+        post: operations["portfolio_insights_endpoint_api_v1_tenants__tenant_id__insights_portfolio_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tenants/{tenant_id}/insights/property": {
         parameters: {
             query?: never;
@@ -7355,6 +7447,39 @@ export interface components {
             /** Query Keyword */
             query_keyword?: string | null;
         };
+        /** IntentSignalRequest */
+        IntentSignalRequest: {
+            /**
+             * Activity
+             * @default {}
+             */
+            activity: {
+                [key: string]: unknown;
+            };
+            /**
+             * Investor
+             * @default {}
+             */
+            investor: {
+                [key: string]: unknown;
+            };
+            /** Investorref */
+            investorRef: string;
+            /**
+             * Locale
+             * @default en-GB
+             */
+            locale: string;
+            /** Requestid */
+            requestId: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /** InteraktCredentialsBody */
+        InteraktCredentialsBody: {
+            /** Api Key */
+            api_key: string;
+        };
         /**
          * InteraktStatus
          * @description Read-only status for the Interakt/WhatsApp channel connection. Deliberately NOT a
@@ -7759,6 +7884,64 @@ export interface components {
         PortalOut: {
             /** Url */
             url: string;
+        };
+        /** PortfolioInsightsRequest */
+        PortfolioInsightsRequest: {
+            /**
+             * Investor
+             * @default {}
+             */
+            investor: {
+                [key: string]: unknown;
+            };
+            /**
+             * Locale
+             * @default en-GB
+             */
+            locale: string;
+            /**
+             * Portfolioaverages
+             * @default {}
+             */
+            portfolioAverages: {
+                [key: string]: unknown;
+            };
+            /**
+             * Properties
+             * @default []
+             */
+            properties: {
+                [key: string]: unknown;
+            }[];
+            /** Requestid */
+            requestId: string;
+            /**
+             * Yieldandcashflowdeltas
+             * @default {}
+             */
+            yieldAndCashflowDeltas: {
+                [key: string]: unknown;
+            };
+        } & {
+            [key: string]: unknown;
+        };
+        /**
+         * PostActivityRequest
+         * @description extra="forbid" is deliberate: a stray propertyId/developmentId/documentId must be a hard
+         *     422, not a silently-accepted-and-ignored field, so a client-side regression that starts
+         *     sending ids again is caught immediately rather than passing review by accident.
+         */
+        PostActivityRequest: {
+            /** Category */
+            category: string;
+            /** Label */
+            label: string;
+            /** Location */
+            location?: string | null;
+            /** Postcode */
+            postcode?: string | null;
+            /** Propertyname */
+            propertyName?: string | null;
         };
         /** ProbeOut */
         ProbeOut: {
@@ -10967,6 +11150,142 @@ export interface operations {
         };
     };
     test_gmail_credentials_api_v1_agents__agent_id__gmail_credentials_test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_interakt_credentials_api_v1_agents__agent_id__interakt_credentials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_interakt_credentials_api_v1_agents__agent_id__interakt_credentials_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InteraktCredentialsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    disconnect_interakt_api_v1_agents__agent_id__interakt_credentials_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_interakt_credentials_api_v1_agents__agent_id__interakt_credentials_test_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -19227,6 +19546,163 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_activity_api_v1_tenants__tenant_id__activity_get: {
+        parameters: {
+            query: {
+                investorRef: string;
+            };
+            header?: {
+                "x-api-key"?: string | null;
+                "x-tenant-id"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_activity_api_v1_tenants__tenant_id__activity_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                authorization?: string | null;
+            };
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PostActivityRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    activity_intent_signals_api_v1_tenants__tenant_id__activity_intent_signals_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+                "x-tenant-id"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IntentSignalRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    portfolio_insights_endpoint_api_v1_tenants__tenant_id__insights_portfolio_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+                "x-tenant-id"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortfolioInsightsRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

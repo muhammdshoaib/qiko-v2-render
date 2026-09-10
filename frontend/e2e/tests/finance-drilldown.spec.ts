@@ -249,12 +249,16 @@ test.describe("Finance drilldown dashboard", () => {
     await dismissConsent(page);
 
     await expect(page.getByRole("heading", { name: "Avenue House" })).toBeVisible();
-    await expect(page.getByRole("table", { name: /Units for Avenue House/ }).getByText("Ground floor office").first()).toBeVisible();
+    // DataTable (packages/ui/src/data-table.tsx) renders a card list below md and the table at
+    // md and up, so scoping to role=table only ever matches on desktop. Scope to the section
+    // instead, which is the same content in both layouts.
+    const unitLedger = page.getByRole("heading", { name: "Unit ledger" }).locator("..");
+    await expect(unitLedger.getByText("Ground floor office").filter({ visible: true }).first()).toBeVisible();
 
-    await page.getByRole("table", { name: /Units for Avenue House/ }).getByRole("button", { name: "View" }).first().click();
+    await unitLedger.getByRole("button", { name: "View" }).filter({ visible: true }).first().click();
     await expect(page).toHaveURL(new RegExp(`https?://[^/]+/studio/${AGENT_ID}/finance/property/A001\\?unit=101`));
     await expect(page.getByRole("heading", { name: "101" })).toBeVisible();
-    await expect(page.getByRole("table", { name: /Unit expenses/ }).getByText("Electricity").first()).toBeVisible();
+    await expect(page.getByText("Electricity").filter({ visible: true }).first()).toBeVisible();
   });
 
   test("Expenditure and history pages render with filters", async ({ page }) => {
@@ -270,6 +274,9 @@ test.describe("Finance drilldown dashboard", () => {
 
     await page.goto(`/studio/${AGENT_ID}/finance/history`);
     await dismissConsent(page);
-    await expect(page.getByText("No messages yet")).toBeVisible();
+    // Two chat panels render this same empty-state copy, so an unqualified getByText is a
+    // strict-mode violation. The assertion only needs the page to have rendered, and the
+    // neighbouring checks in this file already use .first() for the same reason.
+    await expect(page.getByText("No messages yet").first()).toBeVisible();
   });
 });

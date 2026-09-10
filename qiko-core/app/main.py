@@ -50,7 +50,7 @@ from app.modules.joseph_mews.jm_backend_client import HttpJmBackendClient, Unava
 from app.modules.joseph_mews.router import router as joseph_mews_router
 from app.modules.channels.sessions import ChannelSessionStore
 from app.modules.channels.slack_events import SlackEventHandler
-from app.modules.channels.webhooks import IdempotencyGuard
+from app.modules.channels.webhooks import IdempotencyGuard, RedisIdempotencyGuard
 from app.modules.channels.slack_oauth import InstallationStore, SlackOAuth, WorkspaceLinkStore
 from app.modules.channels.slack_store import InMemorySlackChannelStore
 from app.modules.channels.teams_integration import TeamsNotifier
@@ -72,6 +72,7 @@ from app.modules.admin.router import router as admin_router
 from app.modules.admin.support import router as admin_support_router
 from app.modules.agents.router import router as agents_router
 from app.modules.agents.service import AgentService
+from app.modules.joseph_mews.activity import InMemoryInvestorActivityStore
 from app.modules.audit.service import InMemoryAuditStore
 from app.modules.ai.caps import CostCapExceeded, CostGuard, InMemoryCostCapStore
 from app.modules.ai.usage import InMemoryUsageStore
@@ -151,6 +152,7 @@ async def lifespan(app: FastAPI):
             SqlFinanceFileStore,
             SqlIngestFilterSettingStore,
             SqlIngestionSourceStore,
+            SqlInvestorActivityStore,
             SqlLeadStore,
             SqlNotificationStore,
             SqlOpportunityStore,
@@ -232,6 +234,7 @@ async def lifespan(app: FastAPI):
         # redeploy. The LLM provider is the same configured gateway used elsewhere.
         app.state.finance = FinanceService(files=SqlFinanceFileStore(sm), chats=SqlFinanceChatStore(sm))
         app.state.agents = AgentService(store=SqlAgentStore(sm))  # workers survive a redeploy
+        app.state.investor_activity = SqlInvestorActivityStore(sm)  # JM2-1131
         app.state.rfp_packs = RfpPackService(store=SqlRfpPackStore(sm))
         app.state.requirements = RequirementService(store=SqlRequirementStore(sm))
         app.state.pack_answers = PackAnswerService(store=SqlPackAnswerStore(sm))
@@ -474,6 +477,7 @@ def create_app() -> FastAPI:
     app.state.assignments = AssignmentService()
     app.state.chat = ChatService()
     app.state.crm = CrmService(app.state.chat)
+    app.state.investor_activity = InMemoryInvestorActivityStore()
     # Generic in-app notification inbox (reusable across verticals) + the SI trigger wrapper.
     app.state.ai_usage = InMemoryUsageStore()
     app.state.cost_caps = InMemoryCostCapStore()
@@ -520,7 +524,14 @@ def create_app() -> FastAPI:
         WhatsAppClient() if settings.whatsapp_access_token else StubWhatsAppGateway())
     app.state.interakt = InteraktGateway(
         InteraktClient() if settings.interakt_api_key else StubInteraktClient())
-    app.state.interakt_idempotency = IdempotencyGuard()
+    # Redis-backed once Redis is configured (JM2-1025): the in-memory guard is per-process, so a
+    # duplicate delivery routed to a different replica wouldn't be caught by it. Reuses
+    # app.state.redis (set above) rather than opening a second connection.
+    app.state.interakt_idempotency = (
+        RedisIdempotencyGuard(redis=app.state.redis, namespace="qiko:idempotency:interakt")
+        if app.state.redis is not None
+        else IdempotencyGuard()
+    )
     app.state.jm_backend = (
         HttpJmBackendClient(settings.jm_backend_base_url, settings.jm_backend_shared_secret)
         if settings.jm_backend_base_url and settings.jm_backend_shared_secret

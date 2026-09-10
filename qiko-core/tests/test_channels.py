@@ -4,6 +4,7 @@ import time
 
 from app.modules.channels.webhooks import (
     IdempotencyGuard,
+    RedisIdempotencyGuard,
     verify_hmac_signature,
     verify_slack_signature,
 )
@@ -70,3 +71,43 @@ def test_idempotency_guard_is_bounded_and_evicts_oldest_first():
     assert len(g._seen) == 3
     assert g.is_duplicate("a") is False          # forgotten, so treated as new
     assert g.is_duplicate("d") is True           # still remembered
+
+
+class _FakeRedis:
+    def __init__(self):
+        self._store: dict[str, str] = {}
+        self.calls: list[tuple] = []
+
+    async def set(self, key, value, *, nx=False, ex=None):
+        self.calls.append((key, value, nx, ex))
+        if nx and key in self._store:
+            return None
+        self._store[key] = value
+        return True
+
+
+class _ExplodingRedis:
+    async def set(self, *args, **kwargs):
+        raise ConnectionError("redis unreachable")
+
+
+async def test_redis_idempotency_guard_ignores_duplicates_atomically():
+    redis = _FakeRedis()
+    g = RedisIdempotencyGuard(redis=redis, namespace="interakt")
+    assert await g.is_duplicate("evt-1") is False
+    assert await g.is_duplicate("evt-1") is True
+    assert await g.is_duplicate("evt-2") is False
+    assert redis.calls[0] == ("interakt:evt-1", "1", True, g.ttl_seconds)
+
+
+async def test_redis_idempotency_guard_namespaces_keys_so_channels_cannot_collide():
+    redis = _FakeRedis()
+    interakt = RedisIdempotencyGuard(redis=redis, namespace="interakt")
+    slack = RedisIdempotencyGuard(redis=redis, namespace="slack")
+    assert await interakt.is_duplicate("shared-id") is False
+    assert await slack.is_duplicate("shared-id") is False  # different namespace, not a duplicate
+
+
+async def test_redis_idempotency_guard_fails_open_on_backend_error():
+    g = RedisIdempotencyGuard(redis=_ExplodingRedis())
+    assert await g.is_duplicate("evt-1") is False

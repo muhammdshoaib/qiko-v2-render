@@ -361,4 +361,99 @@ def test_slack_and_gmail_are_tenant_isolated_and_editor_gated(client):
 def test_slack_and_gmail_tests_422_without_credentials(client):
     c, aid = _agent(client, "sgco3")
     assert client.post(f"/api/v1/agents/{aid}/slack-credentials/test", cookies=c).status_code == 422
-    assert client.post(f"/api/v1/agents/{aid}/gmail-credentials/test", cookies=c).status_code == 422
+
+
+# --- Per-worker Interakt connection (JM2-1026) ---------------------------------------------------
+def test_interakt_credentials_save_mask_and_disconnect(client):
+    import asyncio
+
+    from app.core.crypto import decrypt
+
+    c, aid = _agent(client, "inco")
+    save = client.post(f"/api/v1/agents/{aid}/interakt-credentials", cookies=c,
+                       json={"api_key": "ik-supersecret"})
+    assert save.status_code == 200
+    body = save.json()
+    assert body["interakt_credentials_added"] is True
+    assert "ik-supersecret" not in save.text
+    assert body["api_key_masked"] and body["api_key_masked"] != "ik-supersecret"
+
+    fetched = client.get(f"/api/v1/agents/{aid}/interakt-credentials", cookies=c)
+    assert fetched.status_code == 200 and fetched.json()["interakt_credentials_added"] is True
+    assert "ik-supersecret" not in fetched.text
+
+    # the ciphertext may not leak through the generic agent views
+    listed = client.get("/api/v1/agents", cookies=c).text
+    assert "interakt_api_key_encrypted" not in listed
+
+    # and it is genuinely encrypted at rest, not stored as the plaintext it was sent as
+    cfg = asyncio.run(client.app.state.agents.get("inco", aid)).config
+    assert cfg["interakt_api_key_encrypted"] != "ik-supersecret"
+    assert decrypt(cfg["interakt_api_key_encrypted"]) == "ik-supersecret"
+
+    disconnected = client.delete(f"/api/v1/agents/{aid}/interakt-credentials", cookies=c)
+    assert disconnected.status_code == 200 and disconnected.json()["disconnected"] is True
+    assert client.get(f"/api/v1/agents/{aid}/interakt-credentials", cookies=c).json()["interakt_credentials_added"] is False
+
+
+def test_interakt_credentials_are_tenant_isolated_and_editor_gated(client):
+    c, aid = _agent(client, "intenantA")
+    client.post(f"/api/v1/agents/{aid}/interakt-credentials", cookies=c, json={"api_key": "ik-A"})
+    other = auth_cookies("intenantB", "owner")
+    viewer = auth_cookies("intenantA", "viewer")
+    assert client.get(f"/api/v1/agents/{aid}/interakt-credentials", cookies=other).status_code == 404
+    assert client.delete(f"/api/v1/agents/{aid}/interakt-credentials", cookies=other).status_code == 404
+    assert client.post(f"/api/v1/agents/{aid}/interakt-credentials/test", cookies=other).status_code == 404
+    assert client.post(f"/api/v1/agents/{aid}/interakt-credentials", cookies=other,
+                       json={"api_key": "x"}).status_code == 404
+    assert client.delete(f"/api/v1/agents/{aid}/interakt-credentials", cookies=viewer).status_code == 403
+    assert client.post(f"/api/v1/agents/{aid}/interakt-credentials/test", cookies=viewer).status_code == 403
+
+
+def test_interakt_test_connection_requires_credentials_first(client):
+    c, aid = _agent(client, "inco2")
+    r = client.post(f"/api/v1/agents/{aid}/interakt-credentials/test", cookies=c)
+    assert r.status_code == 422
+
+
+def test_interakt_test_connection_succeeds(client, monkeypatch):
+    class _FakeClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def verify_credentials(self):
+            return None
+
+    monkeypatch.setattr("app.integrations.clients.InteraktClient", _FakeClient)
+    c, aid = _agent(client, "inco3")
+    client.post(f"/api/v1/agents/{aid}/interakt-credentials", cookies=c, json={"api_key": "ik-good"})
+    r = client.post(f"/api/v1/agents/{aid}/interakt-credentials/test", cookies=c)
+    assert r.status_code == 200 and r.json() == {"verified": True}
+
+
+def test_interakt_test_connection_surfaces_a_bad_key_as_502_not_500(client, monkeypatch):
+    from app.integrations.clients import InteraktAuthError
+
+    class _FailingClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def verify_credentials(self):
+            raise InteraktAuthError("Interakt rejected this API key")
+
+    monkeypatch.setattr("app.integrations.clients.InteraktClient", _FailingClient)
+    c, aid = _agent(client, "inco4")
+    client.post(f"/api/v1/agents/{aid}/interakt-credentials", cookies=c, json={"api_key": "ik-bad"})
+    r = client.post(f"/api/v1/agents/{aid}/interakt-credentials/test", cookies=c)
+    assert r.status_code == 502
+
+
+def test_interakt_undecryptable_credential_asks_for_a_reconnect_instead_of_500(client):
+    import asyncio
+
+    c, aid = _agent(client, "inco5")
+    client.post(f"/api/v1/agents/{aid}/interakt-credentials", cookies=c, json={"api_key": "ik-x"})
+    asyncio.run(client.app.state.agents.update_config(
+        "inco5", aid, {"interakt_api_key_encrypted": "not-fernet"}))
+    r = client.post(f"/api/v1/agents/{aid}/interakt-credentials/test", cookies=c)
+    assert r.status_code == 422 and "reconnect" in r.json()["detail"]

@@ -17,13 +17,24 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import Settings, get_settings
-from app.core.deps import get_agents
+from app.core.deps import get_agents, get_investor_activity_store
 from app.modules.agents.router import verify_worker_api_key
 from app.modules.agents.service import Agent, AgentService
 from app.modules.ai.gateway import get_provider
+from app.modules.joseph_mews.activity import (
+    IntentSignalRequest,
+    IntentSignalResult,
+    InvestorActivityStore,
+    aggregate_activity,
+    generate_intent_signals,
+)
+from app.modules.joseph_mews.investor_token import InvestorTokenError, decode_investor_activity_token
 from app.modules.joseph_mews.portfolio_insights import (
+    PortfolioInsightsRequest,
+    PortfolioInsightsResult,
     PropertyInsightRequest,
     PropertyInsightResult,
+    generate_portfolio_insights,
     generate_property_insight,
 )
 from app.modules.joseph_mews.signal_summary import (
@@ -76,6 +87,7 @@ class _ResultCache:
 
 _cache = _ResultCache()
 _insight_cache = _ResultCache()
+_portfolio_insight_cache = _ResultCache()
 
 
 class GenerationOutcome(StrEnum):
@@ -183,6 +195,32 @@ async def property_insight_endpoint(
     return _insight_response(body.requestId, result)
 
 
+def _portfolio_insight_response(request_id: str, result: PortfolioInsightsResult | None) -> dict:
+    if result is None:
+        return {
+            "requestId": request_id,
+            "error": {"code": "GENERATION_FAILED", "message": "could not draft portfolio insights"},
+        }
+    return {"requestId": request_id, "cards": [c.model_dump() for c in result.cards]}
+
+
+@router.post("/insights/portfolio")
+async def portfolio_insights_endpoint(
+    tenant_id: str, body: PortfolioInsightsRequest,
+    agent: Annotated[Agent | None, Depends(require_worker_caller)],
+) -> dict:
+    """JM2-1132: categorized portfolio-level cards (Concentration, Regional Performance, Income
+    Performance, Pipeline), same idempotency-on-requestId behaviour as insights/property."""
+    seen, cached = _portfolio_insight_cache.get(body.requestId)
+    if seen:
+        return _portfolio_insight_response(body.requestId, cached)
+
+    config = agent.config if agent is not None else None
+    result = await asyncio.to_thread(generate_portfolio_insights, body, get_provider(), config)
+    _portfolio_insight_cache.put(body.requestId, result)
+    return _portfolio_insight_response(body.requestId, result)
+
+
 @router.post("/signals/{request_id}/outcome")
 async def report_signal_outcome(
     tenant_id: str, request_id: str, body: OutcomeReport,
@@ -205,7 +243,12 @@ async def report_insight_outcome(
     tenant_id: str, request_id: str, body: OutcomeReport,
     _agent: Annotated[Agent | None, Depends(require_worker_caller)],
 ) -> dict:
+    # Covers both insight shapes (per-property, JM2-1042, and portfolio-level, JM2-1132) under
+    # one outcome log -- a requestId is unique to whichever one generated it, so there is no
+    # ambiguity in accepting a report against either cache here.
     seen, _ = _insight_cache.get(request_id)
+    if not seen:
+        seen, _ = _portfolio_insight_cache.get(request_id)
     if not seen:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown requestId")
     _insight_outcomes.record(request_id, body)
@@ -231,6 +274,91 @@ def _signal_response(request_id: str, result: SignalSummaryResult | None) -> dic
         "suggestedNextAction": result.suggestedNextAction,
         "groundedIn": result.groundedIn,
     }
+
+
+async def require_investor_token(tenant_id: str, authorization: Annotated[str | None, Header()] = None) -> str:
+    """Authenticates one investor's own mobile app for the activity-write path (JM2-1131) --
+    distinct from require_worker_caller, which authenticates a whole backend on behalf of the
+    tenant. Returns the investor_ref claim. Deliberately does not accept X-Api-Key: a leaked
+    worker key must not let a caller impersonate an individual investor's own activity feed."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing bearer token")
+    token = authorization.split(" ", 1)[1]
+    try:
+        claims = decode_investor_activity_token(token)
+    except InvestorTokenError as e:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(e)) from e
+    if claims["tenant"] != tenant_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "token tenant mismatch")
+    return claims["investor_ref"]
+
+
+class PostActivityRequest(BaseModel):
+    """extra="forbid" is deliberate: a stray propertyId/developmentId/documentId must be a hard
+    422, not a silently-accepted-and-ignored field, so a client-side regression that starts
+    sending ids again is caught immediately rather than passing review by accident."""
+
+    model_config = ConfigDict(extra="forbid")
+    category: str = Field(min_length=1, max_length=32)
+    label: str = Field(min_length=1, max_length=255)
+    propertyName: str | None = Field(default=None, max_length=255)
+    location: str | None = Field(default=None, max_length=255)
+    postcode: str | None = Field(default=None, max_length=16)
+
+
+@router.post("/activity", status_code=status.HTTP_201_CREATED)
+async def post_activity(
+    tenant_id: str, body: PostActivityRequest,
+    investor_ref: Annotated[str, Depends(require_investor_token)],
+    store: Annotated[InvestorActivityStore, Depends(get_investor_activity_store)],
+) -> dict:
+    await store.record(
+        tenant_id, investor_ref, category=body.category, label=body.label,
+        property_name=body.propertyName, location=body.location, postcode=body.postcode,
+    )
+    return {"status": "recorded"}
+
+
+@router.get("/activity")
+async def get_activity(
+    tenant_id: str, investorRef: str,
+    _agent: Annotated[Agent | None, Depends(require_worker_caller)],
+    store: Annotated[InvestorActivityStore, Depends(get_investor_activity_store)],
+) -> dict:
+    events = await store.list_for_investor(tenant_id, investorRef)
+    return {
+        "investorRef": investorRef,
+        "events": [
+            {
+                "category": e.category, "label": e.label, "propertyName": e.property_name,
+                "location": e.location, "postcode": e.postcode,
+                "occurredAt": e.occurred_at.isoformat() if e.occurred_at else None,
+            }
+            for e in events
+        ],
+    }
+
+
+def _intent_signal_response(request_id: str, result: IntentSignalResult | None) -> dict:
+    if result is None:
+        return {
+            "requestId": request_id,
+            "error": {"code": "GENERATION_FAILED", "message": "could not draft intent signals"},
+        }
+    return {"requestId": request_id, "signals": [s.model_dump() for s in result.signals]}
+
+
+@router.post("/activity/intent-signals")
+async def activity_intent_signals(
+    tenant_id: str, body: IntentSignalRequest,
+    agent: Annotated[Agent | None, Depends(require_worker_caller)],
+    store: Annotated[InvestorActivityStore, Depends(get_investor_activity_store)],
+) -> dict:
+    events = await store.list_for_investor(tenant_id, body.investorRef)
+    body.activity = aggregate_activity(events)
+    config = agent.config if agent is not None else None
+    result = await asyncio.to_thread(generate_intent_signals, body, get_provider(), config)
+    return _intent_signal_response(body.requestId, result)
 
 
 def _insight_response(request_id: str, result: PropertyInsightResult | None) -> dict:

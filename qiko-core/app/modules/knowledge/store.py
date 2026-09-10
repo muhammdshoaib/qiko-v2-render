@@ -16,6 +16,8 @@ class VectorStore(Protocol):
     async def search(self, tenant: str, query_embedding: list[float], *, k: int,
                      agent_id: str | None = None,
                      doc_id: str | None = None) -> list[Passage]: ...
+    async def neighbours(self, tenant: str, doc_id: str, lo: int, hi: int, *,
+                         agent_id: str | None) -> list[Passage]: ...
     async def delete_doc(self, tenant: str, doc_id: str, agent_id: str | None = None) -> int: ...
 
 
@@ -57,6 +59,20 @@ class InMemoryVectorStore:
         # No ANN index in memory - there is nothing to bound, so this is exactly today's get(),
         # including its doc_id scoping rules.
         return await self.get(tenant, agent_id, doc_id)
+
+    async def neighbours(self, tenant: str, doc_id: str, lo: int, hi: int, *,
+                         agent_id: str | None) -> list[Passage]:
+        """Passages `lo..hi` inclusive of one document, in document order (QIKO-1085).
+
+        `agent_id` is matched EXACTLY, including None meaning tenant-wide. It is the agent_id of
+        the passage being widened, not the caller's retrieval scope, which keeps both existing
+        rules intact without this method needing to know which one applied: an unscoped worker
+        retrieval may surface a tenant-wide passage, and widening it must stay tenant-wide, while
+        a doc_id-scoped retrieval only ever surfaces the worker's own."""
+        found = [p for p in self._by_tenant.get(tenant, [])
+                 if p.doc_id == doc_id and p.ordinal is not None and lo <= p.ordinal <= hi
+                 and p.agent_id == agent_id]
+        return sorted(found, key=lambda p: p.ordinal or 0)
 
     async def delete_doc(self, tenant: str, doc_id: str, agent_id: str | None = None) -> int:
         current = self._by_tenant.get(tenant, [])

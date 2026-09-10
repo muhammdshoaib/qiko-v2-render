@@ -13,6 +13,23 @@ from app.modules.knowledge.parsing import extract_text
 from app.modules.knowledge.store import InMemoryVectorStore, VectorStore
 
 
+# Chunks either side of a hit to hand over with it. Chosen by measurement against the IDG KBR
+# submission, on the question that exposed the defect ("details of all current projects"), counting
+# how many of Form B8-2's thirteen project names reach the model:
+#
+#   radius 3 -> 10/12   radius 4 -> 12/12   radius 5 -> 12/12   radius 6 -> 12/12
+#
+# 4 is the smallest that returns the whole register. 5 and 6 buy nothing on this document and cost
+# context. Before this change the same question put 3 of 12 in front of the model.
+#
+# The cost is real and worth knowing: at the default k this takes an answer's retrieved context
+# from roughly 4 KB to roughly 29 KB, so about seven times the input tokens for the retrieval
+# portion of each answer. That is the price of a complete table.
+_WINDOW_RADIUS = 4
+# Ceiling on one merged run, so a pathological document cannot swallow an answer's whole context.
+_MAX_WIDENED_CHARS = 12_000
+
+
 def _doc_name(sample: Passage | None, doc_id: str) -> str:
     if sample is None or not sample.text:
         return doc_id
@@ -41,6 +58,8 @@ class KnowledgeService:
                 # Include agent_id in the id seed so the same doc ingested for two workers doesn't collide.
                 id=hashlib.sha1(f"{tenant}:{agent_id or ''}:{doc_id}:{i}".encode()).hexdigest()[:16],
                 tenant=tenant, doc_id=doc_id, text=chunk, embedding=embedding, agent_id=agent_id,
+                # Same `i` the id is seeded with, so ordinal and id can never disagree.
+                ordinal=i,
             )
             for i, (chunk, embedding) in enumerate(zip(chunks, embeddings))
         ]
@@ -99,7 +118,63 @@ class KnowledgeService:
         # Query embedding + cosine/bm25 scoring are network-/CPU-bound pure Python; run them off
         # the event loop so a large tenant corpus can't freeze the loop for the whole scoring pass.
         order = await asyncio.to_thread(self._rank, qvec, query, passages)
-        return [passages[i] for i in order[:k]]
+        return await self._widen(tenant, [passages[i] for i in order[:k]])
+
+    async def _widen(self, tenant: str, hits: list[Passage]) -> list[Passage]:
+        """Grow each hit into the contiguous run of text around it, MERGED into one passage.
+
+        A tender's substance is in its tables, and an 800-character window cuts a thirteen-row
+        project register into six chunks. Ranking returns some of them, so the model saw a
+        fragment and answered from it: on a real IDG tender it named nine of thirteen projects and
+        pulled three more from the neighbouring tables. Measured on that document, a window of
+        +/-3 around the hit recovers the whole register in about 5.5 KB.
+
+        The merge is the part that matters, and it is why this is not the neighbour-expansion that
+        would have fought QIKO-1086. Returning the neighbours as SEPARATE passages would deliver
+        the data and simultaneously guarantee the answer got flagged, because grounding requires a
+        sentence to be supported by ONE passage and a summary of a thirteen-row table is supported
+        by no single chunk of it. Merged, the passage the critic scores against contains the whole
+        table, so the two changes agree.
+
+        Windows that touch are merged into one, so overlapping hits inside the same table produce
+        a single passage rather than repeated text. A passage with no ordinal (pre-migration-0050
+        and unreconstructable) is returned untouched, which is exactly today's behaviour.
+        """
+        if not hits:
+            return hits
+        # Per document, collapse the hit ordinals into non-overlapping [lo, hi] spans.
+        # Keyed by (doc_id, agent_id): a tenant-wide passage and a worker's passage can share a
+        # doc_id, and their runs must not be merged into each other.
+        spans: dict[tuple[str, str | None], list[list[int]]] = {}
+        passthrough: list[Passage] = []
+        for hit in hits:
+            if hit.ordinal is None:
+                passthrough.append(hit)
+                continue
+            lo, hi = hit.ordinal - _WINDOW_RADIUS, hit.ordinal + _WINDOW_RADIUS
+            doc = spans.setdefault((hit.doc_id, hit.agent_id), [])
+            for span in doc:
+                if lo <= span[1] + 1 and span[0] <= hi + 1:   # touching or overlapping
+                    span[0], span[1] = min(span[0], lo), max(span[1], hi)
+                    break
+            else:
+                doc.append([lo, hi])
+
+        out: list[Passage] = []
+        for (doc_id, doc_agent), doc_spans in spans.items():
+            for lo, hi in doc_spans:
+                run = await self.store.neighbours(tenant, doc_id, max(0, lo), hi,
+                                                  agent_id=doc_agent)
+                if not run:
+                    continue
+                merged = "\n\n".join(p.text for p in run)
+                # Bounded so one very long run cannot dominate an answer's context budget.
+                if len(merged) > _MAX_WIDENED_CHARS:
+                    merged = merged[:_MAX_WIDENED_CHARS]
+                first = run[0]
+                out.append(Passage(id=first.id, tenant=tenant, doc_id=doc_id, text=merged,
+                                   agent_id=first.agent_id, ordinal=first.ordinal))
+        return out + passthrough
 
     def _rank(self, qvec: list[float], query: str, passages: list[Passage]) -> list[int]:
         dense = [retrieval.cosine(qvec, p.embedding) for p in passages]

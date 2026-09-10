@@ -54,7 +54,12 @@ class AgentCore:
         # Resolved BEFORE the gate now, because the gate honours it: a writer reporting that it
         # could not answer must not be auto-accepted on the strength of grounding alone.
         confidence = gen.confidence if gen.confidence is not None else critique.grounding
-        decision = gate_mod.decide(critique, threshold=self.threshold, confidence=confidence)
+        # The gaps note is checked alongside the answer: that is where the claims about the source
+        # document landed, and it is shown to the reviewer as the authoritative account of what is
+        # missing (QIKO-1087).
+        source_claim = gate_mod.claims_about_the_source(answer, gen.gaps)
+        decision = gate_mod.decide(critique, threshold=self.threshold, confidence=confidence,
+                                   source_claim=source_claim)
         # Citations are clean source labels (doc_id + short snippet) built by the worker; fall back
         # to the raw context only for callers that build a Requirement without sources.
         citations = list(req.sources) if req.sources else list(req.context)

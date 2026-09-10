@@ -1,7 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { seedConsent } from "./support/consent";
+
 const workers = [
-  { id: "pre-1", tenant: "demo", name: "Tender Expert", status: "ready", atype: "pre_sales_writer", enabled: true, config: {}, created_at: "2026-07-01T00:00:00Z" },
+    // studio_linked is what makes a ready worker appear in the Studio grid (QIK-338). Without it
+  // the grid renders its empty state, which is what broke the stale-cache test below.
+  { id: "pre-1", tenant: "demo", name: "Tender Expert", status: "ready", atype: "pre_sales_writer", enabled: true, config: { studio_linked: true }, created_at: "2026-07-01T00:00:00Z" },
   { id: "hidden", tenant: "demo", name: "Disabled Worker", status: "ready", atype: "worker", enabled: false, config: {}, created_at: "2026-07-01T00:00:00Z" },
 ];
 
@@ -12,8 +16,10 @@ const packs = [
 
 async function mockApi(page: Page, usage: "limit" | "unlimited" | "error" = "limit") {
   const outcomeBodies: unknown[] = [];
+  const unmockedPaths: string[] = [];
   let childCalls = 0;
   let workerEnabled = true;
+  await seedConsent(page);
   await page.context().addCookies([{ name: "qiko_access", value: "test", url: "http://127.0.0.1:3100" }]);
   await page.route("**/api/v1/**", async (route) => {
     const url = new URL(route.request().url());
@@ -32,11 +38,23 @@ async function mockApi(page: Page, usage: "limit" | "unlimited" | "error" = "lim
     if (path.endsWith("/rfp/packs") && method === "GET") { childCalls += 1; return fulfill(packs); }
     if (path.endsWith("/knowledge/documents")) return fulfill([]);
     if (path.includes("/overview")) return fulfill({ sections: 0, sections_locked: 0, ai_drafted: 0, ai_drafted_total: 0, for_human_review: 0, can_finalize: false });
+    // The Studio grid gained sales-intelligence and finance tiles after this mock was written, so
+    // /studio queried two endpoints it did not cover, fell through to the 404 below, and rendered
+    // no worker card at all -- which broke the stale-cache test on its very first assertion.
+    // Both carry the agent id in the MIDDLE of the path (/sales-intelligence/{id}/opportunities,
+    // /finance/{id}/analytics), so match on the tail rather than a contiguous prefix.
+    if (path.endsWith("/opportunities")) return fulfill({ opportunities: [], summary: {} });
+    if (path.endsWith("/analytics")) return fulfill({ properties: [], vendors: [], months: [], totals: {} });
+    if (path.includes("/consent")) return route.fulfill({ status: 204, body: "" });
     if (path.endsWith("/outcome") && method === "PUT") {
       const body = route.request().postDataJSON();
       outcomeBodies.push(body);
       return fulfill({ ...packs[0], outcome: body.outcome, outcome_reason: body.reason, outcome_value: body.value, outcome_at: "2026-07-20T00:00:00Z" });
     }
+    // Record it. A 404 here is why this spec could rot unnoticed: the page degraded gracefully
+    // instead of the test erroring, so an endpoint added to a page silently stopped being covered.
+    // Tests assert on this list so the next such addition shows up as a failure, not as a mystery.
+    unmockedPaths.push(`${method} ${path}`);
     return fulfill({ detail: "mock not configured" }, 404);
   });
   return {
@@ -44,6 +62,7 @@ async function mockApi(page: Page, usage: "limit" | "unlimited" | "error" = "lim
     childCalls: () => childCalls,
     resetChildCalls: () => { childCalls = 0; },
     disableWorker: () => { workerEnabled = false; },
+    unmockedPaths: () => [...unmockedPaths],
   };
 }
 

@@ -28,6 +28,7 @@ from app.db.models import Conversation as ConversationRow
 from app.db.models import CrmAction as CrmActionRow
 from app.db.models import FinanceChatMessage as FinanceChatMessageRow
 from app.db.models import FinanceFile as FinanceFileRow
+from app.db.models import InvestorActivityEvent as InvestorActivityEventRow
 from app.db.models import Lead as LeadRow
 from app.db.models import Message as MessageRow
 from app.db.models import MfaBackupCode as MfaBackupCodeRow
@@ -49,6 +50,7 @@ from app.db.models import PlatformAdminAudit as PlatformAdminAuditRow
 from app.db.models import PolicyRelease as PolicyReleaseRow
 from app.db.models import RfpPack as RfpPackRow
 
+from app.modules.joseph_mews.activity import ActivityEvent
 from app.modules.channels.slack_store import (
     DEFAULT_MESSAGE_LIMIT,
     SlackMessage,
@@ -284,6 +286,43 @@ class SqlUserStore:
 
 
 @dataclass
+class SqlInvestorActivityStore:
+    """Backs JM2-1131's activity endpoints. Callers must never pass a property/development/
+    document id in property_name/location/postcode -- this store persists exactly what it is
+    given, so that identity rule is enforced by the router/schema layer, not re-checked here."""
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def record(
+        self, tenant: str, investor_ref: str, *, category: str, label: str,
+        property_name: str | None = None, location: str | None = None, postcode: str | None = None,
+        occurred_at: datetime | None = None,
+    ) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            s.add(InvestorActivityEventRow(
+                tenant_id=tenant, investor_ref=investor_ref, category=category, label=label,
+                property_name=property_name, location=location, postcode=postcode,
+                occurred_at=occurred_at or datetime.now(timezone.utc),
+            ))
+
+    async def list_for_investor(self, tenant: str, investor_ref: str) -> list[ActivityEvent]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(InvestorActivityEventRow).where(
+                    InvestorActivityEventRow.tenant_id == tenant,
+                    InvestorActivityEventRow.investor_ref == investor_ref,
+                ).order_by(InvestorActivityEventRow.occurred_at)
+            )).scalars().all()
+            return [
+                ActivityEvent(
+                    category=r.category, label=r.label, property_name=r.property_name,
+                    location=r.location, postcode=r.postcode, occurred_at=r.occurred_at,
+                )
+                for r in rows
+            ]
+
+
+@dataclass
 class SqlVerifiedStore:
     sessionmaker: async_sessionmaker[AsyncSession]
 
@@ -349,7 +388,8 @@ class SqlVectorStore:
             is_postgres = s.bind.dialect.name == "postgresql"
             for p in passages:
                 row = PassageRow(id=p.id, tenant_id=p.tenant, agent_id=p.agent_id,
-                                 doc_id=p.doc_id, text=p.text, embedding=p.embedding)
+                                 doc_id=p.doc_id, ordinal=p.ordinal, text=p.text,
+                                 embedding=p.embedding)
                 s.add(row)
             if is_postgres:
                 await s.flush()
@@ -381,7 +421,8 @@ class SqlVectorStore:
                 stmt = stmt.where(PassageRow.doc_id == doc_id)
             rows = (await s.execute(stmt)).scalars().all()
             return [Passage(id=r.id, tenant=r.tenant_id, doc_id=r.doc_id, text=r.text,
-                            embedding=list(r.embedding or []), agent_id=r.agent_id) for r in rows]
+                            embedding=list(r.embedding or []), agent_id=r.agent_id,
+                            ordinal=r.ordinal) for r in rows]
 
     async def search(self, tenant: str, query_embedding: list[float], *, k: int,
                      agent_id: str | None = None, doc_id: str | None = None) -> list[Passage]:
@@ -409,14 +450,39 @@ class SqlVectorStore:
                 doc_clause = "AND doc_id = :doc_id"
                 params["doc_id"] = doc_id
             rows = (await s.execute(text(
-                "SELECT id, tenant_id, agent_id, doc_id, text, embedding FROM passages "
+                "SELECT id, tenant_id, agent_id, doc_id, ordinal, text, embedding FROM passages "
                 "WHERE tenant_id = :tenant AND embedding_vec IS NOT NULL "
                 f"{agent_clause} {doc_clause} "
                 "ORDER BY embedding_vec <=> CAST(:qvec AS vector) LIMIT :k"),
                 params)).mappings().all()
             return [Passage(id=r["id"], tenant=r["tenant_id"], doc_id=r["doc_id"], text=r["text"],
-                            embedding=list(r["embedding"] or []), agent_id=r["agent_id"])
-                    for r in rows]
+                            embedding=list(r["embedding"] or []), agent_id=r["agent_id"],
+                            ordinal=r["ordinal"]) for r in rows]
+
+    async def neighbours(self, tenant: str, doc_id: str, lo: int, hi: int, *,
+                         agent_id: str | None) -> list[Passage]:
+        """Passages `lo..hi` inclusive of one document, in document order (QIKO-1085).
+
+        No embeddings are selected: the caller already ranked, and these rows exist to give the
+        model the text either side of a hit. Loading vectors for them would be the whole cost of
+        the widening for none of the benefit.
+
+        `agent_id` is matched EXACTLY, including None meaning tenant-wide, because it is the
+        agent_id of the passage being widened rather than the caller's retrieval scope. That keeps
+        both existing rules intact: an unscoped worker retrieval may surface a tenant-wide passage
+        and widening it stays tenant-wide, while a doc_id-scoped retrieval only ever surfaces the
+        worker's own passages."""
+        async with self.sessionmaker() as s:
+            stmt = (select(PassageRow.id, PassageRow.tenant_id, PassageRow.agent_id,
+                           PassageRow.doc_id, PassageRow.ordinal, PassageRow.text)
+                    .where(PassageRow.tenant_id == tenant, PassageRow.doc_id == doc_id,
+                           PassageRow.ordinal.is_not(None),
+                           PassageRow.ordinal >= lo, PassageRow.ordinal <= hi))
+            stmt = stmt.where(PassageRow.agent_id.is_(None) if agent_id is None
+                              else PassageRow.agent_id == agent_id)
+            rows = (await s.execute(stmt.order_by(PassageRow.ordinal))).mappings().all()
+            return [Passage(id=r["id"], tenant=r["tenant_id"], doc_id=r["doc_id"], text=r["text"],
+                            agent_id=r["agent_id"], ordinal=r["ordinal"]) for r in rows]
 
     async def delete_doc(self, tenant: str, doc_id: str, agent_id: str | None = None) -> int:
         async with self.sessionmaker() as s, s.begin():

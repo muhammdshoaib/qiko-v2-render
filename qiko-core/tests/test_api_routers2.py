@@ -219,6 +219,37 @@ def test_interakt_inbound_answers_and_dedupes_once_enabled(client, monkeypatch):
     assert replay.json()["processed"] == []
 
 
+async def test_interakt_inbound_dedupes_against_an_async_idempotency_guard(client, monkeypatch):
+    """JM2-1025: production runs the Redis-backed guard, whose is_duplicate() is a coroutine,
+    not a plain bool - the router must actually await it rather than treating the coroutine
+    object itself as truthy (which would incorrectly drop every message as a "duplicate")."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "channels_inbound_enabled", True)
+
+    class _AsyncGuard:
+        def __init__(self):
+            self.seen: set[str] = set()
+
+        async def is_duplicate(self, event_id: str) -> bool:
+            if event_id in self.seen:
+                return True
+            self.seen.add(event_id)
+            return False
+
+    client.app.state.interakt_idempotency = _AsyncGuard()
+
+    first = client.post(
+        "/api/v1/channels/interakt/webhook", json=_interakt_message("Tell me about ISO", "im-async-1")
+    )
+    assert first.json()["processed"] == ["im-async-1"]
+
+    replay = client.post(
+        "/api/v1/channels/interakt/webhook", json=_interakt_message("Tell me about ISO", "im-async-1")
+    )
+    assert replay.json()["processed"] == []
+
+
 def test_interakt_inbound_ignores_non_message_events(client, monkeypatch):
     from app.core.config import get_settings
 
@@ -233,11 +264,15 @@ class _FakeJmBackend:
 
     def __init__(self):
         self.turns: list[tuple[str, str, str]] = []
+        self.handoffs: list = []
 
-    def record_turn(self, phone_number, role, text, *, template_used=None, interakt_message_id=None):
+    def record_turn(self, phone_number, role, text, *, template_used=None, interakt_message_id=None,
+                    handoff=None):
         from app.modules.joseph_mews.jm_backend_client import ConversationState, ConversationTurn
 
         self.turns.append((phone_number, role, text))
+        if handoff is not None:
+            self.handoffs.append(handoff)
         return ConversationState(
             conversation_id=f"wa_{phone_number}", investor_id=None,
             history=tuple(
@@ -266,10 +301,13 @@ def test_interakt_inbound_wants_human_forces_handoff_end_to_end(client, monkeypa
     monkeypatch.setattr(get_settings(), "channels_inbound_enabled", True)
 
     class _EscalatingJmBackend(_FakeJmBackend):
-        def record_turn(self, phone_number, role, text, *, template_used=None, interakt_message_id=None):
+        def record_turn(self, phone_number, role, text, *, template_used=None, interakt_message_id=None,
+                        handoff=None):
             from app.modules.joseph_mews.jm_backend_client import ConversationState, ConversationTurn
 
             self.turns.append((phone_number, role, text))
+            if handoff is not None:
+                self.handoffs.append(handoff)
             return ConversationState(
                 conversation_id=f"wa_{phone_number}", investor_id=None,
                 history=(ConversationTurn(role="customer", text="I want to speak to a human please"),),
@@ -281,13 +319,19 @@ def test_interakt_inbound_wants_human_forces_handoff_end_to_end(client, monkeypa
         "app.modules.channels.router.extract_qualification",
         lambda *_a, **_kw: LeadQualification(wants_human=True),
     )
-    client.app.state.jm_backend = _EscalatingJmBackend()
+    fake_jm_backend = _EscalatingJmBackend()
+    client.app.state.jm_backend = fake_jm_backend
 
     response = client.post(
         "/api/v1/channels/interakt/webhook",
         json=_interakt_message("I want to speak to a human please", "im-5"),
     )
     assert response.json()["replyMode"] == "handoff"
+
+    # JM2-1031: the "joe" turn for a handoff must carry the structured packet, not just be
+    # persisted as flattened history text - jm-backend maps this onto an Enquiry.
+    assert len(fake_jm_backend.handoffs) == 1
+    assert fake_jm_backend.handoffs[0].reason_code == "human_requested"
 
 
 def test_excel_search(client):
