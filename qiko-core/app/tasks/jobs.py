@@ -177,7 +177,13 @@ def _fast_tier_worker(worker):
     (a different AgentCore instance), so this never changes the tier the tenant's OWN chat uses
     via `worker.agent.generator` -- only the copy handed to Specialist is fast-tier. The
     Specialist makes many narrow, single-facet calls per pipeline run; Synthesizer/Critic keep
-    the capable tier (see Settings.bedrock_model_fast)."""
+    the capable tier (see Settings.bedrock_model_fast).
+
+    `system_prompt` and `reference_scoped` are carried over from the real worker's generator
+    (see app.core.deps.assemble_worker) rather than left at Generator's dataclass defaults: they
+    hold the tenant's own Train-wizard-synthesized persona and whether this job is restricted to
+    one reference document. Only `provider` (and therefore the model tier) should differ between
+    this Generator and the real worker's."""
     from app.core.config import get_settings
     from app.modules.agentcore.generator import Generator
     from app.modules.agentcore.runtime import AgentCore
@@ -187,7 +193,10 @@ def _fast_tier_worker(worker):
     return Worker(
         config=worker.config, knowledge=worker.knowledge,
         agent=AgentCore(
-            generator=Generator(provider=get_provider(model=get_settings().bedrock_model_fast)),
+            generator=Generator(
+                provider=get_provider(model=get_settings().bedrock_model_fast),
+                system_prompt=worker.agent.generator.system_prompt,
+                reference_scoped=worker.agent.generator.reference_scoped),
             verified=worker.agent.verified, threshold=worker.agent.threshold),
         cost_guard=worker.cost_guard)
 

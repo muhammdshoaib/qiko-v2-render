@@ -48,6 +48,11 @@ MODEL_PRICES_NANO_USD_PER_1K: dict[str, dict[str, int]] = {
     "anthropic.claude-3-5-sonnet": {_INPUT: 3_000_000, _OUTPUT: 15_000_000},
     "anthropic.claude-3-5-haiku": {_INPUT: 800_000, _OUTPUT: 4_000_000},
     "anthropic.claude-3-haiku": {_INPUT: 250_000, _OUTPUT: 1_250_000},
+    # Settings.bedrock_model_fast's tier (the Specialist's cheap/fast model -- see app.tasks.jobs
+    # ._fast_tier_worker). $1 / $5 per million input/output tokens, confirmed current on Bedrock
+    # as of writing (Anthropic's published Claude Haiku 4.5 pricing page and AWS's own per-region
+    # Bedrock rate card both list $1.00/$5.00 per 1M tokens across all regions).
+    "anthropic.claude-haiku-4-5": {_INPUT: 1_000_000, _OUTPUT: 5_000_000},
     "amazon.titan-embed-text-v2": {_INPUT: 20_000, _OUTPUT: 0},
     "amazon.nova-sonic": {_INPUT: 3_400_000, _OUTPUT: 13_600_000},
 }

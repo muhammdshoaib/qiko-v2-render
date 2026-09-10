@@ -41,6 +41,30 @@ def test_a_date_qualified_model_id_is_still_priced():
     assert usage.cost_nano_usd(real, 1000, 1000) == 3_000_000 + 15_000_000
 
 
+def test_the_fast_tier_model_is_priced_not_silently_free():
+    """Settings.bedrock_model_fast ("anthropic.claude-haiku-4-5", the Specialist's cheap/fast
+    tier -- see app.tasks.jobs._fast_tier_worker) must have a rate in the price table. Checked
+    against the SAME id shape BedrockProvider.model_id actually hands to usage.record(): the
+    configured base model prefixed with the inference-profile geography (e.g. "eu."), not the
+    bare model name, so a geography prefix on this new entry cannot silently defeat the match the
+    way it did before rates_for() did prefix matching at all."""
+    from app.core.config import get_settings
+    from app.modules.ai.bedrock import BedrockProvider, resolve_model_id
+
+    settings = get_settings()
+    provider = BedrockProvider(model=settings.bedrock_model_fast)
+    model_id = provider.model_id
+    assert model_id == resolve_model_id(settings.bedrock_model_fast, settings.bedrock_inference_profile)
+    # Pinned against the real configured default (an eu-prefixed inference profile) so this test
+    # still catches a price-table key that only matches the bare, unprefixed model name.
+    assert settings.bedrock_inference_profile == "eu" and model_id == "eu.anthropic.claude-haiku-4-5"
+
+    rates = usage.rates_for(model_id)
+    assert rates is not None, "the fast tier must not silently cost 0 / record priced=False"
+    assert rates == {"input": 1_000_000, "output": 5_000_000}
+    assert usage.cost_nano_usd(model_id, 1000, 1000) == 1_000_000 + 5_000_000
+
+
 def test_the_longest_matching_prefix_wins():
     """Otherwise claude-3-5-haiku could be priced against a shorter claude-3 entry, i.e. at the wrong
     rate rather than at no rate, which is the harder error to notice."""

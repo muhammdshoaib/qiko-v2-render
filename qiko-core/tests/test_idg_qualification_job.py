@@ -223,3 +223,48 @@ async def test_build_idg_pipeline_deps_gives_specialist_the_fast_tier_worker():
     synthesizer_provider = pipeline.synthesizer.generator.provider
     assert isinstance(synthesizer_provider, FallbackProvider)
     assert synthesizer_provider.primary.model != "anthropic.claude-haiku-4-5"
+
+
+def test_fast_tier_worker_carries_over_the_tenants_persona_and_reference_scope():
+    """_fast_tier_worker must build its Generator so that ONLY `provider` (the model tier) differs
+    from the real worker's: `system_prompt` (the tenant's own Train-wizard-synthesized persona,
+    see app.modules.workers.persona.synthesize_persona) and `reference_scoped` (whether this job
+    is restricted to one reference document, IDG-1000) must be carried over unchanged. Passing
+    only `provider=` into the new Generator(...) would silently reset both to their dataclass
+    defaults and fall the Specialist back to the generic default identity."""
+    from app.modules.agentcore.generator import Generator
+    from app.modules.agentcore.runtime import AgentCore
+    from app.modules.knowledge.service import KnowledgeService
+    from app.modules.workers.config import WorkerConfig
+    from app.modules.workers.persona import synthesize_persona
+    from app.modules.workers.worker import Worker
+
+    cfg = {"full_name": "Ava Ross", "title": "Senior Bid Writer",
+           "expertise": "public sector tenders", "tone": "formal",
+           "about": "You work exclusively from the supplied evidence."}
+    persona = synthesize_persona(cfg)
+    assert persona and persona != Generator().system_prompt  # a real, non-default persona
+
+    worker_config = WorkerConfig(name="w-acme-agent-1", tenant="acme", agent_id="agent-1",
+                                 system_prompt=persona, reference_doc_id="doc-42",
+                                 gate_threshold=0.42)
+    real_worker = Worker(
+        config=worker_config, knowledge=KnowledgeService(),
+        agent=AgentCore(generator=Generator(system_prompt=persona, reference_scoped=True),
+                        threshold=worker_config.gate_threshold))
+
+    fast_worker = jobs._fast_tier_worker(real_worker)
+    fast_generator = fast_worker.agent.generator
+    real_generator = real_worker.agent.generator
+
+    assert fast_generator.system_prompt == real_generator.system_prompt == persona
+    assert fast_generator.reference_scoped is True
+    assert fast_generator.reference_scoped == real_generator.reference_scoped
+    # The provider (model tier) is the ONLY thing that should differ.
+    assert fast_generator.provider is not real_generator.provider
+
+    # Everything else about the worker/agent is shared with (or mirrors) the real one.
+    assert fast_worker.config is real_worker.config
+    assert fast_worker.knowledge is real_worker.knowledge
+    assert fast_worker.agent.verified is real_worker.agent.verified
+    assert fast_worker.agent.threshold == real_worker.agent.threshold
