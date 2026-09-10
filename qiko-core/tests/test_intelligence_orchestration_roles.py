@@ -35,6 +35,18 @@ class _CannedProvider:
         return LLMResponse(text=self.text, stub=False)
 
 
+class _RecordingProvider:
+    """Returns a fixed text and records the kwargs each call was made with."""
+
+    def __init__(self, text: str):
+        self.text = text
+        self.calls: list[dict] = []
+
+    def generate(self, prompt, *, system=None, temperature=0.2, prefill=None):
+        self.calls.append({"temperature": temperature})
+        return LLMResponse(text=self.text, stub=False)
+
+
 @pytest.fixture
 def knowledge():
     store = InMemoryVectorStore()
@@ -164,6 +176,17 @@ async def test_synthesizer_returns_raw_text_when_not_json():
     assert result.findings == []
 
 
+async def test_synthesizer_pins_temperature_zero():
+    payload = json.dumps({"summary": "x", "findings": [], "citations": []})
+    provider = _RecordingProvider(payload)
+    synthesizer = Synthesizer(Generator(provider=provider))
+    outputs = [SpecialistOutput(facet="f", answer="a", confidence=0.9, gaps="")]
+
+    await synthesizer.consolidate(outputs)
+
+    assert provider.calls[-1]["temperature"] == 0.0
+
+
 async def test_critic_uses_deterministic_grounding():
     critic = Critic()
     output = ConsolidatedOutput(text="ACME builds AI tools.")
@@ -184,6 +207,17 @@ async def test_critic_llm_layer_cannot_raise_grounding():
 
     assert critique.grounding <= 1.0
     assert "unrelated issue" in critique.issues
+
+
+async def test_critic_llm_layer_pins_temperature_zero():
+    llm = _RecordingProvider(json.dumps({"grounding": 1.0, "issues": []}))
+    critic = Critic(llm_layer=llm)
+    output = ConsolidatedOutput(text="ACME builds AI tools.")
+    evidence = EvidenceBundle(text_chunks=["ACME builds AI tools for sales."])
+
+    await critic.score(output, evidence)
+
+    assert llm.calls[-1]["temperature"] == 0.0
 
 
 async def test_magistrate_accept_when_grounding_high():

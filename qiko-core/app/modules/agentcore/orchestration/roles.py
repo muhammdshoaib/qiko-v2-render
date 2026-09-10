@@ -75,11 +75,18 @@ class Synthesizer:
             context=context,
         )
         prompt = self.generator.build_prompt(req)
+        # Pin temperature explicitly rather than relying on the provider's own default: LLM
+        # judges are not fully reproducible even at temperature=0 (sampling noise can still
+        # change a verdict across an identical revise-retry on unchanged evidence), but an
+        # unpinned call silently inherits whatever default the provider method has today, with
+        # no signal here if that default ever changes upstream. 0.0 is the lowest lever available
+        # on the Bedrock Converse API (no seed parameter exists to pin further).
         response = await asyncio.to_thread(
             self.generator.provider.generate,
             prompt,
             system=_SYNTHESIZER_SYSTEM,
             prefill="{",
+            temperature=0.0,
         )
         parsed = _parse_synthesis(response.text)
         if parsed is None:
@@ -130,11 +137,13 @@ class Critic:
             "Return ONLY a JSON object with keys \"grounding\" and \"issues\"."
         )
         try:
+            # Pin temperature=0.0 for the same reason as Synthesizer.consolidate() above.
             response = await asyncio.to_thread(
                 self.llm_layer.generate,
                 prompt,
                 system=_LLM_CRITIC_SYSTEM,
                 prefill="{",
+                temperature=0.0,
             )
         except Exception:
             logger.exception("LLM critic failed; falling back to deterministic score")
