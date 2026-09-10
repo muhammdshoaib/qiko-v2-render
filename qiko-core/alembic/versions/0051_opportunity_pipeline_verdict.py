@@ -4,15 +4,15 @@ that went through the IDG agentic qualification pipeline now carries which verdi
 joinable against the deterministic scorer's own recommendation/qualification_score columns
 already on the same row. No auto-tuning added in this migration or this phase - tracking only.
 
-Revision ID: 0049_opportunity_pipeline_verdict
-Revises: 0048_passage_embedding_vector
+Revision ID: 0051_opportunity_pipeline_verdict
+Revises: 0050_passage_ordinal
 Create Date: 2026-09-08
 """
 from alembic import op
 import sqlalchemy as sa
 
-revision = "0049_opportunity_pipeline_verdict"
-down_revision = "0048_passage_embedding_vector"
+revision = "0051_opportunity_pipeline_verdict"
+down_revision = "0050_passage_ordinal"
 branch_labels = None
 depends_on = None
 
