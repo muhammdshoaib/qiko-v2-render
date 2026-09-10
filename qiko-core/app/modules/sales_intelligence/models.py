@@ -158,6 +158,12 @@ class Opportunity:
     recommendation: str | None = None
     qualification_score: int | None = None
     confidence: int | None = None
+    # Tracking half of a future calibration feedback loop: which verdict the IDG agentic
+    # qualification pipeline reached for this opportunity, and which PipelineRun produced it.
+    # Set by app.tasks.jobs.run_idg_qualification_pipeline whenever a run completes (not only on
+    # "accept"). No auto-tuning reads these yet.
+    pipeline_verdict: str | None = None
+    pipeline_run_id: str | None = None
     competitor_readiness: str | None = None
     qualification_summary: str | None = None
     qualification_reasons: list[str] = field(default_factory=list)

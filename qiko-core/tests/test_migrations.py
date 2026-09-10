@@ -61,3 +61,19 @@ def test_passage_embedding_vector_migration_is_a_noop_on_sqlite(tmp_path):
     # SQLite never gets embedding_vec - the migration's dialect guard must skip it entirely,
     # not fail, not add a differently-typed column.
     assert "embedding_vec" not in columns
+
+
+def test_opportunity_pipeline_verdict_migration_adds_nullable_columns(tmp_path):
+    db = tmp_path / "verdict.db"
+    os.environ["ALEMBIC_URL"] = f"sqlite:///{db}"
+    try:
+        cfg = Config("alembic.ini")
+        command.upgrade(cfg, "head")
+    finally:
+        os.environ.pop("ALEMBIC_URL", None)
+
+    con = sqlite3.connect(db)
+    columns = {row[1] for row in con.execute("pragma table_info(sales_intel_opportunities)")}
+    con.close()
+    assert "pipeline_verdict" in columns
+    assert "pipeline_run_id" in columns

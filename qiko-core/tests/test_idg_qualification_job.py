@@ -175,6 +175,43 @@ async def test_accepted_verdict_promotes_stage_and_logs_an_activity_entry():
     assert entry.activity_type == "opportunity"
 
 
+async def test_pipeline_run_records_verdict_and_run_id_on_the_opportunity():
+    """Tracking half of a future calibration feedback loop (see .devin/specs/2026-09-08-
+    orchestration-quality-cost-efficiency-design.md): every completed run -- not only "accept" --
+    must stamp the opportunity with which verdict it got and which PipelineRun produced it."""
+    sessionmaker = await _sqlite_sessionmaker()
+    await SqlAgentStore(sessionmaker).add(
+        Agent(id="agent-1", tenant="acme", name="Sales", atype="sales_intelligence", status="ready"))
+
+    opportunities = SqlOpportunityStore(sessionmaker)
+    opportunity = await opportunities.add(_opportunity())
+
+    run_store = SqlPipelineRunStore(sessionmaker)
+    config = PipelineConfig(
+        tenant=opportunity.tenant, agent_id=opportunity.agent_id, subject=opportunity.title,
+        facets=["facet"], kind="idg_qualification")
+    run = Pipeline.new_run(config)
+    await run_store.add(run)
+    # threshold above the max possible grounding score (1.0) forces an "escalate" verdict, proving
+    # the write happens on every completed run, not only "accept".
+    specialist = _RecordingSpecialist()
+    pipeline = Pipeline(
+        scout=_IdgScoutAdapter(opportunity), specialist=specialist, synthesizer=_FakeSynthesizer(),
+        critic=Critic(), magistrate=Magistrate(threshold=1.5), store=run_store)
+
+    result = await run_idg_qualification_pipeline(
+        tenant=opportunity.tenant, agent_id=opportunity.agent_id, opportunity_id=opportunity.id,
+        run_id=run.run_id, pipeline=pipeline, sessionmaker=sessionmaker)
+
+    assert result["verdict"] == "escalate"
+
+    updated = await opportunities.get(opportunity.tenant, opportunity.agent_id, opportunity.id)
+    assert updated.pipeline_verdict == result["verdict"]
+    assert updated.pipeline_run_id == run.run_id
+    # An escalate verdict must not touch stage or write the accept-only activity log.
+    assert updated.stage == "awaiting_review"
+
+
 async def test_stage_promotion_is_skipped_without_a_sessionmaker_and_logs_nothing():
     """The eager dev/test path (pipeline passed directly, no sessionmaker) has nowhere durable to
     write the opportunity stage or the activity log, so it must not attempt either -- unchanged

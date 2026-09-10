@@ -364,6 +364,11 @@ async def run_idg_qualification_pipeline(
 
     An "accept" verdict promotes the opportunity's stage from awaiting_review to qualified with no
     human in the loop; see _record_idg_stage_promotion for the activity-log entry that records it.
+
+    Every completed run (any verdict) also stamps Opportunity.pipeline_verdict/pipeline_run_id --
+    the tracking half of a future calibration feedback loop, joinable against the deterministic
+    scorer's own recommendation/qualification_score columns on the same row. No auto-tuning reads
+    these yet.
     """
     run = None
     events: list = []
@@ -392,15 +397,24 @@ async def run_idg_qualification_pipeline(
     if run is None:
         raise ValueError(f"pipeline run {run_id} not found")
 
-    if run.verdict == "accept" and sessionmaker is not None:
+    if sessionmaker is not None:
         from app.db.stores import SqlOpportunityStore
 
         opportunities = SqlOpportunityStore(sessionmaker)
         opportunity = await opportunities.get(tenant, agent_id, opportunity_id)
-        if opportunity is not None and opportunity.stage == "awaiting_review":
-            opportunity.stage = "qualified"
+        if opportunity is not None:
+            # Tracking half of a future calibration feedback loop: every completed run stamps the
+            # opportunity with its verdict and run id, not only "accept" -- see
+            # .devin/specs/2026-09-08-orchestration-quality-cost-efficiency-design.md. No
+            # auto-tuning reads these yet.
+            opportunity.pipeline_verdict = run.verdict
+            opportunity.pipeline_run_id = run.run_id
+            promote = run.verdict == "accept" and opportunity.stage == "awaiting_review"
+            if promote:
+                opportunity.stage = "qualified"
             await opportunities.update(opportunity)
-            await _record_idg_stage_promotion(sessionmaker, opportunity, run)
+            if promote:
+                await _record_idg_stage_promotion(sessionmaker, opportunity, run)
     return {"run_id": run.run_id, "verdict": run.verdict, "status": run.status, "cost": run.cost}
 
 
