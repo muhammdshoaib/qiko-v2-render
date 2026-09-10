@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     aws_region: str = "eu-central-1"
     bedrock_inference_profile: str = "eu"  # eu | us | jp | au | global | "" (in-region)
     bedrock_model: str = "anthropic.claude-sonnet-4-5"
+    # Cheap/fast tier for narrow, single-facet work with many parallel calls per pipeline run (the
+    # agentic pipeline's Specialist role - see app.tasks.jobs._build_idg_pipeline_deps and
+    # _build_pipeline_deps). Synthesizer/Critic keep the capable bedrock_model tier above: fewer
+    # calls per run, and both are consolidation/judgment roles where the cascade-routing
+    # literature (e.g. "A Unified Approach to Routing and Cascading for LLMs", ICML 2025) treats
+    # quality as mattering more than for narrow per-item work.
+    bedrock_model_fast: str = "anthropic.claude-haiku-4-5"
     # Generated file storage. Empty means the in-memory backend, which is a plain dict with no TTL
     # and no eviction: acceptable in dev, an unbounded leak plus data loss on restart in production.
     s3_bucket: str = ""

@@ -170,6 +170,28 @@ async def generate_tender_artifacts(*, tenant: str, pack_id: str, agent_id: str 
         reset_tenant(tenant_token)
 
 
+def _fast_tier_worker(worker):
+    """A Specialist-only Worker on the cheap/fast Bedrock tier (Settings.bedrock_model_fast).
+
+    Same config/knowledge/cost_guard as the tenant's own resolved `worker`, but its own Generator
+    (a different AgentCore instance), so this never changes the tier the tenant's OWN chat uses
+    via `worker.agent.generator` -- only the copy handed to Specialist is fast-tier. The
+    Specialist makes many narrow, single-facet calls per pipeline run; Synthesizer/Critic keep
+    the capable tier (see Settings.bedrock_model_fast)."""
+    from app.core.config import get_settings
+    from app.modules.agentcore.generator import Generator
+    from app.modules.agentcore.runtime import AgentCore
+    from app.modules.ai.gateway import get_provider
+    from app.modules.workers.worker import Worker
+
+    return Worker(
+        config=worker.config, knowledge=worker.knowledge,
+        agent=AgentCore(
+            generator=Generator(provider=get_provider(model=get_settings().bedrock_model_fast)),
+            verified=worker.agent.verified, threshold=worker.agent.threshold),
+        cost_guard=worker.cost_guard)
+
+
 async def _build_pipeline_deps(sessionmaker, tenant: str, agent_id: str):
     """Build a Postgres-backed Pipeline for the arq worker tier, mirroring the in-memory wiring
     in app.main."""
@@ -203,7 +225,7 @@ async def _build_pipeline_deps(sessionmaker, tenant: str, agent_id: str):
             signal_store=SqlSignalStore(sessionmaker),
             document_store=SqlDocumentStore(sessionmaker),
         ),
-        specialist=Specialist(worker),
+        specialist=Specialist(_fast_tier_worker(worker)),
         synthesizer=Synthesizer(worker.agent.generator),
         critic=Critic(),
         magistrate=Magistrate(threshold=worker.agent.threshold),
@@ -273,7 +295,7 @@ async def _build_idg_pipeline_deps(sessionmaker, tenant: str, agent_id: str, opp
         tenant=tenant, agent_id=agent_id)
     return Pipeline(
         scout=_IdgScoutAdapter(opportunity),
-        specialist=Specialist(worker),
+        specialist=Specialist(_fast_tier_worker(worker)),
         synthesizer=Synthesizer(worker.agent.generator),
         critic=Critic(),
         magistrate=Magistrate(threshold=worker.agent.threshold),

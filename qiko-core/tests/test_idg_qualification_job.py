@@ -26,8 +26,10 @@ from app.modules.agentcore.orchestration import (
 from app.modules.agentcore.orchestration.models import ConsolidatedOutput, SpecialistOutput
 from app.modules.agents.service import Agent
 from app.modules.ai import usage
+from app.modules.ai.gateway import FallbackProvider
 from app.modules.sales_intelligence.models import Opportunity
 from app.modules.sales_intelligence.orchestration import _IdgScoutAdapter
+from app.tasks import jobs
 from app.tasks.jobs import run_idg_qualification_pipeline
 
 
@@ -193,3 +195,31 @@ async def test_stage_promotion_is_skipped_without_a_sessionmaker_and_logs_nothin
     assert result["verdict"] == "accept"
     # No sessionmaker -> no stage promotion, no activity-log write attempted (would raise if it
     # tried, since there is no DB here at all).
+
+
+# --- Fast-tier Specialist: _build_idg_pipeline_deps ------------------------------------------
+
+async def test_build_idg_pipeline_deps_gives_specialist_the_fast_tier_worker():
+    """The Specialist makes many narrow, single-facet model calls per pipeline run, so it must
+    run on the cheap/fast Bedrock tier (Settings.bedrock_model_fast) rather than the tenant's own
+    configured worker tier. Synthesizer/Critic keep the capable tier -- see
+    app.core.config.Settings.bedrock_model_fast and app.tasks.jobs._build_idg_pipeline_deps."""
+    sessionmaker = await _sqlite_sessionmaker()
+    await SqlAgentStore(sessionmaker).add(
+        Agent(id="agent-1", tenant="acme", name="Sales", atype="sales_intelligence", status="ready"))
+    opportunity = _opportunity()
+
+    pipeline = await jobs._build_idg_pipeline_deps(
+        sessionmaker, opportunity.tenant, opportunity.agent_id, opportunity)
+
+    # get_provider() always wraps the configured primary with the configured fallback (see
+    # tests/test_ai_gateway.py::test_get_provider_wraps_bedrock_with_stub_fallback), so the model
+    # id lives on `.primary`, not directly on `.provider`.
+    specialist_provider = pipeline.specialist.worker.agent.generator.provider
+    assert isinstance(specialist_provider, FallbackProvider)
+    assert specialist_provider.primary.model == "anthropic.claude-haiku-4-5"
+
+    # Synthesizer keeps the real worker's own (default-tier) generator, unchanged.
+    synthesizer_provider = pipeline.synthesizer.generator.provider
+    assert isinstance(synthesizer_provider, FallbackProvider)
+    assert synthesizer_provider.primary.model != "anthropic.claude-haiku-4-5"
