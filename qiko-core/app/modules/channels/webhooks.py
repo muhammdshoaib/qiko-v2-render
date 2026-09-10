@@ -8,9 +8,13 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def verify_hmac_signature(secret: str, body: bytes, signature: str) -> bool:
@@ -70,3 +74,34 @@ class IdempotencyGuard:
         while len(self._seen) > self.max_entries:
             self._seen.popitem(last=False)
         return False
+
+
+@dataclass
+class RedisIdempotencyGuard:
+    """Redis-backed replacement for IdempotencyGuard (JM2-1025), safe across replicas.
+
+    `SET key value NX EX ttl` is atomic in Redis: two replicas racing on the same delivery id
+    can never both see "not a duplicate" the way two processes each checking their own in-memory
+    OrderedDict independently could. Namespaced by event source (e.g. "interakt") so a message
+    id from one channel can never collide with an unrelated one from another.
+
+    Fails OPEN (treated as "not a duplicate") on any Redis error, same reasoning as
+    RateLimitMiddleware's own try/except around `limiter.allow()`: dedupe here is a protection
+    against double-processing a redelivered webhook, not a correctness guarantee the channel's
+    own delivery semantics already provide - an occasional double-send during a Redis outage is
+    a far smaller problem than silently dropping every inbound message until Redis recovers.
+    """
+
+    redis: Any
+    namespace: str = "qiko:idempotency"
+    ttl_seconds: int = 60 * 60 * 24  # generous redelivery window; a duplicate id older than a day is not coming back
+
+    async def is_duplicate(self, event_id: str) -> bool:
+        key = f"{self.namespace}:{event_id}"
+        try:
+            was_set = await self.redis.set(key, "1", nx=True, ex=self.ttl_seconds)
+        except Exception:
+            logger.warning("idempotency_backend_unavailable_failing_open",
+                           extra={"source": "channels.idempotency", "namespace": self.namespace})
+            return False
+        return not was_set

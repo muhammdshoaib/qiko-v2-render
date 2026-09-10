@@ -219,6 +219,37 @@ def test_interakt_inbound_answers_and_dedupes_once_enabled(client, monkeypatch):
     assert replay.json()["processed"] == []
 
 
+async def test_interakt_inbound_dedupes_against_an_async_idempotency_guard(client, monkeypatch):
+    """JM2-1025: production runs the Redis-backed guard, whose is_duplicate() is a coroutine,
+    not a plain bool - the router must actually await it rather than treating the coroutine
+    object itself as truthy (which would incorrectly drop every message as a "duplicate")."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "channels_inbound_enabled", True)
+
+    class _AsyncGuard:
+        def __init__(self):
+            self.seen: set[str] = set()
+
+        async def is_duplicate(self, event_id: str) -> bool:
+            if event_id in self.seen:
+                return True
+            self.seen.add(event_id)
+            return False
+
+    client.app.state.interakt_idempotency = _AsyncGuard()
+
+    first = client.post(
+        "/api/v1/channels/interakt/webhook", json=_interakt_message("Tell me about ISO", "im-async-1")
+    )
+    assert first.json()["processed"] == ["im-async-1"]
+
+    replay = client.post(
+        "/api/v1/channels/interakt/webhook", json=_interakt_message("Tell me about ISO", "im-async-1")
+    )
+    assert replay.json()["processed"] == []
+
+
 def test_interakt_inbound_ignores_non_message_events(client, monkeypatch):
     from app.core.config import get_settings
 
