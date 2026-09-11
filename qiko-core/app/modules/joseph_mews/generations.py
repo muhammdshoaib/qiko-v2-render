@@ -103,6 +103,20 @@ class InMemoryGenerationStore:
             return None
         return max(candidates, key=lambda r: r.created_at).result
 
+    async def latest_portfolio_insight(self, tenant: str, investor_ref: str) -> dict | None:
+        """Newest successful portfolio insight for one investor (JM2-1133), same skip-failures
+        rule as latest_property_insight above."""
+        candidates = [
+            r for k, r in self._rows.items()
+            if k.startswith(f"{tenant}:")
+            and r.kind == GenerationKind.portfolio_insight
+            and r.investor_ref == investor_ref
+            and r.result is not None
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda r: r.created_at).result
+
     @staticmethod
     def _key(tenant: str, request_id: str) -> str:
         # Tenant-prefixed so one tenant can never read or overwrite another's generation by

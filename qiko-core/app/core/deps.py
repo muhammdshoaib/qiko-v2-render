@@ -153,6 +153,10 @@ def get_jm_generations(request: Request):
     return request.app.state.jm_generations
 
 
+def get_intent_signals(request: Request):
+    return request.app.state.jm_intent_signals
+
+
 def get_rfp_packs(request: Request):
     return request.app.state.rfp_packs
 

@@ -5107,7 +5107,20 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Activity */
+        /**
+         * Get Activity
+         * @description One endpoint for both reads the admin panel needs (JM2-1133): one investor's activity
+         *     (`investorRef=`) and the whole platform's feed (omit it), the latter searchable, filterable
+         *     and sortable.
+         *
+         *     `investorRef` became optional rather than gaining a second all-investors route: they return
+         *     the same rows in the same shape, differing only by a filter, and a separate route would
+         *     duplicate the search/sort/paging surface and let the two drift.
+         *
+         *     `sort` is validated against an allowlist (activity.ACTIVITY_SORTS) and 422s on anything else,
+         *     rather than falling back to the default: silently sorting by something other than what was
+         *     asked for is indistinguishable, from the client's side, from the data being in that order.
+         */
         get: operations["get_activity_api_v1_tenants__tenant_id__activity_get"];
         put?: never;
         /** Post Activity */
@@ -5142,7 +5155,18 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get Portfolio Insights
+         * @description Read back an investor's portfolio insights: 1 to 3 cards covering their own portfolio and,
+         *     where the caller supplied platformAverages when generating, how it sits against the wider
+         *     Joseph Mews portfolio (JM2-1133).
+         *
+         *     A read of what was already drafted, like GET /insights/property: the admin panel and the app
+         *     both display these on load, and regenerating per view would spend model budget to restate the
+         *     same grounded facts. 404 when nothing has been generated for the investor yet, so the caller
+         *     can tell that apart from an investor whose portfolio genuinely supports no card.
+         */
+        get: operations["get_portfolio_insights_api_v1_tenants__tenant_id__insights_portfolio_get"];
         put?: never;
         /**
          * Portfolio Insights Endpoint
@@ -5217,6 +5241,36 @@ export interface paths {
          *     to zero.
          */
         get: operations["outcomes_summary_api_v1_tenants__tenant_id__outcomes_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenants/{tenant_id}/signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Intent Signals
+         * @description Read the intent signals Qiko generated: every investor's (omit `investorRef`) or one
+         *     investor's (JM2-1133).
+         *
+         *     A read, not a generation: signals are persisted when they are drafted, so opening the admin
+         *     panel does not spend model budget per row. The one exception is a single investor with no
+         *     stored signals yet but enough activity to support them - drafted once, on demand, then
+         *     stored, so the panel is never blank for an investor who has simply not been processed yet.
+         *
+         *     When one investor has no signals AND their activity is too sparse to support any, the
+         *     response says so explicitly (`insufficientActivity: true` plus the thresholds), because an
+         *     empty list alone cannot tell "nothing to say yet" from "something is broken".
+         */
+        get: operations["list_intent_signals_api_v1_tenants__tenant_id__signals_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -7917,6 +7971,13 @@ export interface components {
              * @default en-GB
              */
             locale: string;
+            /**
+             * Platformaverages
+             * @default {}
+             */
+            platformAverages: {
+                [key: string]: unknown;
+            };
             /**
              * Portfolioaverages
              * @default {}
@@ -19589,8 +19650,15 @@ export interface operations {
     };
     get_activity_api_v1_tenants__tenant_id__activity_get: {
         parameters: {
-            query: {
-                investorRef: string;
+            query?: {
+                investorRef?: string | null;
+                q?: string | null;
+                category?: string | null;
+                since?: string | null;
+                until?: string | null;
+                sort?: string;
+                limit?: number;
+                offset?: number;
             };
             header?: {
                 "x-api-key"?: string | null;
@@ -19681,6 +19749,44 @@ export interface operations {
                 "application/json": components["schemas"]["IntentSignalRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_portfolio_insights_api_v1_tenants__tenant_id__insights_portfolio_get: {
+        parameters: {
+            query: {
+                investorRef: string;
+            };
+            header?: {
+                "x-api-key"?: string | null;
+                "x-tenant-id"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -19867,6 +19973,48 @@ export interface operations {
     outcomes_summary_api_v1_tenants__tenant_id__outcomes_summary_get: {
         parameters: {
             query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+                "x-tenant-id"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_intent_signals_api_v1_tenants__tenant_id__signals_get: {
+        parameters: {
+            query?: {
+                investorRef?: string | null;
+                strength?: string | null;
+                q?: string | null;
+                limit?: number;
+                offset?: number;
+            };
             header?: {
                 "x-api-key"?: string | null;
                 "x-tenant-id"?: string | null;
