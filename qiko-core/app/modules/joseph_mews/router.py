@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import hmac
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Annotated
 from uuid import uuid4
 
@@ -500,13 +500,25 @@ async def list_intent_signals(
             "total": total, "limit": limit, "offset": offset,
         }
 
-    stored = await signals.list_for_investor(tenant_id, investorRef)
+    return await _signals_for_one_investor(
+        tenant_id, investorRef, agent=agent, activity=activity, signals=signals)
+
+
+async def _signals_for_one_investor(
+    tenant_id: str, investor_ref: str, *, agent, activity, signals,
+) -> dict:
+    """One investor's signals, drafting them once on demand if they have never been processed.
+
+    Shared by GET /signals?investorRef= and the combined per-user read below, so the two can
+    never disagree about what "this investor has no signal" means.
+    """
+    stored = await signals.list_for_investor(tenant_id, investor_ref)
     if not stored:
-        events = await activity.list_for_investor(tenant_id, investorRef)
+        events = await activity.list_for_investor(tenant_id, investor_ref)
         aggregated = aggregate_activity(events)
         if not has_signal_worthy_evidence(aggregated):
             return {
-                "investorRef": investorRef, "signals": [], "insufficientActivity": True,
+                "investorRef": investor_ref, "signals": [], "insufficientActivity": True,
                 "reason": (
                     "not enough repeated engagement to support a signal: needs at least "
                     f"{MIN_PROPERTY_VISITS_FOR_SIGNAL} visits to one property or "
@@ -515,18 +527,74 @@ async def list_intent_signals(
                 "activityEventCount": len(events),
             }
         request = IntentSignalRequest(
-            requestId=f"admin-read-{uuid4()}", investorRef=investorRef, activity=aggregated)
+            requestId=f"admin-read-{uuid4()}", investorRef=investor_ref, activity=aggregated)
         config = agent.config if agent is not None else None
         result = await asyncio.to_thread(generate_intent_signals, request, get_provider(), config)
         if result is None:
             raise HTTPException(status.HTTP_502_BAD_GATEWAY, "could not draft intent signals")
-        await signals.replace_for_investor(tenant_id, investorRef, result.signals)
-        stored = await signals.list_for_investor(tenant_id, investorRef)
+        await signals.replace_for_investor(tenant_id, investor_ref, result.signals)
+        stored = await signals.list_for_investor(tenant_id, investor_ref)
 
     return {
-        "investorRef": investorRef,
+        "investorRef": investor_ref,
         "signals": [_stored_signal_json(s) for s in stored],
         "insufficientActivity": False,
+    }
+
+
+@router.get("/investors/{investor_ref}")
+async def get_investor_detail(
+    tenant_id: str, investor_ref: str,
+    agent: Annotated[Agent | None, Depends(require_worker_caller)],
+    activity: Annotated[InvestorActivityStore, Depends(get_investor_activity_store)],
+    signals: Annotated[IntentSignalStore, Depends(get_intent_signals)],
+    recentLimit: int = Query(default=50, ge=0, le=MAX_ACTIVITY_PAGE),
+) -> dict:
+    """Everything the admin panel's per-user page shows, in one response (JM2-1136).
+
+    The client's schema is explicit that both blocks - the activity log and the intent signals -
+    come from the same Qiko response for that user. Two endpoints would make the page render in
+    two stages and let the signals describe a different moment than the log shown beside them.
+
+    `activity.screens`, `activity.properties` and `activity.calculatorSteps` are the counted view
+    the page actually displays. Counts, not raw rows: "viewed Marina Heights 5 times" is the
+    behaviour an admin reads, and it is the same aggregation the signal generation is grounded
+    in, so the evidence on a signal card always reconciles with the numbers next to it.
+
+    `activity.recent` carries the underlying events for the log panel, newest first. Pass
+    `recentLimit=0` to skip them when only the counts are needed.
+    """
+    events = await activity.list_for_investor(tenant_id, investor_ref)
+    aggregated = aggregate_activity(events)
+    recent = sorted(
+        events, key=lambda e: e.occurred_at or datetime.min.replace(tzinfo=UTC), reverse=True,
+    )[:recentLimit]
+    signal_block = await _signals_for_one_investor(
+        tenant_id, investor_ref, agent=agent, activity=activity, signals=signals)
+
+    return {
+        "investorRef": investor_ref,
+        "activity": {
+            "screens": [
+                {"label": label, "visitCount": count}
+                for label, count in sorted(aggregated["screens"].items(),
+                                           key=lambda kv: (-kv[1], kv[0]))
+            ],
+            "properties": sorted(aggregated["properties"],
+                                 key=lambda p: (-p["visitCount"], p["propertyName"])),
+            "calculatorSteps": [
+                {"step": step, "visitCount": count}
+                for step, count in sorted(aggregated["calculatorSteps"].items(),
+                                          key=lambda kv: (-kv[1], kv[0]))
+            ],
+            "totalEvents": len(events),
+            "recent": [_activity_json(e) for e in recent],
+        },
+        "signals": signal_block["signals"],
+        "insufficientActivity": signal_block["insufficientActivity"],
+        **({"reason": signal_block["reason"],
+            "activityEventCount": signal_block["activityEventCount"]}
+           if signal_block.get("insufficientActivity") else {}),
     }
 
 
