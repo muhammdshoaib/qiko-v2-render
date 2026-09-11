@@ -372,6 +372,21 @@ export type ProjectMetrics = {
 export type IntelligenceMetrics = { projects: Record<string, ProjectMetrics> };
 export const getIntelligenceMetrics = (agentId: string) => request<IntelligenceMetrics>(`/intelligence/agents/${encodeURIComponent(agentId)}/metrics`);
 
+export type OverviewPr = {
+  ref: string; container: string; author: string; title: string; url: string | null;
+  age_hours: number; review_status: string | null;
+};
+export type OverviewTicket = {
+  ref: string; status: string; actor: string; project_key: string | null;
+  url: string | null; updated_at: string;
+};
+export type OverviewDeveloper = { actor: string; open_prs: number; in_progress_tickets: number };
+export type IntelligenceOverview = {
+  open_prs: OverviewPr[]; in_progress_tickets: OverviewTicket[]; developers: OverviewDeveloper[];
+};
+export const getIntelligenceOverview = (agentId: string) =>
+  request<IntelligenceOverview>(`/intelligence/agents/${encodeURIComponent(agentId)}/overview`);
+
 // Research briefs
 export type FindingOut = {
   text: string;
