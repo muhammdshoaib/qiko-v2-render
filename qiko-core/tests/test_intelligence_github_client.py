@@ -185,3 +185,72 @@ async def test_connector_verify_reports_error_for_ssrf_rejected_base_url():
         config={"base_url": "http://169.254.169.254/"}, credential="ghp_test_token")
     assert result["ok"] is False
     assert "unsafe base url" in result["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_fetch_signals_emits_a_deploy_failed_signal_for_a_failed_deploy_workflow_run():
+    """A completed run of a deploy-*.yml workflow that concluded `failure` must become a
+    `deploy_failed` Signal (QIW-1027), so a bad deploy is visible without polling `gh run view`."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/actions/runs" in request.url.path:
+            return httpx.Response(200, json={"workflow_runs": [{
+                "id": 999, "name": "Deploy Preprod",
+                "path": ".github/workflows/deploy-preprod.yml",
+                "head_branch": "preprod", "head_sha": "deadbeef",
+                "status": "completed", "conclusion": "failure",
+                "created_at": "2026-09-11T07:05:19Z", "updated_at": "2026-09-11T07:20:00Z",
+                "html_url": "https://github.com/acme/repo/actions/runs/999",
+                "actor": {"login": "pixelartisanag"},
+                "head_commit": {"message": "QIW-1023: scheduled sync"},
+            }]})
+        if request.url.path.endswith("/pulls"):
+            return httpx.Response(200, json=[])
+        return httpx.Response(200, json=[])
+
+    client = GitHubClient("ghp_test", transport=httpx.MockTransport(handler),
+                          resolver=_public_resolver)
+    signals = await client.fetch_signals(
+        config={"repo_allowlist": ["acme/repo"], "watched_branches": []},
+        since=None, tenant="acme", agent_id="a1")
+    deploy_signals = [s for s in signals if s.kind == "deploy_failed"]
+    assert len(deploy_signals) == 1
+    assert deploy_signals[0].container == "acme/repo"
+    assert deploy_signals[0].actor == "pixelartisanag"
+    assert deploy_signals[0].url == "https://github.com/acme/repo/actions/runs/999"
+
+
+@pytest.mark.asyncio
+async def test_fetch_signals_emits_a_deploy_succeeded_signal_and_ignores_non_deploy_workflows():
+    """Only workflow files named deploy-*.yml qualify for the new signal kinds - a failing CI
+    workflow (already covered by `ci_failed` on the PR check-run path) must not also surface as
+    `deploy_failed`."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/actions/runs" in request.url.path:
+            return httpx.Response(200, json={"workflow_runs": [
+                {"id": 1, "name": "CI", "path": ".github/workflows/ci.yml",
+                 "head_branch": "main", "head_sha": "a1", "status": "completed",
+                 "conclusion": "failure", "created_at": "2026-09-11T08:00:00Z",
+                 "updated_at": "2026-09-11T08:05:00Z",
+                 "html_url": "https://github.com/acme/repo/actions/runs/1",
+                 "actor": {"login": "dev"}, "head_commit": {"message": "m"}},
+                {"id": 2, "name": "Deploy Preprod", "path": ".github/workflows/deploy-preprod.yml",
+                 "head_branch": "preprod", "head_sha": "b2", "status": "completed",
+                 "conclusion": "success", "created_at": "2026-09-11T08:10:00Z",
+                 "updated_at": "2026-09-11T08:20:00Z",
+                 "html_url": "https://github.com/acme/repo/actions/runs/2",
+                 "actor": {"login": "dev"}, "head_commit": {"message": "m2"}},
+            ]})
+        return httpx.Response(200, json=[])
+
+    client = GitHubClient("ghp_test", transport=httpx.MockTransport(handler),
+                          resolver=_public_resolver)
+    signals = await client.fetch_signals(
+        config={"repo_allowlist": ["acme/repo"], "watched_branches": []},
+        since=None, tenant="acme", agent_id="a1")
+    kinds = {s.kind for s in signals}
+    # The CI workflow's failure must NOT be reported via the new deploy-only signal kinds -
+    # only .github/workflows/deploy-*.yml paths qualify.
+    assert "deploy_succeeded" in kinds
+    assert "deploy_failed" not in kinds
