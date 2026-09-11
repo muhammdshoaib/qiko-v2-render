@@ -21,6 +21,7 @@ from app.core.crypto import decrypt, encrypt
 
 from app.db.models import Agent as AgentRow
 from app.db.models import AgentStateAudit as AgentStateAuditRow
+from app.db.models import JmGeneration
 from app.db.models import Assignment as AssignmentRow
 from app.db.models import ConsentRecord as ConsentRecordRow
 from app.db.models import Contact as ContactRow
@@ -50,6 +51,7 @@ from app.db.models import PlatformAdminAudit as PlatformAdminAuditRow
 from app.db.models import PolicyRelease as PolicyReleaseRow
 from app.db.models import RfpPack as RfpPackRow
 
+from app.modules.joseph_mews.generations import GenerationKind, GenerationOutcomeCounts
 from app.modules.joseph_mews.activity import ActivityEvent
 from app.modules.channels.slack_store import (
     DEFAULT_MESSAGE_LIMIT,
@@ -320,6 +322,83 @@ class SqlInvestorActivityStore:
                 )
                 for r in rows
             ]
+
+
+@dataclass
+class SqlJmGenerationStore:
+    """Persistent twin of joseph_mews.generations.InMemoryGenerationStore. Same interface, so the
+    router has one code path and wiring the wrong store is a one-line difference rather than a
+    behavioural surprise."""
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def get(self, tenant: str, request_id: str) -> tuple[bool, dict | None]:
+        async with self.sessionmaker() as s:
+            row = (await s.execute(
+                select(JmGeneration).where(
+                    JmGeneration.tenant_id == tenant, JmGeneration.request_id == request_id)
+            )).scalar_one_or_none()
+            if row is None:
+                return False, None
+            return True, row.result
+
+    async def put(self, tenant: str, request_id: str, kind: GenerationKind, result: dict | None, *,
+                  investor_ref: str | None = None, property_name: str | None = None,
+                  location: str | None = None, postcode: str | None = None) -> None:
+        async with self.sessionmaker() as s, s.begin():
+            existing = (await s.execute(
+                select(JmGeneration).where(
+                    JmGeneration.tenant_id == tenant, JmGeneration.request_id == request_id)
+            )).scalar_one_or_none()
+            if existing is not None:
+                # A concurrent duplicate of the same requestId. Keep the first result: that is the
+                # whole point of idempotency, and overwriting would hand two callers different
+                # answers for the same id.
+                return
+            s.add(JmGeneration(
+                request_id=request_id, tenant_id=tenant, kind=str(kind), result=result,
+                investor_ref=investor_ref, property_name=property_name, location=location,
+                postcode=postcode,
+            ))
+
+    async def record_outcome(self, tenant: str, request_id: str, outcome: str, note: str) -> bool:
+        async with self.sessionmaker() as s, s.begin():
+            row = (await s.execute(
+                select(JmGeneration).where(
+                    JmGeneration.tenant_id == tenant, JmGeneration.request_id == request_id)
+                .with_for_update()
+            )).scalar_one_or_none()
+            if row is None:
+                return False
+            row.outcome = outcome
+            row.outcome_note = note
+            row.outcome_at = datetime.now(timezone.utc)
+            return True
+
+    async def counts(self, tenant: str, kind: GenerationKind) -> GenerationOutcomeCounts:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(JmGeneration.outcome, func.count())
+                .where(JmGeneration.tenant_id == tenant, JmGeneration.kind == str(kind),
+                       JmGeneration.outcome.is_not(None))
+                .group_by(JmGeneration.outcome)
+            )).all()
+            by = {outcome: n for outcome, n in rows}
+            return GenerationOutcomeCounts(accurate=by.get("accurate", 0),
+                                           inaccurate=by.get("inaccurate", 0))
+
+    async def latest_property_insight(self, tenant: str, investor_ref: str, *,
+                                      property_name: str | None = None) -> dict | None:
+        async with self.sessionmaker() as s:
+            stmt = (select(JmGeneration.result)
+                    .where(JmGeneration.tenant_id == tenant,
+                           JmGeneration.kind == str(GenerationKind.property_insight),
+                           JmGeneration.investor_ref == investor_ref,
+                           JmGeneration.result.is_not(None)))
+            if property_name is not None:
+                stmt = stmt.where(JmGeneration.property_name == property_name)
+            return (await s.execute(
+                stmt.order_by(JmGeneration.created_at.desc()).limit(1))).scalar_one_or_none()
 
 
 @dataclass

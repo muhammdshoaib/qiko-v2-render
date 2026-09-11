@@ -73,6 +73,7 @@ from app.modules.admin.support import router as admin_support_router
 from app.modules.agents.router import router as agents_router
 from app.modules.agents.service import AgentService
 from app.modules.joseph_mews.activity import InMemoryInvestorActivityStore
+from app.modules.joseph_mews.generations import InMemoryGenerationStore
 from app.modules.audit.service import InMemoryAuditStore
 from app.modules.ai.caps import CostCapExceeded, CostGuard, InMemoryCostCapStore
 from app.modules.ai.usage import InMemoryUsageStore
@@ -153,6 +154,7 @@ async def lifespan(app: FastAPI):
             SqlIngestFilterSettingStore,
             SqlIngestionSourceStore,
             SqlInvestorActivityStore,
+            SqlJmGenerationStore,
             SqlLeadStore,
             SqlNotificationStore,
             SqlOpportunityStore,
@@ -235,6 +237,9 @@ async def lifespan(app: FastAPI):
         app.state.finance = FinanceService(files=SqlFinanceFileStore(sm), chats=SqlFinanceChatStore(sm))
         app.state.agents = AgentService(store=SqlAgentStore(sm))  # workers survive a redeploy
         app.state.investor_activity = SqlInvestorActivityStore(sm)  # JM2-1131
+        # Generations keyed by requestId: idempotency, outcome reporting and GET /insights/property
+        # all need one to outlive the process that made it.
+        app.state.jm_generations = SqlJmGenerationStore(sm)
         app.state.rfp_packs = RfpPackService(store=SqlRfpPackStore(sm))
         app.state.requirements = RequirementService(store=SqlRequirementStore(sm))
         app.state.pack_answers = PackAnswerService(store=SqlPackAnswerStore(sm))
@@ -477,7 +482,15 @@ def create_app() -> FastAPI:
     app.state.assignments = AssignmentService()
     app.state.chat = ChatService()
     app.state.crm = CrmService(app.state.chat)
-    app.state.investor_activity = InMemoryInvestorActivityStore()
+    # Dev/test defaults only. These are set BEFORE the DB branch above can overwrite them, never
+    # after: an earlier version of this file assigned investor_activity here unconditionally,
+    # several hundred lines below the SQL wiring, so the in-memory store silently won even with
+    # use_db_stores=True. Every activity event the app sent was lost on redeploy, GET /activity
+    # kept returning [], and intent signals could never reach the 3-visit threshold that makes
+    # them generate. Keep dev fallbacks guarded by the same condition as the real thing.
+    if not get_settings().use_db_stores:
+        app.state.investor_activity = InMemoryInvestorActivityStore()
+        app.state.jm_generations = InMemoryGenerationStore()
     # Generic in-app notification inbox (reusable across verticals) + the SI trigger wrapper.
     app.state.ai_usage = InMemoryUsageStore()
     app.state.cost_caps = InMemoryCostCapStore()

@@ -5163,7 +5163,20 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * Get Property Insight
+         * @description Read back the most recent property insight for an investor, optionally for one named
+         *     property.
+         *
+         *     Added because the app had no way to display an insight it had already paid to generate: the
+         *     only route was re-POSTing the same requestId, which only returned the original while the
+         *     generating process was still alive. Asked for during integration (Shoaib, 10 Sep).
+         *
+         *     `propertyName` rather than a property id, matching the identity rule the rest of this module
+         *     enforces. Returns 404 when there is nothing stored, so the caller can tell "not generated yet"
+         *     from "generated and empty".
+         */
+        get: operations["get_property_insight_api_v1_tenants__tenant_id__insights_property_get"];
         put?: never;
         /** Property Insight Endpoint */
         post: operations["property_insight_endpoint_api_v1_tenants__tenant_id__insights_property_post"];
@@ -5197,7 +5210,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Outcomes Summary */
+        /**
+         * Outcomes Summary
+         * @description Quality tracking, not a product surface: how often a generated signal or insight was judged
+         *     accurate once a human could tell. Counted from storage now, so a release no longer resets it
+         *     to zero.
+         */
         get: operations["outcomes_summary_api_v1_tenants__tenant_id__outcomes_summary_get"];
         put?: never;
         post?: never;
@@ -19703,6 +19721,45 @@ export interface operations {
                 "application/json": components["schemas"]["PortfolioInsightsRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_property_insight_api_v1_tenants__tenant_id__insights_property_get: {
+        parameters: {
+            query: {
+                investorRef: string;
+                propertyName?: string | null;
+            };
+            header?: {
+                "x-api-key"?: string | null;
+                "x-tenant-id"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

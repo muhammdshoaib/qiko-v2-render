@@ -137,5 +137,9 @@ def test_reporting_the_same_request_id_twice_overwrites_rather_than_double_count
     client.post("/api/v1/tenants/joseph-mews/signals/signal-overwrite/outcome",
                json={"outcome": "accurate"}, headers=_headers())
 
-    from app.modules.joseph_mews.router import _signal_outcomes
-    assert _signal_outcomes._by_request["signal-overwrite"].outcome == "accurate"
+    # Asserted through the API rather than a module-level dict: the outcome log moved into storage
+    # so a report survives a restart, and reaching into internals is what made this test break
+    # when it did. One requestId carries one outcome, so a correction overwrites.
+    summary = client.get("/api/v1/tenants/joseph-mews/outcomes/summary", headers=_headers())
+    assert summary.status_code == 200
+    assert summary.json()["signals"] == {"accurate": 1, "inaccurate": 0}
