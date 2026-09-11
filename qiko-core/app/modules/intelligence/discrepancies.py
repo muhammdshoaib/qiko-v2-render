@@ -38,6 +38,7 @@ _DISCREPANCY_LABELS: dict[str, dict[str, str]] = {
     "blocked_and_silent": {"label": "Blocked and gone quiet", "severity": "high"},
     "ci_red_but_claimed_green": {"label": "Build claim mismatch", "severity": "high"},
     "discussed_never_tracked": {"label": "Discussed but not tracked", "severity": "low"},
+    "deploy_failed_silently": {"label": "Deploy failed, no follow-up", "severity": "high"},
 }
 
 _STATUS_LABELS: dict[str, str] = {
@@ -229,6 +230,7 @@ class DiscrepancyEngine:
             results.extend(self._ci_red_but_claimed_green(ref, data))
 
         results.extend(self._discussed_never_tracked(slack_signals, qt_signals))
+        results.extend(self._deploy_failed_silently(github_signals))
         results = sorted(results, key=lambda d: d.evidence_at or d.claimed_at or now, reverse=True)
 
         if project_keys:
@@ -434,6 +436,39 @@ class DiscrepancyEngine:
                 claimed_at=signal.occurred_at,
                 evidence_at=None,
                 sources=self._sources([signal]),
+                project_key=None,
+            ))
+        return results
+
+    def _deploy_failed_silently(self, github_signals: list[Signal]) -> list[Discrepancy]:
+        """A deploy failed and no activity (of any kind) has followed in that repo since."""
+        by_repo: dict[str, list[Signal]] = {}
+        for signal in github_signals:
+            by_repo.setdefault(signal.container, []).append(signal)
+
+        results: list[Discrepancy] = []
+        for repo, signals in by_repo.items():
+            failures = [s for s in signals if s.kind == "deploy_failed"]
+            if not failures:
+                continue
+            latest_failure = max(failures, key=lambda s: s.occurred_at)
+            after = [s for s in signals if s.occurred_at > latest_failure.occurred_at]
+            if after:
+                continue
+            meta = _class_meta("deploy_failed_silently")
+            results.append(Discrepancy(
+                discrepancy_class="deploy_failed_silently",
+                class_label=meta["label"],
+                severity=meta["severity"],
+                ref=latest_failure.ref,
+                title="A deploy failed and nothing has happened since",
+                summary=(
+                    f"{latest_failure.title} on {_date(latest_failure.occurred_at)}. "
+                    "No commit, PR, ticket or Slack activity in this repo since."
+                ),
+                claimed_at=None,
+                evidence_at=latest_failure.occurred_at,
+                sources=self._sources([latest_failure]),
                 project_key=None,
             ))
         return results

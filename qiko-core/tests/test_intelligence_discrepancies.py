@@ -184,6 +184,52 @@ async def test_analyze_paginated_returns_total_and_counts(store, engine):
 
 
 @pytest.mark.asyncio
+async def test_deploy_failed_silently_when_no_activity_follows_in_the_same_repo(store, engine):
+    await store.add(_signal(
+        source="github", kind="deploy_failed", external_id="deploy-1",
+        container="acme/repo", actor="dev",
+        title="Deploy Preprod on preprod: failure", body="",
+        occurred_at=T0 - timedelta(hours=2)))
+
+    result = await engine.analyze("t1", "w1", now=T0)
+
+    matches = [d for d in result if d.discrepancy_class == "deploy_failed_silently"]
+    assert len(matches) == 1
+
+
+@pytest.mark.asyncio
+async def test_deploy_failed_is_not_silent_once_later_activity_exists_in_the_same_repo(store, engine):
+    await store.add(_signal(
+        source="github", kind="deploy_failed", external_id="deploy-1",
+        container="acme/repo", actor="dev",
+        title="Deploy Preprod on preprod: failure", body="",
+        occurred_at=T0 - timedelta(hours=2)))
+    await store.add(_signal(
+        source="github", kind="pr_opened", external_id="pr-9",
+        container="acme/repo", actor="dev",
+        title="Fix the deploy", body="", occurred_at=T0 - timedelta(hours=1)))
+
+    result = await engine.analyze("t1", "w1", now=T0)
+
+    matches = [d for d in result if d.discrepancy_class == "deploy_failed_silently"]
+    assert matches == []
+
+
+@pytest.mark.asyncio
+async def test_deploy_succeeded_never_produces_the_silent_discrepancy(store, engine):
+    await store.add(_signal(
+        source="github", kind="deploy_succeeded", external_id="deploy-2",
+        container="acme/repo", actor="dev",
+        title="Deploy Preprod on preprod: success", body="",
+        occurred_at=T0 - timedelta(hours=2)))
+
+    result = await engine.analyze("t1", "w1", now=T0)
+
+    matches = [d for d in result if d.discrepancy_class == "deploy_failed_silently"]
+    assert matches == []
+
+
+@pytest.mark.asyncio
 async def test_project_filter_excludes_other_projects(store, engine):
     await store.add(_signal(
         source="qiko_track", kind="ticket_moved", external_id="qt1",
