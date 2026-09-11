@@ -4,8 +4,9 @@ this module's own stated test strategy (no real network)."""
 import json
 
 import httpx
+import pytest
 
-from app.integrations.clients import InteraktClient, _split_phone_number
+from app.integrations.clients import InteraktAuthError, InteraktClient, _split_phone_number
 
 
 def test_split_phone_number_separates_country_code_and_national_number():
@@ -64,3 +65,52 @@ def test_send_template_raises_on_a_non_2xx_response():
         pass
     else:
         raise AssertionError("expected send_template to raise on a 422")
+
+
+def test_verify_credentials_posts_the_expected_shape():
+    """Confirmed against a real Interakt account (JM2-1026 follow-up): despite the name, Get
+    Users is a POST, not a GET, and a filters list is mandatory - Interakt 400s with an
+    unrelated-looking error if it's omitted. A GET (this test's own first version) gets a 405,
+    which InteraktClient.verify_credentials's raise_for_status() would have raised as an
+    unhandled httpx.HTTPStatusError, misreporting every valid key as broken."""
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["method"] = request.method
+        captured["url"] = str(request.url)
+        captured["body"] = json.loads(request.read())
+        return httpx.Response(200, json={"result": True, "data": {"customers": []}})
+
+    client = InteraktClient(api_key="test-key", client=httpx.Client(
+        base_url="https://api.interakt.ai/v1/public", transport=httpx.MockTransport(handler)))
+    client.verify_credentials()
+
+    assert captured["method"] == "POST"
+    assert captured["url"] == "https://api.interakt.ai/v1/public/apis/users/?offset=0&limit=1"
+    assert captured["body"] == {
+        "filters": [{"trait": "created_at_utc", "op": "gt", "val": "2099-01-01T00:00:00.000Z"}],
+    }
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_verify_credentials_raises_interakt_auth_error_on_401_or_403(status):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, json={"result": False, "message": "invalid key"})
+
+    client = InteraktClient(api_key="bad-key", client=httpx.Client(
+        base_url="https://api.interakt.ai/v1/public", transport=httpx.MockTransport(handler)))
+    with pytest.raises(InteraktAuthError):
+        client.verify_credentials()
+
+
+def test_verify_credentials_raises_http_status_error_on_other_failures():
+    """A non-auth failure (e.g. Interakt's own 5xx) is not swallowed as "verified", but is also
+    not misreported as an InteraktAuthError - the credentials route's own except clause only
+    catches InteraktAuthError, so this still surfaces as a 502 through raise_for_status()."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={"result": False, "message": "Error processing the request."})
+
+    client = InteraktClient(api_key="test-key", client=httpx.Client(
+        base_url="https://api.interakt.ai/v1/public", transport=httpx.MockTransport(handler)))
+    with pytest.raises(httpx.HTTPStatusError):
+        client.verify_credentials()
