@@ -1033,3 +1033,36 @@ class InvestorActivityEvent(Base):
     __table_args__ = (
         Index("ix_investor_activity_tenant_investor", "tenant_id", "investor_ref"),
     )
+
+
+class JmGeneration(Base):
+    """One Joseph Mews AI generation, keyed by the caller's requestId (JM2-1131).
+
+    Replaces three in-memory caches and two in-memory outcome logs. Their tradeoff was documented
+    but had a consequence that only showed up during integration: an outcome could only be
+    reported against a requestId generated since the last restart, so every report was lost on
+    release and /outcomes/summary silently reset. This table is also what GET /insights/property
+    reads, which the app previously had no way to do at all.
+
+    A row means "this requestId was generated". `result` NULL on an existing row means the
+    generation was attempted and FAILED, which is deliberately distinct from never having been
+    asked: conflating them would make a failed generation retry forever."""
+    __tablename__ = "jm_generations"
+    request_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64))
+    kind: Mapped[str] = mapped_column(String(32))
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Name/location/postcode only, never an id -- same identity rule as InvestorActivityEvent.
+    investor_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    property_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    location: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    postcode: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    outcome: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    outcome_note: Mapped[str] = mapped_column(String(2000), default="")
+    outcome_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    __table_args__ = (
+        Index("ix_jm_generations_lookup", "tenant_id", "kind", "investor_ref", "property_name",
+              "created_at"),
+        Index("ix_jm_generations_outcome", "tenant_id", "kind", "outcome"),
+    )

@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import hmac
-from collections import OrderedDict
-from dataclasses import dataclass, field
 from typing import Annotated
 
 from enum import StrEnum
@@ -17,7 +15,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import Settings, get_settings
-from app.core.deps import get_agents, get_investor_activity_store
+from app.core.deps import get_agents, get_investor_activity_store, get_jm_generations
 from app.modules.agents.router import verify_worker_api_key
 from app.modules.agents.service import Agent, AgentService
 from app.modules.ai.gateway import get_provider
@@ -29,6 +27,7 @@ from app.modules.joseph_mews.activity import (
     generate_intent_signals,
 )
 from app.modules.joseph_mews.investor_token import InvestorTokenError, decode_investor_activity_token
+from app.modules.joseph_mews.generations import GenerationKind
 from app.modules.joseph_mews.portfolio_insights import (
     PortfolioInsightsRequest,
     PortfolioInsightsResult,
@@ -60,36 +59,6 @@ async def _get_joseph_mews_agent(agents: AgentService) -> Agent | None:
         return None
 
 
-@dataclass
-class _ResultCache:
-    """Caches a completed generation result per requestId so a retried call after a
-    client-side timeout returns the same result instead of drafting a second, possibly
-    different, one. Shared by both generation endpoints below (signal summaries, property
-    insights) since both need exactly the same idempotency behaviour. Same bounded/in-memory
-    tradeoff as channels.webhooks.IdempotencyGuard: fine for a single replica, needs Redis
-    before scaling out."""
-
-    max_entries: int = 10_000
-    _results: OrderedDict[str, SignalSummaryResult | PropertyInsightResult | None] = field(
-        default_factory=OrderedDict
-    )
-
-    def get(self, request_id: str) -> tuple[bool, SignalSummaryResult | PropertyInsightResult | None]:
-        if request_id in self._results:
-            return True, self._results[request_id]
-        return False, None
-
-    def put(self, request_id: str, result: SignalSummaryResult | PropertyInsightResult | None) -> None:
-        self._results[request_id] = result
-        while len(self._results) > self.max_entries:
-            self._results.popitem(last=False)
-
-
-_cache = _ResultCache()
-_insight_cache = _ResultCache()
-_portfolio_insight_cache = _ResultCache()
-
-
 class GenerationOutcome(StrEnum):
     """Whether a previously-generated summary/insight turned out to be accurate once a human (or
     the downstream system tracking the investor's actual response) could judge it. This is
@@ -109,28 +78,35 @@ class OutcomeReport(BaseModel):
     note: str = Field(default="", max_length=2000)
 
 
-@dataclass
-class _OutcomeLog:
-    """In-memory outcome counts per generation kind ('signal'/'insight'). Same single-replica
-    tradeoff as _ResultCache -- needs a real store before scaling past one instance."""
 
-    max_entries: int = 10_000
-    _by_request: OrderedDict[str, OutcomeReport] = field(default_factory=OrderedDict)
+def _investor_ref(body: object) -> str | None:
+    """The investor this generation is about, for the GET lookup and per-investor reporting.
 
-    def record(self, request_id: str, report: OutcomeReport) -> None:
-        self._by_request[request_id] = report
-        while len(self._by_request) > self.max_entries:
-            self._by_request.popitem(last=False)
+    Requests carry the investor as a free-form dict (`extra="allow"` on the request models), so
+    this reads the two shapes callers actually send rather than requiring a schema change on their
+    side: a top-level `investorRef`, or `investor.ref`/`investor.id`."""
+    ref = getattr(body, "investorRef", None)
+    if isinstance(ref, str) and ref:
+        return ref
+    investor = getattr(body, "investor", None)
+    if isinstance(investor, dict):
+        for key in ("ref", "investorRef", "id"):
+            value = investor.get(key)
+            if isinstance(value, (str, int)) and str(value):
+                return str(value)
+    return None
 
-    def counts(self) -> dict[str, int]:
-        counts = {outcome.value: 0 for outcome in GenerationOutcome}
-        for report in self._by_request.values():
-            counts[report.outcome.value] += 1
-        return counts
+
+def _as_signal(stored: dict | None) -> SignalSummaryResult | None:
+    return SignalSummaryResult.model_validate(stored) if stored else None
 
 
-_signal_outcomes = _OutcomeLog()
-_insight_outcomes = _OutcomeLog()
+def _as_insight(stored: dict | None) -> PropertyInsightResult | None:
+    return PropertyInsightResult.model_validate(stored) if stored else None
+
+
+def _as_portfolio(stored: dict | None) -> PortfolioInsightsResult | None:
+    return PortfolioInsightsResult.model_validate(stored) if stored else None
 
 
 async def require_worker_caller(
@@ -169,14 +145,17 @@ async def require_worker_caller(
 async def summarize_signal_endpoint(
     tenant_id: str, body: SignalSummarizeRequest,
     agent: Annotated[Agent | None, Depends(require_worker_caller)],
+    store: Annotated[object, Depends(get_jm_generations)],
 ) -> dict:
-    seen, cached = _cache.get(body.requestId)
+    seen, cached = await store.get(tenant_id, body.requestId)
     if seen:
-        return _signal_response(body.requestId, cached)
+        return _signal_response(body.requestId, _as_signal(cached))
 
     config = agent.config if agent is not None else None
     result = await asyncio.to_thread(summarize_signal, body, get_provider(), config)
-    _cache.put(body.requestId, result)
+    await store.put(tenant_id, body.requestId, GenerationKind.signal,
+                    result.model_dump() if result else None,
+                    investor_ref=_investor_ref(body))
     return _signal_response(body.requestId, result)
 
 
@@ -184,15 +163,47 @@ async def summarize_signal_endpoint(
 async def property_insight_endpoint(
     tenant_id: str, body: PropertyInsightRequest,
     agent: Annotated[Agent | None, Depends(require_worker_caller)],
+    store: Annotated[object, Depends(get_jm_generations)],
 ) -> dict:
-    seen, cached = _insight_cache.get(body.requestId)
+    seen, cached = await store.get(tenant_id, body.requestId)
     if seen:
-        return _insight_response(body.requestId, cached)
+        return _insight_response(body.requestId, _as_insight(cached))
 
     config = agent.config if agent is not None else None
     result = await asyncio.to_thread(generate_property_insight, body, get_provider(), config)
-    _insight_cache.put(body.requestId, result)
+    await store.put(tenant_id, body.requestId, GenerationKind.property_insight,
+                    result.model_dump() if result else None,
+                    investor_ref=_investor_ref(body),
+                    property_name=(body.property or {}).get("name"),
+                    location=(body.property or {}).get("location"),
+                    postcode=(body.property or {}).get("postcode"))
     return _insight_response(body.requestId, result)
+
+
+@router.get("/insights/property")
+async def get_property_insight(
+    tenant_id: str, investorRef: str,
+    _agent: Annotated[Agent | None, Depends(require_worker_caller)],
+    store: Annotated[object, Depends(get_jm_generations)],
+    propertyName: str | None = None,
+) -> dict:
+    """Read back the most recent property insight for an investor, optionally for one named
+    property.
+
+    Added because the app had no way to display an insight it had already paid to generate: the
+    only route was re-POSTing the same requestId, which only returned the original while the
+    generating process was still alive. Asked for during integration (Shoaib, 10 Sep).
+
+    `propertyName` rather than a property id, matching the identity rule the rest of this module
+    enforces. Returns 404 when there is nothing stored, so the caller can tell "not generated yet"
+    from "generated and empty".
+    """
+    stored = await store.latest_property_insight(tenant_id, investorRef,
+                                                 property_name=propertyName)
+    if stored is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no insight stored for that investor")
+    result = _as_insight(stored)
+    return {"investorRef": investorRef, "summary": result.summary, "groundedIn": result.groundedIn}
 
 
 def _portfolio_insight_response(request_id: str, result: PortfolioInsightsResult | None) -> dict:
@@ -208,16 +219,19 @@ def _portfolio_insight_response(request_id: str, result: PortfolioInsightsResult
 async def portfolio_insights_endpoint(
     tenant_id: str, body: PortfolioInsightsRequest,
     agent: Annotated[Agent | None, Depends(require_worker_caller)],
+    store: Annotated[object, Depends(get_jm_generations)],
 ) -> dict:
     """JM2-1132: categorized portfolio-level cards (Concentration, Regional Performance, Income
     Performance, Pipeline), same idempotency-on-requestId behaviour as insights/property."""
-    seen, cached = _portfolio_insight_cache.get(body.requestId)
+    seen, cached = await store.get(tenant_id, body.requestId)
     if seen:
-        return _portfolio_insight_response(body.requestId, cached)
+        return _portfolio_insight_response(body.requestId, _as_portfolio(cached))
 
     config = agent.config if agent is not None else None
     result = await asyncio.to_thread(generate_portfolio_insights, body, get_provider(), config)
-    _portfolio_insight_cache.put(body.requestId, result)
+    await store.put(tenant_id, body.requestId, GenerationKind.portfolio_insight,
+                    result.model_dump() if result else None,
+                    investor_ref=_investor_ref(body))
     return _portfolio_insight_response(body.requestId, result)
 
 
@@ -225,16 +239,15 @@ async def portfolio_insights_endpoint(
 async def report_signal_outcome(
     tenant_id: str, request_id: str, body: OutcomeReport,
     _agent: Annotated[Agent | None, Depends(require_worker_caller)],
+    store: Annotated[object, Depends(get_jm_generations)],
 ) -> dict:
     """Backward data flow (3 Sep, Razvan): a consumer that generated a signal summary reports
     whether it turned out accurate once a human could judge it. Any authorised caller can report
     an outcome, not only the one that requested the original summary -- outcomes commonly surface
     downstream of where the generation happened (e.g. an admin acting on the signal in
     joseph-mews-backend, not jm-backend)."""
-    seen, _ = _cache.get(request_id)
-    if not seen:
+    if not await store.record_outcome(tenant_id, request_id, body.outcome.value, body.note):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown requestId")
-    _signal_outcomes.record(request_id, body)
     return {"requestId": request_id, "recorded": True}
 
 
@@ -242,24 +255,34 @@ async def report_signal_outcome(
 async def report_insight_outcome(
     tenant_id: str, request_id: str, body: OutcomeReport,
     _agent: Annotated[Agent | None, Depends(require_worker_caller)],
+    store: Annotated[object, Depends(get_jm_generations)],
 ) -> dict:
     # Covers both insight shapes (per-property, JM2-1042, and portfolio-level, JM2-1132) under
     # one outcome log -- a requestId is unique to whichever one generated it, so there is no
     # ambiguity in accepting a report against either cache here.
-    seen, _ = _insight_cache.get(request_id)
-    if not seen:
-        seen, _ = _portfolio_insight_cache.get(request_id)
-    if not seen:
+    if not await store.record_outcome(tenant_id, request_id, body.outcome.value, body.note):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown requestId")
-    _insight_outcomes.record(request_id, body)
     return {"requestId": request_id, "recorded": True}
 
 
 @router.get("/outcomes/summary")
 async def outcomes_summary(
     tenant_id: str, _agent: Annotated[Agent | None, Depends(require_worker_caller)],
+    store: Annotated[object, Depends(get_jm_generations)],
 ) -> dict:
-    return {"signals": _signal_outcomes.counts(), "insights": _insight_outcomes.counts()}
+    """Quality tracking, not a product surface: how often a generated signal or insight was judged
+    accurate once a human could tell. Counted from storage now, so a release no longer resets it
+    to zero."""
+    signals = await store.counts(tenant_id, GenerationKind.signal)
+    prop = await store.counts(tenant_id, GenerationKind.property_insight)
+    portfolio = await store.counts(tenant_id, GenerationKind.portfolio_insight)
+    return {
+        "signals": signals.as_dict(),
+        "insights": {
+            "accurate": prop.accurate + portfolio.accurate,
+            "inaccurate": prop.inaccurate + portfolio.inaccurate,
+        },
+    }
 
 
 def _signal_response(request_id: str, result: SignalSummaryResult | None) -> dict:

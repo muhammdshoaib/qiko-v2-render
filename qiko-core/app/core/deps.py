@@ -149,6 +149,10 @@ def get_investor_activity_store(request: Request):
     return request.app.state.investor_activity
 
 
+def get_jm_generations(request: Request):
+    return request.app.state.jm_generations
+
+
 def get_rfp_packs(request: Request):
     return request.app.state.rfp_packs
 
