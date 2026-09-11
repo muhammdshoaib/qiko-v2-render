@@ -238,6 +238,56 @@ class GitHubClient:
 
         for branch in watched_branches:
             signals.extend(await self._fetch_commits(repo, branch, since, tenant, agent_id))
+        signals.extend(await self._fetch_deploy_signals(repo, since, tenant, agent_id))
+        return signals
+
+    async def _fetch_deploy_signals(self, repo: str, since: datetime, tenant: str,
+                                     agent_id: str) -> list[Signal]:
+        """Deploy workflow outcomes (deploy-*.yml only) as Signals, so a failure is visible
+        without anyone having to poll `gh run view`/SSM by hand (QIW-1027)."""
+        since_str = _fmt_iso(since)
+        params: dict[str, Any] = {"per_page": "50"}
+        if since_str:
+            params["created"] = f">={since_str}"
+        try:
+            result = await self._request("GET", f"/repos/{repo}/actions/runs", params=params)
+        except httpx.HTTPStatusError as exc:
+            # A repo with Actions disabled (or a credential without workflow read access)
+            # 404s here; that must not take down the rest of the sync (mirrors verify()'s
+            # handling of a missing repo).
+            status = exc.response.status_code if exc.response is not None else 0
+            if status == 404:
+                return []
+            raise
+        runs = result.get("workflow_runs") if isinstance(result, dict) else None
+        if not isinstance(runs, list):
+            return []
+        signals: list[Signal] = []
+        for run in runs:
+            path = run.get("path") or ""
+            workflow_file = path.rsplit("/", 1)[-1]
+            if not workflow_file.startswith("deploy-"):
+                continue
+            if run.get("status") != "completed":
+                continue
+            conclusion = run.get("conclusion")
+            if conclusion not in ("success", "failure"):
+                continue
+            completed = _parse_iso(run.get("updated_at"))
+            if not completed or completed < since:
+                continue
+            run_id = run.get("id")
+            kind = "deploy_succeeded" if conclusion == "success" else "deploy_failed"
+            commit_message = (run.get("head_commit") or {}).get("message", "")
+            ref = self._ref_from_text(commit_message, run.get("head_branch") or "")
+            signals.append(Signal(
+                tenant=tenant, agent_id=agent_id, source="github", kind=kind,
+                external_id=f"deploy-{run_id}",
+                title=f"{run.get('name', 'Deploy')} on {run.get('head_branch', '')}: {conclusion}",
+                body=commit_message,
+                actor=(run.get("actor") or {}).get("login", ""),
+                url=run.get("html_url"), ref=ref, container=repo, occurred_at=completed,
+            ))
         return signals
 
     async def _fetch_commits(self, repo: str, branch: str, since: datetime,
