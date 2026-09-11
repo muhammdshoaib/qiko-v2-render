@@ -70,15 +70,30 @@ def _build_portfolio_system_prompt(agent_config: dict | None) -> str:
         '"pipeline" (properties not yet completed/tenanted, e.g. reserved or in_build). '
         "Never invent a card for a category the supplied data does not actually support - an "
         "empty list is the correct answer when nothing is grounded enough to say.\n\n"
+        "When platformAverages is supplied, it describes ALL Joseph Mews investors, not this "
+        "one. Use it only to place this investor against that wider picture (e.g. how their "
+        "region compares to the platform's), never as if it were their own holding.\n\n"
         'Return ONLY a JSON object (no prose, no markdown fences) with exactly one key, '
-        '"cards": a JSON array, each item having these keys:\n'
+        '"cards": a JSON array of AT MOST 3 items, each having these keys:\n'
         '"category": one of the categories above (omit if none fits cleanly).\n'
         '"metric": the specific field name this card is about, e.g. "netMonthly" (omit if none).\n'
         '"headline": one short observational sentence.\n'
         '"evidence": the specific supplied fact(s) that ground the headline.\n'
         '"trend": one of "up", "down", "flat" (omit if not applicable).\n'
+        "Return the 3 best-grounded cards when more than 3 are possible, in descending order of "
+        "how strongly the supplied data supports them.\n"
         'If nothing is grounded enough to support any card, return {"cards": []}.'
     )
+
+
+# The client asked for "a max of 3 insights (if the investor has lots of properties) and a
+# minimum of 1 insight". The maximum is enforced here rather than only asked for in the prompt:
+# a model that returns six cards would otherwise quietly reshape the app's overview screen. The
+# minimum cannot be manufactured - an empty portfolio grounds nothing, and inventing a card to
+# satisfy a count is exactly the failure the grounding rules exist to prevent - so it holds
+# whenever there is any grounded evidence at all, and the caller gets an explicit empty list
+# rather than a fabricated insight when there is not.
+MAX_PORTFOLIO_INSIGHTS = 3
 
 
 class PortfolioInsightsRequest(BaseModel):
@@ -88,6 +103,11 @@ class PortfolioInsightsRequest(BaseModel):
     properties: list[dict] = []
     portfolioAverages: dict = {}
     yieldAndCashflowDeltas: dict = {}
+    # Aggregates across ALL Joseph Mews investors, supplied by the caller because jm-backend owns
+    # the property data, not qiko-core. Without it an insight can only ever compare the investor
+    # against themselves; with it the model can ground the client's own example, "London
+    # properties are up 10% in the past 3 months", instead of guessing at a market it cannot see.
+    platformAverages: dict = {}
     locale: str = "en-GB"
 
 
@@ -109,6 +129,9 @@ class _ExtractedCards(BaseModel):
 
 def _portfolio_context_block(request: PortfolioInsightsRequest) -> str:
     parts = [f"properties: {json.dumps(request.properties)}"]
+    if request.platformAverages:
+        parts.append(f"platformAverages (all Joseph Mews investors): "
+                     f"{json.dumps(request.platformAverages)}")
     if request.investor:
         parts.append(f"investor: {json.dumps(request.investor)}")
     if request.portfolioAverages:
@@ -139,7 +162,10 @@ def generate_portfolio_insights(
                 extracted = _ExtractedCards.model_validate(raw)
             except (json.JSONDecodeError, ValidationError, AttributeError):
                 continue
-            return PortfolioInsightsResult(cards=extracted.cards)
+            # Truncate rather than reject an over-long list: the cards are independently
+            # grounded, so the first 3 are as valid as any 3, and discarding a usable response
+            # for being generous would cost a whole extra generation to get the same answer.
+            return PortfolioInsightsResult(cards=extracted.cards[:MAX_PORTFOLIO_INSIGHTS])
         return None
     finally:
         usage.reset_agent(agent_token)

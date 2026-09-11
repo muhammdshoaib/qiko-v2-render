@@ -17,7 +17,7 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Protocol
 
@@ -59,7 +59,10 @@ def has_signal_worthy_evidence(aggregated: dict) -> bool:
 @dataclass(frozen=True)
 class ActivityEvent:
     """One granular activity event, already stripped of any property/development/document id by
-    the caller -- this module never accepts or looks for one."""
+    the caller -- this module never accepts or looks for one.
+
+    investor_ref is set when the event was read back across investors (the admin feed), and left
+    None on the per-investor path where the caller already knows whose events it asked for."""
 
     category: str
     label: str
@@ -67,6 +70,23 @@ class ActivityEvent:
     location: str | None = None
     postcode: str | None = None
     occurred_at: datetime | None = None
+    investor_ref: str | None = None
+
+
+# Sort keys the admin activity feed accepts, mapped to (column name, descending). An allowlist
+# rather than passing the parameter through to an order_by: a caller-supplied column name reaching
+# SQL is the textbook injection-by-identifier route, and an unknown key silently sorting by
+# something else is worse than a 422.
+ACTIVITY_SORTS: dict[str, tuple[str, bool]] = {
+    "-occurredAt": ("occurred_at", True),
+    "occurredAt": ("occurred_at", False),
+    "-investorRef": ("investor_ref", True),
+    "investorRef": ("investor_ref", False),
+    "-category": ("category", True),
+    "category": ("category", False),
+}
+DEFAULT_ACTIVITY_SORT = "-occurredAt"
+MAX_ACTIVITY_PAGE = 200
 
 
 class InvestorActivityStore(Protocol):
@@ -77,6 +97,18 @@ class InvestorActivityStore(Protocol):
     ) -> None: ...
 
     async def list_for_investor(self, tenant: str, investor_ref: str) -> list[ActivityEvent]: ...
+
+    async def search(
+        self, tenant: str, *, investor_ref: str | None = None, q: str | None = None,
+        category: str | None = None, since: datetime | None = None, until: datetime | None = None,
+        sort: str = DEFAULT_ACTIVITY_SORT, limit: int = 50, offset: int = 0,
+    ) -> tuple[list[ActivityEvent], int]:
+        """Page of events plus the unpaginated total, for the admin feed across all investors
+        (JM2-1133). Returns the total separately because a page alone cannot tell an admin panel
+        whether there is a next page."""
+        ...
+
+    async def investor_refs(self, tenant: str) -> list[str]: ...
 
 
 @dataclass
@@ -100,6 +132,116 @@ class InMemoryInvestorActivityStore:
 
     async def list_for_investor(self, tenant: str, investor_ref: str) -> list[ActivityEvent]:
         return list(self._events.get((tenant, investor_ref), []))
+
+    async def search(
+        self, tenant: str, *, investor_ref: str | None = None, q: str | None = None,
+        category: str | None = None, since: datetime | None = None, until: datetime | None = None,
+        sort: str = DEFAULT_ACTIVITY_SORT, limit: int = 50, offset: int = 0,
+    ) -> tuple[list[ActivityEvent], int]:
+        matched: list[ActivityEvent] = []
+        for (event_tenant, ref), events in self._events.items():
+            if event_tenant != tenant or (investor_ref is not None and ref != investor_ref):
+                continue
+            for event in events:
+                if category is not None and event.category != category:
+                    continue
+                if since is not None and event.occurred_at is not None and event.occurred_at < since:
+                    continue
+                if until is not None and event.occurred_at is not None and event.occurred_at > until:
+                    continue
+                if q and not _matches_text(event, q):
+                    continue
+                matched.append(replace(event, investor_ref=ref))
+        column, descending = ACTIVITY_SORTS.get(sort, ACTIVITY_SORTS[DEFAULT_ACTIVITY_SORT])
+        matched.sort(key=lambda e: _sort_key(e, column), reverse=descending)
+        return matched[offset:offset + limit], len(matched)
+
+    async def investor_refs(self, tenant: str) -> list[str]:
+        return sorted({ref for (event_tenant, ref) in self._events if event_tenant == tenant})
+
+
+def _matches_text(event: ActivityEvent, q: str) -> bool:
+    """Free-text search over the fields an admin can actually read in the feed. Deliberately not
+    over investor_ref: it is an opaque token, so matching it would surface unrelated events for
+    anyone whose ref happens to contain the typed substring."""
+    needle = q.casefold()
+    return any(
+        field_value and needle in field_value.casefold()
+        for field_value in (event.label, event.category, event.property_name, event.location,
+                            event.postcode)
+    )
+
+
+def _sort_key(event: ActivityEvent, column: str):
+    if column == "occurred_at":
+        return event.occurred_at or datetime.min.replace(tzinfo=UTC)
+    return getattr(event, column, "") or ""
+
+
+@dataclass(frozen=True)
+class StoredIntentSignal:
+    """A persisted signal (JM2-1133), as the admin feed reads it back."""
+
+    investor_ref: str
+    signal: str
+    strength: str
+    evidence: str = ""
+    category: str | None = None
+    generated_at: datetime | None = None
+
+
+class IntentSignalStore(Protocol):
+    async def replace_for_investor(
+        self, tenant: str, investor_ref: str, signals: list[IntentSignal],
+    ) -> None:
+        """Swap an investor's signals for a freshly generated set, in one transaction. Replace
+        rather than append: a signal describes current behaviour, so an append-only table would
+        show one investor several times with contradictory strengths."""
+        ...
+
+    async def list_for_investor(self, tenant: str, investor_ref: str) -> list[StoredIntentSignal]: ...
+
+    async def search(
+        self, tenant: str, *, strength: str | None = None, q: str | None = None,
+        limit: int = 50, offset: int = 0,
+    ) -> tuple[list[StoredIntentSignal], int]: ...
+
+
+@dataclass
+class InMemoryIntentSignalStore:
+    """Dev/test default, same protocol as db.stores.SqlIntentSignalStore."""
+
+    _by_investor: dict[tuple[str, str], list[StoredIntentSignal]] = field(default_factory=dict)
+
+    async def replace_for_investor(
+        self, tenant: str, investor_ref: str, signals: list[IntentSignal],
+    ) -> None:
+        now = datetime.now(UTC)
+        self._by_investor[(tenant, investor_ref)] = [
+            StoredIntentSignal(
+                investor_ref=investor_ref, signal=s.signal, strength=s.strength,
+                evidence=s.evidence, category=s.category, generated_at=now,
+            )
+            for s in signals
+        ]
+
+    async def list_for_investor(self, tenant: str, investor_ref: str) -> list[StoredIntentSignal]:
+        return list(self._by_investor.get((tenant, investor_ref), []))
+
+    async def search(
+        self, tenant: str, *, strength: str | None = None, q: str | None = None,
+        limit: int = 50, offset: int = 0,
+    ) -> tuple[list[StoredIntentSignal], int]:
+        matched = [
+            s
+            for (signal_tenant, _ref), signals in self._by_investor.items()
+            if signal_tenant == tenant
+            for s in signals
+            if (strength is None or s.strength == strength)
+            and (not q or q.casefold() in f"{s.signal} {s.evidence} {s.category or ''}".casefold())
+        ]
+        matched.sort(key=lambda s: s.generated_at or datetime.min.replace(tzinfo=UTC), reverse=True)
+        return matched[offset:offset + limit], len(matched)
 
 
 def aggregate_activity(events: list[ActivityEvent]) -> dict:
