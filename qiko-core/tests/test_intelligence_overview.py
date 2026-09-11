@@ -102,6 +102,62 @@ def test_in_progress_ticket_falls_back_to_mover_when_no_implementer_recorded():
     assert ticket["actor"] == "mover-bot"
 
 
+def test_in_progress_ticket_uses_a_later_ticket_assigned_signal_over_an_earlier_ticket_moved():
+    # ticket_assigned fires when only the implementer changes, with no status change, and
+    # carries its own full meta.state snapshot. It must win over an earlier ticket_moved
+    # for the same ref, not just be ignored because its kind isn't "ticket_moved".
+    now = datetime.now(timezone.utc)
+    signals = [
+        _signal("ticket_moved", "QIW-1", actor="dave", source="qiko_track",
+               occurred_at=now - timedelta(hours=5),
+               meta={"state": {"status": "IN_PROGRESS", "implementer": ""}}),
+        _signal("ticket_assigned", "QIW-1", actor="mover-bot", source="qiko_track",
+               occurred_at=now - timedelta(hours=1),
+               meta={"state": {"status": "IN_PROGRESS", "implementer": "erin"}}),
+    ]
+    result = build_overview(signals, now=now)
+    assert len(result["in_progress_tickets"]) == 1
+    ticket = result["in_progress_tickets"][0]
+    assert ticket["actor"] == "erin"
+
+
+def test_in_progress_ticket_picks_the_chronologically_latest_state_when_input_is_out_of_order():
+    # Signals arrive in whatever order the store returns them; the grouping must sort by
+    # occurred_at itself rather than trusting input order.
+    now = datetime.now(timezone.utc)
+    signals = [
+        _signal("ticket_assigned", "QIW-1", actor="mover-bot", source="qiko_track",
+               occurred_at=now - timedelta(hours=1),
+               meta={"state": {"status": "IN_PROGRESS", "implementer": "erin"}}),
+        _signal("ticket_moved", "QIW-1", actor="dave", source="qiko_track",
+               occurred_at=now - timedelta(hours=5),
+               meta={"state": {"status": "IN_PROGRESS", "implementer": ""}}),
+        _signal("ticket_moved", "QIW-1", actor="dave", source="qiko_track",
+               occurred_at=now - timedelta(hours=3),
+               meta={"state": {"status": "IN_REVIEW", "implementer": "dave"}}),
+    ]
+    result = build_overview(signals, now=now)
+    assert len(result["in_progress_tickets"]) == 1
+    ticket = result["in_progress_tickets"][0]
+    assert ticket["status"] == "IN_PROGRESS"
+    assert ticket["actor"] == "erin"
+
+
+def test_open_pr_excludes_a_ref_with_a_terminal_signal_regardless_of_review_signal_count():
+    now = datetime.now(timezone.utc)
+    signals = [
+        _signal("pr_opened", "PR#9", actor="bob", occurred_at=now - timedelta(hours=20)),
+        _signal("review_requested", "PR#9", actor="bob", occurred_at=now - timedelta(hours=18)),
+        _signal("review_changes_requested", "PR#9", actor="carol",
+               occurred_at=now - timedelta(hours=15)),
+        _signal("review_requested", "PR#9", actor="bob", occurred_at=now - timedelta(hours=10)),
+        _signal("review_approved", "PR#9", actor="carol", occurred_at=now - timedelta(hours=5)),
+        _signal("pr_merged", "PR#9", actor="bob", occurred_at=now - timedelta(hours=1)),
+    ]
+    result = build_overview(signals, now=now)
+    assert result["open_prs"] == []
+
+
 def test_developer_rollup_counts_open_prs_and_in_progress_tickets_per_actor():
     now = datetime.now(timezone.utc)
     signals = [

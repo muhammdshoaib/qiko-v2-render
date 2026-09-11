@@ -64,11 +64,14 @@ def _in_progress_tickets(signals: list[Signal]) -> list[dict]:
     groups = _group_by_ref(signals, source="qiko_track")
     tickets = []
     for ref, group in groups.items():
-        moves = [s for s in group
-                 if s.kind == "ticket_moved" and isinstance((s.meta or {}).get("state"), dict)]
-        if not moves:
+        # Any qiko_track signal can carry the full `meta.state` snapshot, not just
+        # ticket_moved: e.g. ticket_assigned fires when only the implementer changes.
+        # Mirror discrepancies.py's _latest_state() and take the chronologically latest
+        # one regardless of kind (groups are already sorted ascending by _group_by_ref).
+        with_state = [s for s in group if isinstance((s.meta or {}).get("state"), dict)]
+        if not with_state:
             continue
-        latest = moves[-1]
+        latest = with_state[-1]
         state = (latest.meta or {}).get("state", {})
         status = state.get("status")
         if status not in _IN_PROGRESS_STATUSES:
