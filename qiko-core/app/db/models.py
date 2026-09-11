@@ -606,6 +606,11 @@ class SalesIntelOpportunity(Base):
     recommendation: Mapped[str | None] = mapped_column(String(40), nullable=True)
     qualification_score: Mapped[int | None] = mapped_column(nullable=True)
     confidence: Mapped[int | None] = mapped_column(nullable=True)
+    # Tracking half of a future calibration feedback loop: which verdict the IDG agentic
+    # qualification pipeline (app.tasks.jobs.run_idg_qualification_pipeline) reached for this
+    # opportunity, and which PipelineRun produced it. No auto-tuning reads these yet.
+    pipeline_verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    pipeline_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     competitor_readiness: Mapped[str | None] = mapped_column(String(40), nullable=True)
     qualification_summary: Mapped[str | None] = mapped_column(String, nullable=True)
     qualification_reasons: Mapped[list] = mapped_column(JSON, default=list)

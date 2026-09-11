@@ -8,6 +8,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import uuid
 
 from app.core.tenancy import reset_tenant, set_tenant
 from app.modules.ai import usage
@@ -169,6 +170,37 @@ async def generate_tender_artifacts(*, tenant: str, pack_id: str, agent_id: str 
         reset_tenant(tenant_token)
 
 
+def _fast_tier_worker(worker):
+    """A Specialist-only Worker on the cheap/fast Bedrock tier (Settings.bedrock_model_fast).
+
+    Same config/knowledge/cost_guard as the tenant's own resolved `worker`, but its own Generator
+    (a different AgentCore instance), so this never changes the tier the tenant's OWN chat uses
+    via `worker.agent.generator` -- only the copy handed to Specialist is fast-tier. The
+    Specialist makes many narrow, single-facet calls per pipeline run; Synthesizer/Critic keep
+    the capable tier (see Settings.bedrock_model_fast).
+
+    `system_prompt` and `reference_scoped` are carried over from the real worker's generator
+    (see app.core.deps.assemble_worker) rather than left at Generator's dataclass defaults: they
+    hold the tenant's own Train-wizard-synthesized persona and whether this job is restricted to
+    one reference document. Only `provider` (and therefore the model tier) should differ between
+    this Generator and the real worker's."""
+    from app.core.config import get_settings
+    from app.modules.agentcore.generator import Generator
+    from app.modules.agentcore.runtime import AgentCore
+    from app.modules.ai.gateway import get_provider
+    from app.modules.workers.worker import Worker
+
+    return Worker(
+        config=worker.config, knowledge=worker.knowledge,
+        agent=AgentCore(
+            generator=Generator(
+                provider=get_provider(model=get_settings().bedrock_model_fast),
+                system_prompt=worker.agent.generator.system_prompt,
+                reference_scoped=worker.agent.generator.reference_scoped),
+            verified=worker.agent.verified, threshold=worker.agent.threshold),
+        cost_guard=worker.cost_guard)
+
+
 async def _build_pipeline_deps(sessionmaker, tenant: str, agent_id: str):
     """Build a Postgres-backed Pipeline for the arq worker tier, mirroring the in-memory wiring
     in app.main."""
@@ -202,7 +234,7 @@ async def _build_pipeline_deps(sessionmaker, tenant: str, agent_id: str):
             signal_store=SqlSignalStore(sessionmaker),
             document_store=SqlDocumentStore(sessionmaker),
         ),
-        specialist=Specialist(worker),
+        specialist=Specialist(_fast_tier_worker(worker)),
         synthesizer=Synthesizer(worker.agent.generator),
         critic=Critic(),
         magistrate=Magistrate(threshold=worker.agent.threshold),
@@ -246,6 +278,143 @@ async def run_intelligence_pipeline(
         reset_tenant(tenant_token)
     if run is None:
         raise ValueError(f"pipeline run {run_id} not found")
+    return {"run_id": run.run_id, "verdict": run.verdict, "status": run.status, "cost": run.cost}
+
+
+async def _build_idg_pipeline_deps(sessionmaker, tenant: str, agent_id: str, opportunity):
+    """Build a Postgres-backed Pipeline for IDG qualification, mirroring _build_pipeline_deps.
+
+    Takes the already-fetched Opportunity (the caller needs it anyway, to build this) so the
+    Scout adapter can close over it: IdgScout.gather() takes a single Opportunity, not the
+    (tenant, agent_id, subject) triple the generic Pipeline calls its scout with -- see
+    app.modules.sales_intelligence.orchestration._IdgScoutAdapter.
+    """
+    from app.core.deps import resolve_available_worker
+    from app.db.stores import SqlAgentStore, SqlPipelineRunStore, SqlVectorStore
+    from app.modules.agentcore.orchestration import Critic, Magistrate, Pipeline, Synthesizer
+    from app.modules.agents.service import AgentService
+    from app.modules.intelligence.orchestration import Specialist
+    from app.modules.knowledge.service import KnowledgeService
+    from app.modules.sales_intelligence.orchestration import _IdgScoutAdapter
+
+    knowledge = KnowledgeService(store=SqlVectorStore(sessionmaker))
+    agents = AgentService(store=SqlAgentStore(sessionmaker))
+    worker, _ = await resolve_available_worker(
+        sessionmaker=sessionmaker, agents=agents, knowledge=knowledge,
+        tenant=tenant, agent_id=agent_id)
+    return Pipeline(
+        scout=_IdgScoutAdapter(opportunity),
+        specialist=Specialist(_fast_tier_worker(worker)),
+        synthesizer=Synthesizer(worker.agent.generator),
+        critic=Critic(),
+        magistrate=Magistrate(threshold=worker.agent.threshold),
+        store=SqlPipelineRunStore(sessionmaker),
+    )
+
+
+async def _record_idg_stage_promotion(sessionmaker, opportunity, run) -> None:
+    """Durable audit trail for an autonomous stage transition: the IDG qualification pipeline
+    accepting a notice moves its stage from awaiting_review to qualified with no human in the
+    loop, so this is the record that distinguishes an AI-driven qualification from a human one
+    (mirrors OpportunityService._log()'s ActivityLog shape -- see
+    app.modules.sales_intelligence.service.OpportunityService._log and .models.ActivityLog).
+
+    Reached directly via SqlActivityLogStore rather than through a full OpportunityService: this
+    job already builds the Sql*Store objects it needs inline (see _build_idg_pipeline_deps and
+    the SqlOpportunityStore use above), and OpportunityService itself needs connectors/qualifier/
+    notifier collaborators this job has no use for, so constructing one just to reach `_log()`
+    would be a bigger dependency than the write it performs."""
+    from app.db.stores import SqlActivityLogStore
+    from app.modules.sales_intelligence.models import ActivityLog
+
+    await SqlActivityLogStore(sessionmaker).add(ActivityLog(
+        id=uuid.uuid4().hex[:12], tenant=opportunity.tenant, agent_id=opportunity.agent_id,
+        action="opportunity_ai_qualified",
+        detail=f"AI qualification pipeline run {run.run_id} accepted this opportunity and "
+               "advanced it to qualified.",
+        tone="success", opportunity_id=opportunity.id,
+        metadata={"run_id": run.run_id, "verdict": run.verdict,
+                  "from": "awaiting_review", "to": "qualified"},
+    ))
+
+
+@registry.register("run_idg_qualification_pipeline")
+async def run_idg_qualification_pipeline(
+    *,
+    tenant: str,
+    agent_id: str,
+    opportunity_id: str,
+    run_id: str,
+    pipeline: object | None = None,
+    sessionmaker=None,
+) -> dict:
+    """Background job: execute an IDG qualification pipeline run, then apply its verdict to the
+    opportunity's stage. Mirrors run_intelligence_pipeline's eager-vs-arq dual path: the eager
+    dev/test path may pass a pre-built `Pipeline` directly; the arq worker tier passes only
+    `sessionmaker` and the ids, and this function fetches the Opportunity and rebuilds the
+    Pipeline (via _build_idg_pipeline_deps) from the worker's own DB connection.
+
+    Also mirrors run_intelligence_pipeline's usage-tracking wrapping (set_agent/set_tenant before
+    execution, usage.scope() around the pipeline.resume() call, the accumulated cost written onto
+    the run and flushed to the durable usage store in a `finally`): without it, every Specialist/
+    Synthesizer model call this pipeline makes runs with no usage scope open, so usage.record()
+    hits its "no scope open" fallback and the event is dropped rather than persisted -- this
+    pipeline's real AI spend would otherwise be invisible to cost accounting and PipelineRun.cost
+    would stay unset.
+
+    An "accept" verdict promotes the opportunity's stage from awaiting_review to qualified with no
+    human in the loop; see _record_idg_stage_promotion for the activity-log entry that records it.
+
+    Every completed run (any verdict) also stamps Opportunity.pipeline_verdict/pipeline_run_id --
+    the tracking half of a future calibration feedback loop, joinable against the deterministic
+    scorer's own recommendation/qualification_score columns on the same row. No auto-tuning reads
+    these yet.
+    """
+    run = None
+    events: list = []
+    agent_token = usage.set_agent(agent_id)
+    tenant_token = set_tenant(tenant)
+    try:
+        with usage.scope() as events:
+            if pipeline is None:
+                if sessionmaker is None:
+                    raise ValueError("run_idg_qualification_pipeline requires sessionmaker or pipeline")
+                from app.db.stores import SqlOpportunityStore
+
+                opportunity = await SqlOpportunityStore(sessionmaker).get(tenant, agent_id, opportunity_id)
+                if opportunity is None:
+                    raise ValueError(f"opportunity {opportunity_id} not found")
+                pipeline = await _build_idg_pipeline_deps(sessionmaker, tenant, agent_id, opportunity)
+
+            run = await pipeline.resume(tenant, agent_id, run_id)
+    finally:
+        if run is not None and pipeline is not None:
+            run.cost = dataclasses.asdict(usage.accumulate(events))
+            await pipeline.store.update(run)
+        await usage.flush(_usage_store(sessionmaker), events)
+        usage.reset_agent(agent_token)
+        reset_tenant(tenant_token)
+    if run is None:
+        raise ValueError(f"pipeline run {run_id} not found")
+
+    if sessionmaker is not None:
+        from app.db.stores import SqlOpportunityStore
+
+        opportunities = SqlOpportunityStore(sessionmaker)
+        opportunity = await opportunities.get(tenant, agent_id, opportunity_id)
+        if opportunity is not None:
+            # Tracking half of a future calibration feedback loop: every completed run stamps the
+            # opportunity with its verdict and run id, not only "accept" -- see
+            # .devin/specs/2026-09-08-orchestration-quality-cost-efficiency-design.md. No
+            # auto-tuning reads these yet.
+            opportunity.pipeline_verdict = run.verdict
+            opportunity.pipeline_run_id = run.run_id
+            promote = run.verdict == "accept" and opportunity.stage == "awaiting_review"
+            if promote:
+                opportunity.stage = "qualified"
+            await opportunities.update(opportunity)
+            if promote:
+                await _record_idg_stage_promotion(sessionmaker, opportunity, run)
     return {"run_id": run.run_id, "verdict": run.verdict, "status": run.status, "cost": run.cost}
 
 

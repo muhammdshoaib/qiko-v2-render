@@ -36,6 +36,7 @@ from app.modules.sales_intelligence.models import (
 )
 from app.core.deps import WorkerUnavailable
 from app.modules.sales_intelligence.notifications import SalesNotificationService
+from app.modules.sales_intelligence.orchestration import build_facets
 from app.modules.sales_intelligence.qualification import QualificationService
 
 
@@ -113,6 +114,12 @@ class OpportunityService:
     # scheduler/background scan path; the manual API path passes agent_config explicitly instead.
     agents: object | None = None
     scan_interval_minutes: int = 1
+    # Wired from app.state in main.py once both exist (see the late attribute assignments there,
+    # mirroring app.state.cost_guard.notifications). When task_queue is None (every existing call
+    # site that does not pass it, and most tests), the enqueue gate in _scan_source() is a no-op --
+    # a service built the old way behaves exactly as before.
+    task_queue: object | None = None
+    pipeline_run_store: object | None = None
 
     def __post_init__(self) -> None:
         if self.sources is None:
@@ -360,6 +367,29 @@ class OpportunityService:
                 if is_new and self.notifier is not None and opportunity.stage == "awaiting_review":
                     await recheck()
                     await self.notifier.notify_review_required(opportunity)
+
+                # Cost-control gate: route only the ambiguous middle to the agentic pipeline. This
+                # is NOT gated on `is_new` like the notification above -- a notice that stayed
+                # "awaiting_review" across a re-scan deserves the same resolution attempt every
+                # time, not just on first ingest. build_facets() reflects this scan's own
+                # qualify() output (missing_fields/risks); a confident "Bid"/"No Bid" notice never
+                # has either, so it never reaches here regardless of the task_queue check below.
+                if self.task_queue is not None and opportunity.stage == "awaiting_review":
+                    facets = build_facets({
+                        "missing_fields": qualification.get("missing_fields", []),
+                        "risks": qualification.get("risks", []),
+                    })
+                    if facets:
+                        from app.modules.agentcore.orchestration import Pipeline, PipelineConfig
+
+                        pipeline_config = PipelineConfig(
+                            tenant=tenant, agent_id=agent_id, subject=opportunity.title,
+                            facets=facets, kind="idg_qualification")
+                        pipeline_run = Pipeline.new_run(pipeline_config)
+                        await self.pipeline_run_store.add(pipeline_run)
+                        await self.task_queue.enqueue(
+                            "run_idg_qualification_pipeline", tenant=tenant, agent_id=agent_id,
+                            opportunity_id=opportunity.id, run_id=pipeline_run.run_id)
 
             source.last_scan_status = "success"
             source.last_scan_at = _now()

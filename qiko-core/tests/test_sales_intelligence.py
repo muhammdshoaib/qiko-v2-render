@@ -397,6 +397,83 @@ async def test_scan_does_not_revive_archived_opportunity(monkeypatch):
     assert second["opportunities"] == []
 
 
+class _StubTaskQueue:
+    """Records enqueue() calls instead of running them -- this test only cares whether the
+    cost-control gate fires, not the pipeline job's own behaviour (covered separately)."""
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    async def enqueue(self, name, **kwargs):
+        self.calls.append((name, kwargs))
+
+
+async def test_review_notice_enqueues_agentic_pipeline_and_bid_notice_does_not(monkeypatch):
+    """The cost-control gate: only a 'Review' recommendation ever enqueues the pipeline."""
+    from app.modules.agentcore.orchestration import InMemoryPipelineRunStore
+
+    queue = _StubTaskQueue()
+    svc = OpportunityService(task_queue=queue, pipeline_run_store=InMemoryPipelineRunStore())
+    await svc.update_source_status("acme", "agent-1", "ted", "active")
+
+    def fake_search(filters=None):
+        return {"payload": {}, "skipped": 0, "notices": [
+            # Review: one keyword hit (score 20, below the reasons.append(>=25) branch), no
+            # country, no estimated_value -- qualify() reports both a missing_fields entry and a
+            # risks entry, exactly what build_facets() turns into a non-empty facet list.
+            _with_deadline({
+                "external_id": "REVIEW-1", "title": "Risk advisory and audit services",
+                "buyer": "Ministry of Advisory Affairs",
+            }),
+            # Bid: strong service-keyword match, target country, buyer, value all present ->
+            # confident enough that qualify() reports zero missing_fields/risks.
+            _with_deadline({
+                "external_id": "BID-1", "title": "Provision of static security guarding services",
+                "category": "Security services", "country": "United Arab Emirates",
+                "buyer": "Ministry of Interior", "estimated_value": 500000,
+            }),
+            # No Bid: zero service-alignment keywords -- qualification.py's own _recommendation()
+            # rejects on service_score == 0 regardless of everything else.
+            _with_deadline({
+                "external_id": "NOBID-1", "title": "Supply of office stationery",
+                "category": "Stationery", "country": "France", "buyer": "City Council",
+            }),
+        ]}
+
+    monkeypatch.setattr(svc.ted, "search", fake_search)
+    result = await svc.scan_ted("acme", "agent-1", {})
+    by_ext = {o.external_id: o for o in result["opportunities"]}
+
+    assert by_ext["REVIEW-1"].recommendation == "Review"
+    assert by_ext["REVIEW-1"].stage == "awaiting_review"
+    assert by_ext["BID-1"].recommendation == "Bid"
+    assert by_ext["NOBID-1"].recommendation == "No Bid"
+
+    enqueued = [call for call in queue.calls if call[0] == "run_idg_qualification_pipeline"]
+    assert len(enqueued) == 1
+    _, kwargs = enqueued[0]
+    assert kwargs["tenant"] == "acme"
+    assert kwargs["agent_id"] == "agent-1"
+    assert kwargs["opportunity_id"] == by_ext["REVIEW-1"].id
+    assert kwargs["run_id"]
+
+
+async def test_scan_without_task_queue_never_enqueues(monkeypatch):
+    """A service built the old way (no task_queue/pipeline_run_store) must behave exactly as
+    before -- the `if self.task_queue is not None` guard is what makes that safe."""
+    svc = OpportunityService()
+    await svc.update_source_status("acme", "agent-1", "ted", "active")
+
+    def fake_search(filters=None):
+        return {"payload": {}, "skipped": 0, "notices": [_with_deadline({
+            "external_id": "REVIEW-2", "title": "Risk advisory and audit services",
+            "buyer": "Ministry of Advisory Affairs",
+        })]}
+
+    monkeypatch.setattr(svc.ted, "search", fake_search)
+    result = await svc.scan_ted("acme", "agent-1", {})
+    assert result["opportunities"][0].recommendation == "Review"
+
+
 async def test_manual_create_and_update_fields():
     mutation = OpportunityMutationService()
     opp = await mutation.create_manual("acme", "agent-1", {

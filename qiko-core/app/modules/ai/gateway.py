@@ -80,18 +80,19 @@ class FallbackProvider:
 
 
 def _build_one(name: str, *, read_timeout: int | None = None,
-               max_tokens: int | None = None) -> LLMProvider:
+               max_tokens: int | None = None, model: str | None = None) -> LLMProvider:
     if name == "bedrock":
         from app.modules.ai.bedrock import BedrockProvider
 
         overrides = {k: v for k, v in
-                     (("read_timeout", read_timeout), ("max_tokens", max_tokens)) if v is not None}
+                     (("read_timeout", read_timeout), ("max_tokens", max_tokens),
+                      ("model", model)) if v is not None}
         return BedrockProvider(**overrides)
     return StubProvider()
 
 
 def get_provider(*, read_timeout: int | None = None,
-                 max_tokens: int | None = None) -> LLMProvider:
+                 max_tokens: int | None = None, model: str | None = None) -> LLMProvider:
     """Build the provider from config: primary (default Bedrock) wrapped with a configured
     fallback. Model, Region and inference profile are config, not code (ADR-007/008).
 
@@ -99,13 +100,19 @@ def get_provider(*, read_timeout: int | None = None,
     answering hot path. One-shot, whole-document calls (extraction/compliance/brief) need more of
     each: longer to read tens of thousands of characters, and a bigger output ceiling because they
     must return a COMPLETE structured document rather than one short answer. Raising only the
-    timeout leaves those calls silently truncated (QIKO-1081)."""
+    timeout leaves those calls silently truncated (QIKO-1081).
+
+    `model` overrides the configured default model id (Settings.bedrock_model) for call sites that
+    need a different Bedrock model tier than the app-wide default - e.g. the agentic pipeline's
+    Specialist role, which makes many narrow, single-facet calls per run and uses a cheaper/faster
+    tier than the pipeline's own Synthesizer/Critic roles (see agentcore.orchestration and
+    app.tasks.jobs._build_idg_pipeline_deps)."""
     s = get_settings()
-    primary = _build_one(s.ai_provider, read_timeout=read_timeout, max_tokens=max_tokens)
+    primary = _build_one(s.ai_provider, read_timeout=read_timeout, max_tokens=max_tokens, model=model)
     if s.ai_fallback_provider and s.ai_fallback_provider != s.ai_provider:
         return FallbackProvider(primary, _build_one(s.ai_fallback_provider,
                                                     read_timeout=read_timeout,
-                                                    max_tokens=max_tokens))
+                                                    max_tokens=max_tokens, model=model))
     return primary
 
 

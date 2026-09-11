@@ -97,6 +97,17 @@ def test_get_provider_read_timeout_override_reaches_bedrock_provider():
     assert p.primary.read_timeout == 90
 
 
+def test_get_provider_model_override_reaches_bedrock_provider():
+    p = get_provider(model="anthropic.claude-haiku-4-5")
+    assert isinstance(p, FallbackProvider)
+    assert p.primary.model == "anthropic.claude-haiku-4-5"
+
+
+def test_build_one_model_override():
+    p = _build_one("bedrock", model="anthropic.claude-haiku-4-5")
+    assert p.model == "anthropic.claude-haiku-4-5"
+
+
 # --- embeddings ---
 def test_local_embeddings_deterministic_and_normalised():
     e = LocalEmbeddings(dim=16)

@@ -43,6 +43,13 @@ async def run_intelligence_pipeline(ctx, **kwargs):  # pragma: no cover - invoke
     return await jobs.run_intelligence_pipeline(sessionmaker=ctx["sessionmaker"], **kwargs)
 
 
+async def run_idg_qualification_pipeline(ctx, **kwargs):  # pragma: no cover - invoked by the arq runtime
+    # Same reasoning as run_intelligence_pipeline above: only serialisable ids reach Redis
+    # (tenant/agent_id/opportunity_id/run_id), and the Pipeline (with its IdgScout adapter bound to
+    # the fetched Opportunity) is rebuilt here from the worker's own DB connection.
+    return await jobs.run_idg_qualification_pipeline(sessionmaker=ctx["sessionmaker"], **kwargs)
+
+
 async def generate_slack_digest(ctx, **kwargs):  # pragma: no cover - invoked by the arq runtime
     # The SYNC sessionmaker is what carries the Slack installation store (see sync_stores.py):
     # without it the job cannot resolve a bot token and could never post the digest it paid for.
@@ -50,9 +57,22 @@ async def generate_slack_digest(ctx, **kwargs):  # pragma: no cover - invoked by
         sessionmaker=ctx["sessionmaker"], sync_sessionmaker=ctx.get("sync_sessionmaker"), **kwargs)
 
 
-def _build_sales_runtime(sessionmaker):
+def _build_sales_runtime(sessionmaker, redis=None):
     """Build a Postgres-backed OpportunityService for a worker sweep, mirroring the DB-store wiring
-    in app.main's lifespan so scheduled scans read/write the same source of truth as the API."""
+    in app.main's lifespan so scheduled scans read/write the same source of truth as the API.
+
+    `redis` is the arq worker's own connection pool (ctx["redis"], set by arq itself before any
+    job or cron function ever runs -- see arq.worker.Worker.main). Wiring it as task_queue lets
+    this cron sweep enqueue run_idg_qualification_pipeline for a "Review" notice the same way
+    app.main's durable (use_db_stores) branch wires task_queue/pipeline_run_store for the
+    manually-triggered API scan. Unlike that main.py wiring, there is no EagerTaskQueue concern to
+    guard against here: this module is the arq worker process's own entrypoint, so it only ever
+    runs when TASK_BACKEND=arq is the actual configured backend.
+
+    Reusing ctx["redis"] (rather than building a fresh ArqTaskQueue with its own pool) matters
+    because scan_due_sources ticks once a minute: opening a brand-new Redis connection on every
+    tick would leak connections, where ArqTaskQueue only opens a pool when its own _pool is unset.
+    """
     from app.db.stores import (
         SqlActivityLogStore,
         SqlAgentStore,
@@ -60,14 +80,17 @@ def _build_sales_runtime(sessionmaker):
         SqlIngestionSourceStore,
         SqlNotificationStore,
         SqlOpportunityStore,
+        SqlPipelineRunStore,
     )
     from app.modules.agents.service import AgentService
     from app.modules.notifications.service import NotificationService
     from app.modules.sales_intelligence.notifications import SalesNotificationService
     from app.modules.sales_intelligence.service import OpportunityService
+    from app.tasks.queue import ArqTaskQueue
 
     notifier = SalesNotificationService(notifications=NotificationService(store=SqlNotificationStore(sessionmaker)))
     agents = AgentService(store=SqlAgentStore(sessionmaker))
+    task_queue = ArqTaskQueue(redis_url=get_settings().redis_url, _pool=redis) if redis is not None else None
     service = OpportunityService(
         scan_interval_minutes=get_settings().idg_sales_scan_interval_minutes,
         sources=SqlIngestionSourceStore(sessionmaker),
@@ -75,13 +98,15 @@ def _build_sales_runtime(sessionmaker):
         activity_logs=SqlActivityLogStore(sessionmaker),
         notifier=notifier,
         agents=agents,
+        task_queue=task_queue,
+        pipeline_run_store=SqlPipelineRunStore(sessionmaker),
     )
     ingest_filters = SqlIngestFilterSettingStore(sessionmaker)
     return service, agents, ingest_filters
 
 
 async def scan_due_sources(ctx):  # pragma: no cover - invoked by the arq cron runtime
-    service, agents, ingest_filters = _build_sales_runtime(ctx["sessionmaker"])
+    service, agents, ingest_filters = _build_sales_runtime(ctx["sessionmaker"], redis=ctx.get("redis"))
     return await sales_scheduler.scan_due_sources(service, agents=agents, ingest_filters=ingest_filters)
 
 
@@ -91,7 +116,7 @@ async def purge_expired_signups(ctx):  # pragma: no cover - invoked by the arq c
 
 
 async def send_deadline_reminders(ctx):  # pragma: no cover - invoked by the arq cron runtime
-    service, agents, _ingest_filters = _build_sales_runtime(ctx["sessionmaker"])
+    service, agents, _ingest_filters = _build_sales_runtime(ctx["sessionmaker"], redis=ctx.get("redis"))
     return await sales_scheduler.send_deadline_reminders(service, agents=agents)
 
 
@@ -115,7 +140,8 @@ async def reconcile_invoices(ctx) -> dict:  # pragma: no cover - invoked by the 
 
 
 FUNCTIONS = [ingest_document, process_uploaded_document, send_email, generate_tender_artifacts,
-             erase_audit_subject, generate_slack_digest, reconcile_invoices, run_intelligence_pipeline]
+             erase_audit_subject, generate_slack_digest, reconcile_invoices, run_intelligence_pipeline,
+             run_idg_qualification_pipeline]
 
 # arq cron is calendar-based (no native "every N minutes" interval). Rather than encode the
 # configured cadence into a minute-set at startup, the scan cron ticks once a minute and the sweep
