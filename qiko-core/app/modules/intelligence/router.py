@@ -40,6 +40,7 @@ from app.modules.intelligence.digest import (
 from app.modules.intelligence.discrepancies import DiscrepancyEngine
 from app.modules.intelligence.documents import SUPPORTED_DOCUMENT_EXTENSIONS, UnsupportedDocumentError
 from app.modules.intelligence.ingest import ingest_source
+from app.modules.intelligence.overview import build_overview
 from app.modules.intelligence.orchestration import (
     Critic,
     Magistrate,
@@ -1252,6 +1253,28 @@ async def get_agent_metrics(
     finally:
         await recheck()
     return {"projects": metrics}
+
+
+@router.get("/agents/{agent_id}/overview")
+async def get_agent_overview(
+    agent_id: str, request: Request,
+    tenant: str = Depends(authed_tenant),
+    _claims: dict = Depends(require_role(Role.viewer)),
+) -> dict:
+    """Ongoing work at a glance: open PRs, in-progress tickets, and who's carrying what.
+
+    Deterministic reconstruction from already-ingested Signals (see overview.py) - the same
+    discipline every discrepancy class already follows. RBAC note: Role.viewer, matching
+    get_agent_metrics's precedent (aggregate delivery data, not the accusatory claim-vs-evidence
+    framing /discrepancies uses at Role.admin).
+    """
+    _worker, recheck = await _resolve_worker(request, tenant, agent_id)
+    try:
+        signals = await request.app.state.intelligence_signal_store.list_recent(
+            tenant, agent_id, limit=500)
+        return build_overview(signals)
+    finally:
+        await recheck()
 
 
 @router.post("/agents/{agent_id}/documents")
