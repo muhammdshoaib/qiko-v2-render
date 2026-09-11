@@ -7,28 +7,43 @@ from __future__ import annotations
 
 import asyncio
 import hmac
+from datetime import datetime
 from typing import Annotated
+from uuid import uuid4
 
 from enum import StrEnum
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.config import Settings, get_settings
-from app.core.deps import get_agents, get_investor_activity_store, get_jm_generations
+from app.core.deps import (
+    get_agents,
+    get_intent_signals,
+    get_investor_activity_store,
+    get_jm_generations,
+)
 from app.modules.agents.router import verify_worker_api_key
 from app.modules.agents.service import Agent, AgentService
 from app.modules.ai.gateway import get_provider
 from app.modules.joseph_mews.activity import (
+    ACTIVITY_SORTS,
+    DEFAULT_ACTIVITY_SORT,
+    MAX_ACTIVITY_PAGE,
+    MIN_CALCULATOR_VISITS_FOR_SIGNAL,
+    MIN_PROPERTY_VISITS_FOR_SIGNAL,
     IntentSignalRequest,
     IntentSignalResult,
+    IntentSignalStore,
     InvestorActivityStore,
     aggregate_activity,
     generate_intent_signals,
+    has_signal_worthy_evidence,
 )
 from app.modules.joseph_mews.investor_token import InvestorTokenError, decode_investor_activity_token
 from app.modules.joseph_mews.generations import GenerationKind
 from app.modules.joseph_mews.portfolio_insights import (
+    MAX_PORTFOLIO_INSIGHTS,
     PortfolioInsightsRequest,
     PortfolioInsightsResult,
     PropertyInsightRequest,
@@ -235,6 +250,32 @@ async def portfolio_insights_endpoint(
     return _portfolio_insight_response(body.requestId, result)
 
 
+@router.get("/insights/portfolio")
+async def get_portfolio_insights(
+    tenant_id: str, investorRef: str,
+    _agent: Annotated[Agent | None, Depends(require_worker_caller)],
+    store: Annotated[object, Depends(get_jm_generations)],
+) -> dict:
+    """Read back an investor's portfolio insights: 1 to 3 cards covering their own portfolio and,
+    where the caller supplied platformAverages when generating, how it sits against the wider
+    Joseph Mews portfolio (JM2-1133).
+
+    A read of what was already drafted, like GET /insights/property: the admin panel and the app
+    both display these on load, and regenerating per view would spend model budget to restate the
+    same grounded facts. 404 when nothing has been generated for the investor yet, so the caller
+    can tell that apart from an investor whose portfolio genuinely supports no card.
+    """
+    stored = await store.latest_portfolio_insight(tenant_id, investorRef)
+    if stored is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND,
+                            "no portfolio insights stored for that investor")
+    result = _as_portfolio(stored)
+    return {
+        "investorRef": investorRef,
+        "cards": [c.model_dump() for c in result.cards[:MAX_PORTFOLIO_INSIGHTS]],
+    }
+
+
 @router.post("/signals/{request_id}/outcome")
 async def report_signal_outcome(
     tenant_id: str, request_id: str, body: OutcomeReport,
@@ -342,23 +383,52 @@ async def post_activity(
     return {"status": "recorded"}
 
 
+def _activity_json(event) -> dict:
+    return {
+        "investorRef": event.investor_ref,
+        "category": event.category, "label": event.label, "propertyName": event.property_name,
+        "location": event.location, "postcode": event.postcode,
+        "occurredAt": event.occurred_at.isoformat() if event.occurred_at else None,
+    }
+
+
 @router.get("/activity")
 async def get_activity(
-    tenant_id: str, investorRef: str,
+    tenant_id: str,
     _agent: Annotated[Agent | None, Depends(require_worker_caller)],
     store: Annotated[InvestorActivityStore, Depends(get_investor_activity_store)],
+    investorRef: str | None = None,
+    q: str | None = Query(default=None, max_length=200),
+    category: str | None = Query(default=None, max_length=32),
+    since: datetime | None = None,
+    until: datetime | None = None,
+    sort: str = DEFAULT_ACTIVITY_SORT,
+    limit: int = Query(default=50, ge=1, le=MAX_ACTIVITY_PAGE),
+    offset: int = Query(default=0, ge=0),
 ) -> dict:
-    events = await store.list_for_investor(tenant_id, investorRef)
+    """One endpoint for both reads the admin panel needs (JM2-1133): one investor's activity
+    (`investorRef=`) and the whole platform's feed (omit it), the latter searchable, filterable
+    and sortable.
+
+    `investorRef` became optional rather than gaining a second all-investors route: they return
+    the same rows in the same shape, differing only by a filter, and a separate route would
+    duplicate the search/sort/paging surface and let the two drift.
+
+    `sort` is validated against an allowlist (activity.ACTIVITY_SORTS) and 422s on anything else,
+    rather than falling back to the default: silently sorting by something other than what was
+    asked for is indistinguishable, from the client's side, from the data being in that order.
+    """
+    if sort not in ACTIVITY_SORTS:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"unsupported sort '{sort}'; expected one of {', '.join(sorted(ACTIVITY_SORTS))}")
+    events, total = await store.search(
+        tenant_id, investor_ref=investorRef, q=q, category=category, since=since, until=until,
+        sort=sort, limit=limit, offset=offset)
     return {
         "investorRef": investorRef,
-        "events": [
-            {
-                "category": e.category, "label": e.label, "propertyName": e.property_name,
-                "location": e.location, "postcode": e.postcode,
-                "occurredAt": e.occurred_at.isoformat() if e.occurred_at else None,
-            }
-            for e in events
-        ],
+        "events": [_activity_json(e) for e in events],
+        "total": total, "limit": limit, "offset": offset,
     }
 
 
@@ -376,12 +446,88 @@ async def activity_intent_signals(
     tenant_id: str, body: IntentSignalRequest,
     agent: Annotated[Agent | None, Depends(require_worker_caller)],
     store: Annotated[InvestorActivityStore, Depends(get_investor_activity_store)],
+    signals: Annotated[IntentSignalStore, Depends(get_intent_signals)],
 ) -> dict:
     events = await store.list_for_investor(tenant_id, body.investorRef)
     body.activity = aggregate_activity(events)
     config = agent.config if agent is not None else None
     result = await asyncio.to_thread(generate_intent_signals, body, get_provider(), config)
+    if result is not None:
+        # Persisted so the admin feed can read signals instead of paying to redraft them
+        # (JM2-1133). A failed generation (None) leaves the previous set alone: replacing it with
+        # nothing would make a transient model failure look like the investor's intent vanished.
+        await signals.replace_for_investor(tenant_id, body.investorRef, result.signals)
     return _intent_signal_response(body.requestId, result)
+
+
+def _stored_signal_json(signal) -> dict:
+    return {
+        "investorRef": signal.investor_ref, "signal": signal.signal, "strength": signal.strength,
+        "evidence": signal.evidence, "category": signal.category,
+        "generatedAt": signal.generated_at.isoformat() if signal.generated_at else None,
+    }
+
+
+@router.get("/signals")
+async def list_intent_signals(
+    tenant_id: str,
+    agent: Annotated[Agent | None, Depends(require_worker_caller)],
+    activity: Annotated[InvestorActivityStore, Depends(get_investor_activity_store)],
+    signals: Annotated[IntentSignalStore, Depends(get_intent_signals)],
+    investorRef: str | None = None,
+    strength: str | None = Query(default=None, pattern="^(high|medium|low)$"),
+    q: str | None = Query(default=None, max_length=200),
+    limit: int = Query(default=50, ge=1, le=MAX_ACTIVITY_PAGE),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    """Read the intent signals Qiko generated: every investor's (omit `investorRef`) or one
+    investor's (JM2-1133).
+
+    A read, not a generation: signals are persisted when they are drafted, so opening the admin
+    panel does not spend model budget per row. The one exception is a single investor with no
+    stored signals yet but enough activity to support them - drafted once, on demand, then
+    stored, so the panel is never blank for an investor who has simply not been processed yet.
+
+    When one investor has no signals AND their activity is too sparse to support any, the
+    response says so explicitly (`insufficientActivity: true` plus the thresholds), because an
+    empty list alone cannot tell "nothing to say yet" from "something is broken".
+    """
+    if investorRef is None:
+        found, total = await signals.search(tenant_id, strength=strength, q=q, limit=limit,
+                                            offset=offset)
+        return {
+            "signals": [_stored_signal_json(s) for s in found],
+            "total": total, "limit": limit, "offset": offset,
+        }
+
+    stored = await signals.list_for_investor(tenant_id, investorRef)
+    if not stored:
+        events = await activity.list_for_investor(tenant_id, investorRef)
+        aggregated = aggregate_activity(events)
+        if not has_signal_worthy_evidence(aggregated):
+            return {
+                "investorRef": investorRef, "signals": [], "insufficientActivity": True,
+                "reason": (
+                    "not enough repeated engagement to support a signal: needs at least "
+                    f"{MIN_PROPERTY_VISITS_FOR_SIGNAL} visits to one property or "
+                    f"{MIN_CALCULATOR_VISITS_FOR_SIGNAL} uses of one calculator step"
+                ),
+                "activityEventCount": len(events),
+            }
+        request = IntentSignalRequest(
+            requestId=f"admin-read-{uuid4()}", investorRef=investorRef, activity=aggregated)
+        config = agent.config if agent is not None else None
+        result = await asyncio.to_thread(generate_intent_signals, request, get_provider(), config)
+        if result is None:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, "could not draft intent signals")
+        await signals.replace_for_investor(tenant_id, investorRef, result.signals)
+        stored = await signals.list_for_investor(tenant_id, investorRef)
+
+    return {
+        "investorRef": investorRef,
+        "signals": [_stored_signal_json(s) for s in stored],
+        "insufficientActivity": False,
+    }
 
 
 def _insight_response(request_id: str, result: PropertyInsightResult | None) -> dict:

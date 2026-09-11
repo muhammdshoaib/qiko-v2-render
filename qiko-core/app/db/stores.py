@@ -30,6 +30,7 @@ from app.db.models import CrmAction as CrmActionRow
 from app.db.models import FinanceChatMessage as FinanceChatMessageRow
 from app.db.models import FinanceFile as FinanceFileRow
 from app.db.models import InvestorActivityEvent as InvestorActivityEventRow
+from app.db.models import JmIntentSignal as JmIntentSignalRow
 from app.db.models import Lead as LeadRow
 from app.db.models import Message as MessageRow
 from app.db.models import MfaBackupCode as MfaBackupCodeRow
@@ -52,7 +53,13 @@ from app.db.models import PolicyRelease as PolicyReleaseRow
 from app.db.models import RfpPack as RfpPackRow
 
 from app.modules.joseph_mews.generations import GenerationKind, GenerationOutcomeCounts
-from app.modules.joseph_mews.activity import ActivityEvent
+from app.modules.joseph_mews.activity import (
+    ACTIVITY_SORTS,
+    DEFAULT_ACTIVITY_SORT,
+    ActivityEvent,
+    IntentSignal,
+    StoredIntentSignal,
+)
 from app.modules.channels.slack_store import (
     DEFAULT_MESSAGE_LIMIT,
     SlackMessage,
@@ -323,6 +330,129 @@ class SqlInvestorActivityStore:
                 for r in rows
             ]
 
+    async def search(
+        self, tenant: str, *, investor_ref: str | None = None, q: str | None = None,
+        category: str | None = None, since: datetime | None = None, until: datetime | None = None,
+        sort: str = DEFAULT_ACTIVITY_SORT, limit: int = 50, offset: int = 0,
+    ) -> tuple[list[ActivityEvent], int]:
+        conditions = [InvestorActivityEventRow.tenant_id == tenant]
+        if investor_ref is not None:
+            conditions.append(InvestorActivityEventRow.investor_ref == investor_ref)
+        if category is not None:
+            conditions.append(InvestorActivityEventRow.category == category)
+        if since is not None:
+            conditions.append(InvestorActivityEventRow.occurred_at >= since)
+        if until is not None:
+            conditions.append(InvestorActivityEventRow.occurred_at <= until)
+        if q:
+            # ILIKE over the readable columns only, never investor_ref: it is an opaque token, so
+            # matching it would surface unrelated investors' events for a lucky substring.
+            like = f"%{q}%"
+            conditions.append(or_(
+                InvestorActivityEventRow.label.ilike(like),
+                InvestorActivityEventRow.category.ilike(like),
+                InvestorActivityEventRow.property_name.ilike(like),
+                InvestorActivityEventRow.location.ilike(like),
+                InvestorActivityEventRow.postcode.ilike(like),
+            ))
+        column_name, descending = ACTIVITY_SORTS.get(sort, ACTIVITY_SORTS[DEFAULT_ACTIVITY_SORT])
+        column = getattr(InvestorActivityEventRow, column_name)
+        # id as the tiebreaker so a page boundary is stable: two events in the same millisecond
+        # would otherwise be free to swap places between two requests and duplicate/skip a row.
+        order = (column.desc(), InvestorActivityEventRow.id.desc()) if descending else (
+            column.asc(), InvestorActivityEventRow.id.asc())
+        async with self.sessionmaker() as s:
+            total = (await s.execute(
+                select(func.count()).select_from(InvestorActivityEventRow).where(*conditions)
+            )).scalar_one()
+            rows = (await s.execute(
+                select(InvestorActivityEventRow).where(*conditions)
+                .order_by(*order).limit(limit).offset(offset)
+            )).scalars().all()
+            return [
+                ActivityEvent(
+                    category=r.category, label=r.label, property_name=r.property_name,
+                    location=r.location, postcode=r.postcode, occurred_at=r.occurred_at,
+                    investor_ref=r.investor_ref,
+                )
+                for r in rows
+            ], total
+
+    async def investor_refs(self, tenant: str) -> list[str]:
+        async with self.sessionmaker() as s:
+            return list((await s.execute(
+                select(InvestorActivityEventRow.investor_ref)
+                .where(InvestorActivityEventRow.tenant_id == tenant)
+                .distinct().order_by(InvestorActivityEventRow.investor_ref)
+            )).scalars().all())
+
+
+@dataclass
+class SqlIntentSignalStore:
+    """Persistent twin of joseph_mews.activity.InMemoryIntentSignalStore (JM2-1133)."""
+
+    sessionmaker: async_sessionmaker[AsyncSession]
+
+    async def replace_for_investor(
+        self, tenant: str, investor_ref: str, signals: list[IntentSignal],
+    ) -> None:
+        now = datetime.now(timezone.utc)
+        async with self.sessionmaker() as s, s.begin():
+            # Delete + insert in ONE transaction: an admin reading mid-regeneration sees either
+            # the old set or the new one, never an empty list for an investor who has signals.
+            await s.execute(delete(JmIntentSignalRow).where(
+                JmIntentSignalRow.tenant_id == tenant,
+                JmIntentSignalRow.investor_ref == investor_ref,
+            ))
+            for signal in signals:
+                s.add(JmIntentSignalRow(
+                    tenant_id=tenant, investor_ref=investor_ref, signal=signal.signal,
+                    strength=signal.strength, evidence=signal.evidence or "",
+                    category=signal.category, generated_at=now,
+                ))
+
+    async def list_for_investor(self, tenant: str, investor_ref: str) -> list[StoredIntentSignal]:
+        async with self.sessionmaker() as s:
+            rows = (await s.execute(
+                select(JmIntentSignalRow).where(
+                    JmIntentSignalRow.tenant_id == tenant,
+                    JmIntentSignalRow.investor_ref == investor_ref,
+                ).order_by(JmIntentSignalRow.id)
+            )).scalars().all()
+            return [_to_stored_signal(r) for r in rows]
+
+    async def search(
+        self, tenant: str, *, strength: str | None = None, q: str | None = None,
+        limit: int = 50, offset: int = 0,
+    ) -> tuple[list[StoredIntentSignal], int]:
+        conditions = [JmIntentSignalRow.tenant_id == tenant]
+        if strength is not None:
+            conditions.append(JmIntentSignalRow.strength == strength)
+        if q:
+            like = f"%{q}%"
+            conditions.append(or_(
+                JmIntentSignalRow.signal.ilike(like),
+                JmIntentSignalRow.evidence.ilike(like),
+                JmIntentSignalRow.category.ilike(like),
+            ))
+        async with self.sessionmaker() as s:
+            total = (await s.execute(
+                select(func.count()).select_from(JmIntentSignalRow).where(*conditions)
+            )).scalar_one()
+            rows = (await s.execute(
+                select(JmIntentSignalRow).where(*conditions)
+                .order_by(JmIntentSignalRow.generated_at.desc(), JmIntentSignalRow.id.desc())
+                .limit(limit).offset(offset)
+            )).scalars().all()
+            return [_to_stored_signal(r) for r in rows], total
+
+
+def _to_stored_signal(row: JmIntentSignalRow) -> StoredIntentSignal:
+    return StoredIntentSignal(
+        investor_ref=row.investor_ref, signal=row.signal, strength=row.strength,
+        evidence=row.evidence or "", category=row.category, generated_at=row.generated_at,
+    )
+
 
 @dataclass
 class SqlJmGenerationStore:
@@ -399,6 +529,16 @@ class SqlJmGenerationStore:
                 stmt = stmt.where(JmGeneration.property_name == property_name)
             return (await s.execute(
                 stmt.order_by(JmGeneration.created_at.desc()).limit(1))).scalar_one_or_none()
+
+    async def latest_portfolio_insight(self, tenant: str, investor_ref: str) -> dict | None:
+        async with self.sessionmaker() as s:
+            return (await s.execute(
+                select(JmGeneration.result)
+                .where(JmGeneration.tenant_id == tenant,
+                       JmGeneration.kind == str(GenerationKind.portfolio_insight),
+                       JmGeneration.investor_ref == investor_ref,
+                       JmGeneration.result.is_not(None))
+                .order_by(JmGeneration.created_at.desc()).limit(1))).scalar_one_or_none()
 
 
 @dataclass

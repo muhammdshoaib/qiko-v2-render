@@ -72,7 +72,10 @@ from app.modules.admin.router import router as admin_router
 from app.modules.admin.support import router as admin_support_router
 from app.modules.agents.router import router as agents_router
 from app.modules.agents.service import AgentService
-from app.modules.joseph_mews.activity import InMemoryInvestorActivityStore
+from app.modules.joseph_mews.activity import (
+    InMemoryIntentSignalStore,
+    InMemoryInvestorActivityStore,
+)
 from app.modules.joseph_mews.generations import InMemoryGenerationStore
 from app.modules.audit.service import InMemoryAuditStore
 from app.modules.ai.caps import CostCapExceeded, CostGuard, InMemoryCostCapStore
@@ -153,6 +156,7 @@ async def lifespan(app: FastAPI):
             SqlFinanceFileStore,
             SqlIngestFilterSettingStore,
             SqlIngestionSourceStore,
+            SqlIntentSignalStore,
             SqlInvestorActivityStore,
             SqlJmGenerationStore,
             SqlLeadStore,
@@ -240,6 +244,8 @@ async def lifespan(app: FastAPI):
         # Generations keyed by requestId: idempotency, outcome reporting and GET /insights/property
         # all need one to outlive the process that made it.
         app.state.jm_generations = SqlJmGenerationStore(sm)
+        # Signals persisted so the admin panel lists them instead of redrafting (JM2-1133).
+        app.state.jm_intent_signals = SqlIntentSignalStore(sm)
         app.state.rfp_packs = RfpPackService(store=SqlRfpPackStore(sm))
         app.state.requirements = RequirementService(store=SqlRequirementStore(sm))
         app.state.pack_answers = PackAnswerService(store=SqlPackAnswerStore(sm))
@@ -497,6 +503,7 @@ def create_app() -> FastAPI:
     if not get_settings().use_db_stores:
         app.state.investor_activity = InMemoryInvestorActivityStore()
         app.state.jm_generations = InMemoryGenerationStore()
+        app.state.jm_intent_signals = InMemoryIntentSignalStore()
     # Generic in-app notification inbox (reusable across verticals) + the SI trigger wrapper.
     app.state.ai_usage = InMemoryUsageStore()
     app.state.cost_caps = InMemoryCostCapStore()
