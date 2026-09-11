@@ -230,6 +230,43 @@ async def test_deploy_succeeded_never_produces_the_silent_discrepancy(store, eng
 
 
 @pytest.mark.asyncio
+async def test_deploy_failed_is_not_silent_once_a_later_slack_message_exists_anywhere(store, engine):
+    await store.add(_signal(
+        source="github", kind="deploy_failed", external_id="deploy-1",
+        container="acme/repo", actor="dev",
+        title="Deploy Preprod on preprod: failure", body="",
+        occurred_at=T0 - timedelta(hours=2)))
+    await store.add(_signal(
+        source="slack", external_id="s1", container="T9/C9",
+        title="on it", body="on it, investigating",
+        occurred_at=T0 - timedelta(hours=1)))
+
+    result = await engine.analyze("t1", "w1", now=T0)
+
+    matches = [d for d in result if d.discrepancy_class == "deploy_failed_silently"]
+    assert matches == []
+
+
+@pytest.mark.asyncio
+async def test_deploy_failed_is_not_silent_once_a_later_qiko_track_signal_exists_anywhere(store, engine):
+    await store.add(_signal(
+        source="github", kind="deploy_failed", external_id="deploy-1",
+        container="acme/repo", actor="dev",
+        title="Deploy Preprod on preprod: failure", body="",
+        occurred_at=T0 - timedelta(hours=2)))
+    await store.add(_signal(
+        source="qiko_track", kind="ticket_created", external_id="qt1",
+        container="OPS", ref="OPS-42",
+        title="Incident: preprod deploy failure", body="",
+        occurred_at=T0 - timedelta(hours=1)))
+
+    result = await engine.analyze("t1", "w1", now=T0)
+
+    matches = [d for d in result if d.discrepancy_class == "deploy_failed_silently"]
+    assert matches == []
+
+
+@pytest.mark.asyncio
 async def test_project_filter_excludes_other_projects(store, engine):
     await store.add(_signal(
         source="qiko_track", kind="ticket_moved", external_id="qt1",

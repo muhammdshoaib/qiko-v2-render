@@ -230,7 +230,7 @@ class DiscrepancyEngine:
             results.extend(self._ci_red_but_claimed_green(ref, data))
 
         results.extend(self._discussed_never_tracked(slack_signals, qt_signals))
-        results.extend(self._deploy_failed_silently(github_signals))
+        results.extend(self._deploy_failed_silently(github_signals, slack_signals, qt_signals))
         results = sorted(results, key=lambda d: d.evidence_at or d.claimed_at or now, reverse=True)
 
         if project_keys:
@@ -440,8 +440,16 @@ class DiscrepancyEngine:
             ))
         return results
 
-    def _deploy_failed_silently(self, github_signals: list[Signal]) -> list[Discrepancy]:
-        """A deploy failed and no activity (of any kind) has followed in that repo since."""
+    def _deploy_failed_silently(self, github_signals: list[Signal],
+                                slack_signals: list[Signal],
+                                qt_signals: list[Signal]) -> list[Discrepancy]:
+        """A deploy failed and no activity (of any kind) has followed since.
+
+        GitHub follow-up is scoped to the same repo/container, since GitHub signals
+        span many unrelated repos for one worker. A deploy failure is a team-wide
+        event though, so any Slack or Qiko Track activity afterward counts as
+        follow-up regardless of which channel or project it landed in.
+        """
         by_repo: dict[str, list[Signal]] = {}
         for signal in github_signals:
             by_repo.setdefault(signal.container, []).append(signal)
@@ -452,8 +460,14 @@ class DiscrepancyEngine:
             if not failures:
                 continue
             latest_failure = max(failures, key=lambda s: s.occurred_at)
-            after = [s for s in signals if s.occurred_at > latest_failure.occurred_at]
-            if after:
+            after_github = [s for s in signals if s.occurred_at > latest_failure.occurred_at]
+            if after_github:
+                continue
+            after_slack = [s for s in slack_signals if s.occurred_at > latest_failure.occurred_at]
+            if after_slack:
+                continue
+            after_qt = [s for s in qt_signals if s.occurred_at > latest_failure.occurred_at]
+            if after_qt:
                 continue
             meta = _class_meta("deploy_failed_silently")
             results.append(Discrepancy(
@@ -464,7 +478,7 @@ class DiscrepancyEngine:
                 title="A deploy failed and nothing has happened since",
                 summary=(
                     f"{latest_failure.title} on {_date(latest_failure.occurred_at)}. "
-                    "No commit, PR, ticket or Slack activity in this repo since."
+                    "No commit, PR, ticket or Slack activity since."
                 ),
                 claimed_at=None,
                 evidence_at=latest_failure.occurred_at,
