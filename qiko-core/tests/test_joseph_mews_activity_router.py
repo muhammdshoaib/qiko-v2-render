@@ -424,3 +424,115 @@ def test_get_signals_requires_the_api_key(client, monkeypatch):
     response = client.get("/api/v1/tenants/joseph-mews/signals",
                           headers={"X-Tenant-Id": "joseph-mews"})
     assert response.status_code == 403
+
+
+# --- One response for the admin's per-user page (JM2-1136) -------------------------------------
+# The client's schema is explicit: "Both blocks come from the same Qiko admin API response for
+# that user." Their per-user page shows screen visit counts, property visits by
+# name/location/postcode, calculator step counts, and the signal cards beside them.
+
+
+def test_investor_detail_returns_activity_and_signals_in_one_response(client, monkeypatch):
+    for _ in range(3):
+        _record(client, monkeypatch, "inv-a", category="property_visit", label="PropertyDetail",
+                propertyName="Marina Heights", location="Manchester", postcode="M1 1AA")
+    _record(client, monkeypatch, "inv-a", category="screen", label="Dashboard")
+    _record(client, monkeypatch, "inv-a", category="calculator_step", label="projection")
+    _signal_provider(monkeypatch, [
+        {"signal": "Interested in Manchester", "strength": "high", "evidence": "viewed 3x"}])
+
+    response = client.get("/api/v1/tenants/joseph-mews/investors/inv-a",
+                          headers=_admin_headers(monkeypatch))
+    assert response.status_code == 200
+    body = response.json()
+    assert body["investorRef"] == "inv-a"
+    assert body["signals"][0]["signal"] == "Interested in Manchester"
+
+    activity = body["activity"]
+    assert activity["screens"] == [{"label": "Dashboard", "visitCount": 1}]
+    assert activity["calculatorSteps"] == [{"step": "projection", "visitCount": 1}]
+    assert activity["properties"] == [{
+        "propertyName": "Marina Heights", "location": "Manchester", "postcode": "M1 1AA",
+        "visitCount": 3,
+    }]
+    assert activity["totalEvents"] == 5
+
+
+def test_investor_detail_counts_reconcile_with_the_evidence_on_the_signal(client, monkeypatch):
+    """The counts and the signal come from the same aggregation, so an admin can always tie a
+    signal card back to the numbers rendered beside it."""
+    for _ in range(4):
+        _record(client, monkeypatch, "inv-a", category="property_visit", label="PropertyDetail",
+                propertyName="Marina Heights", location="Manchester", postcode="M1 1AA")
+
+    captured: list[str] = []
+
+    class Provider:
+        def generate(self, prompt, **_kwargs):
+            captured.append(prompt)
+            return type("R", (), {"text": json.dumps({"signals": [
+                {"signal": "s", "strength": "high", "evidence": "e"}]})})()
+
+    import app.modules.joseph_mews.router as router_module
+    monkeypatch.setattr(router_module, "get_provider", lambda: Provider())
+
+    body = client.get("/api/v1/tenants/joseph-mews/investors/inv-a",
+                      headers=_admin_headers(monkeypatch)).json()
+    assert body["activity"]["properties"][0]["visitCount"] == 4
+    assert "4" in captured[0] and "Marina Heights" in captured[0]
+
+
+def test_investor_detail_orders_counts_by_engagement(client, monkeypatch):
+    """Busiest first: an admin scanning the page wants the strongest behaviour at the top."""
+    for _ in range(3):
+        _record(client, monkeypatch, "inv-a", category="screen", label="Explore")
+    _record(client, monkeypatch, "inv-a", category="screen", label="Dashboard")
+    for _ in range(2):
+        _record(client, monkeypatch, "inv-a", category="screen", label="Documents")
+
+    body = client.get("/api/v1/tenants/joseph-mews/investors/inv-a",
+                      headers=_admin_headers(monkeypatch)).json()
+    assert [s["label"] for s in body["activity"]["screens"]] == \
+        ["Explore", "Documents", "Dashboard"]
+
+
+def test_investor_detail_says_when_there_is_not_enough_activity_for_a_signal(client, monkeypatch):
+    _record(client, monkeypatch, "inv-a", category="screen", label="Dashboard")
+    Provider = _signal_provider(monkeypatch, [{"signal": "x", "strength": "high", "evidence": "y"}])
+
+    body = client.get("/api/v1/tenants/joseph-mews/investors/inv-a",
+                      headers=_admin_headers(monkeypatch)).json()
+    assert body["signals"] == [] and body["insufficientActivity"] is True
+    assert body["activityEventCount"] == 1
+    # The log still renders: no signal yet does not mean no activity to show.
+    assert body["activity"]["totalEvents"] == 1
+    assert Provider.calls == 0
+
+
+def test_investor_detail_recent_events_are_newest_first_and_can_be_skipped(client, monkeypatch):
+    for index in range(3):
+        _record(client, monkeypatch, "inv-a", category="screen", label=f"Screen{index}")
+
+    headers = _admin_headers(monkeypatch)
+    body = client.get("/api/v1/tenants/joseph-mews/investors/inv-a", headers=headers).json()
+    assert len(body["activity"]["recent"]) == 3
+
+    counts_only = client.get("/api/v1/tenants/joseph-mews/investors/inv-a",
+                             params={"recentLimit": 0}, headers=headers).json()
+    assert counts_only["activity"]["recent"] == []
+    assert counts_only["activity"]["totalEvents"] == 3  # the count is unaffected
+
+
+def test_investor_detail_never_exposes_a_property_id(client, monkeypatch):
+    _record(client, monkeypatch, "inv-a", category="property_visit", label="PropertyDetail",
+            propertyName="Marina Heights", location="Manchester", postcode="M1 1AA")
+    body = client.get("/api/v1/tenants/joseph-mews/investors/inv-a",
+                      headers=_admin_headers(monkeypatch)).text
+    assert "propertyId" not in body
+
+
+def test_investor_detail_requires_the_api_key(client, monkeypatch):
+    _admin_headers(monkeypatch)
+    response = client.get("/api/v1/tenants/joseph-mews/investors/inv-a",
+                          headers={"X-Tenant-Id": "joseph-mews"})
+    assert response.status_code == 403

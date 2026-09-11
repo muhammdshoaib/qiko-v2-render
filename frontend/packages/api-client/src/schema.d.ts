@@ -5252,6 +5252,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tenants/{tenant_id}/investors/{investor_ref}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Investor Detail
+         * @description Everything the admin panel's per-user page shows, in one response (JM2-1136).
+         *
+         *     The client's schema is explicit that both blocks - the activity log and the intent signals -
+         *     come from the same Qiko response for that user. Two endpoints would make the page render in
+         *     two stages and let the signals describe a different moment than the log shown beside them.
+         *
+         *     `activity.screens`, `activity.properties` and `activity.calculatorSteps` are the counted view
+         *     the page actually displays. Counts, not raw rows: "viewed Marina Heights 5 times" is the
+         *     behaviour an admin reads, and it is the same aggregation the signal generation is grounded
+         *     in, so the evidence on a signal card always reconciles with the numbers next to it.
+         *
+         *     `activity.recent` carries the underlying events for the log panel, newest first. Pass
+         *     `recentLimit=0` to skip them when only the counts are needed.
+         */
+        get: operations["get_investor_detail_api_v1_tenants__tenant_id__investors__investor_ref__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tenants/{tenant_id}/outcomes/summary": {
         parameters: {
             query?: never;
@@ -20005,6 +20037,45 @@ export interface operations {
                 "application/json": components["schemas"]["OutcomeReport"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_investor_detail_api_v1_tenants__tenant_id__investors__investor_ref__get: {
+        parameters: {
+            query?: {
+                recentLimit?: number;
+            };
+            header?: {
+                "x-api-key"?: string | null;
+                "x-tenant-id"?: string | null;
+            };
+            path: {
+                tenant_id: string;
+                investor_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
