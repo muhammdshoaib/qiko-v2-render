@@ -1,8 +1,27 @@
 import os
 import sqlite3
+from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
+
+
+def test_every_revision_id_fits_the_real_alembic_version_column():
+    # alembic_version.version_num is varchar(32) on Postgres (alembic's own default schema,
+    # never widened by this codebase). SQLite (used by every other test in this file) does not
+    # enforce VARCHAR length, so a too-long revision id passes every local/CI migration test and
+    # only fails against the real production database, with a StringDataRightTruncation error
+    # from `alembic upgrade head` - which is exactly what happened with the original
+    # "0051_opportunity_pipeline_verdict" (33 chars) before it was renamed. This test makes that
+    # class of bug fail locally instead of on a live deploy.
+    root = Path(__file__).parents[1]
+    config = Config(str(root / "alembic.ini"))
+    config.set_main_option("script_location", str(root / "alembic"))
+    scripts = ScriptDirectory.from_config(config)
+    too_long = {rev.revision: len(rev.revision) for rev in scripts.walk_revisions()
+                if len(rev.revision) > 32}
+    assert too_long == {}
 
 
 def test_alembic_upgrade_head_creates_schema(tmp_path):
