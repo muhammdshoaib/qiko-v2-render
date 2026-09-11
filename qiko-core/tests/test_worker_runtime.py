@@ -148,3 +148,36 @@ async def test_scan_due_sources_enqueues_the_agentic_pipeline_for_a_review_notic
     persisted = await SqlPipelineRunStore(sessionmaker).get("acme", "agent-1", kwargs["run_id"])
     assert persisted is not None
     assert persisted.subject == "Risk advisory and audit services"
+
+
+# --- sync_intelligence_signals: the arq wrapper around app.modules.intelligence.scheduler ------
+#
+# The sweep logic itself (due-ness, per-source gating, failure isolation) is already covered by
+# test_intelligence_scheduler.py. This proves the arq entrypoint actually builds a working
+# SourceCatalog/AgentService/SqlSignalStore/KnowledgeService from ctx["sessionmaker"] and calls
+# sync_stale_signals, the same wiring app.main._build_intelligence_catalog() and
+# app.state.knowledge use for the API.
+async def test_sync_intelligence_signals_wires_catalog_and_agents():
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+
+    from app.db.base import Base
+    from app.db.stores import SqlAgentStore
+    from app.modules.agents.service import Agent
+    from app.tasks import worker
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
+
+    # An intelligence agent with no source credentials configured: nothing is due to sync, but
+    # it must still be considered, proving list_all()/AgentService really ran against this DB.
+    await SqlAgentStore(sessionmaker).add(
+        Agent(id="agent-1", tenant="acme", name="Intel", atype="intelligence", status="ready"))
+
+    ctx = {"sessionmaker": sessionmaker}
+    result = await worker.sync_intelligence_signals(ctx)
+
+    assert "considered" in result
+    assert result["considered"] == 1
+    assert result["synced"] == 0

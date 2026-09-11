@@ -120,6 +120,24 @@ async def send_deadline_reminders(ctx):  # pragma: no cover - invoked by the arq
     return await sales_scheduler.send_deadline_reminders(service, agents=agents)
 
 
+async def sync_intelligence_signals(ctx):  # pragma: no cover - invoked by the arq cron runtime
+    # Reuses the exact same catalog/knowledge wiring as app.main's own lifespan (durable branch):
+    # _build_intelligence_catalog() and KnowledgeService(store=SqlVectorStore(...)) so the cron
+    # sweep refreshes GitHub/Qiko Track signals through the same source of truth the API uses.
+    from app.db.stores import SqlAgentStore, SqlSignalStore, SqlVectorStore
+    from app.main import _build_intelligence_catalog
+    from app.modules.agents.service import AgentService
+    from app.modules.intelligence.scheduler import sync_stale_signals
+    from app.modules.knowledge.service import KnowledgeService
+
+    sessionmaker = ctx["sessionmaker"]
+    catalog = _build_intelligence_catalog()
+    agents = AgentService(store=SqlAgentStore(sessionmaker))
+    signal_store = SqlSignalStore(sessionmaker)
+    knowledge = KnowledgeService(store=SqlVectorStore(sessionmaker))
+    return await sync_stale_signals(catalog, signal_store, agents=agents, knowledge=knowledge)
+
+
 async def erase_audit_subject(ctx: dict, **kwargs) -> int:  # pragma: no cover - worker runtime
     from app.db.stores import SqlAuditStore
 
@@ -179,6 +197,10 @@ CRON_JOBS = [
     cron(scan_due_sources, name="sales_intel:scan_due_sources", second=0, unique=True),
     # dailyAt 08:00 (idg-sales notify-deadlines parity)
     cron(send_deadline_reminders, name="sales_intel:send_deadline_reminders", hour=8, minute=0, unique=True),
+    # every 15 minutes, gated by sync_stale_signals's own per-source due-ness (default 60-minute
+    # interval) -- same tick-often-let-due-ness-decide relationship scan_due_sources has above.
+    cron(sync_intelligence_signals, name="intelligence:sync_stale_signals",
+         minute=set(range(0, 60, 15)), unique=True),
     cron(purge_expired_signups, name="identity:purge_expired_signups", hour=2, minute=15, unique=True),
     # Daily, off-peak. Nothing enforced the retention the model docstring claimed, so the trail grew
     # personal data indefinitely while asserting that it did not.
