@@ -187,9 +187,17 @@ class InteraktClient:
         """JM2-1026: Get Users is the only read-only, side-effect-free call in Interakt's public
         API (send_template above sends a real WhatsApp message, so it can never double as a
         connection test) - limit=1 purely to keep the check cheap, the response body is otherwise
-        unused. Raises InteraktAuthError on a 401/403 so the credentials route can turn that into
-        an actionable 422 rather than a raw 5xx from a bad key."""
-        r = self._c.get("/apis/users/", params={"offset": 0, "limit": 1})
+        unused. Confirmed against a real key (not just the docs, which undersell how easy this is
+        to get wrong): despite the name, it is a POST, not a GET, and a filters list is mandatory
+        - Interakt 400s with an unrelated-looking error ("'NoneType' object has no attribute
+        'update'") if it's omitted, which would otherwise misreport a perfectly valid key as
+        broken. The far-future "gt" filter matches zero contacts by construction, every account's
+        WhatsApp history necessarily predates 2099, so this never touches or lists real contacts.
+        Raises InteraktAuthError on a 401/403 so the credentials route can turn that into an
+        actionable 422 rather than a raw 5xx from a bad key."""
+        r = self._c.post("/apis/users/", params={"offset": 0, "limit": 1}, json={
+            "filters": [{"trait": "created_at_utc", "op": "gt", "val": "2099-01-01T00:00:00.000Z"}],
+        })
         if r.status_code in (401, 403):
             raise InteraktAuthError("Interakt rejected this API key")
         r.raise_for_status()
