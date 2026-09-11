@@ -1,35 +1,42 @@
-"""JM2-1131 follow-ups, all three found during integration rather than by the suite.
+"""JM2-1131 follow-ups, found during integration rather than by the suite.
 
-1. The SQL activity store was constructed and then overwritten by an in-memory one, so every
-   event the app sent was lost on redeploy.
-2. Outcome reporting 404'd for anything generated before the last restart, because the lookup
-   went through an in-memory cache.
-3. There was no way to read a generated insight back at all.
+1. Outcome reporting 404'd for anything generated before the last restart, because the lookup
+   went through a module-level in-memory cache. Real, and the error Shoaib reported.
+2. There was no way to read a generated insight back at all. Real.
+3. A third was claimed in the original commit and was WRONG: that the SQL activity store was
+   being overwritten by an in-memory one. It was not. create_app() runs at import and lifespan()
+   at startup, so the SQL store set in lifespan() won and preprod was always on Postgres. That
+   claim came from importing app.main in a verification script, which runs create_app() and never
+   lifespan(), and then reading the harness's own state as the server's. The store-ordering test
+   below is kept, rewritten to assert the invariant that is actually worth holding.
 """
-import app.main as main_module
 from app.core.config import Settings
 from app.modules.joseph_mews.generations import GenerationKind, InMemoryGenerationStore
 
 
-def test_dev_defaults_do_not_overwrite_the_sql_stores(monkeypatch):
-    """The regression that started this. `create_app()` assigned the in-memory activity store
-    unconditionally, several hundred lines BELOW the SQL wiring, so it always won: preprod ran
-    with use_db_stores=True and an in-memory store, and nothing failed loudly. Anything that
-    looks like a dev fallback must be guarded by the same condition as the real thing."""
-    source = (main_module.__file__ or "")
+def test_dev_store_defaults_are_guarded_rather_than_unconditional():
+    """Not a regression test: nothing regressed. An invariant worth holding anyway.
+
+    create_app() used to assign the in-memory stores unconditionally and rely on lifespan()
+    running later to replace them with the Postgres-backed ones. That worked, and preprod was
+    always on Postgres. But it means the file reads as though the in-memory store wins, and it
+    genuinely does win for any caller that builds the app without running the lifespan, which is
+    how I misdiagnosed this in the first place.
+
+    Guarding both on the same condition as the real wiring makes which store reaches production
+    independent of function-call order."""
+    import app.main as main_module
+
+    source = main_module.__file__ or ""
     assert source
     text = open(source).read()
 
-    sql_at = text.index("app.state.investor_activity = SqlInvestorActivityStore(sm)")
     mem_at = text.index("app.state.investor_activity = InMemoryInvestorActivityStore()")
-    assert sql_at < mem_at, "expected the SQL wiring first, then a guarded dev fallback"
-
-    # The dev fallback must sit inside a use_db_stores guard, not at function scope.
-    guard = text.rindex("if not get_settings().use_db_stores:", 0, mem_at)
-    between = text[guard:mem_at]
+    guard_at = text.rindex("if not get_settings().use_db_stores:", 0, mem_at)
+    between = text[guard_at:mem_at]
     assert "\n    app.state" not in between, (
-        "the in-memory fallback is not inside the use_db_stores guard, so it will overwrite the "
-        "SQL store again"
+        "the in-memory fallback is not inside the use_db_stores guard, so which store production "
+        "gets depends on create_app/lifespan ordering again"
     )
 
 

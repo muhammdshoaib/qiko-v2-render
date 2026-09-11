@@ -482,12 +482,18 @@ def create_app() -> FastAPI:
     app.state.assignments = AssignmentService()
     app.state.chat = ChatService()
     app.state.crm = CrmService(app.state.chat)
-    # Dev/test defaults only. These are set BEFORE the DB branch above can overwrite them, never
-    # after: an earlier version of this file assigned investor_activity here unconditionally,
-    # several hundred lines below the SQL wiring, so the in-memory store silently won even with
-    # use_db_stores=True. Every activity event the app sent was lost on redeploy, GET /activity
-    # kept returning [], and intent signals could never reach the 3-visit threshold that makes
-    # them generate. Keep dev fallbacks guarded by the same condition as the real thing.
+    # Dev/test defaults, guarded by the same condition as the real wiring in lifespan().
+    #
+    # These used to be assigned unconditionally here. That was NOT a live bug, contrary to what
+    # the commit that added this guard claimed: create_app() runs at import and lifespan() runs at
+    # startup, so the SQL stores set in lifespan() overwrote these anyway and preprod was always
+    # using Postgres. I diagnosed it backwards by importing app.main in a script, which runs
+    # create_app() and never lifespan(), then read my own harness's state as the server's.
+    #
+    # The guard stays because depending on function-call order for which store reaches production
+    # is a trap: it reads like the in-memory one wins, and it would in fact win for anything that
+    # builds the app without running the lifespan. Guarding is not a fix for a bug that existed,
+    # it removes the ambiguity.
     if not get_settings().use_db_stores:
         app.state.investor_activity = InMemoryInvestorActivityStore()
         app.state.jm_generations = InMemoryGenerationStore()
