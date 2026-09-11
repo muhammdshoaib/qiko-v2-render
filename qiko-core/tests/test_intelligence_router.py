@@ -305,6 +305,31 @@ def test_get_metrics_returns_empty_when_qiko_track_not_connected(client):
     assert r.json()["projects"] == {}
 
 
+def test_get_overview_returns_open_prs_and_ticket_rollup(client):
+    from datetime import datetime, timezone
+    from app.modules.intelligence.models import Signal
+
+    asyncio.run(client.app.state.intelligence_signal_store.add(Signal(
+        tenant="intelco", agent_id="w1", source="github", kind="pr_opened",
+        external_id="pr-42", container="acme/repo", actor="alice",
+        title="Add feature", body="", occurred_at=datetime(2026, 8, 18, tzinfo=timezone.utc),
+        ref="PR#42", url="https://github.com/acme/repo/pull/42",
+    )))
+
+    r = client.get("/api/v1/intelligence/agents/w1/overview", cookies=C)
+    assert r.status_code == 200
+    body = r.json()
+    assert "open_prs" in body and "in_progress_tickets" in body and "developers" in body
+    assert body["open_prs"][0]["ref"] == "PR#42"
+    assert body["open_prs"][0]["author"] == "alice"
+    assert body["developers"][0]["actor"] == "alice"
+
+
+def test_get_overview_requires_auth(client):
+    r = client.get("/api/v1/intelligence/agents/w1/overview")
+    assert r.status_code == 401
+
+
 def test_preview_qiko_track_requires_editor(client):
     r = client.get("/api/v1/intelligence/agents/w1/sources/qiko_track/preview", cookies=auth_cookies("intelco", "viewer"))
     assert r.status_code == 403
