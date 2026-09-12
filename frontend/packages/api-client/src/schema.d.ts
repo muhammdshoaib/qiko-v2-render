@@ -6098,6 +6098,8 @@ export interface components {
              * @default
              */
             project_name: string;
+            /** Property Id */
+            property_id?: string | null;
             /** Repo Allowlist */
             repo_allowlist?: string[];
             /**

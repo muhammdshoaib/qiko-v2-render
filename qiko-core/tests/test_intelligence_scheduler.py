@@ -198,6 +198,23 @@ async def test_sync_stale_signals_survives_a_failing_source_and_isolates_it():
     assert {agent_id for _, agent_id, _ in connector.calls} == {"broken", "healthy"}
 
 
+async def test_sync_stale_signals_syncs_a_connected_ga4_source():
+    catalog = SourceCatalog()
+    connector = _FakeConnector()
+    connector.key = "ga4"
+    catalog.register(key="ga4", name="GA4", connector=connector)
+    agent = _FakeAgent(tenant="acme", id="a1", config={"ga4_credentials_added": True})
+    agents = _FakeAgents([agent])
+    store = InMemorySignalStore()
+
+    summary = await sync_stale_signals(catalog, store, agents=agents)
+
+    assert len(connector.calls) == 1
+    tenant, agent_id, _since = connector.calls[0]
+    assert (tenant, agent_id) == ("acme", "a1")
+    assert summary["synced"] == 1
+
+
 async def test_sync_stale_signals_skips_qiko_track_without_a_base_url():
     """A manually-connected worker can have project_keys but an empty qiko_track_base_url; the
     gate must require base_url too, matching every other qiko_track readiness check in

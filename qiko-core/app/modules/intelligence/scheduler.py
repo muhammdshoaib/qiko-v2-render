@@ -121,6 +121,26 @@ async def sync_stale_signals(catalog: SourceCatalog, signal_store: SignalStore, 
                         "intelligence scheduler: qiko_track sync failed",
                         extra={"tenant": agent.tenant, "agent_id": agent.id})
 
+        if "ga4" in pollable and cfg.get("ga4_credentials_added"):
+            try:
+                due, since = await _is_signal_source_due(
+                    signal_store, agent.tenant, agent.id, source="ga4",
+                    interval_minutes=interval_minutes, now=now)
+                if due:
+                    await ingest_source(
+                        agent.tenant, agent.id, "ga4",
+                        {"property_id": cfg.get("ga4_property_id") or ""},
+                        "", catalog=catalog, signal_store=signal_store, knowledge=knowledge,
+                        since=since)
+                    synced += 1
+                else:
+                    skipped += 1
+            except Exception:  # noqa: BLE001 - one agent's failure must not abort the sweep
+                failed += 1
+                logger.exception(
+                    "intelligence scheduler: ga4 sync failed",
+                    extra={"tenant": agent.tenant, "agent_id": agent.id})
+
     summary = {"considered": considered, "synced": synced, "skipped": skipped, "failed": failed}
     logger.info("intelligence scheduler: sync sweep complete", extra=summary)
     return summary
