@@ -5173,6 +5173,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tenants/{tenant_id}/docs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tenant Docs
+         * @description Unauthenticated by necessity, harmless by construction: see shell.render's docstring.
+         *     The tenant check happens here too, so the page cannot be used to discover which tenants
+         *     exist.
+         */
+        get: operations["tenant_docs_api_v1_tenants__tenant_id__docs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tenants/{tenant_id}/insights/portfolio": {
         parameters: {
             query?: never;
@@ -5276,6 +5298,23 @@ export interface paths {
          *     `recentLimit=0` to skip them when only the counts are needed.
          */
         get: operations["get_investor_detail_api_v1_tenants__tenant_id__investors__investor_ref__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/tenants/{tenant_id}/openapi.json": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tenant Openapi */
+        get: operations["tenant_openapi_api_v1_tenants__tenant_id__openapi_json_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -19862,6 +19901,37 @@ export interface operations {
             };
         };
     };
+    tenant_docs_api_v1_tenants__tenant_id__docs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tenant_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_portfolio_insights_api_v1_tenants__tenant_id__insights_portfolio_get: {
         parameters: {
             query: {
@@ -20072,6 +20142,42 @@ export interface operations {
             path: {
                 tenant_id: string;
                 investor_ref: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    tenant_openapi_api_v1_tenants__tenant_id__openapi_json_get: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-api-key"?: string | null;
+                "x-tenant-id"?: string | null;
+            };
+            path: {
+                tenant_id: string;
             };
             cookie?: never;
         };

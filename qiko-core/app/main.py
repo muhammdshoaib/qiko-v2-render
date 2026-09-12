@@ -5,11 +5,13 @@ Modular monolith: each domain lives under app/modules/<name> and registers its o
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app import __version__
 from app.core.db import build_engine, build_sessionmaker, build_sync_engine, build_sync_sessionmaker
@@ -47,6 +49,7 @@ from app.modules.billing.payment_links import PaymentLinkService
 from app.modules.channels.digest_scheduler import DigestScheduler
 from app.modules.channels.interakt import InteraktGateway
 from app.modules.joseph_mews.jm_backend_client import HttpJmBackendClient, UnavailableJmBackendClient
+from app.modules.api_docs.router import router as api_docs_router
 from app.modules.joseph_mews.router import router as joseph_mews_router
 from app.modules.channels.sessions import ChannelSessionStore
 from app.modules.channels.slack_events import SlackEventHandler
@@ -638,8 +641,18 @@ def create_app() -> FastAPI:
               channels_router, excel_router, voice_router, signal_router, intelligence_router,
               public_chat_router, sources_router, twofa_router, onboarding_router, admin_org_router,
               batch_router, marketing_router, crm_router, sales_intelligence_router, finance_router,
-              notifications_router, consent_router, joseph_mews_router):
+              notifications_router, consent_router, joseph_mews_router,
+              api_docs_router):
         app.include_router(r, prefix="/api/v1")
+
+    # Swagger UI is served from disk, not a CDN: the CSP in Caddyfile allows scripts from
+    # 'self' only, so a CDN reference would silently never execute. Resolved from __file__
+    # rather than the working directory, which differs between the container and a local run.
+    app.mount(
+        "/api/v1/docs-assets",
+        StaticFiles(directory=Path(__file__).parent / "static" / "docs-assets"),
+        name="docs-assets",
+    )
     return app
 
 
