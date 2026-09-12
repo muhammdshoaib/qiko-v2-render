@@ -25,8 +25,17 @@
   // service-to-service credential, and the platform CSP permits inline script, so any
   // same-origin XSS would be able to read it back without the holder present. It stays in
   // this closure and dies with the page. The cost is retyping it after a reload.
+  // Keys get handed over in chat messages, which wrap them across lines, so a paste very
+  // often arrives with a space or newline in the middle. The first person to use this page
+  // hit exactly that and got "rejected" for a key that was in fact correct. A worker key is
+  // secrets.token_urlsafe output, so no whitespace can ever be part of it: strip all of it
+  // rather than make the reader spot a line break.
+  function apiKey() {
+    return keyField.value.replace(/\s+/g, "");
+  }
+
   function headers() {
-    return { "X-Api-Key": keyField.value, "X-Tenant-Id": tenant };
+    return { "X-Api-Key": apiKey(), "X-Tenant-Id": tenant };
   }
 
   function refreshWarning() {
@@ -39,14 +48,19 @@
 
   document.getElementById("load").addEventListener("click", function () {
     error.textContent = "";
-    if (!keyField.value) {
+    if (!apiKey()) {
       error.textContent = "A key is required.";
       return;
     }
     fetch(specUrl, { headers: headers() })
       .then(function (response) {
         if (response.status === 403) {
-          throw new Error("That key was rejected.");
+          throw new Error(
+            apiKey().length === 43
+              ? "That key was rejected. It may have been rotated since you were given it."
+              : "That key was rejected, and it is " + apiKey().length +
+                " characters rather than 43, so it looks truncated or joined with something."
+          );
         }
         if (!response.ok) {
           throw new Error("Could not load the contract (" + response.status + ").");
@@ -65,7 +79,7 @@
           // but that is a property of how it is initialised, not a guarantee.
           validatorUrl: null,
           requestInterceptor: function (request) {
-            request.headers["X-Api-Key"] = keyField.value;
+            request.headers["X-Api-Key"] = apiKey();
             request.headers["X-Tenant-Id"] = tenant;
             return request;
           },

@@ -159,3 +159,24 @@ def test_assets_are_served(client):
         response = client.get(f"/api/v1/docs-assets/{asset}")
         assert response.status_code == 200, asset
         assert response.content, asset
+
+
+def test_pasted_keys_survive_a_line_break(client):
+    """Keys are handed over in chat messages, which wrap them, so a paste commonly arrives
+    with whitespace in the middle. The first real user hit exactly that and was told their
+    correct key was rejected. A worker key is token_urlsafe output and can never contain
+    whitespace, so the page strips it rather than making the reader spot a line break."""
+    asset = client.get("/api/v1/docs-assets/docs-shell.js").text
+    assert 'replace(/\\s+/g, "")' in asset
+    # nothing on a request path may use the raw field value
+    for line in asset.splitlines():
+        if "X-Api-Key" in line:
+            assert "keyField.value" not in line, line
+
+
+def test_no_sourcemap_request_is_provoked(client):
+    """The upstream CSS points at a .map we do not vendor, so every visit with devtools open
+    logged a 404. A console error on a docs page reads as a broken page."""
+    css = client.get("/api/v1/docs-assets/swagger-ui.css").text
+    assert "sourceMappingURL" not in css
+    assert client.get("/api/v1/docs-assets/swagger-ui.css.map").status_code == 404

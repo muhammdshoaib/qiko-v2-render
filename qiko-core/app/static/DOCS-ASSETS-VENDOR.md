@@ -8,7 +8,7 @@
 | Vendored on | 2026-09-11 (JM2-1134) |
 
 ```
-40170f0ee859d17f92131ba707329a88a070e4f66874d11365e9a77d232f6117  swagger-ui.css
+0a1cb8b082687b16728122913354c52909a36582b449b1b54ff7a96e0477dc1e  swagger-ui.css
 c2e4a9ef08144839ff47c14202063ecfe4e59e70a4e7154a26bd50d880c88ba1  swagger-ui-bundle.js
 ```
 
@@ -40,6 +40,15 @@ separately approved action in this workspace.
 The hashes exist so an upgrade is a reviewable change rather than a silent one. Nothing
 verifies them automatically at runtime: the files are served from disk, so a change to them
 is a change to the diff, which is where it should be caught.
+
+## One deliberate modification
+
+`swagger-ui.css` has had its trailing `sourceMappingURL` comment removed. The upstream file
+points at `swagger-ui.css.map`, which is not vendored, so every visit with devtools open
+logged a 404 for it. A console error on a documentation page tells an integrating team that
+something is broken, which is the opposite of the point. Sourcemaps for a third-party bundle
+nobody here debugs are not worth the megabytes. The hash above is therefore of the modified
+file, not of the upstream one; refetching at a new version means reapplying this removal.
 
 ## Why this file sits outside the served directory
 
