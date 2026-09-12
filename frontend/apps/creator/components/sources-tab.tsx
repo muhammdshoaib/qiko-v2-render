@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Settings } from "lucide-react";
+import { Loader2, LineChart, Settings } from "lucide-react";
 import { Badge, Button, Card, CardContent, Dialog, Logo } from "@qiko/ui";
 import { type IntelligenceSource, getIntelligenceSourceConnection, listIntelligenceSources } from "@/lib/api";
-import { GithubForm, QikoTrackForm, SlackForm } from "./source-forms";
+import { GA4Form, GithubForm, QikoTrackForm, SlackForm } from "./source-forms";
 
 function GitHubLogo({ className }: { className?: string }) {
   return (
@@ -36,6 +36,7 @@ function SourceIcon({ source }: { source: string }) {
   if (source === "github") return <GitHubLogo className="size-5" />;
   if (source === "slack") return <SlackLogo className="size-5" />;
   if (source === "qiko_track") return <Logo iconOnly className="size-5" />;
+  if (source === "ga4") return <LineChart className="size-5" />;
   return null;
 }
 
@@ -149,10 +150,12 @@ function SourceSettingsDialog({
   titleId: string;
 }) {
   const qc = useQueryClient();
+  // GA4 has no per-worker connection detail endpoint: it is a single global flag already
+  // present on `source.connected` from the catalog list, so skip the fetch entirely.
   const connection = useQuery({
     queryKey: ["intelligence-source-connection", agentId, source.key],
     queryFn: () => getIntelligenceSourceConnection(agentId, source.key),
-    enabled: open,
+    enabled: open && source.key !== "ga4",
   });
 
   const invalidate = () => {
@@ -191,6 +194,9 @@ function SourceSettingsDialog({
         )}
         {connection.data && source.key === "slack" && (
           <SlackForm agentId={agentId} connection={connection.data} onChange={invalidate} configured={source.configured} />
+        )}
+        {source.key === "ga4" && (
+          <GA4Form agentId={agentId} connected={source.connected} onChange={invalidate} />
         )}
       </div>
     </Dialog>
