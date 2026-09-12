@@ -47,3 +47,16 @@ def test_update_agent_config_requires_editor_role(client):
     r = client.put("/api/v1/agents/x/config", cookies=auth_cookies("configco3", "viewer"),
                    json={"patch": {}})
     assert r.status_code == 403
+
+
+def test_update_agent_config_rejects_ga4_credentials_added(client):
+    """ga4_credentials_added must only ever be set by the dedicated
+    POST /intelligence/agents/{id}/sources/ga4 endpoint, which records an audit row. Letting the
+    generic merge-patch flip it directly would let an editor claim a GA4 connection with no audit
+    trail at all (A09/A01) -- same protection every other <x>_credentials_added flag already has."""
+    c = auth_cookies("configco4", "owner")
+    agent = client.post("/api/v1/agents", json={"name": "GA4 worker"}, cookies=c).json()
+    r = client.put(f"/api/v1/agents/{agent['id']}/config", cookies=c,
+                   json={"patch": {"ga4_credentials_added": True}})
+    assert r.status_code == 422
+    assert "ga4_credentials_added" in r.json()["detail"]

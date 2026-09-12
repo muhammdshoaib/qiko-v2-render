@@ -127,9 +127,11 @@ async def sync_stale_signals(catalog: SourceCatalog, signal_store: SignalStore, 
                     signal_store, agent.tenant, agent.id, source="ga4",
                     interval_minutes=interval_minutes, now=now)
                 if due:
+                    # No per-agent config: GA4 always resolves the property and credential
+                    # from Settings (see GA4Connector._client).
                     await ingest_source(
                         agent.tenant, agent.id, "ga4",
-                        {"property_id": cfg.get("ga4_property_id") or ""},
+                        {},
                         "", catalog=catalog, signal_store=signal_store, knowledge=knowledge,
                         since=since)
                     synced += 1

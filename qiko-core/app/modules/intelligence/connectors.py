@@ -141,8 +141,12 @@ class GA4Connector:
     def _client(self, config: dict, credential: str):
         from app.integrations.clients import GA4Client
 
+        # No per-agent property override: GA4 always resolves the property from
+        # Settings.ga4_property_id, exactly like the access token. Allowing a per-agent
+        # property id here would let any tenant read another tenant's GA4 property through
+        # this shared, global credential (see GA4Client.__init__'s own fallback).
         return GA4Client(
-            property_id=config.get("property_id") or None,
+            property_id=None,
             access_token=credential or None,
             client=self.http_client)
 

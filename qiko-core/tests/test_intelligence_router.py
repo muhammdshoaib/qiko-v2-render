@@ -203,17 +203,41 @@ def test_connect_ga4_sets_the_flag_with_no_credential_required(client):
     assert sources["ga4"]["connected"] is True
 
 
-def test_connect_ga4_stores_an_optional_property_id_override(client):
+def test_connect_ga4_rejects_a_client_supplied_property_id(client):
+    """GA4 credentials are GLOBAL (Settings.ga4_property_id/ga4_access_token), not per-worker: a
+    worker "connects" GA4 by setting a flag, nothing else. A caller must never be able to steer
+    which property the shared credential reports on -- that would let any editor-role tenant read
+    another tenant's GA4 traffic through the one shared service account (A01/BOLA). property_id
+    is not a field on ConnectSourceBody any more, so a request that includes one is rejected
+    outright by extra="forbid", the same convention this codebase already uses for
+    unexpected id-shaped fields (see test_joseph_mews_activity_router.py's
+    test_post_activity_rejects_an_unexpected_property_id_field). There is no silent-ignore path
+    where the value is accepted and then dropped -- and the agent's config never gets a
+    per-agent property override, connected or not.
+    """
     r = client.post(
         "/api/v1/intelligence/agents/w1/sources/ga4",
         json={"property_id": "123456789"},
         cookies=C,
     )
-    assert r.status_code == 200
-    assert r.json()["connected"] is True
+    assert r.status_code == 422
 
     agent = asyncio.run(client.app.state.agents.get("intelco", "w1"))
-    assert agent.config["ga4_property_id"] == "123456789"
+    assert "ga4_property_id" not in (agent.config or {})
+
+
+def test_connect_ga4_config_never_gains_a_property_override(client):
+    """Even a normal, body-less connect must never produce a per-agent GA4 property override --
+    only the flag GA4Connector reads (`ga4_credentials_added`) is ever persisted."""
+    r = client.post(
+        "/api/v1/intelligence/agents/w1/sources/ga4",
+        json={},
+        cookies=C,
+    )
+    assert r.status_code == 200
+
+    agent = asyncio.run(client.app.state.agents.get("intelco", "w1"))
+    assert agent.config == {"ga4_credentials_added": True}
 
 
 def test_ga4_is_not_globally_configured_by_default(client):

@@ -73,10 +73,12 @@ class _FakeConnector:
 
     def __init__(self, fails_for: set[str] | None = None):
         self.calls = []
+        self.configs = []
         self._fails_for = fails_for or set()
 
     async def fetch_since(self, *, config, credential, since, tenant, agent_id, signal_store=None):
         self.calls.append((tenant, agent_id, since))
+        self.configs.append(config)
         if agent_id in self._fails_for:
             raise RuntimeError("connector failure")
         return []
@@ -203,7 +205,12 @@ async def test_sync_stale_signals_syncs_a_connected_ga4_source():
     connector = _FakeConnector()
     connector.key = "ga4"
     catalog.register(key="ga4", name="GA4", connector=connector)
-    agent = _FakeAgent(tenant="acme", id="a1", config={"ga4_credentials_added": True})
+    # Even a config carrying a stray ga4_property_id (e.g. left over from before this fix, or an
+    # editor who slipped one in via some other path) must never reach the connector: GA4 is
+    # global-only, so the sweep's ingest_config for ga4 is always {} (see scheduler.py).
+    agent = _FakeAgent(tenant="acme", id="a1", config={
+        "ga4_credentials_added": True, "ga4_property_id": "999999999",
+    })
     agents = _FakeAgents([agent])
     store = InMemorySignalStore()
 
@@ -212,6 +219,7 @@ async def test_sync_stale_signals_syncs_a_connected_ga4_source():
     assert len(connector.calls) == 1
     tenant, agent_id, _since = connector.calls[0]
     assert (tenant, agent_id) == ("acme", "a1")
+    assert connector.configs == [{}]
     assert summary["synced"] == 1
 
 

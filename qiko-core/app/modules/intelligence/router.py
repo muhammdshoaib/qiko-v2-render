@@ -85,7 +85,6 @@ class ConnectSourceBody(BaseModel):
     project_kind: str = Field(default="")
     base_url: str = Field(default="")
     auto: bool = Field(default=False)
-    property_id: str | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -230,7 +229,6 @@ _SOURCE_CONFIG = {
     },
     "ga4": {
         "added": "ga4_credentials_added",
-        "property_id": "ga4_property_id",
         "label": "GA4",
     },
 }
@@ -761,7 +759,6 @@ async def connect_source(
         secret = ""
         patch = {
             meta["added"]: True,
-            meta["property_id"]: body.property_id or "",
         }
     else:
         raise HTTPException(status_code=404, detail="source not found")
@@ -788,7 +785,7 @@ async def connect_source(
                     "watched_branches": body.watched_branches,
                 }
             else:
-                ingest_config = {"property_id": body.property_id or ""}
+                ingest_config = {}
             result["ingested"] = await ingest_source(
                 tenant, agent_id, key, ingest_config, secret,
                 catalog=catalog,
