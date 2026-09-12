@@ -5,7 +5,9 @@ Nothing here writes to the third party; `verify()` performs read-only checks.
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.core.config import get_settings
@@ -119,3 +121,67 @@ class QikoTrackConnector:
             "scopes": actor.get("scopes") or [],
             "projects": visible,
         }
+
+
+@dataclass
+class GA4Connector:
+    """Read-only GA4 (Google Analytics Data API) connector.
+
+    Unlike GitHub/Qiko Track, GA4 credentials are GLOBAL (one property for the whole product,
+    the same one the admin dashboard already reads via GA4Client) rather than per-worker.
+    A worker "connects" GA4 by setting a flag; there is nothing to paste. `credential` is
+    accepted for protocol symmetry with every other Connector but is expected to be empty here -
+    GA4Client falls back to Settings.ga4_access_token when given one, exactly like the admin
+    dashboard's own construction (see app.integrations.clients.GA4Client.__init__).
+    """
+
+    key: str = "ga4"
+    http_client: Any | None = field(default=None, repr=False)
+
+    def _client(self, config: dict, credential: str):
+        from app.integrations.clients import GA4Client
+
+        return GA4Client(
+            property_id=config.get("property_id") or None,
+            access_token=credential or None,
+            client=self.http_client)
+
+    async def fetch_since(self, *, config: dict, credential: str,
+                          since: Any, tenant: str, agent_id: str,
+                          signal_store: Any | None = None) -> list[Signal]:
+        client = self._client(config, credential)
+        start = since.strftime("%Y-%m-%d")
+        end = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        rows = await asyncio.to_thread(
+            client.run_report, start, end, ["sessions", "activeUsers"], ["date"])
+
+        signals: list[Signal] = []
+        for row in rows:
+            raw_date = row.get("date", "")
+            try:
+                occurred_at = datetime.strptime(raw_date, "%Y%m%d").replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            sessions = row.get("sessions", "0")
+            active_users = row.get("activeUsers", "0")
+            signals.append(Signal(
+                tenant=tenant, agent_id=agent_id, source="ga4", kind="traffic_snapshot",
+                external_id=f"ga4-{raw_date}", container="ga4", actor="",
+                title=f"Traffic on {occurred_at.date().isoformat()}: "
+                      f"{sessions} sessions, {active_users} active users",
+                body=f"sessions={sessions} active_users={active_users}",
+                occurred_at=occurred_at,
+                meta={"sessions": sessions, "active_users": active_users},
+            ))
+        return signals
+
+    async def verify(self, *, config: dict, credential: str) -> dict:
+        client = self._client(config, credential)
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        try:
+            await asyncio.to_thread(
+                client.run_report, yesterday, today, ["sessions"], ["date"])
+        except Exception as exc:  # noqa: BLE001 - surfaced to the Test button, not raised
+            return {"ok": False, "error": str(exc)}
+        return {"ok": True}
