@@ -263,3 +263,32 @@ jobs:
             frontend/e2e/test-results-ci
             frontend/e2e/playwright-report-ci
           retention-days: 7
+
+  ci-status:
+    # One check to require on the protected branches. Every other job here is conditional on the
+    # path filter, so requiring them directly would block a promotion PR forever: a promotion
+    # touches no backend code, `backend` is skipped, and a required check that never reports is a
+    # merge that never happens.
+    #
+    # `always()` so this runs even when a dependency is skipped, and the result is computed rather
+    # than inherited: skipped is fine (the filter decided that code was untouched), failed or
+    # cancelled is not. Without the explicit check, `needs` alone would skip this job too and it
+    # would report nothing.
+    name: CI Status
+    if: always()
+    needs: [changes, compose, backend, frontend, e2e]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any job did not succeed or skip
+        env:
+          RESULTS: ${{ needs.changes.result }} ${{ needs.compose.result }} ${{ needs.backend.result }} ${{ needs.frontend.result }} ${{ needs.e2e.result }}
+        run: |
+          set -euo pipefail
+          echo "job results: $RESULTS"
+          for result in $RESULTS; do
+            case "$result" in
+              success|skipped) ;;
+              *) echo "::error::a required job reported '$result'"; exit 1 ;;
+            esac
+          done
+          echo "All CI gates passed or were skipped by the path filter."
