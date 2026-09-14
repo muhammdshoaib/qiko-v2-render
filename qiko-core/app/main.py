@@ -67,7 +67,7 @@ from app.tasks.queue import get_task_queue as build_task_queue
 from app.modules.admin.customers import CustomerDirectory
 from app.modules.signal.router import router as signal_router
 from app.modules.intelligence.catalog import SourceCatalog
-from app.modules.intelligence.connectors import GitHubConnector, QikoTrackConnector
+from app.modules.intelligence.connectors import GA4Connector, GitHubConnector, QikoTrackConnector
 from app.modules.intelligence.models import InMemorySignalStore
 from app.modules.intelligence.router import router as intelligence_router
 from app.core.tenancy import tenant_dependency
@@ -341,6 +341,9 @@ def _build_intelligence_catalog() -> SourceCatalog:
     catalog.register(
         key="qiko_track", name="Qiko Track", connector=QikoTrackConnector(),
         description="Tickets, comments and blockers.")
+    catalog.register(
+        key="ga4", name="GA4", connector=GA4Connector(),
+        description="Website traffic and active users.")
     catalog.register(
         key="generic", name="Generic", connector=None,
         description="Custom webhooks or files.")

@@ -227,6 +227,10 @@ _SOURCE_CONFIG = {
         "watched": "slack_watched_channels",
         "team_id": "slack_team_id",
     },
+    "ga4": {
+        "added": "ga4_credentials_added",
+        "label": "GA4",
+    },
 }
 
 
@@ -374,6 +378,8 @@ async def _connected_keys(agent, installation_store) -> set[str]:
         connected.add("github")
     if cfg.get("qiko_track_credentials_added") and (cfg.get("qiko_track_token_encrypted") or cfg.get("qiko_track_service_token")):
         connected.add("qiko_track")
+    if cfg.get("ga4_credentials_added"):
+        connected.add("ga4")
     try:
         inst = await asyncio.to_thread(installation_store.find_for_worker, agent.tenant, agent.id)
     except Exception:  # noqa: BLE001 - sync store may raise if the schema is not ready
@@ -389,6 +395,8 @@ def _globally_configured_keys() -> set[str]:
     configured: set[str] = {"github", "qiko_track", "generic"}
     if s.slack_client_id and s.slack_client_secret and s.slack_redirect_uri:
         configured.add("slack")
+    if s.ga4_access_token and s.ga4_property_id:
+        configured.add("ga4")
     return configured
 
 
@@ -746,30 +754,38 @@ async def connect_source(
                 meta["project_keys"]: project_keys,
                 meta["base_url"]: body.base_url,
             }
+    elif key == "ga4":
+        meta = _SOURCE_CONFIG["ga4"]
+        secret = ""
+        patch = {
+            meta["added"]: True,
+        }
     else:
         raise HTTPException(status_code=404, detail="source not found")
 
     await agents.update_config(
         tenant, agent_id, patch,
         audit=_build_credential_audit(
-            provider=key, secret=secret, encrypted_key=meta["token"],
+            provider=key, secret=secret, encrypted_key=meta.get("token", ""),
             tenant=tenant, agent_id=agent_id, agent_name=agent.name,
             action=audit_actions.CREDENTIAL_SET, claims=claims, request=request))
     await recheck()
 
     result: dict = {"connected": True}
-    if key in ("qiko_track", "github"):
+    if key in ("qiko_track", "github", "ga4"):
         try:
             if key == "qiko_track":
                 ingest_config = {
                     "project_keys": project_keys,
                     "base_url": base_url,
                 }
-            else:
+            elif key == "github":
                 ingest_config = {
                     "repo_allowlist": body.repo_allowlist,
                     "watched_branches": body.watched_branches,
                 }
+            else:
+                ingest_config = {}
             result["ingested"] = await ingest_source(
                 tenant, agent_id, key, ingest_config, secret,
                 catalog=catalog,

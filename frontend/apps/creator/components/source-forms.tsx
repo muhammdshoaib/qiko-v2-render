@@ -422,6 +422,46 @@ export function QikoTrackForm({
   );
 }
 
+export function GA4Form({
+  agentId,
+  connected,
+  onChange,
+}: {
+  agentId: string;
+  connected: boolean;
+  onChange: OnChange;
+}) {
+  const [message, setMessage] = useState<string | null>(null);
+
+  const connect = useMutation({
+    mutationFn: () => connectIntelligenceSource(agentId, "ga4", {}),
+    onSuccess: () => { setMessage(null); onChange(); },
+    onError: (e: Error) => setMessage(e.message),
+  });
+
+  if (connected) {
+    return (
+      <p className="text-xs text-muted-foreground">
+        GA4 is connected. This worker reads traffic and active-user signals from the
+        workspace&apos;s configured GA4 property, no per-worker credentials needed.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        GA4 is configured globally for this workspace, there is nothing to paste here.
+        Connect to let this worker pull traffic and active-user signals.
+      </p>
+      <Button disabled={connect.isPending} onClick={() => connect.mutate()} className="w-full">
+        {connect.isPending && <Loader2 className="size-4 animate-spin" />} Connect GA4
+      </Button>
+      {message && <p className="text-xs text-destructive">{message}</p>}
+    </div>
+  );
+}
+
 export function SlackForm({
   agentId,
   connection,

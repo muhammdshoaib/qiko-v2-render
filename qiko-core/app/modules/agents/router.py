@@ -67,6 +67,7 @@ _WRITE_ONLY_VIA_DEDICATED_ENDPOINT = frozenset(_REDACTED_CONFIG_KEYS) | {
     "vapi_credentials_added", "salesforce_credentials_added", "calendly_credentials_added",
     "clickup_credentials_added", "slack_credentials_added", "gmail_credentials_added",
     "github_credentials_added", "qiko_track_credentials_added", "interakt_credentials_added",
+    "ga4_credentials_added",
     "slack_watched_channels", "slack_team_id",
     # Server-generated only (POST/DELETE .../worker-api-key), never something a caller should be
     # able to set to an arbitrary value through the free-form patch.
