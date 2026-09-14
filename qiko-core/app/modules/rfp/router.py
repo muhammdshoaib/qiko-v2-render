@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -11,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from app.core.deps import (
     WorkerRecheck,
+    WorkerUnavailable,
     authed_tenant,
     current_claims,
     get_chat,
@@ -24,6 +26,7 @@ from app.core.deps import (
     require_role,
     resolve_tenant_worker,
 )
+from app.modules.ai.caps import CostCapExceeded
 from app.modules.ai.gateway import document_provider
 from app.modules.chat.files import build_docx, build_xlsx
 from app.modules.identity.rbac import Role, role_allows
@@ -44,6 +47,7 @@ from app.modules.workers.worker import source_labels
 from app.tasks.queue import EagerTaskQueue
 
 router = APIRouter(prefix="/rfp/packs", tags=["rfp"])
+logger = logging.getLogger(__name__)
 
 # extract/ask/compliance/brief are one-shot calls over a whole tender document (tens of thousands
 # of chars in, a full structured response out) -- the gateway's default read_timeout (20s) is
@@ -1278,7 +1282,18 @@ async def generate_pack(pack_id: str, request: Request, only_missing: bool = Fal
     (no ai_answer AND no user_draft), the exact filter rfp.generation.run_generation's own
     resumable drafts stage applies. Without it every non-locked question is redrafted, including
     ones already AI-drafted or carrying a reviewer's saved-but-unlocked edit -- fine for a
-    deliberate full regenerate, but wasteful and destructive for a mere resume-after-outage."""
+    deliberate full regenerate, but wasteful and destructive for a mere resume-after-outage.
+
+    One question raising a non-outage error does not fail the whole batch: it is skipped and
+    logged, so e.g. a single flaky retrieval call cannot fail a "Retry drafting" click that would
+    otherwise have fixed every OTHER still-missing section (mirrors
+    rfp.generation.run_generation's own per-question isolation for the background job). Three
+    fail-closed signals are NOT swallowed by that isolation and still abort the whole request,
+    exactly as before this change: a genuine provider outage (StubProviderUnavailable, surfaced
+    by `_generate_question` as a 503), the worker being disabled mid-run (WorkerUnavailable,
+    app.main's 404 handler), and the tenant's AI spend cap being reached (CostCapExceeded,
+    app.main's 402 handler) -- continuing to draft after any of those would either waste calls on
+    a dead provider or let an editor whose worker/budget was just revoked keep spending anyway."""
     pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
     manual_sections = {s.id for s in await tree.sections.list(tenant, pack_id) if s.manual}
     out = []
@@ -1288,8 +1303,16 @@ async def generate_pack(pack_id: str, request: Request, only_missing: bool = Fal
         if only_missing and (q.ai_answer or q.user_draft):
             continue
         await tree.get_question_for_pack(tenant, pack_id, q.id)
-        out.append(await _generate_question(tenant, q, worker, tree, recheck,
-                                            pack.reference_doc_id))
+        try:
+            out.append(await _generate_question(tenant, q, worker, tree, recheck,
+                                                pack.reference_doc_id))
+        except HTTPException:
+            raise  # StubProviderUnavailable -> 503: a genuine outage fails the batch closed
+        except (WorkerUnavailable, CostCapExceeded):
+            raise  # worker disabled / cost cap reached: fail closed, same as every sibling route
+        except Exception as e:  # noqa: BLE001 - one bad question must not sink the rest
+            logger.warning("generate_pack: question %s (section %s) failed to draft: %s",
+                           q.id, q.section_id, e)
     return out
 
 
