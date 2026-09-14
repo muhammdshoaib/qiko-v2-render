@@ -39,6 +39,7 @@ from app.modules.intelligence.digest import (
 )
 from app.modules.intelligence.discrepancies import DiscrepancyEngine
 from app.modules.intelligence.documents import SUPPORTED_DOCUMENT_EXTENSIONS, UnsupportedDocumentError
+from app.modules.intelligence.engagement import build_engagement
 from app.modules.intelligence.ingest import ingest_source
 from app.modules.intelligence.overview import build_overview
 from app.modules.intelligence.orchestration import (
@@ -1195,6 +1196,27 @@ async def list_discrepancies(
     ]
     await recheck()
     return {"items": items, "total": total, "projects": projects}
+
+
+@router.get("/agents/{agent_id}/engagement")
+async def get_agent_engagement(
+    agent_id: str, request: Request,
+    tenant: str = Depends(authed_tenant),
+    _claims: dict = Depends(require_role(Role.admin)),
+) -> dict:
+    """Who's active in Slack conversations, and who has an unanswered mention waiting on them.
+
+    Owner/admin only, matching /discrepancies's own sensitivity level: unlike /overview (PR and
+    ticket counts, a normal team-visibility view), this reports named people's response latency,
+    a more sensitive framing.
+    """
+    _worker, recheck = await _resolve_worker(request, tenant, agent_id)
+    try:
+        signals = await request.app.state.intelligence_signal_store.list_recent(
+            tenant, agent_id, source="slack", limit=2000)
+        return build_engagement(signals)
+    finally:
+        await recheck()
 
 
 @router.get("/agents/{agent_id}/discrepancies/digest")

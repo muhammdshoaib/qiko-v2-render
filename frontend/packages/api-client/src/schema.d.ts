@@ -3039,6 +3039,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/intelligence/agents/{agent_id}/engagement": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Agent Engagement
+         * @description Who's active in Slack conversations, and who has an unanswered mention waiting on them.
+         *
+         *     Owner/admin only, matching /discrepancies's own sensitivity level: unlike /overview (PR and
+         *     ticket counts, a normal team-visibility view), this reports named people's response latency,
+         *     a more sensitive framing.
+         */
+        get: operations["get_agent_engagement_api_v1_intelligence_agents__agent_id__engagement_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/intelligence/agents/{agent_id}/metrics": {
         parameters: {
             query?: never;
@@ -15417,6 +15441,39 @@ export interface operations {
             path: {
                 agent_id: string;
                 doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_agent_engagement_api_v1_intelligence_agents__agent_id__engagement_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agent_id: string;
             };
             cookie?: never;
         };

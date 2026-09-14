@@ -584,3 +584,31 @@ def test_get_discrepancy_digest_returns_heads_up_digest_or_503(client, monkeypat
         assert "headline" in payload
         assert "summary" in payload
         assert "sections" in payload
+
+
+def test_engagement_endpoint_returns_active_and_awaiting_response(client):
+    from datetime import datetime, timedelta, timezone
+    from app.modules.intelligence.models import Signal
+
+    now = datetime.now(timezone.utc)
+    asyncio.run(client.app.state.intelligence_signal_store.add(Signal(
+        tenant="intelco", agent_id="w1", source="slack", kind="message",
+        external_id="1000.0001", container="T1/C1", actor="UALICE",
+        title="hey <@UBOB> can you check this", body="hey <@UBOB> can you check this",
+        occurred_at=now - timedelta(hours=30),
+        url="https://slack.example/T1/C1",
+    )))
+
+    r = client.get("/api/v1/intelligence/agents/w1/engagement", cookies=C)
+    assert r.status_code == 200
+    body = r.json()
+    assert "active" in body and "awaiting_response" in body
+    assert body["active"][0]["actor"] == "UALICE"
+    assert body["awaiting_response"][0]["mentioned"] == "UBOB"
+    assert body["awaiting_response"][0]["mentioned_by"] == "UALICE"
+
+
+def test_engagement_endpoint_rejects_a_non_admin_viewer(client):
+    cookies = auth_cookies("intelco", "viewer")
+    r = client.get("/api/v1/intelligence/agents/w1/engagement", cookies=cookies)
+    assert r.status_code == 403
