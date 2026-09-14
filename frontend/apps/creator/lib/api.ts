@@ -792,8 +792,8 @@ export const generatePackQuestion = (packId: string, questionId: string) =>
   request<PackQuestion>(`/rfp/packs/${packId}/questions/${questionId}/generate`, { method: "POST" });
 export const generatePackSection = (packId: string, sectionId: string) =>
   request<PackQuestion[]>(`/rfp/packs/${packId}/sections/${sectionId}/generate`, { method: "POST" });
-export const generatePack = (packId: string) =>
-  request<PackQuestion[]>(`/rfp/packs/${packId}/generate`, { method: "POST" });
+export const generatePack = (packId: string, onlyMissing = false) =>
+  request<PackQuestion[]>(`/rfp/packs/${packId}/generate${onlyMissing ? "?only_missing=true" : ""}`, { method: "POST" });
 
 /** Upload one OR MANY RFP/tender documents to a pack: extracts requirements and (re)builds the
  * section tree. Every file is sent under the `files` field, so a single file works too.

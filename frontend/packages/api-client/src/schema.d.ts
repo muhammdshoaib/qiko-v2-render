@@ -4163,6 +4163,24 @@ export interface paths {
         /**
          * Generate Pack
          * @description Whole-pack draft: every non-locked question in every non-manual section, via agentcore.
+         *
+         *     `only_missing=true` is the resume path the "Retry drafting" recovery banner uses after a
+         *     partial/errored background run: it limits the run to questions with no draft yet at all
+         *     (no ai_answer AND no user_draft), the exact filter rfp.generation.run_generation's own
+         *     resumable drafts stage applies. Without it every non-locked question is redrafted, including
+         *     ones already AI-drafted or carrying a reviewer's saved-but-unlocked edit -- fine for a
+         *     deliberate full regenerate, but wasteful and destructive for a mere resume-after-outage.
+         *
+         *     One question raising a non-outage error does not fail the whole batch: it is skipped and
+         *     logged, so e.g. a single flaky retrieval call cannot fail a "Retry drafting" click that would
+         *     otherwise have fixed every OTHER still-missing section (mirrors
+         *     rfp.generation.run_generation's own per-question isolation for the background job). Three
+         *     fail-closed signals are NOT swallowed by that isolation and still abort the whole request,
+         *     exactly as before this change: a genuine provider outage (StubProviderUnavailable, surfaced
+         *     by `_generate_question` as a 503), the worker being disabled mid-run (WorkerUnavailable,
+         *     app.main's 404 handler), and the tenant's AI spend cap being reached (CostCapExceeded,
+         *     app.main's 402 handler) -- continuing to draft after any of those would either waste calls on
+         *     a dead provider or let an editor whose worker/budget was just revoked keep spending anyway.
          */
         post: operations["generate_pack_api_v1_rfp_packs__pack_id__generate_post"];
         delete?: never;
@@ -17551,7 +17569,9 @@ export interface operations {
     };
     generate_pack_api_v1_rfp_packs__pack_id__generate_post: {
         parameters: {
-            query?: never;
+            query?: {
+                only_missing?: boolean;
+            };
             header?: never;
             path: {
                 pack_id: string;

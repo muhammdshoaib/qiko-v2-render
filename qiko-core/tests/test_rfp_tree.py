@@ -3,8 +3,10 @@ import io
 
 import pytest
 
+from app.core.deps import WorkerUnavailable
 from app.modules.agentcore.models import AgentResult, Critique, Decision
 from app.modules.agents.service import Agent
+from app.modules.ai.caps import CapDecision, CostCapExceeded
 from app.modules.rfp.service import PackRequirement
 from app.modules.rfp.tree import PackQuestionNotFound, PackSectionNotFound, PackTreeService
 
@@ -561,6 +563,147 @@ def test_generate_section_and_pack(client, monkeypatch):
 
     pack_gen = client.post(f"/api/v1/rfp/packs/{pid}/generate", cookies=c).json()
     assert len(pack_gen) == 2
+
+
+def test_generate_pack_only_missing_resumes_without_reoverwriting(client, monkeypatch):
+    """The "Retry drafting" recovery banner (shown after a partial/errored background run) calls
+    /generate?only_missing=true so a retry drafts ONLY the questions still missing a draft --
+    mirroring rfp.generation.run_generation's own resumable stage ("not (ai_answer or
+    user_draft)") -- instead of re-billing every already-drafted question and clobbering a
+    reviewer's saved-but-unlocked edit."""
+    _patch_worker(monkeypatch, _fake_worker_factory())
+    c, pid = _pack(client, "genco4")
+    s = client.post(f"/api/v1/rfp/packs/{pid}/sections", json={"name": "Intro"}, cookies=c).json()
+    q1 = client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
+                     json={"text": "Q1"}, cookies=c).json()
+    q2 = client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
+                     json={"text": "Q2"}, cookies=c).json()
+    q3 = client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
+                     json={"text": "Q3"}, cookies=c).json()
+
+    # Q1 already AI-drafted (e.g. the background job reached it before a transient outage)...
+    client.post(f"/api/v1/rfp/packs/{pid}/questions/{q1['id']}/generate", cookies=c)
+    # ...Q2 carries a reviewer's saved-but-unlocked edit (no AI draft yet)...
+    client.put(f"/api/v1/rfp/packs/{pid}/questions/{q2['id']}/draft",
+              json={"user_draft": "human draft"}, cookies=c)
+    # ...Q3 never got a draft at all.
+
+    resumed = client.post(f"/api/v1/rfp/packs/{pid}/generate?only_missing=true", cookies=c).json()
+    assert [q["id"] for q in resumed] == [q3["id"]]
+
+    tree = {q["id"]: q for q in
+           client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()[0]["questions"]}
+    assert tree[q2["id"]]["user_draft"] == "human draft"  # untouched, not overwritten
+
+
+def test_generate_pack_isolates_per_question_failures(client, monkeypatch):
+    """A single question raising a non-outage error during a whole-pack (re)draft -- the "Retry
+    drafting" banner's underlying call -- must not fail the entire request. Mirrors
+    rfp.generation.run_generation's own per-question isolation for the background job: one bad
+    question is skipped and logged, the rest still draft and are returned. A genuine provider
+    outage (StubProviderUnavailable) is unaffected by this and still fails the whole batch closed
+    with 503 (see test_generate_question_rejects_stub_fallback_and_does_not_persist)."""
+    class _FlakyWorker:
+        async def answer(self, rid, text, **_kw):
+            if text == "BOOM":
+                raise RuntimeError("transient retrieval error")
+            return AgentResult(requirement_id=rid, answer="AI draft",
+                               critique=Critique(grounding=0.9), decision=Decision.auto_accept,
+                               citations=["doc:iso"], confidence=0.9, gaps="", stub=False)
+
+    async def _build(*_a, **_kw):
+        return _FlakyWorker()
+    _patch_worker(monkeypatch, _build)
+
+    c, pid = _pack(client, "genco6")
+    s = client.post(f"/api/v1/rfp/packs/{pid}/sections", json={"name": "Intro"}, cookies=c).json()
+    good1 = client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
+                        json={"text": "Q1"}, cookies=c).json()
+    bad = client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
+                      json={"text": "BOOM"}, cookies=c).json()
+    good2 = client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
+                        json={"text": "Q2"}, cookies=c).json()
+
+    r = client.post(f"/api/v1/rfp/packs/{pid}/generate", cookies=c)
+    assert r.status_code == 200
+    out = r.json()
+    assert {q["id"] for q in out} == {good1["id"], good2["id"]}
+
+    tree = {q["id"]: q for q in
+           client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()[0]["questions"]}
+    assert tree[good1["id"]]["ai_answer"] == "AI draft"
+    assert tree[good2["id"]]["ai_answer"] == "AI draft"
+    assert tree[bad["id"]]["ai_answer"] == ""  # isolated, not persisted, batch kept going
+
+
+@pytest.mark.parametrize("make_exc, expected_status", [
+    (lambda: WorkerUnavailable(), 404),
+    (lambda: CostCapExceeded(CapDecision(allowed=False, cap=None, spent_nano_usd=1,
+                                         limit_nano_usd=1, alerting=False)), 402),
+])
+def test_generate_pack_isolation_does_not_swallow_fail_closed_signals(
+        client, monkeypatch, make_exc, expected_status):
+    """The per-question isolation added for ordinary draft failures (see
+    test_generate_pack_isolates_per_question_failures) must not swallow the two fail-closed
+    signals every other RFP mutation endpoint relies on: WorkerUnavailable (worker disabled,
+    app.main's 404 handler) and CostCapExceeded (tenant AI spend cap reached, app.main's 402
+    handler). Both must still abort the whole batch with their dedicated status, not be logged
+    and skipped like an ordinary per-question failure."""
+    class _FailClosedWorker:
+        async def answer(self, rid, text, **_kw):
+            raise make_exc()
+
+    async def _build(*_a, **_kw):
+        return _FailClosedWorker()
+    _patch_worker(monkeypatch, _build)
+
+    c, pid = _pack(client, f"genco7{expected_status}")
+    s = client.post(f"/api/v1/rfp/packs/{pid}/sections", json={"name": "Intro"}, cookies=c).json()
+    client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions", json={"text": "Q1"}, cookies=c)
+
+    r = client.post(f"/api/v1/rfp/packs/{pid}/generate", cookies=c)
+    assert r.status_code == expected_status
+
+
+def test_generate_pack_stub_outage_still_fails_whole_batch_closed(client, monkeypatch):
+    """A genuine provider outage (StubProviderUnavailable, raised when a question's answer came
+    from the deterministic StubProvider fallback) must still fail the WHOLE /generate (batch)
+    request with 503, even though the per-question isolation added for ordinary failures (see
+    test_generate_pack_isolates_per_question_failures) lets other kinds of errors continue past.
+    test_generate_question_rejects_stub_fallback_and_does_not_persist covers this at the
+    single-question route only; this covers the batch route the isolation change actually
+    touched, and additionally checks the batch stops immediately rather than quietly continuing
+    to draft questions ordered after the outage."""
+    class _OneStubWorker:
+        async def answer(self, rid, text, **_kw):
+            if text == "OUTAGE":
+                return AgentResult(requirement_id=rid, answer="echo",
+                                   critique=Critique(grounding=0.0), decision=Decision.human_review,
+                                   citations=[], confidence=0.0, gaps="", stub=True)
+            return AgentResult(requirement_id=rid, answer="AI draft",
+                               critique=Critique(grounding=0.9), decision=Decision.auto_accept,
+                               citations=["doc:iso"], confidence=0.9, gaps="", stub=False)
+
+    async def _build(*_a, **_kw):
+        return _OneStubWorker()
+    _patch_worker(monkeypatch, _build)
+
+    c, pid = _pack(client, "genco9")
+    s = client.post(f"/api/v1/rfp/packs/{pid}/sections", json={"name": "Intro"}, cookies=c).json()
+    before = client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
+                        json={"text": "Q1"}, cookies=c).json()
+    client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
+               json={"text": "OUTAGE"}, cookies=c)
+    after = client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
+                        json={"text": "Q2"}, cookies=c).json()
+
+    r = client.post(f"/api/v1/rfp/packs/{pid}/generate", cookies=c)
+    assert r.status_code == 503
+
+    tree = {q["id"]: q for q in
+           client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()[0]["questions"]}
+    assert tree[before["id"]]["ai_answer"] == "AI draft"  # drafted before the outage was hit
+    assert tree[after["id"]]["ai_answer"] == ""  # batch stopped, never reached
 
 
 def test_save_draft_lock_unlock_and_stage_guard(client):
