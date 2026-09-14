@@ -72,7 +72,14 @@ Store as `/qiko/live/ENV` and/or place as `.env` on the box. Real values via SSM
 - `PUBLIC_CHAT_ENABLED=false` (enterprise launch; `/embed/*`, `/widget.js` and the public chat API are disabled)
 - `COOKIE_DOMAIN=.qiko.ai` - so qiko.ai and admin.qiko.ai share the auth/CSRF cookies.
 - `CORS_ALLOW_ORIGINS=["https://qiko.ai","https://admin.qiko.ai"]` - MUST be a JSON array (a bare
-  or comma-separated string fails to parse and the app will not start).
+  or comma-separated string fails to parse and the app will not start). **Qiko-operated origins
+  only.** `require_csrf` validates the `Origin` header against this same list, so an entry here is
+  trusted for login refresh, logout, 2FA, consent and every admin and billing mutation, not just
+  for reading a response in a browser. A third party never belongs in it.
+- `PARTNER_CORS_ORIGINS` - optional, same JSON array format, for a third-party origin that must
+  read responses in a browser without becoming CSRF-trusted. Empty unless one is in use: a
+  service API key belongs in the integrator's backend, and that path needs no CORS entry at all.
+  Both lists are `https://`-only outside dev, and the startup check refuses anything else.
 - `AWS_REGION=eu-central-1` and Bedrock config (`AI_PROVIDER=bedrock`, `BEDROCK_MODEL`,
   `BEDROCK_INFERENCE_PROFILE`, `EMBEDDINGS_PROVIDER=titan`, `EMBEDDINGS_DIM`, `VOICE_MODEL`).
 - Email: `EMAIL_BACKEND=smtp`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`.

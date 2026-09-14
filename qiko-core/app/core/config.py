@@ -176,7 +176,17 @@ class Settings(BaseSettings):
     labs_contact_email: str = "support" + "@" + "qiko.ai"
 
     # API hardening
+    # First-party origins. Two separate powers, not one: browsers there may read our responses,
+    # AND require_csrf accepts them as the Origin of a cookie-authenticated mutation. Only put a
+    # Qiko-operated origin here.
     cors_allow_origins: list[str] = ["http://localhost:3000"]
+    # Third-party origins that may read responses in a browser and are deliberately NOT trusted
+    # for cookie-authenticated mutations (QIKO-1102). Kept apart from cors_allow_origins because
+    # that list is also require_csrf's trusted-origin list: adding an integrator there to clear a
+    # CORS error would also make their origin acceptable for login refresh, logout, 2FA, consent
+    # and every admin and billing mutation, which is far more than the CORS request asked for.
+    # Nothing added here can grant that, by construction rather than by review.
+    partner_cors_origins: list[str] = []
     rate_limit_per_minute: int = 120
     # /auth/login is a credential-stuffing/brute-force target -- the generic per-path limit above
     # (120/min) is far too permissive for it specifically, so it gets its own much tighter budget.
@@ -196,6 +206,18 @@ class Settings(BaseSettings):
     encryption_key: str = ""
     consent_pseudonym_keys: dict[str, str] = Field(default_factory=dict)
     consent_pseudonym_active_version: str = "v1"
+
+    @property
+    def browser_allowed_origins(self) -> list[str]:
+        """Every origin CORSMiddleware accepts: first-party plus partner. This is the CORS
+        question only. The CSRF trust question is answered by cors_allow_origins alone, and
+        keeping the two reads distinct is the whole point of the split."""
+        seen: dict[str, None] = {}
+        for origin in (*self.cors_allow_origins, *self.partner_cors_origins):
+            # Dedup preserving order: CORSMiddleware matches the Origin header by exact string,
+            # so a repeat is harmless, but the resulting config is easier to read without it.
+            seen.setdefault(origin, None)
+        return list(seen)
 
     @property
     def is_production(self) -> bool:
@@ -272,6 +294,11 @@ class Settings(BaseSettings):
             # require_csrf validates the Origin header against this list, so a wrong entry 403s
             # login-refresh, logout, 2FA, consent and every admin mutation.
             misconfigured.append("CORS_ALLOW_ORIGINS with https:// origins only")
+        if any(not origin.startswith("https://") for origin in self.partner_cors_origins):
+            # Same rule, and it also rejects "*", which is invalid anyway next to
+            # allow_credentials=True and would hand every site on the internet a readable
+            # response from a partner-facing route.
+            misconfigured.append("PARTNER_CORS_ORIGINS with https:// origins only")
         if misconfigured:
             raise RuntimeError(
                 "unsafe production config: a non-dev deploy must not run on in-memory stores or "

@@ -476,7 +476,11 @@ def create_app() -> FastAPI:
                                     "/api/v1/billing/checkout"))
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.cors_allow_origins,
+        # First-party plus partner origins. Deliberately NOT settings.cors_allow_origins: that
+        # list is also require_csrf's trusted-origin list, so using it here would mean the only
+        # way to let an integrator's browser read a response is to also accept their origin on
+        # our cookie-authenticated mutations (QIKO-1102).
+        allow_origins=settings.browser_allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

@@ -143,3 +143,69 @@ def test_live_edge_sends_hsts_with_preload_and_admin_hides_its_stack():
     for app in ("admin", "creator"):
         config = (root / "frontend/apps" / app / "next.config.mjs").read_text()
         assert "poweredByHeader: false" in config, f"{app} must not advertise its stack"
+
+
+# --- a partner origin may read responses without becoming CSRF-trusted (QIKO-1102) ------------
+
+
+def _partner_settings(monkeypatch, target: str, **overrides):
+    """Point one module's get_settings at a throwaway Settings carrying a partner origin.
+
+    Deliberately patches the caller's reference rather than clearing get_settings' lru_cache:
+    conftest mutates the cached Settings instance in place (slack credentials, token TTL), so
+    evicting it makes unrelated tests later in the session see a fresh object without any of
+    that, which is a failure with no connection to the test that caused it.
+    """
+    from app.core.config import Settings
+
+    settings = Settings(cors_allow_origins=["http://localhost:3000"],
+                        partner_cors_origins=["https://panel.partner.example"], **overrides)
+    monkeypatch.setattr(f"{target}.get_settings", lambda: settings)
+    return settings
+
+
+def test_partner_origin_is_allowed_by_cors(monkeypatch):
+    """The CORS half of the split: their browser may read the response."""
+    from app.main import create_app
+
+    _partner_settings(monkeypatch, "app.main")
+    c = TestClient(create_app())
+
+    r = c.get("/health", headers={"Origin": "https://panel.partner.example"})
+    assert r.headers.get("access-control-allow-origin") == "https://panel.partner.example"
+
+    # An origin in neither list is still refused, so the split did not open the door generally.
+    r = c.get("/health", headers={"Origin": "https://unknown.example"})
+    assert r.headers.get("access-control-allow-origin") is None
+
+
+def test_partner_origin_is_still_rejected_by_csrf(monkeypatch):
+    """The half that matters. Being readable in a browser must not make an origin acceptable as
+    the source of a state-changing request carrying an admin's session cookie. Before the split
+    there was one list, so allowing the CORS read above would have granted this too."""
+    import pytest
+    from fastapi import HTTPException, Request
+
+    from app.modules.identity.csrf import CSRF_COOKIE, CSRF_HEADER, require_csrf
+
+    # Must be a non-dev environment: require_csrf deliberately skips the origin check in dev, so
+    # asserting a rejection under the default settings would pass for the wrong reason.
+    _partner_settings(monkeypatch, "app.modules.identity.csrf", environment="preprod")
+
+    def _request(origin: str) -> Request:
+        token = "a-csrf-token-value"
+        return Request({
+            "type": "http", "method": "POST", "path": "/admin/anything",
+            "headers": [(CSRF_HEADER.encode(), token.encode()),
+                        (b"cookie", f"{CSRF_COOKIE}={token}".encode()),
+                        (b"origin", origin.encode())],
+        })
+
+    # A first-party origin passes, as before.
+    require_csrf(_request("http://localhost:3000"))
+
+    # The partner origin does not, even though CORS allows it to read.
+    with pytest.raises(HTTPException) as first_party_only:
+        require_csrf(_request("https://panel.partner.example"))
+    assert first_party_only.value.status_code == 403
+    assert first_party_only.value.detail == "Request origin rejected"
