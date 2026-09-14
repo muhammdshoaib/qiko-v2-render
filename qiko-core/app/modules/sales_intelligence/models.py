@@ -164,6 +164,13 @@ class Opportunity:
     # "accept"). No auto-tuning reads these yet.
     pipeline_verdict: str | None = None
     pipeline_run_id: str | None = None
+    # Set the moment _scan_source() enqueues run_idg_qualification_pipeline for this opportunity
+    # (not on completion, unlike pipeline_verdict/pipeline_run_id above): the enqueue-cooldown gate
+    # in OpportunityService._scan_source() reads this to skip re-enqueueing a fresh, expensive
+    # pipeline run for an opportunity that already has one recent or in flight (QIW cost incident,
+    # 2026-09-14 - a notice that stayed awaiting_review across per-minute re-scans got a full
+    # Synthesizer/Critic Sonnet 4.5 run every single scan, unbounded).
+    pipeline_last_enqueued_at: datetime | None = None
     competitor_readiness: str | None = None
     qualification_summary: str | None = None
     qualification_reasons: list[str] = field(default_factory=list)

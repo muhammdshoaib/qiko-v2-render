@@ -474,6 +474,116 @@ async def test_scan_without_task_queue_never_enqueues(monkeypatch):
     assert result["opportunities"][0].recommendation == "Review"
 
 
+def _still_ambiguous_notice(external_id: str) -> dict:
+    """A notice that qualifies as 'Review' on every scan (missing_fields/risks present), so a
+    re-scan finds the SAME opportunity still `awaiting_review` every time -- this is the shape
+    that used to re-enqueue the agentic pipeline once per scan, unbounded (QIW cost incident,
+    2026-09-14)."""
+    return _with_deadline({
+        "external_id": external_id, "title": "Risk advisory and audit services",
+        "buyer": "Ministry of Advisory Affairs",
+    })
+
+
+async def test_repeated_scan_does_not_reenqueue_within_cooldown(monkeypatch):
+    """The actual bug: a notice that stays awaiting_review across re-scans must NOT get a fresh
+    agentic pipeline run every single scan. Two scans inside the cooldown window enqueue once."""
+    from app.modules.agentcore.orchestration import InMemoryPipelineRunStore
+
+    queue = _StubTaskQueue()
+    svc = OpportunityService(task_queue=queue, pipeline_run_store=InMemoryPipelineRunStore())
+    await svc.update_source_status("acme", "agent-1", "ted", "active")
+
+    def fake_search(filters=None):
+        return {"payload": {}, "skipped": 0, "notices": [_still_ambiguous_notice("REVIEW-3")]}
+
+    monkeypatch.setattr(svc.ted, "search", fake_search)
+    await svc.scan_ted("acme", "agent-1", {})
+    await svc.scan_ted("acme", "agent-1", {})
+
+    enqueued = [c for c in queue.calls if c[0] == "run_idg_qualification_pipeline"]
+    assert len(enqueued) == 1
+
+
+async def test_scan_reenqueues_after_cooldown_elapses(monkeypatch):
+    """Once the cooldown window has genuinely elapsed, an opportunity still awaiting_review is
+    eligible for another pipeline attempt."""
+    from app.modules.agentcore.orchestration import InMemoryPipelineRunStore
+    from app.modules.sales_intelligence import service as service_module
+
+    queue = _StubTaskQueue()
+    svc = OpportunityService(task_queue=queue, pipeline_run_store=InMemoryPipelineRunStore(),
+                             pipeline_reenqueue_cooldown_minutes=30)
+    await svc.update_source_status("acme", "agent-1", "ted", "active")
+
+    def fake_search(filters=None):
+        return {"payload": {}, "skipped": 0, "notices": [_still_ambiguous_notice("REVIEW-4")]}
+
+    monkeypatch.setattr(svc.ted, "search", fake_search)
+
+    base = datetime.now(timezone.utc)
+    monkeypatch.setattr(service_module, "_now", lambda: base)
+    await svc.scan_ted("acme", "agent-1", {})
+
+    monkeypatch.setattr(service_module, "_now", lambda: base + timedelta(minutes=31))
+    await svc.scan_ted("acme", "agent-1", {})
+
+    enqueued = [c for c in queue.calls if c[0] == "run_idg_qualification_pipeline"]
+    assert len(enqueued) == 2
+
+
+class _StubCostGuard:
+    """Records check() calls; `allowed` controls whether the cap is reached."""
+    def __init__(self, *, allowed: bool) -> None:
+        self.allowed = allowed
+        self.calls: list[tuple[str, str | None]] = []
+
+    async def check(self, tenant, agent_id=None):
+        self.calls.append((tenant, agent_id))
+        return type("CapDecision", (), {"allowed": self.allowed})()
+
+
+async def test_cost_cap_reached_skips_pipeline_enqueue(monkeypatch):
+    """The financial backstop: when the tenant's cost cap is already exceeded, the scan must
+    still complete (never raise) but must not enqueue another expensive pipeline run."""
+    from app.modules.agentcore.orchestration import InMemoryPipelineRunStore
+
+    queue = _StubTaskQueue()
+    cost_guard = _StubCostGuard(allowed=False)
+    svc = OpportunityService(task_queue=queue, pipeline_run_store=InMemoryPipelineRunStore(),
+                             cost_guard=cost_guard)
+    await svc.update_source_status("acme", "agent-1", "ted", "active")
+
+    def fake_search(filters=None):
+        return {"payload": {}, "skipped": 0, "notices": [_still_ambiguous_notice("REVIEW-5")]}
+
+    monkeypatch.setattr(svc.ted, "search", fake_search)
+    result = await svc.scan_ted("acme", "agent-1", {})
+
+    assert result["opportunities"][0].recommendation == "Review"
+    assert not [c for c in queue.calls if c[0] == "run_idg_qualification_pipeline"]
+    assert cost_guard.calls == [("acme", "agent-1")]
+
+
+async def test_cost_cap_allowed_still_enqueues(monkeypatch):
+    """A wired cost_guard that allows spend must not itself block the existing behaviour."""
+    from app.modules.agentcore.orchestration import InMemoryPipelineRunStore
+
+    queue = _StubTaskQueue()
+    cost_guard = _StubCostGuard(allowed=True)
+    svc = OpportunityService(task_queue=queue, pipeline_run_store=InMemoryPipelineRunStore(),
+                             cost_guard=cost_guard)
+    await svc.update_source_status("acme", "agent-1", "ted", "active")
+
+    def fake_search(filters=None):
+        return {"payload": {}, "skipped": 0, "notices": [_still_ambiguous_notice("REVIEW-6")]}
+
+    monkeypatch.setattr(svc.ted, "search", fake_search)
+    await svc.scan_ted("acme", "agent-1", {})
+
+    assert len([c for c in queue.calls if c[0] == "run_idg_qualification_pipeline"]) == 1
+
+
 async def test_manual_create_and_update_fields():
     mutation = OpportunityMutationService()
     opp = await mutation.create_manual("acme", "agent-1", {
