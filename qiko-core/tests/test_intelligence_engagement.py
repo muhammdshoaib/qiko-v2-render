@@ -84,3 +84,13 @@ def test_a_reply_in_a_different_thread_does_not_clear_the_mention():
     ]
     result = build_engagement(signals, now=now)
     assert len(result["awaiting_response"]) == 1
+
+
+def test_a_self_mention_is_never_flagged_as_awaiting_a_reply():
+    now = datetime.now(timezone.utc)
+    signals = [
+        _slack_signal("UALICE", "note to self <@UALICE> follow up on this", thread_ts=None,
+                     occurred_at=now - timedelta(hours=30), external_id="1000.0004"),
+    ]
+    result = build_engagement(signals, now=now)
+    assert result["awaiting_response"] == []

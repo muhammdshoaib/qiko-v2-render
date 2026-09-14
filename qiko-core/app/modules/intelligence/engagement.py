@@ -6,9 +6,11 @@ follow. This reports "mentioned, no reply yet, N hours" as a fact, never a judgm
 someone may be on leave, may not be the right person, or the message may not have needed a
 reply. A human triages this list; nothing here decides anything on its own.
 
-See .devin/plans/2026-09-14-qiw-1024-engagement.md for the judgment calls this makes (Slack
-only for v1, Role.admin, a separate tab) - override any of them freely, they were not put to a
-design round-trip before this was built.
+Judgment calls made without a design round-trip, override any of them freely (QIW-1024):
+Slack only for v1 (GitHub/Qiko Track activity is already covered by overview.py's per-developer
+rollup), Role.admin on the endpoint that serves this (named people's response latency is more
+sensitive than the aggregate PR/ticket counts /overview exposes), and a separate cockpit tab
+rather than folding this into the discrepancy engine's own claim-vs-evidence framing.
 """
 from __future__ import annotations
 
