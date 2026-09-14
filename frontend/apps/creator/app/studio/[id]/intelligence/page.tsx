@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { ArrowLeft, BarChart3, FileText, MessageSquare, RefreshCw, Search, SendHorizonal, ShieldAlert, Database, Users } from "lucide-react";
+import { ArrowLeft, BarChart3, FileText, MessageCircle, MessageSquare, RefreshCw, Search, SendHorizonal, ShieldAlert, Database, Users } from "lucide-react";
 import { Badge, Button, cn } from "@qiko/ui";
 import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 import { SourcesTab } from "@/components/sources-tab";
@@ -11,6 +11,7 @@ import { DocumentsTab } from "@/components/documents-tab";
 import { ResearchTab } from "@/components/research-tab";
 import { WorkerAvatar } from "@/components/worker-avatar";
 import { DiscrepanciesTab } from "./discrepancies-tab";
+import { EngagementTab } from "./engagement-tab";
 import { OverviewTab } from "./overview-tab";
 import {
   askIntelligence, getIntelligenceMetrics, listAgents, listIntelligenceSources, type IntelligenceMetrics, type ProjectMetrics,
@@ -34,7 +35,7 @@ export default function IntelligenceWorkerPage() {
     queryFn: () => getIntelligenceMetrics(agentId),
   });
 
-  const [tab, setTab] = useState<"overview" | "discrepancies" | "chat" | "sources" | "documents" | "research">("discrepancies");
+  const [tab, setTab] = useState<"overview" | "engagement" | "discrepancies" | "chat" | "sources" | "documents" | "research">("discrepancies");
 
   if (agents.isLoading) return <PageSkeleton />;
   if (!worker) return <UnavailableState onBack={() => router.push("/studio")} />;
@@ -62,6 +63,7 @@ export default function IntelligenceWorkerPage() {
           <nav className="flex gap-6" aria-label="Intelligence tabs">
             {([
               { key: "overview", label: "Overview", icon: Users },
+              { key: "engagement", label: "Team", icon: MessageCircle },
               { key: "discrepancies", label: "Discrepancies", icon: ShieldAlert },
               { key: "chat", label: "Chat", icon: MessageSquare },
               { key: "sources", label: "Sources", icon: Database },
@@ -87,6 +89,12 @@ export default function IntelligenceWorkerPage() {
         {tab === "overview" && (
           <section className="text-white">
             <OverviewTab agentId={agentId} />
+          </section>
+        )}
+
+        {tab === "engagement" && (
+          <section className="text-white">
+            <EngagementTab agentId={agentId} />
           </section>
         )}
 

@@ -387,6 +387,15 @@ export type IntelligenceOverview = {
 export const getIntelligenceOverview = (agentId: string) =>
   request<IntelligenceOverview>(`/intelligence/agents/${encodeURIComponent(agentId)}/overview`);
 
+export type EngagementActive = { actor: string; message_count: number; channels: string[] };
+export type EngagementAwaiting = {
+  mentioned: string; mentioned_by: string; container: string; since: string;
+  hours_waiting: number; url: string | null;
+};
+export type IntelligenceEngagement = { active: EngagementActive[]; awaiting_response: EngagementAwaiting[] };
+export const getIntelligenceEngagement = (agentId: string) =>
+  request<IntelligenceEngagement>(`/intelligence/agents/${encodeURIComponent(agentId)}/engagement`);
+
 // Research briefs
 export type FindingOut = {
   text: string;
