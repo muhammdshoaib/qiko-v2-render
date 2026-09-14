@@ -218,8 +218,9 @@ async def lifespan(app: FastAPI):
         app.state.sales_notifier = sales_notifier
         app.state.sales_intel = OpportunityService(
             scan_interval_minutes=get_settings().idg_sales_scan_interval_minutes,
+            pipeline_reenqueue_cooldown_minutes=get_settings().idg_pipeline_reenqueue_cooldown_minutes,
             sources=si_sources, opportunities=si_opportunities, activity_logs=si_activity_logs,
-            notifier=sales_notifier)
+            notifier=sales_notifier, cost_guard=app.state.cost_guard)
         # app.state.task_queue already exists here (create_app() ran fully before this lifespan
         # body does): it is assigned exactly once, in create_app(), shared by both branches. Wired
         # only in THIS (use_db_stores) branch: in non-dev, TASK_BACKEND=arq, so an enqueue here
@@ -523,8 +524,10 @@ def create_app() -> FastAPI:
     app.state.notifications = NotificationService()
     app.state.cost_guard.notifications = app.state.notifications
     app.state.sales_notifier = SalesNotificationService(notifications=app.state.notifications)
-    app.state.sales_intel = OpportunityService(scan_interval_minutes=settings.idg_sales_scan_interval_minutes,
-                                               notifier=app.state.sales_notifier)
+    app.state.sales_intel = OpportunityService(
+        scan_interval_minutes=settings.idg_sales_scan_interval_minutes,
+        pipeline_reenqueue_cooldown_minutes=settings.idg_pipeline_reenqueue_cooldown_minutes,
+        notifier=app.state.sales_notifier, cost_guard=app.state.cost_guard)
     app.state.sales_intel_mutation = OpportunityMutationService(opportunities=app.state.sales_intel.opportunities,
                                                                  activity_logs=app.state.sales_intel.activity_logs,
                                                                  notifier=app.state.sales_notifier)

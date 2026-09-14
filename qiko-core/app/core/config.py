@@ -151,6 +151,9 @@ class Settings(BaseSettings):
 
     # IDG Sales Intelligence (app.modules.sales_intelligence)
     idg_sales_scan_interval_minutes: int = 1
+    # Minimum time between two agentic-pipeline enqueues for the same opportunity (QIW cost
+    # incident, 2026-09-14). See OpportunityService._may_enqueue_pipeline.
+    idg_pipeline_reenqueue_cooldown_minutes: int = 60
     public_base_url: str = "http://localhost:3000"
     # Public/embed chat is disabled by default for enterprise deployments. Dev keeps it available for
     # local tests; non-dev must opt in explicitly.

@@ -76,23 +76,33 @@ def _build_sales_runtime(sessionmaker, redis=None):
     from app.db.stores import (
         SqlActivityLogStore,
         SqlAgentStore,
+        SqlCostCapStore,
         SqlIngestFilterSettingStore,
         SqlIngestionSourceStore,
         SqlNotificationStore,
         SqlOpportunityStore,
         SqlPipelineRunStore,
+        SqlUsageStore,
     )
     from app.modules.agents.service import AgentService
+    from app.modules.ai.caps import CostGuard
     from app.modules.notifications.service import NotificationService
     from app.modules.sales_intelligence.notifications import SalesNotificationService
     from app.modules.sales_intelligence.service import OpportunityService
     from app.tasks.queue import ArqTaskQueue
 
-    notifier = SalesNotificationService(notifications=NotificationService(store=SqlNotificationStore(sessionmaker)))
+    notifications = NotificationService(store=SqlNotificationStore(sessionmaker))
+    notifier = SalesNotificationService(notifications=notifications)
     agents = AgentService(store=SqlAgentStore(sessionmaker))
     task_queue = ArqTaskQueue(redis_url=get_settings().redis_url, _pool=redis) if redis is not None else None
+    # No CostGuard existed on this cron path before (QIW cost incident, 2026-09-14): the arq
+    # worker process never built one, so the scheduled scan sweep could never be capped, mirroring
+    # app.main's own CostGuard(caps=..., usage=...) + notifications wiring.
+    cost_guard = CostGuard(caps=SqlCostCapStore(sessionmaker), usage=SqlUsageStore(sessionmaker))
+    cost_guard.notifications = notifications
     service = OpportunityService(
         scan_interval_minutes=get_settings().idg_sales_scan_interval_minutes,
+        pipeline_reenqueue_cooldown_minutes=get_settings().idg_pipeline_reenqueue_cooldown_minutes,
         sources=SqlIngestionSourceStore(sessionmaker),
         opportunities=SqlOpportunityStore(sessionmaker),
         activity_logs=SqlActivityLogStore(sessionmaker),
@@ -100,6 +110,7 @@ def _build_sales_runtime(sessionmaker, redis=None):
         agents=agents,
         task_queue=task_queue,
         pipeline_run_store=SqlPipelineRunStore(sessionmaker),
+        cost_guard=cost_guard,
     )
     ingest_filters = SqlIngestFilterSettingStore(sessionmaker)
     return service, agents, ingest_filters

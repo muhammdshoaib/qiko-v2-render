@@ -1847,6 +1847,7 @@ def _opportunity_from_row(r: SalesIntelOpportunityRow) -> Opportunity:
         published_at=r.published_at, deadline_at=r.deadline_at, stage=r.stage, recommendation=r.recommendation,
         qualification_score=r.qualification_score, confidence=r.confidence,
         pipeline_verdict=r.pipeline_verdict, pipeline_run_id=r.pipeline_run_id,
+        pipeline_last_enqueued_at=r.pipeline_last_enqueued_at,
         competitor_readiness=r.competitor_readiness, qualification_summary=r.qualification_summary,
         qualification_reasons=list(r.qualification_reasons or []),
         qualification_dimensions=dict(r.qualification_dimensions or {}),
@@ -1871,6 +1872,7 @@ def _apply_opportunity_columns(row: SalesIntelOpportunityRow, o: Opportunity) ->
     row.stage, row.recommendation = o.stage, o.recommendation
     row.qualification_score, row.confidence = o.qualification_score, o.confidence
     row.pipeline_verdict, row.pipeline_run_id = o.pipeline_verdict, o.pipeline_run_id
+    row.pipeline_last_enqueued_at = o.pipeline_last_enqueued_at
     row.competitor_readiness, row.qualification_summary = o.competitor_readiness, o.qualification_summary
     row.qualification_reasons, row.qualification_dimensions = o.qualification_reasons, o.qualification_dimensions
     row.qualification_recommendations = o.qualification_recommendations

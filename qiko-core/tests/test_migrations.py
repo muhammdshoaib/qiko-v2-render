@@ -96,3 +96,18 @@ def test_opportunity_pipeline_verdict_migration_adds_nullable_columns(tmp_path):
     con.close()
     assert "pipeline_verdict" in columns
     assert "pipeline_run_id" in columns
+
+
+def test_pipeline_enqueue_cooldown_migration_adds_nullable_column(tmp_path):
+    db = tmp_path / "cooldown.db"
+    os.environ["ALEMBIC_URL"] = f"sqlite:///{db}"
+    try:
+        cfg = Config("alembic.ini")
+        command.upgrade(cfg, "head")
+    finally:
+        os.environ.pop("ALEMBIC_URL", None)
+
+    con = sqlite3.connect(db)
+    columns = {row[1] for row in con.execute("pragma table_info(sales_intel_opportunities)")}
+    con.close()
+    assert "pipeline_last_enqueued_at" in columns

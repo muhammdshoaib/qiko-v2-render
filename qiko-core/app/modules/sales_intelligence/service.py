@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.modules.sales_intelligence import source_catalog
 from app.modules.sales_intelligence.connectors import (
@@ -120,6 +120,14 @@ class OpportunityService:
     # a service built the old way behaves exactly as before.
     task_queue: object | None = None
     pipeline_run_store: object | None = None
+    # Optional ai.caps.CostGuard. When wired, _scan_source() skips (never raises) enqueueing the
+    # agentic pipeline once the tenant/agent's monthly cap is reached -- the same guard the chat
+    # path (Worker.answer) already enforces, applied here too (QIW cost incident, 2026-09-14).
+    cost_guard: object | None = None
+    # Minimum time between two pipeline enqueues for the SAME opportunity. Without this, an
+    # opportunity that stays awaiting_review across re-scans got a fresh Synthesizer/Critic
+    # (Sonnet 4.5) run on every single scan cycle, unbounded (QIW cost incident, 2026-09-14).
+    pipeline_reenqueue_cooldown_minutes: int = 60
 
     def __post_init__(self) -> None:
         if self.sources is None:
@@ -287,6 +295,29 @@ class OpportunityService:
             agent_config = getattr(agent, "config", None) if agent is not None else None
         return self.qualification.with_config(agent_config)
 
+    async def _may_enqueue_pipeline(self, tenant: str, agent_id: str, opportunity: Opportunity) -> bool:
+        """Both halves of the cost-control gate for the agentic pipeline, checked right before an
+        enqueue that _scan_source() would otherwise make unconditionally on every scan cycle.
+
+        Cooldown first (cheap, no I/O): an opportunity that already got a pipeline run enqueued
+        recently -- whether it is still in flight or just finished and is still awaiting_review --
+        does not get another one until pipeline_reenqueue_cooldown_minutes has passed. Then the
+        cost cap (one cached DB-backed read via CostGuard): even a correctly-cooling-down pipeline
+        can still exceed a tenant's configured monthly AI spend if enough opportunities are
+        ambiguous at once, so this is a second, independent backstop, not a substitute for the
+        cooldown.
+        """
+        last = opportunity.pipeline_last_enqueued_at
+        if last is not None:
+            cooldown = timedelta(minutes=self.pipeline_reenqueue_cooldown_minutes)
+            if _now() - last < cooldown:
+                return False
+        if self.cost_guard is not None:
+            decision = await self.cost_guard.check(tenant, agent_id)
+            if not decision.allowed:
+                return False
+        return True
+
     async def _scan_source(self, tenant: str, agent_id: str, source_key: str, source_name: str,
                            search_fn, actor_user_id: str | None = None,
                            agent_config: dict | None = None, recheck_worker=None) -> dict:
@@ -379,7 +410,7 @@ class OpportunityService:
                         "missing_fields": qualification.get("missing_fields", []),
                         "risks": qualification.get("risks", []),
                     })
-                    if facets:
+                    if facets and await self._may_enqueue_pipeline(tenant, agent_id, opportunity):
                         from app.modules.agentcore.orchestration import Pipeline, PipelineConfig
 
                         pipeline_config = PipelineConfig(
@@ -387,6 +418,8 @@ class OpportunityService:
                             facets=facets, kind="idg_qualification")
                         pipeline_run = Pipeline.new_run(pipeline_config)
                         await self.pipeline_run_store.add(pipeline_run)
+                        opportunity.pipeline_last_enqueued_at = _now()
+                        await self.opportunities.update(opportunity)
                         await self.task_queue.enqueue(
                             "run_idg_qualification_pipeline", tenant=tenant, agent_id=agent_id,
                             opportunity_id=opportunity.id, run_id=pipeline_run.run_id)

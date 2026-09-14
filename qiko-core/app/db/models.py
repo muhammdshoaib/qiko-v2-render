@@ -611,6 +611,9 @@ class SalesIntelOpportunity(Base):
     # opportunity, and which PipelineRun produced it. No auto-tuning reads these yet.
     pipeline_verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)
     pipeline_run_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Enqueue-cooldown marker for OpportunityService._may_enqueue_pipeline (QIW cost incident,
+    # 2026-09-14). See the matching field docstring on the domain Opportunity model.
+    pipeline_last_enqueued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     competitor_readiness: Mapped[str | None] = mapped_column(String(40), nullable=True)
     qualification_summary: Mapped[str | None] = mapped_column(String, nullable=True)
     qualification_reasons: Mapped[list] = mapped_column(JSON, default=list)
