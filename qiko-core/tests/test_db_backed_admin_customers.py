@@ -61,6 +61,22 @@ def test_directory_reflects_real_tenants(tmp_path):
     assert globex.plan == "free" and globex.agents == 0 and globex.earnings_cents == 0
 
 
+def test_count_matches_the_in_memory_directorys_contract(tmp_path):
+    """`/admin/overview` calls customers.count() unconditionally (app/modules/admin/router.py).
+    The in-memory CustomerDirectory has always had it; SqlCustomerDirectory (the durable store
+    actually wired on preprod/live) did not, so overview() 500ed with AttributeError on every
+    real deploy since PR #204 (2026-09-02) -- untested because tests/conftest.py's `client`
+    fixture always uses the in-memory wiring (see AGENTS.md trap #8)."""
+    sm = _sessionmaker(tmp_path / "count.db")
+    _seed(sm)
+    directory = SqlCustomerDirectory(sm)
+
+    assert directory.count() == 2
+
+    directory.soft_delete("globex")
+    assert directory.count() == 1  # matches list()'s non-deleted filter, not a raw row count
+
+
 def test_search_and_plan_filter(tmp_path):
     sm = _sessionmaker(tmp_path / "filter.db")
     _seed(sm)

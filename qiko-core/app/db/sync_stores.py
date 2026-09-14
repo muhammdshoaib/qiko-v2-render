@@ -299,6 +299,14 @@ class SqlCustomerDirectory:
                 deleted=bool(flag.deleted) if flag is not None else False)
         return records
 
+    def count(self) -> int:
+        """Total non-deleted customers, mirroring the in-memory CustomerDirectory's own contract.
+        GET /admin/overview calls this unconditionally on whichever directory is wired, so a
+        missing method here 500s the whole page rather than being caught by any API test (which
+        always run against the in-memory wiring, see tests/conftest.py)."""
+        with self.sessionmaker() as s:
+            return sum(1 for r in self._records(s).values() if not r.deleted)
+
     def list(self, *, search: str | None = None, plan: str | None = None,
              page: int = 1, page_size: int = PAGE_SIZE,
              sort: str | None = None, order: str = "desc",
