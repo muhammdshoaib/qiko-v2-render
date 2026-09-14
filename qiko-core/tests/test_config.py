@@ -233,3 +233,51 @@ def test_qiko_track_service_token_is_optional():
     settings = Settings()
     assert settings.qiko_track_service_token == ""
     assert "QIKO_TRACK_SERVICE_TOKEN" not in settings.model_dump()
+
+
+# --- CORS allowlist vs CSRF trusted origins (QIKO-1102) ----------------------------------------
+
+
+def test_partner_cors_origins_are_browser_readable_but_not_csrf_trusted():
+    """The whole point of the split. cors_allow_origins answers two unrelated questions at once:
+    who may read a response in a browser, and whose Origin we trust for a cookie-authenticated
+    mutation. A partner origin needs the first and must never silently acquire the second."""
+    settings = _prod_settings(
+        cors_allow_origins=["https://qiko.example.test"],
+        partner_cors_origins=["https://panel.partner.example"])
+
+    assert settings.browser_allowed_origins == [
+        "https://qiko.example.test", "https://panel.partner.example"]
+    # The CSRF trust list is deliberately the first-party list alone.
+    assert "https://panel.partner.example" not in settings.cors_allow_origins
+
+
+def test_browser_allowed_origins_deduplicates_and_keeps_order():
+    """CORSMiddleware compares the Origin header against this list by exact string, so a repeat
+    entry is harmless but pointless, and order is preserved to keep the config readable."""
+    settings = _prod_settings(
+        cors_allow_origins=["https://qiko.example.test", "https://admin.example.test"],
+        partner_cors_origins=["https://qiko.example.test", "https://panel.partner.example"])
+
+    assert settings.browser_allowed_origins == [
+        "https://qiko.example.test", "https://admin.example.test",
+        "https://panel.partner.example"]
+
+
+def test_partner_cors_origins_default_to_empty_so_nothing_changes_for_existing_deploys():
+    assert Settings(environment="dev").partner_cors_origins == []
+    assert Settings(environment="dev").browser_allowed_origins == ["http://localhost:3000"]
+
+
+def test_non_dev_requires_https_partner_origins_too():
+    """Same rule as the first-party list: a plaintext or wildcard entry reaching a real deploy is
+    a misconfiguration, and '*' is invalid outright next to allow_credentials=True."""
+    for env in ("preprod", "live"):
+        with pytest.raises(RuntimeError, match="PARTNER_CORS_ORIGINS"):
+            _prod_settings(environment=env,
+                           partner_cors_origins=["http://panel.partner.example"]).assert_secrets_set()
+        with pytest.raises(RuntimeError, match="PARTNER_CORS_ORIGINS"):
+            _prod_settings(environment=env, partner_cors_origins=["*"]).assert_secrets_set()
+        # A well-formed partner origin is accepted.
+        _prod_settings(environment=env,
+                       partner_cors_origins=["https://panel.partner.example"]).assert_secrets_set()

@@ -53,6 +53,10 @@ def require_csrf(request: Request) -> None:
     if source is None and (referer := request.headers.get("referer")):
         parts = urlsplit(referer)
         source = f"{parts.scheme}://{parts.netloc}" if parts.scheme and parts.netloc else None
+    # First-party origins only, never settings.browser_allowed_origins. A partner origin is
+    # allowed to read a response in a browser; that is not the same as being trusted to be the
+    # Origin of a state-changing request carrying an admin's session cookie, and conflating the
+    # two is what QIKO-1102 separated.
     allowed = {origin.rstrip("/") for origin in settings.cors_allow_origins}
     if source is None:
         if settings.environment is not Environment.dev:
