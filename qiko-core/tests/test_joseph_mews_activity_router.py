@@ -536,3 +536,78 @@ def test_investor_detail_requires_the_api_key(client, monkeypatch):
     response = client.get("/api/v1/tenants/joseph-mews/investors/inv-a",
                           headers={"X-Tenant-Id": "joseph-mews"})
     assert response.status_code == 403
+
+
+# --- logging activity schedules the intent signal draft (JM2-1134) ----------------------------
+
+
+class RecordingQueue:
+    """Captures enqueue calls. Installed with dependency_overrides rather than by assigning
+    app.state: the client fixture builds its own app instance, so app.main.app is a different
+    object and setting state there records nothing."""
+
+    def __init__(self):
+        self.calls: list[dict] = []
+
+    async def enqueue(self, name, *, defer_by=None, **kwargs):
+        self.calls.append({"name": name, "defer_by": defer_by, **kwargs})
+
+
+class BrokenQueue:
+    async def enqueue(self, *_a, **_kw):
+        raise RuntimeError("redis is down")
+
+
+def _with_queue(client, queue):
+    from app.core.deps import get_task_queue
+
+    client.app.dependency_overrides[get_task_queue] = lambda: queue
+    return get_task_queue
+
+
+def test_post_activity_schedules_an_intent_signal_draft(client, monkeypatch):
+    """The wiring the cross-investor signals feed depends on. Jake, 2026-09-11: the feed "should
+    send all available intent signals for all investors", and Shoaib confirmed the integrating
+    panel has no trigger of its own. So logging activity, not opening a page, is what queues a
+    draft."""
+    queue = RecordingQueue()
+    key = _with_queue(client, queue)
+    try:
+        headers = _investor_headers(monkeypatch, investor_ref="inv-77")
+        response = client.post(
+            "/api/v1/tenants/joseph-mews/activity",
+            json={"category": "property_visit", "label": "PropertyDetail",
+                  "propertyName": "The Mayfair Residence"}, headers=headers,
+        )
+        assert response.status_code == 201
+    finally:
+        client.app.dependency_overrides.pop(key, None)
+
+    assert len(queue.calls) == 1
+    assert queue.calls[0]["name"] == "draft_jm_intent_signals"
+    assert queue.calls[0]["investor_ref"] == "inv-77"
+    assert queue.calls[0]["tenant"] == "joseph-mews"
+    # Deferred, not immediate: a browsing session emits many events, and a draft mid-session
+    # would describe a half-finished visit and be replaced minutes later.
+    assert queue.calls[0]["defer_by"].total_seconds() > 0
+
+
+def test_activity_is_still_recorded_when_the_queue_is_down(client, monkeypatch):
+    """Activity logging is the start of the whole chain. A lost draft is recoverable, because the
+    next event enqueues again; a refused write is gone for good."""
+    key = _with_queue(client, BrokenQueue())
+    try:
+        headers = _investor_headers(monkeypatch, investor_ref="inv-78")
+        response = client.post(
+            "/api/v1/tenants/joseph-mews/activity",
+            json={"category": "screen", "label": "Dashboard"}, headers=headers,
+        )
+        assert response.status_code == 201
+        assert response.json() == {"status": "recorded"}
+    finally:
+        client.app.dependency_overrides.pop(key, None)
+
+    admin = _admin_headers(monkeypatch)
+    stored = client.get("/api/v1/tenants/joseph-mews/activity?investorRef=inv-78", headers=admin)
+    assert stored.status_code == 200
+    assert len(stored.json()["events"]) == 1

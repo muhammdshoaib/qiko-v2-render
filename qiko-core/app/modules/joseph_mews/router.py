@@ -22,6 +22,7 @@ from app.core.deps import (
     get_intent_signals,
     get_investor_activity_store,
     get_jm_generations,
+    get_task_queue,
 )
 from app.modules.agents.router import verify_worker_api_key
 from app.modules.agents.service import Agent, AgentService
@@ -41,6 +42,7 @@ from app.modules.joseph_mews.activity import (
     has_signal_worthy_evidence,
 )
 from app.modules.joseph_mews.investor_token import InvestorTokenError, decode_investor_activity_token
+from app.modules.joseph_mews.signal_scheduler import IntentSignalScheduler
 from app.modules.joseph_mews.generations import GenerationKind
 from app.modules.joseph_mews.portfolio_insights import (
     MAX_PORTFOLIO_INSIGHTS,
@@ -375,11 +377,17 @@ async def post_activity(
     tenant_id: str, body: PostActivityRequest,
     investor_ref: Annotated[str, Depends(require_investor_token)],
     store: Annotated[InvestorActivityStore, Depends(get_investor_activity_store)],
+    queue: Annotated[object, Depends(get_task_queue)],
 ) -> dict:
     await store.record(
         tenant_id, investor_ref, category=body.category, label=body.label,
         property_name=body.propertyName, location=body.location, postcode=body.postcode,
     )
+    # Schedule the intent signal draft for this investor (JM2-1134). This is what populates the
+    # cross-investor feed: without it, signals only ever exist for investors somebody already
+    # opened individually, which is the per-investor querying that feed exists to replace.
+    # Deliberately after the write and deliberately unable to fail it: see on_activity.
+    await IntentSignalScheduler(task_queue=queue).on_activity(tenant_id, investor_ref)
     return {"status": "recorded"}
 
 

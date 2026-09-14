@@ -168,9 +168,15 @@ async def reconcile_invoices(ctx) -> dict:  # pragma: no cover - invoked by the 
     return await asyncio.to_thread(svc.reconcile)
 
 
+async def draft_jm_intent_signals(ctx, **kwargs):  # pragma: no cover - invoked by the arq runtime
+    # Only tenant and investor_ref reach Redis; the activity and signal stores are rebuilt here
+    # from the worker's own DB connection, like every other job in this tier.
+    return await jobs.draft_jm_intent_signals(sessionmaker=ctx["sessionmaker"], **kwargs)
+
+
 FUNCTIONS = [ingest_document, process_uploaded_document, send_email, generate_tender_artifacts,
              erase_audit_subject, generate_slack_digest, reconcile_invoices, run_intelligence_pipeline,
-             run_idg_qualification_pipeline]
+             run_idg_qualification_pipeline, draft_jm_intent_signals]
 
 # arq cron is calendar-based (no native "every N minutes" interval). Rather than encode the
 # configured cadence into a minute-set at startup, the scan cron ticks once a minute and the sweep
