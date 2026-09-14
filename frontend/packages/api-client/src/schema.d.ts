@@ -2945,6 +2945,13 @@ export interface paths {
         /**
          * List Conversations
          * @description All conversations for this worker that the tenant can see.
+         *
+         *     Kept intentionally (QIW-1028): the creator frontend has no page for this today (the admin
+         *     support view lists conversations through its own separate endpoint,
+         *     `/admin/support/workers/{agent_id}/conversations`, backed by the same `chat.list_for_agent`
+         *     call). This is the tenant-facing counterpart of that admin view, real and tested, just
+         *     without a current UI. Leave it for the first real tenant-facing consumer rather than
+         *     deleting a working, audited read path on a guess.
          */
         get: operations["list_conversations_api_v1_intelligence_agents__agent_id__conversations_get"];
         put?: never;
@@ -3097,6 +3104,16 @@ export interface paths {
          * Create Pipeline Run
          * @description Start a new intelligence pipeline run. The run is persisted immediately and the heavy
          *     work is executed by the task queue so the API returns without blocking.
+         *
+         *     Kept intentionally (QIW-1028): this is the generic, un-opinionated entry point into
+         *     `run_intelligence_pipeline` (the same Scout/Specialist/Synthesizer/Critic/Magistrate
+         *     orchestration `research/runs` below builds on). The creator frontend only drives
+         *     `research/runs` today, so this endpoint has no current UI caller. Do not mistake that for
+         *     dead code and remove it: the underlying job is real, tested, and shared by both surfaces.
+         *     This stays as the lower-level API for a future consumer (a different vertical, a script, or
+         *     an external integration) that wants a pipeline run without the research-specific framing
+         *     (subject/brief/backlog). If a second real consumer never appears, revisit removal then, with
+         *     `research/runs`'s own history as the evidence, not a guess made today.
          */
         post: operations["create_pipeline_run_api_v1_intelligence_agents__agent_id__pipeline_runs_post"];
         delete?: never;
@@ -3115,6 +3132,9 @@ export interface paths {
         /**
          * Get Pipeline Run
          * @description Read the current status of a pipeline run.
+         *
+         *     Kept intentionally alongside `create_pipeline_run` above (QIW-1028); see that endpoint's
+         *     docstring for why an endpoint with no current UI caller is not dead code here.
          */
         get: operations["get_pipeline_run_api_v1_intelligence_agents__agent_id__pipeline_runs__run_id__get"];
         put?: never;
@@ -3137,6 +3157,9 @@ export interface paths {
         /**
          * Resume Pipeline Run
          * @description Resume an existing pipeline run (e.g. after a retry or an explicit re-run request).
+         *
+         *     Kept intentionally alongside `create_pipeline_run` above (QIW-1028); see that endpoint's
+         *     docstring for why an endpoint with no current UI caller is not dead code here.
          */
         post: operations["resume_pipeline_run_api_v1_intelligence_agents__agent_id__pipeline_runs__run_id__resume_post"];
         delete?: never;
