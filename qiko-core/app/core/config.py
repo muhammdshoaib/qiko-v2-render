@@ -101,6 +101,10 @@ class Settings(BaseSettings):
     # and named generically so it is not tied to one specific backend's identity.
     investor_activity_token_secret: str = ""
     investor_activity_token_ttl_seconds: int = 24 * 60 * 60
+    # JM2-1134: how long an investor must be quiet before their activity is drafted into intent
+    # signals. A browsing session emits many events, so drafting on the first would describe a
+    # half-finished visit and then be replaced minutes later, paying for both.
+    jm_signal_draft_delay_minutes: int = 10
     slack_client_id: str = ""
     slack_client_secret: str = ""
     slack_signing_secret: str = ""   # Slack request signing for the inbound Events API

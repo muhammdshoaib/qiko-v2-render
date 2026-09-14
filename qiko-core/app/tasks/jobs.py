@@ -517,6 +517,56 @@ async def erase_audit_subject(*, identifier: str, pseudonym: str, request_ref: s
     return rows
 
 
+def _jm_signal_worker_from_state():
+    """Build the intent signal draft worker from live app state (the eager dev/test path)."""
+    from app.main import app
+    from app.modules.ai.gateway import get_provider
+    from app.modules.joseph_mews.signal_scheduler import IntentSignalDraftWorker
+
+    return IntentSignalDraftWorker(
+        activity=app.state.investor_activity,
+        signals=app.state.jm_intent_signals,
+        provider=get_provider(),
+        cost_guard=getattr(app.state, "cost_guard", None),
+        usage_store=getattr(app.state, "ai_usage", None),
+    )
+
+
+def _jm_signal_worker_from_sessionmaker(sessionmaker):
+    """Build it for the arq worker tier, from the worker's own sessionmaker.
+
+    Its own stores rather than any passed in: the job runs in a different process from the
+    request that enqueued it, so anything resolved there is unavailable here.
+    """
+    from app.db.stores import SqlCostCapStore, SqlIntentSignalStore, SqlInvestorActivityStore, SqlUsageStore
+    from app.modules.ai.caps import CostGuard
+    from app.modules.ai.gateway import get_provider
+    from app.modules.joseph_mews.signal_scheduler import IntentSignalDraftWorker
+
+    usage_store = SqlUsageStore(sessionmaker)
+    return IntentSignalDraftWorker(
+        activity=SqlInvestorActivityStore(sessionmaker),
+        signals=SqlIntentSignalStore(sessionmaker),
+        provider=get_provider(),
+        cost_guard=CostGuard(caps=SqlCostCapStore(sessionmaker), usage=usage_store),
+        usage_store=usage_store,
+    )
+
+
+@registry.register("draft_jm_intent_signals")
+async def draft_jm_intent_signals(*, tenant: str, investor_ref: str,
+                                  sessionmaker=None, sync_sessionmaker=None) -> dict:
+    """Background job: draft one investor's intent signals after their activity goes quiet.
+
+    This is what populates the cross-investor signals feed. Without it, signals exist only for
+    investors somebody already opened individually, which is the per-investor querying that feed
+    exists to replace (JM2-1134).
+    """
+    worker = (_jm_signal_worker_from_state() if sessionmaker is None
+              else _jm_signal_worker_from_sessionmaker(sessionmaker))
+    return await worker.run(tenant=tenant, investor_ref=investor_ref)
+
+
 def _slack_worker_from_state():
     """Build a DigestWorker from the live FastAPI app state (the eager dev/test path)."""
     from app.main import app
