@@ -1267,15 +1267,25 @@ async def generate_section(pack_id: str, section_id: str, request: Request,
 
 
 @router.post("/{pack_id}/generate")
-async def generate_pack(pack_id: str, request: Request, tenant: str = Depends(authed_tenant),
+async def generate_pack(pack_id: str, request: Request, only_missing: bool = False,
+                        tenant: str = Depends(authed_tenant),
                         _role: dict = Depends(require_role(Role.editor)),
                         packs=Depends(get_rfp_packs), tree=Depends(get_pack_tree)) -> list:
-    """Whole-pack draft: every non-locked question in every non-manual section, via agentcore."""
+    """Whole-pack draft: every non-locked question in every non-manual section, via agentcore.
+
+    `only_missing=true` is the resume path the "Retry drafting" recovery banner uses after a
+    partial/errored background run: it limits the run to questions with no draft yet at all
+    (no ai_answer AND no user_draft), the exact filter rfp.generation.run_generation's own
+    resumable drafts stage applies. Without it every non-locked question is redrafted, including
+    ones already AI-drafted or carrying a reviewer's saved-but-unlocked edit -- fine for a
+    deliberate full regenerate, but wasteful and destructive for a mere resume-after-outage."""
     pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
     manual_sections = {s.id for s in await tree.sections.list(tenant, pack_id) if s.manual}
     out = []
     for q in await tree.questions.list(tenant, pack_id):
         if q.section_id in manual_sections:
+            continue
+        if only_missing and (q.ai_answer or q.user_draft):
             continue
         await tree.get_question_for_pack(tenant, pack_id, q.id)
         out.append(await _generate_question(tenant, q, worker, tree, recheck,

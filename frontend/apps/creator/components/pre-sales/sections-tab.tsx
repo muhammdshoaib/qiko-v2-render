@@ -121,10 +121,12 @@ export function SectionsTab({ packId }: { packId: string }) {
   const stepper = useMemo(() => deriveStepper(status, sections.length > 0), [status, sections.length]);
   const { phase, steps, secState, draftsState, draftsDone, draftsTotal, draftsError, draftsPartial, draftsFailed, draftingInFlight } = stepper;
 
-  // C2 recovery: re-run/resume drafting for the whole pack, then invalidate + resume polling so a
-  // background retry heals the errored/partial state without a manual reload.
+  // C2 recovery: resume drafting for the questions still missing a draft (only_missing=true), then
+  // invalidate + resume polling so a background retry heals the errored/partial state without a
+  // manual reload. Scoped to the gaps rather than the whole pack so it can't re-bill an
+  // already-drafted question or clobber a reviewer's saved-but-unlocked edit.
   const retryDrafts = useMutation({
-    mutationFn: () => generatePack(packId),
+    mutationFn: () => generatePack(packId, true),
     onSuccess: () => {
       retryPollUntil.current = Date.now() + 15000;
       qc.invalidateQueries({ queryKey: ["pack-sections", packId] });
@@ -403,7 +405,7 @@ function DraftsErrorBanner({ partial, failed, onRetry, retrying, error }: {
             {partial ? "Some answers couldn\u2019t be drafted" : "Drafting failed"}
           </p>
           <p className="mt-0.5 text-[12px] text-amber-200/90">
-            {failedLabel} didn&apos;t finish drafting. You can open them below to regenerate individually, or retry the whole batch.
+            {failedLabel} didn&apos;t finish drafting. You can open them below to regenerate individually, or retry to fill in what&apos;s missing.
           </p>
           {error && (
             <p className="mt-1 flex items-center gap-1.5 text-[11px] text-red-300">

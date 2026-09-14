@@ -563,6 +563,37 @@ def test_generate_section_and_pack(client, monkeypatch):
     assert len(pack_gen) == 2
 
 
+def test_generate_pack_only_missing_resumes_without_reoverwriting(client, monkeypatch):
+    """The "Retry drafting" recovery banner (shown after a partial/errored background run) calls
+    /generate?only_missing=true so a retry drafts ONLY the questions still missing a draft --
+    mirroring rfp.generation.run_generation's own resumable stage ("not (ai_answer or
+    user_draft)") -- instead of re-billing every already-drafted question and clobbering a
+    reviewer's saved-but-unlocked edit."""
+    _patch_worker(monkeypatch, _fake_worker_factory())
+    c, pid = _pack(client, "genco4")
+    s = client.post(f"/api/v1/rfp/packs/{pid}/sections", json={"name": "Intro"}, cookies=c).json()
+    q1 = client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
+                     json={"text": "Q1"}, cookies=c).json()
+    q2 = client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
+                     json={"text": "Q2"}, cookies=c).json()
+    q3 = client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
+                     json={"text": "Q3"}, cookies=c).json()
+
+    # Q1 already AI-drafted (e.g. the background job reached it before a transient outage)...
+    client.post(f"/api/v1/rfp/packs/{pid}/questions/{q1['id']}/generate", cookies=c)
+    # ...Q2 carries a reviewer's saved-but-unlocked edit (no AI draft yet)...
+    client.put(f"/api/v1/rfp/packs/{pid}/questions/{q2['id']}/draft",
+              json={"user_draft": "human draft"}, cookies=c)
+    # ...Q3 never got a draft at all.
+
+    resumed = client.post(f"/api/v1/rfp/packs/{pid}/generate?only_missing=true", cookies=c).json()
+    assert [q["id"] for q in resumed] == [q3["id"]]
+
+    tree = {q["id"]: q for q in
+           client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()[0]["questions"]}
+    assert tree[q2["id"]]["user_draft"] == "human draft"  # untouched, not overwritten
+
+
 def test_save_draft_lock_unlock_and_stage_guard(client):
     c, pid = _pack(client, "lockco1")
     s = client.post(f"/api/v1/rfp/packs/{pid}/sections", json={"name": "Intro"}, cookies=c).json()
