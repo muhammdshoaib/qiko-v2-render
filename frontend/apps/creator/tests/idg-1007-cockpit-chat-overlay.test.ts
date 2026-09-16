@@ -21,9 +21,12 @@ test("cockpit chat panel is a fixed overlay at every breakpoint, never an inline
 });
 
 // An overlay can afford more width than the 300px column could, since it no longer steals layout.
+// IDG-1008 made that width user-set, so the 420px is now the default the panel opens at, not a
+// hardcoded class.
 test("cockpit chat panel widens on desktop", () => {
   const src = source("components/cockpit/chat-panel.tsx");
-  assert.match(src, /lg:w-\[420px\]/);
+  assert.match(src, /const DEFAULT_WIDTH = 420/);
+  assert.match(src, /lg:w-\[var\(--cockpit-chat-width\)\]/);
 });
 
 // The dim backdrop stays mobile-only: at lg+ the panel floats above the content without dimming

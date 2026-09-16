@@ -13,6 +13,21 @@ import { ChatBubble, TypingIndicator } from "@/components/chat-message";
 
 type ChatMessage = { role: string; text: string };
 
+// Desktop width bounds for the resizable panel. The minimum is the width the panel had while it
+// was still an inline column, below which the composer and a citation line stop being readable;
+// the maximum leaves the content it floats over usable rather than fully covered.
+const MIN_WIDTH = 300;
+const MAX_WIDTH = 720;
+const DEFAULT_WIDTH = 420;
+const WIDTH_STORAGE_KEY = "qiko.cockpitChatWidth";
+// One arrow keypress on the handle. Matches the 24px spacing step the cockpit already uses, and is
+// coarse enough that resizing by keyboard does not take fifty presses.
+const KEYBOARD_STEP = 24;
+
+function clampWidth(width: number): number {
+  return Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, Math.round(width)));
+}
+
 function ChatEmptyState({ title, prompt }: { title: string; prompt: string }) {
   return (
     <div className="flex h-full flex-col items-center justify-center text-center">
@@ -88,6 +103,60 @@ export function CockpitChatPanel({
 
   const canSend = ready && !send.isPending && text.trim().length > 0;
 
+  // Desktop width, restored after mount rather than in a lazy initialiser: localStorage does not
+  // exist while this renders on the server, and reading it during the first client render would
+  // make that render disagree with the server's.
+  const [width, setWidth] = useState(DEFAULT_WIDTH);
+  const [resizing, setResizing] = useState(false);
+  useEffect(() => {
+    const stored = Number(window.localStorage.getItem(WIDTH_STORAGE_KEY));
+    if (Number.isFinite(stored) && stored > 0) setWidth(clampWidth(stored));
+  }, []);
+
+  function persistWidth(next: number) {
+    setWidth(next);
+    try {
+      window.localStorage.setItem(WIDTH_STORAGE_KEY, String(next));
+    } catch {
+      // A blocked or full localStorage must not break resizing; the width just won't be remembered.
+    }
+  }
+
+  // Pointer events rather than mouse events, and setPointerCapture, so a fast drag that leaves the
+  // 3px handle (or the window) keeps resizing and still ends on release.
+  function startResize(event: React.PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = width;
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
+    setResizing(true);
+
+    const onMove = (move: PointerEvent) => {
+      // Anchored right: dragging left (a smaller clientX) makes the panel wider.
+      persistWidth(clampWidth(startWidth + (startX - move.clientX)));
+    };
+    const onUp = () => {
+      setResizing(false);
+      handle.releasePointerCapture(event.pointerId);
+      handle.removeEventListener("pointermove", onMove);
+      handle.removeEventListener("pointerup", onUp);
+      handle.removeEventListener("pointercancel", onUp);
+    };
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", onUp);
+    handle.addEventListener("pointercancel", onUp);
+  }
+
+  function resizeByKey(event: React.KeyboardEvent<HTMLDivElement>) {
+    const step = event.key === "ArrowLeft" ? KEYBOARD_STEP
+      : event.key === "ArrowRight" ? -KEYBOARD_STEP
+        : 0;
+    if (!step) return;
+    event.preventDefault();
+    persistWidth(clampWidth(width + step));
+  }
+
   return (
     <>
       {/* Dim backdrop only below lg, where the chat is a modal drawer over the whole view. At lg+
@@ -95,6 +164,10 @@ export function CockpitChatPanel({
           tender (and copy from it) while asking questions. */}
       <div onClick={onClose} className="fixed inset-0 top-14 z-30 bg-black/50 lg:hidden" aria-hidden="true" />
       <aside
+        // The width lives in a custom property, not an inline width: below lg the panel is a touch
+        // drawer whose width is the class-driven one, and only the lg+ class consumes the variable.
+        // An inline width would win at every breakpoint and there is no media query in style={}.
+        style={{ "--cockpit-chat-width": `${width}px` } as React.CSSProperties}
         className={cn(
           "z-40 flex min-h-0 w-[300px] flex-col border-l border-white/[0.06] bg-[#05070d]",
           // Overlay anchored under the header on the right, at every width. It is deliberately NOT
@@ -102,10 +175,33 @@ export function CockpitChatPanel({
           // and squeezed <main> into a narrow strip, which read as a thin sidebar rather than a
           // chat (client feedback, 2026-09-16). Floating it leaves the content full-width.
           "fixed bottom-0 right-0 top-14 max-w-[86vw] shadow-2xl shadow-black/50",
-          // Wider on desktop, which an overlay can afford now that it no longer steals layout.
-          "lg:w-[420px] lg:max-w-none",
+          // Resizable on desktop, where there is a pointer to drag the edge with.
+          "lg:w-[var(--cockpit-chat-width)] lg:max-w-none",
+          // A drag that crosses the transcript would otherwise select its text.
+          resizing && "select-none",
         )}
       >
+        {/* Drag handle on the left edge (the panel is anchored right). Desktop only: below lg the
+            panel is a full-height touch drawer capped at 86vw, where a 3px edge is not a gesture
+            anyone can hit. role=separator with aria-orientation/valuenow is what makes it a
+            resize control to a screen reader rather than a decorative strip. */}
+        <div
+          onPointerDown={startResize}
+          onKeyDown={resizeByKey}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize chat panel"
+          aria-valuenow={width}
+          aria-valuemin={MIN_WIDTH}
+          aria-valuemax={MAX_WIDTH}
+          tabIndex={0}
+          className={cn(
+            "absolute inset-y-0 left-0 hidden w-1.5 -translate-x-1/2 cursor-col-resize lg:block",
+            "after:absolute after:inset-y-0 after:left-1/2 after:w-px after:-translate-x-1/2 after:bg-transparent",
+            "hover:after:bg-indigo-400/60 focus-visible:outline-none focus-visible:after:bg-indigo-400",
+            resizing && "after:bg-indigo-400",
+          )}
+        />
         <div className="flex shrink-0 items-center justify-between border-b border-white/[0.06] px-4 py-3.5">
           <div className="flex items-center gap-2.5">
             <span className="flex size-8 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-400">
