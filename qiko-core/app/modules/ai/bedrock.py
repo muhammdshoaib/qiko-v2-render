@@ -37,12 +37,18 @@ class BedrockProvider:
     # boto3's defaults (60s read timeout x up to 3 retries) mean one slow/unresponsive endpoint
     # can block for minutes before the gateway ever gets to try its fallback provider -- observed
     # live (a 15-requirement tender's answers taking >15 minutes). Fail fast instead: a couple of
-    # short retries, then let the caller fall back. 20s is right for the hot path (one small
-    # per-requirement answer at a time), but is too tight for a single one-shot call over a whole
-    # tender document (extraction/compliance/brief -- see rfp/router.py), which legitimately needs
-    # longer to read tens of thousands of chars and produce a complete structured response; those
-    # call sites build their own BedrockProvider(read_timeout=...) instead of using this default.
-    read_timeout: int = 20
+    # short retries, then let the caller fall back. Still too tight for a single one-shot call
+    # over a whole tender document (extraction/compliance/brief -- see rfp/router.py), which
+    # legitimately needs longer to read tens of thousands of chars and produce a complete
+    # structured response; those call sites pass their own read_timeout instead.
+    #
+    # 0 means "take the configured default" (settings.ai_read_timeout_seconds), the same
+    # resolve-from-settings idiom model/profile/region use below. It was a hardcoded 20s, which is
+    # BELOW the time a real answer takes: a Sonnet 4.5 answer that runs to the 1024-token ceiling
+    # measured 22-23s against eu-central-1, so any long answer timed out, fell through to the stub
+    # provider, and surfaced to the reviewer as a provider outage while Bedrock was perfectly
+    # healthy (a 2s probe call in the same region succeeded throughout).
+    read_timeout: int = 0
     # Output ceiling. 1024 suits the hot path (one short per-requirement answer) and is far too
     # small for a one-shot structured call over a whole document: requirements extraction on a
     # 2 KB tender already returned exactly 1024 tokens, cut mid-key, and surfaced as "model did
@@ -55,6 +61,7 @@ class BedrockProvider:
         self.model = self.model or s.bedrock_model
         self.profile = self.profile or s.bedrock_inference_profile
         self.region = self.region or s.aws_region
+        self.read_timeout = self.read_timeout or s.ai_read_timeout_seconds
 
     @property
     def model_id(self) -> str:

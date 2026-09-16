@@ -59,6 +59,12 @@ class Settings(BaseSettings):
     # AI gateway (ADR-007/008/009)
     ai_provider: str = "bedrock"
     ai_fallback_provider: str = "stub"
+    # Read timeout for the per-answer hot path (see BedrockProvider.read_timeout). A setting rather
+    # than a constant because the value that is right depends on how long the configured model
+    # takes to reach the output ceiling, which is a property of the deployment, not of the code:
+    # it was 20s, and a Sonnet 4.5 answer that runs to the full 1024-token ceiling measured 22-23s
+    # against eu-central-1, so every long answer timed out and fell through to the stub provider.
+    ai_read_timeout_seconds: int = 45
     aws_region: str = "eu-central-1"
     bedrock_inference_profile: str = "eu"  # eu | us | jp | au | global | "" (in-region)
     bedrock_model: str = "anthropic.claude-sonnet-4-5"

@@ -1,5 +1,6 @@
 import math
 
+from app.core.config import get_settings
 from app.modules.ai.bedrock import BedrockProvider, resolve_model_id
 from app.modules.ai.embeddings import LocalEmbeddings, get_embeddings
 from app.modules.ai.gateway import (
@@ -23,7 +24,11 @@ def test_bedrock_provider_uses_config_defaults():
     p = BedrockProvider()
     assert p.model_id == "eu.anthropic.claude-sonnet-4-5"  # default profile 'eu'
     assert p.region == "eu-central-1"
-    assert p.read_timeout == 20  # fast per-requirement hot path default
+    # Per-answer read timeout, resolved from settings rather than hardcoded: it was 20s, below the
+    # 22-23s a Sonnet 4.5 answer that runs to the 1024-token ceiling actually takes, so long
+    # answers timed out into the stub provider and surfaced as a provider outage.
+    assert p.read_timeout == get_settings().ai_read_timeout_seconds
+    assert p.read_timeout > 23
 
 
 def test_bedrock_provider_sets_output_token_ceiling(monkeypatch):
