@@ -240,7 +240,22 @@ async def refresh_drafts_status(*, tenant: str, pack_id: str, packs, tree) -> di
     Returns the saved status, or None when the pack carries no gen_status at all: those are the
     pre-background-job packs the frontend has a documented fallback for (sections exist, so it
     lands on Review), and inventing a partial status for them would push them back a step.
+
+    Fails OPEN, and that is the whole point of the try/except: this is bookkeeping about work that
+    has already been done and persisted. If recomputing or saving the block raises, the drafts
+    themselves are still there, and turning a successful "Retry drafting" into a 500 because the
+    status write failed would be a worse bug than the stale banner this function exists to fix.
+    Same rule the spend accounting follows (`ai.caps.CostGuard`, and see the repo's "fail closed on
+    authz, fail open on accounting" convention): metering must never fail a served answer.
     """
+    try:
+        return await _refresh_drafts_status(tenant=tenant, pack_id=pack_id, packs=packs, tree=tree)
+    except Exception as error:  # noqa: BLE001 - see the fail-open note above
+        logger.warning("drafts status refresh failed for pack %s: %s", pack_id, error)
+        return None
+
+
+async def _refresh_drafts_status(*, tenant: str, pack_id: str, packs, tree) -> dict | None:
     pack = await packs.get(tenant, pack_id)
     if pack is None or not pack.gen_status:
         return None
