@@ -7,6 +7,7 @@ from app.core.deps import WorkerUnavailable
 from app.modules.agentcore.models import AgentResult, Critique, Decision
 from app.modules.agents.service import Agent
 from app.modules.ai.caps import CapDecision, CostCapExceeded
+from app.modules.rfp import router
 from app.modules.rfp.service import PackRequirement
 from app.modules.rfp.tree import PackQuestionNotFound, PackSectionNotFound, PackTreeService
 
@@ -665,27 +666,30 @@ def test_generate_pack_isolation_does_not_swallow_fail_closed_signals(
     assert r.status_code == expected_status
 
 
-def test_generate_pack_stub_outage_still_fails_whole_batch_closed(client, monkeypatch):
-    """A genuine provider outage (StubProviderUnavailable, raised when a question's answer came
-    from the deterministic StubProvider fallback) must still fail the WHOLE /generate (batch)
-    request with 503, even though the per-question isolation added for ordinary failures (see
-    test_generate_pack_isolates_per_question_failures) lets other kinds of errors continue past.
-    test_generate_question_rejects_stub_fallback_and_does_not_persist covers this at the
-    single-question route only; this covers the batch route the isolation change actually
-    touched, and additionally checks the batch stops immediately rather than quietly continuing
-    to draft questions ordered after the outage."""
-    class _OneStubWorker:
+def _stub_on(marker: str):
+    """Worker whose answer comes back from the deterministic StubProvider (stub=True, what
+    `_generate_question` turns into a 503) for questions whose text is `marker`, and drafts
+    normally for everything else."""
+    class _Worker:
         async def answer(self, rid, text, **_kw):
-            if text == "OUTAGE":
+            if text == marker:
                 return AgentResult(requirement_id=rid, answer="echo",
                                    critique=Critique(grounding=0.0), decision=Decision.human_review,
                                    citations=[], confidence=0.0, gaps="", stub=True)
             return AgentResult(requirement_id=rid, answer="AI draft",
                                critique=Critique(grounding=0.9), decision=Decision.auto_accept,
                                citations=["doc:iso"], confidence=0.9, gaps="", stub=False)
+    return _Worker()
 
+
+def test_generate_pack_keeps_drafting_past_a_single_provider_outage(client, monkeypatch):
+    """One question coming back from the stub provider is one answer not arriving, not the
+    provider being down: a full-length Sonnet answer can exceed the read timeout while Bedrock is
+    healthy. Aborting the whole click on the first one is what made "Retry drafting" unusable on
+    a real tender (reported live, 2026-09-16) -- the reviewer never got the sections that would
+    have drafted fine. The run must continue and return them."""
     async def _build(*_a, **_kw):
-        return _OneStubWorker()
+        return _stub_on("OUTAGE")
     _patch_worker(monkeypatch, _build)
 
     c, pid = _pack(client, "genco9")
@@ -698,12 +702,41 @@ def test_generate_pack_stub_outage_still_fails_whole_batch_closed(client, monkey
                         json={"text": "Q2"}, cookies=c).json()
 
     r = client.post(f"/api/v1/rfp/packs/{pid}/generate", cookies=c)
+    assert r.status_code == 200
+    assert {q["id"] for q in r.json()} == {before["id"], after["id"]}
+
+    tree = {q["id"]: q for q in
+           client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()[0]["questions"]}
+    assert tree[before["id"]]["ai_answer"] == "AI draft"
+    # The one that hit the outage is not persisted as an answer (the stub echo must never look
+    # like a draft) and is reached anyway, rather than the run stopping at it.
+    assert tree[after["id"]]["ai_answer"] == "AI draft"
+
+
+def test_generate_pack_fails_closed_when_the_provider_never_answers(client, monkeypatch):
+    """The dead-provider protection the isolation was written for, kept: when every question comes
+    back from the stub provider, the batch has drafted nothing and must report the outage as a 503
+    rather than a successful empty run. It also stops after `_OUTAGE_STREAK` in a row instead of
+    walking a whole tender against a provider that is not answering."""
+    async def _build(*_a, **_kw):
+        return _stub_on("OUTAGE")
+    _patch_worker(monkeypatch, _build)
+
+    c, pid = _pack(client, "genco10")
+    s = client.post(f"/api/v1/rfp/packs/{pid}/sections", json={"name": "Intro"}, cookies=c).json()
+    for _ in range(router._OUTAGE_STREAK + 2):
+        client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
+                   json={"text": "OUTAGE"}, cookies=c)
+    tail = client.post(f"/api/v1/rfp/packs/{pid}/sections/{s['id']}/questions",
+                       json={"text": "Q-last"}, cookies=c).json()
+
+    r = client.post(f"/api/v1/rfp/packs/{pid}/generate", cookies=c)
     assert r.status_code == 503
 
     tree = {q["id"]: q for q in
            client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()[0]["questions"]}
-    assert tree[before["id"]]["ai_answer"] == "AI draft"  # drafted before the outage was hit
-    assert tree[after["id"]]["ai_answer"] == ""  # batch stopped, never reached
+    # Gave up on the streak, so the question ordered after it was never attempted.
+    assert tree[tail["id"]]["ai_answer"] == ""
 
 
 def test_save_draft_lock_unlock_and_stage_guard(client):

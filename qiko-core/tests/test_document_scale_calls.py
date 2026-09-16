@@ -40,7 +40,7 @@ def test_get_provider_without_overrides_is_unchanged(monkeypatch):
     monkeypatch.setattr(gateway.get_settings(), "ai_fallback_provider", "")
 
     provider = get_provider()
-    assert provider.read_timeout == 20
+    assert provider.read_timeout == gateway.get_settings().ai_read_timeout_seconds
     assert provider.max_tokens == 1024
 
 

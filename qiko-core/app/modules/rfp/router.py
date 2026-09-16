@@ -50,9 +50,15 @@ router = APIRouter(prefix="/rfp/packs", tags=["rfp"])
 logger = logging.getLogger(__name__)
 
 # extract/ask/compliance/brief are one-shot calls over a whole tender document (tens of thousands
-# of chars in, a full structured response out) -- the gateway's default read_timeout (20s) is
-# tuned for the fast per-requirement answering hot path and is routinely too tight for these.
+# of chars in, a full structured response out) -- the gateway's per-answer read timeout
+# (settings.ai_read_timeout_seconds) is tuned for one per-requirement answer and is routinely too
+# tight for these.
 _DOCUMENT_READ_TIMEOUT = 90
+
+# How many questions in a row have to come back as a provider outage before a whole-pack draft
+# gives up on the provider. One is not evidence: a single answer can exceed the read timeout while
+# the provider is healthy, and aborting the whole run on it left the reviewer with nothing.
+_OUTAGE_STREAK = 3
 
 
 async def _resolve_pack_worker(request: Request, tenant: str, pack_id: str, packs):
@@ -1284,19 +1290,26 @@ async def generate_pack(pack_id: str, request: Request, only_missing: bool = Fal
     ones already AI-drafted or carrying a reviewer's saved-but-unlocked edit -- fine for a
     deliberate full regenerate, but wasteful and destructive for a mere resume-after-outage.
 
-    One question raising a non-outage error does not fail the whole batch: it is skipped and
-    logged, so e.g. a single flaky retrieval call cannot fail a "Retry drafting" click that would
-    otherwise have fixed every OTHER still-missing section (mirrors
-    rfp.generation.run_generation's own per-question isolation for the background job). Three
-    fail-closed signals are NOT swallowed by that isolation and still abort the whole request,
-    exactly as before this change: a genuine provider outage (StubProviderUnavailable, surfaced
-    by `_generate_question` as a 503), the worker being disabled mid-run (WorkerUnavailable,
-    app.main's 404 handler), and the tenant's AI spend cap being reached (CostCapExceeded,
-    app.main's 402 handler) -- continuing to draft after any of those would either waste calls on
-    a dead provider or let an editor whose worker/budget was just revoked keep spending anyway."""
+    One question failing does not fail the whole batch: it is skipped and logged, so e.g. a single
+    flaky retrieval call cannot fail a "Retry drafting" click that would otherwise have fixed every
+    OTHER still-missing section (mirrors rfp.generation.run_generation's own per-question isolation
+    for the background job).
+
+    That includes a per-question 503, which is one answer not coming back rather than the provider
+    being down: the run continues, and only gives up on the provider once `_OUTAGE_STREAK`
+    questions in a row come back that way, or once the run ends with nothing drafted at all, in
+    which case the 503 is re-raised so the reviewer sees an outage instead of an empty success.
+    Treating the first 503 as a dead provider is what made retry unusable on a real tender.
+
+    Two fail-closed signals are still never swallowed and abort the whole request immediately: the
+    worker being disabled mid-run (WorkerUnavailable, app.main's 404 handler) and the tenant's AI
+    spend cap being reached (CostCapExceeded, app.main's 402 handler). Continuing past either would
+    let an editor whose worker or budget was just revoked keep spending anyway."""
     pack, worker, recheck = await _resolve_pack_worker(request, tenant, pack_id, packs)
     manual_sections = {s.id for s in await tree.sections.list(tenant, pack_id) if s.manual}
     out = []
+    consecutive_outages = 0
+    last_outage: HTTPException | None = None
     for q in await tree.questions.list(tenant, pack_id):
         if q.section_id in manual_sections:
             continue
@@ -1306,13 +1319,33 @@ async def generate_pack(pack_id: str, request: Request, only_missing: bool = Fal
         try:
             out.append(await _generate_question(tenant, q, worker, tree, recheck,
                                                 pack.reference_doc_id))
-        except HTTPException:
-            raise  # StubProviderUnavailable -> 503: a genuine outage fails the batch closed
+            consecutive_outages = 0
+        except HTTPException as e:
+            # A 503 here is one question's answer not coming back from the provider. That is not
+            # the same thing as the provider being down, and treating it as such made "Retry
+            # drafting" unusable on a real tender: one long answer aborted the whole click, so the
+            # reviewer never got the other sections that would have drafted fine (reported live,
+            # 2026-09-16). Keep the dead-provider protection the isolation was written for, but
+            # key it on evidence of a dead provider: _OUTAGE_STREAK failures in a row, or nothing
+            # drafted at all.
+            if e.status_code != 503:
+                raise
+            consecutive_outages += 1
+            last_outage = e
+            logger.warning("generate_pack: question %s (section %s) hit a provider outage "
+                           "(streak %d): %s", q.id, q.section_id, consecutive_outages, e.detail)
+            if consecutive_outages >= _OUTAGE_STREAK:
+                break
         except (WorkerUnavailable, CostCapExceeded):
             raise  # worker disabled / cost cap reached: fail closed, same as every sibling route
         except Exception as e:  # noqa: BLE001 - one bad question must not sink the rest
             logger.warning("generate_pack: question %s (section %s) failed to draft: %s",
                            q.id, q.section_id, e)
+    # Nothing drafted and the provider was the reason: fail closed, so the reviewer sees an outage
+    # rather than an empty success. Anything drafted means the click did useful work, and the
+    # sections that did not are already surfaced by the partial/failed state the banner renders.
+    if not out and last_outage is not None:
+        raise last_outage
     return out
 
 
