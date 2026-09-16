@@ -295,6 +295,44 @@ async def test_refresh_drafts_status_reports_error_when_nothing_is_drafted_at_al
     assert saved["drafts"]["done"] == 0 and saved["drafts"]["failed"] == 2
 
 
+async def test_refresh_drafts_status_fails_open_when_the_status_write_breaks():
+    """The drafts are already written and persisted by the time this runs, so a failure here is a
+    bookkeeping failure, not a drafting failure. It must not propagate: letting it turn a
+    successful retry into a 500 would be worse than the stale banner this function exists to fix.
+    Same rule the spend accounting follows."""
+    packs, tree, pack = await _pack_with_stale_drafts_status(drafted=3, missing=0)
+
+    async def boom(*_a, **_kw):
+        raise RuntimeError("pack row is locked")
+    packs.set_gen_status = boom
+
+    assert await generation.refresh_drafts_status(
+        tenant="t", pack_id=pack.id, packs=packs, tree=tree) is None
+    # And the stale block is still there, untouched rather than half-written.
+    assert (await packs.get("t", pack.id)).gen_status["drafts"]["state"] == "error"
+
+
+def test_a_broken_status_write_does_not_fail_the_retry_request(client, monkeypatch):
+    """The endpoint-level guarantee: drafting succeeded, so the caller gets its drafts and a 200
+    even if the status refresh underneath could not be saved."""
+    _patch(monkeypatch, stub=True)
+    c, pid = _pack(client, "genfailopen")
+    _upload(client, c, pid)
+
+    monkeypatch.setattr("app.modules.rfp.router.resolve_tenant_worker",
+                        _http_worker(answer="Recovered draft"))
+
+    async def boom(*_a, **_kw):
+        raise RuntimeError("pack row is locked")
+    monkeypatch.setattr(client.app.state.rfp_packs, "set_gen_status", boom)
+
+    r = client.post(f"/api/v1/rfp/packs/{pid}/generate?only_missing=true", cookies=c)
+    assert r.status_code == 200 and len(r.json()) == 1
+
+    tree = client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()
+    assert tree[0]["questions"][0]["ai_answer"] == "Recovered draft"  # the draft survived
+
+
 async def test_refresh_drafts_status_leaves_a_pack_with_no_gen_status_alone():
     """Packs from before the background job carry no gen_status, and the frontend has a
     documented fallback that lands them on Review when their sections exist. Writing a status for
