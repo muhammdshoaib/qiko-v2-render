@@ -103,6 +103,7 @@ def _build_sales_runtime(sessionmaker, redis=None):
     service = OpportunityService(
         scan_interval_minutes=get_settings().idg_sales_scan_interval_minutes,
         pipeline_reenqueue_cooldown_minutes=get_settings().idg_pipeline_reenqueue_cooldown_minutes,
+        pipeline_max_attempts=get_settings().idg_pipeline_max_attempts,
         sources=SqlIngestionSourceStore(sessionmaker),
         opportunities=SqlOpportunityStore(sessionmaker),
         activity_logs=SqlActivityLogStore(sessionmaker),

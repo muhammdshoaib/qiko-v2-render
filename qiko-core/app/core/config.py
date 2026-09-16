@@ -158,6 +158,12 @@ class Settings(BaseSettings):
     # Minimum time between two agentic-pipeline enqueues for the same opportunity (QIW cost
     # incident, 2026-09-14). See OpportunityService._may_enqueue_pipeline.
     idg_pipeline_reenqueue_cooldown_minutes: int = 60
+    # Total agentic-pipeline runs a single opportunity may ever accrue. The cooldown above only
+    # bounds the RATE for one opportunity; an opportunity that never resolves (stays
+    # awaiting_review forever) still got a fresh run every cooldown window, unbounded, so the
+    # tenant's total Bedrock spend kept climbing even after the 2026-09-14 fix (QIW cost incident
+    # continuation, 2026-09-16). None means unlimited. See OpportunityService._may_enqueue_pipeline.
+    idg_pipeline_max_attempts: int | None = 3
     public_base_url: str = "http://localhost:3000"
     # Public/embed chat is disabled by default for enterprise deployments. Dev keeps it available for
     # local tests; non-dev must opt in explicitly.

@@ -532,6 +532,58 @@ async def test_scan_reenqueues_after_cooldown_elapses(monkeypatch):
     assert len(enqueued) == 2
 
 
+async def test_pipeline_stops_after_max_attempts_even_past_cooldown(monkeypatch):
+    """The gap the cooldown alone left open: an opportunity that never resolves (stays
+    awaiting_review forever) must not accrue an unbounded number of agentic pipeline runs just
+    because the cooldown keeps elapsing. After pipeline_max_attempts enqueues, no more follow
+    even once the cooldown has genuinely passed (QIW cost incident continuation, 2026-09-16)."""
+    from app.modules.agentcore.orchestration import InMemoryPipelineRunStore
+    from app.modules.sales_intelligence import service as service_module
+
+    queue = _StubTaskQueue()
+    svc = OpportunityService(task_queue=queue, pipeline_run_store=InMemoryPipelineRunStore(),
+                             pipeline_reenqueue_cooldown_minutes=30, pipeline_max_attempts=2)
+    await svc.update_source_status("acme", "agent-1", "ted", "active")
+
+    def fake_search(filters=None):
+        return {"payload": {}, "skipped": 0, "notices": [_still_ambiguous_notice("REVIEW-7")]}
+
+    monkeypatch.setattr(svc.ted, "search", fake_search)
+
+    base = datetime.now(timezone.utc)
+    for i in range(4):
+        monkeypatch.setattr(service_module, "_now", lambda i=i: base + timedelta(minutes=31 * i))
+        await svc.scan_ted("acme", "agent-1", {})
+
+    enqueued = [c for c in queue.calls if c[0] == "run_idg_qualification_pipeline"]
+    assert len(enqueued) == 2
+
+
+async def test_pipeline_max_attempts_none_means_unlimited(monkeypatch):
+    """Explicit opt-out: a service built with pipeline_max_attempts=None keeps re-enqueueing
+    past the cooldown indefinitely, matching the old (0054) behaviour exactly."""
+    from app.modules.agentcore.orchestration import InMemoryPipelineRunStore
+    from app.modules.sales_intelligence import service as service_module
+
+    queue = _StubTaskQueue()
+    svc = OpportunityService(task_queue=queue, pipeline_run_store=InMemoryPipelineRunStore(),
+                             pipeline_reenqueue_cooldown_minutes=30, pipeline_max_attempts=None)
+    await svc.update_source_status("acme", "agent-1", "ted", "active")
+
+    def fake_search(filters=None):
+        return {"payload": {}, "skipped": 0, "notices": [_still_ambiguous_notice("REVIEW-8")]}
+
+    monkeypatch.setattr(svc.ted, "search", fake_search)
+
+    base = datetime.now(timezone.utc)
+    for i in range(4):
+        monkeypatch.setattr(service_module, "_now", lambda i=i: base + timedelta(minutes=31 * i))
+        await svc.scan_ted("acme", "agent-1", {})
+
+    enqueued = [c for c in queue.calls if c[0] == "run_idg_qualification_pipeline"]
+    assert len(enqueued) == 4
+
+
 class _StubCostGuard:
     """Records check() calls; `allowed` controls whether the cap is reached."""
     def __init__(self, *, allowed: bool) -> None:

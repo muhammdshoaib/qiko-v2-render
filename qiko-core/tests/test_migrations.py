@@ -111,3 +111,22 @@ def test_pipeline_enqueue_cooldown_migration_adds_nullable_column(tmp_path):
     columns = {row[1] for row in con.execute("pragma table_info(sales_intel_opportunities)")}
     con.close()
     assert "pipeline_last_enqueued_at" in columns
+
+
+def test_pipeline_attempt_count_migration_adds_notnull_zero_default_column(tmp_path):
+    db = tmp_path / "attempt_count.db"
+    os.environ["ALEMBIC_URL"] = f"sqlite:///{db}"
+    try:
+        cfg = Config("alembic.ini")
+        command.upgrade(cfg, "head")
+    finally:
+        os.environ.pop("ALEMBIC_URL", None)
+
+    con = sqlite3.connect(db)
+    columns = {row[1]: row for row in con.execute("pragma table_info(sales_intel_opportunities)")}
+    con.close()
+    assert "pipeline_attempt_count" in columns
+    # row: (cid, name, type, notnull, dflt_value, pk). SQLite renders a string server_default
+    # as a quoted literal.
+    assert columns["pipeline_attempt_count"][3] == 1
+    assert columns["pipeline_attempt_count"][4] == "'0'"
