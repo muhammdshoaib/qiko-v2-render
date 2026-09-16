@@ -253,7 +253,8 @@ jobs:
             tests/sales-source-catalog.spec.ts \
             tests/qik313-settings.spec.ts \
             tests/qik338-push-to-studio.spec.ts \
-            tests/finance-drilldown.spec.ts
+            tests/finance-drilldown.spec.ts \
+            tests/idg-1008-chat-resize.spec.ts
         working-directory: frontend/e2e
       - if: failure()
         uses: actions/upload-artifact@v4
