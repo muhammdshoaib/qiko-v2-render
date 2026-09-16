@@ -4,7 +4,7 @@
 // the generic <AppShell> (no global Creator/Studio left rail): this mirrors the original worker
 // product's own top bar + icon nav + chat panel layout pixel-for-pixel (see
 // studio-sales-intel-detail.png / pipeline-view.png / ingestion-filters.png / studio-sf-push-log.png).
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Bell, Gavel, History, LayoutGrid, MessageSquare, Radar, TableProperties, Upload } from "lucide-react";
 import { cn } from "@qiko/ui";
@@ -35,17 +35,12 @@ export function CockpitShell({ agentId, workerName, active, children }: {
   agentId: string; workerName: string; active: CockpitSection; children: React.ReactNode;
 }) {
   const router = useRouter();
-  const [chatOpen, setChatOpen] = useState(true);
+  // Closed on first load at every width: the chat is an overlay now, not an inline column, so
+  // opening it by default would cover the content (and the controls in it) until dismissed. It
+  // opens on demand from the Chat button in the top bar.
+  const [chatOpen, setChatOpen] = useState(false);
   // One conversation id per cockpit mount, kept stable across re-renders.
   const [cid] = useState(() => `sales-intel-${agentId}-${Math.random().toString(36).slice(2)}`);
-
-  // On mobile/tablet the chat is a full-height overlay drawer, so don't open it over the content
-  // on first load; keep the original open-by-default behaviour on lg+ (inline side column).
-  useEffect(() => {
-    if (typeof window !== "undefined" && !window.matchMedia("(min-width: 1024px)").matches) {
-      setChatOpen(false);
-    }
-  }, []);
 
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-[#05070d] text-slate-200">

@@ -4,7 +4,7 @@
 // Intelligence cockpit-shell (dark theme, indigo/violet accents, top bar + left icon rail + chat
 // panel) for cross-vertical consistency, but is tab-state driven (one route, /studio/[id]/pre-sales)
 // rather than route-per-section, because tab + active-tender selection are interdependent state.
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronRight, FileText, LayoutGrid, ListChecks, MessageSquare, Plus, ShieldCheck,
@@ -43,13 +43,10 @@ export function PreSalesCockpitShell({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  // Closed on first load at every width: the chat is an overlay now, not an inline column, so
+  // opening it by default would cover the content (and the controls in it) until dismissed. It
+  // opens on demand from the Chat button in the top bar.
   const [chatOpen, setChatOpen] = useState(false);
-
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches) {
-      setChatOpen(true);
-    }
-  }, []);
 
   return (
     <div className="flex h-[100dvh] flex-col overflow-hidden bg-[#05070d] text-slate-200">

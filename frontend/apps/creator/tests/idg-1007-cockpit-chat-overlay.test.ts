@@ -44,3 +44,20 @@ test("both cockpit shells render the shared chat panel", () => {
     assert.match(source(path), /<CockpitChatPanel/);
   }
 });
+
+// An open-by-default overlay would cover the content (and every control under it) on first load
+// until dismissed: Sales Intelligence used to start with chatOpen=true and Pre-Sales opened it
+// from an lg+ matchMedia effect, both safe only while the panel was an inline column. Four
+// desktop e2e specs failed on exactly that (clicks intercepted by the panel). Closed on load in
+// both cockpits, opened from the Chat button.
+test("neither cockpit opens the chat on first load", () => {
+  for (const path of [
+    "components/pre-sales/cockpit-shell.tsx",
+    "components/sales-intelligence/cockpit-shell.tsx",
+  ]) {
+    const src = source(path);
+    assert.match(src, /const \[chatOpen, setChatOpen\] = useState\(false\)/);
+    assert.doesNotMatch(src, /matchMedia/);
+    assert.doesNotMatch(src, /setChatOpen\(true\)/);
+  }
+});
