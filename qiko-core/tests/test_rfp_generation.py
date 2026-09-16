@@ -137,6 +137,72 @@ def test_stub_guard_stops_drafts_without_persisting(client, monkeypatch):
     assert tree[0]["questions"][0]["ai_answer"] == ""  # nothing written from the stub
 
 
+def test_retry_drafting_clears_the_stale_failure_banner_state(client, monkeypatch):
+    """IDG-1010, reported live: after the retry finally drafted everything, the failure banner
+    stayed on screen. The banner reads gen_status.drafts, and only the background job ever wrote
+    that block, so a successful inline retry left the original failure snapshot behind. Observed
+    on preprod: all 48 questions drafted, status still {"state": "error", "done": 6, "total": 48}.
+
+    This walks the whole reported path: an outage leaves drafts in "error" with nothing drafted,
+    the retry then drafts everything, and the status has to say so."""
+    _patch(monkeypatch, stub=True)  # provider outage on upload
+    c, pid = _pack(client, "genretrybanner")
+    _upload(client, c, pid)
+
+    stale = client.get(f"/api/v1/rfp/packs/{pid}/status", cookies=c).json()
+    assert stale["drafts"]["state"] == "error"
+    assert stale["errors"]["drafts"] == "answer generation is temporarily unavailable"
+
+    # Provider recovers, reviewer clicks "Retry drafting" (only_missing=true is what it calls).
+    monkeypatch.setattr("app.modules.rfp.router.resolve_tenant_worker",
+                        _http_worker(answer="Recovered draft"))
+    assert client.post(f"/api/v1/rfp/packs/{pid}/generate?only_missing=true",
+                       cookies=c).status_code == 200
+
+    status = client.get(f"/api/v1/rfp/packs/{pid}/status", cookies=c).json()
+    assert status["drafts"]["state"] == "ready"
+    assert status["drafts"]["done"] == status["drafts"]["total"] > 0
+    assert status["drafts"]["failed"] == 0 and status["drafts"]["failed_ids"] == []
+    # The outage text must go with it, or the stage reads healthy next to a stale error.
+    assert status["errors"] == {} and status["error"] is None
+
+
+def test_regenerating_the_last_missing_question_also_clears_the_banner(client, monkeypatch):
+    """Same invariant on the single-question path, which is the workaround a reviewer reaches for
+    when the batch retry is the thing that is broken. It cleared the answer but not the status."""
+    _patch(monkeypatch, stub=True)
+    c, pid = _pack(client, "genregenbanner")
+    _upload(client, c, pid)
+    assert client.get(f"/api/v1/rfp/packs/{pid}/status", cookies=c).json()["drafts"]["state"] == "error"
+
+    tree = client.get(f"/api/v1/rfp/packs/{pid}/sections", cookies=c).json()
+    qid = tree[0]["questions"][0]["id"]
+    monkeypatch.setattr("app.modules.rfp.router.resolve_tenant_worker",
+                        _http_worker(answer="Recovered draft"))
+    assert client.post(f"/api/v1/rfp/packs/{pid}/questions/{qid}/generate",
+                       cookies=c).status_code == 200
+
+    status = client.get(f"/api/v1/rfp/packs/{pid}/status", cookies=c).json()
+    assert status["drafts"]["state"] == "ready"
+    assert status["errors"] == {}
+
+
+def _http_worker(*, answer="Grounded AI draft", stub=False):
+    """Worker resolver for the ROUTER path (the inline endpoints), as opposed to `_patch_worker`
+    above which patches the background job's resolver."""
+    async def resolve(*_a, **_kw):
+        class _W:
+            async def answer(self, rid, text, **__):
+                return AgentResult(requirement_id=rid, answer=answer,
+                                   critique=Critique(grounding=0.9), decision=Decision.auto_accept,
+                                   citations=["doc:iso"], stub=stub)
+
+        async def recheck():
+            return None
+        return _W(), recheck
+    return resolve
+
+
 def test_status_brief_compliance_empty_before_any_job(client, monkeypatch):
     _patch(monkeypatch)
     c, pid = _pack(client, "genempty")  # created but nothing uploaded yet
@@ -170,6 +236,76 @@ async def _make_pack(document_text="tender doc"):
     pack = await packs.create("t", "w1", "Tender")
     await packs.set_document_text("t", pack.id, document_text)
     return packs, reqs, answers, tree, pack
+
+
+async def _pack_with_stale_drafts_status(*, drafted: int, missing: int):
+    """A pack carrying the failure snapshot the background job left behind, plus a question tree
+    that has since moved on: `drafted` questions answered, `missing` still blank."""
+    packs, _reqs, _answers, tree, pack = await _make_pack()
+    section = await tree.add_section("t", pack.id, code="A", name="Intro")
+    for i in range(drafted):
+        q = await tree.add_question("t", section.id, text=f"answered-{i}")
+        await tree.apply_generation("t", q.id, ai_answer="draft", ai_sources=["doc:iso"],
+                                    confidence=0.9, decision="auto_accept", kb_gap=False)
+    for i in range(missing):
+        await tree.add_question("t", section.id, text=f"blank-{i}")
+    await packs.set_gen_status("t", pack.id, {
+        "requirements": "ready", "sections": "ready", "brief": "ready", "compliance": "ready",
+        "drafts": {"state": "error", "done": 0, "total": 99, "failed": 0, "failed_ids": []},
+        "error": "answer generation is temporarily unavailable",
+        "errors": {"drafts": "answer generation is temporarily unavailable"},
+    })
+    return packs, tree, pack
+
+
+async def test_refresh_drafts_status_reports_ready_once_nothing_is_missing():
+    packs, tree, pack = await _pack_with_stale_drafts_status(drafted=3, missing=0)
+
+    saved = await generation.refresh_drafts_status(
+        tenant="t", pack_id=pack.id, packs=packs, tree=tree)
+
+    assert saved["drafts"] == {"state": "ready", "done": 3, "total": 3,
+                               "failed": 0, "failed_ids": []}
+    assert saved["error"] is None and saved["errors"] == {}
+    assert (await packs.get("t", pack.id)).gen_status["drafts"]["state"] == "ready"
+
+
+async def test_refresh_drafts_status_reports_partial_while_some_are_still_blank():
+    packs, tree, pack = await _pack_with_stale_drafts_status(drafted=2, missing=1)
+
+    saved = await generation.refresh_drafts_status(
+        tenant="t", pack_id=pack.id, packs=packs, tree=tree)
+
+    assert saved["drafts"]["state"] == "partial"
+    assert saved["drafts"]["done"] == 2 and saved["drafts"]["total"] == 3
+    assert saved["drafts"]["failed"] == 1 and len(saved["drafts"]["failed_ids"]) == 1
+    # Still genuinely failing, so the outage text stays: the banner is supposed to be up.
+    assert saved["errors"]["drafts"] == "answer generation is temporarily unavailable"
+
+
+async def test_refresh_drafts_status_reports_error_when_nothing_is_drafted_at_all():
+    """"Drafting failed" rather than the softer "Some answers couldn't be drafted": the banner
+    renders two different headlines off this distinction."""
+    packs, tree, pack = await _pack_with_stale_drafts_status(drafted=0, missing=2)
+
+    saved = await generation.refresh_drafts_status(
+        tenant="t", pack_id=pack.id, packs=packs, tree=tree)
+
+    assert saved["drafts"]["state"] == "error"
+    assert saved["drafts"]["done"] == 0 and saved["drafts"]["failed"] == 2
+
+
+async def test_refresh_drafts_status_leaves_a_pack_with_no_gen_status_alone():
+    """Packs from before the background job carry no gen_status, and the frontend has a
+    documented fallback that lands them on Review when their sections exist. Writing a status for
+    them would push them back a step, so this must be a no-op."""
+    packs, _reqs, _answers, tree, pack = await _make_pack()
+    section = await tree.add_section("t", pack.id, code="A", name="Intro")
+    await tree.add_question("t", section.id, text="Q1")
+
+    assert await generation.refresh_drafts_status(
+        tenant="t", pack_id=pack.id, packs=packs, tree=tree) is None
+    assert not (await packs.get("t", pack.id)).gen_status
 
 
 def _stub_supporting_stages(monkeypatch):
