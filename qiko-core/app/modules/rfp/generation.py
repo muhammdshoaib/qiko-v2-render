@@ -223,6 +223,60 @@ def _touch(status: dict) -> dict:
     return status
 
 
+async def refresh_drafts_status(*, tenant: str, pack_id: str, packs, tree) -> dict | None:
+    """Recompute gen_status["drafts"] from the persisted question tree and save it.
+
+    run_generation owns that block, but it runs once, on upload. Every other way a draft can
+    appear -- the "Retry drafting" banner's whole-pack call, a per-section regenerate, a
+    single-question regenerate -- left the block untouched, so a stale failure snapshot outlived
+    the failure. Observed live: a pack with all 48 questions drafted still carried
+    {"state": "error", "done": 6, "total": 48} from the original run, and the banner that reads
+    that snapshot never went away (IDG-1010).
+
+    `failed` here means "still has no draft", which is not quite the background job's meaning
+    ("errored during this run"), but it IS what the UI reads it as: the banner offers to "fill in
+    what's missing" and already falls back to total-minus-done when the field is absent.
+
+    Returns the saved status, or None when the pack carries no gen_status at all: those are the
+    pre-background-job packs the frontend has a documented fallback for (sections exist, so it
+    lands on Review), and inventing a partial status for them would push them back a step.
+    """
+    pack = await packs.get(tenant, pack_id)
+    if pack is None or not pack.gen_status:
+        return None
+
+    status = dict(pack.gen_status)
+    manual_sections = {s.id for s in await tree.sections.list(tenant, pack_id) if s.manual}
+    questions = [q for q in await tree.questions.list(tenant, pack_id)
+                 if q.section_id not in manual_sections and not q.locked]
+    drafted = [q for q in questions if q.ai_answer or q.user_draft]
+    missing = [q for q in questions if not (q.ai_answer or q.user_draft)]
+
+    if not missing:
+        state = "ready"
+    elif drafted:
+        state = "partial"
+    else:
+        # Nothing at all came back: the banner's "Drafting failed" headline, not its softer
+        # "Some answers couldn't be drafted" one.
+        state = "error"
+    status["drafts"] = {"state": state, "done": len(drafted), "total": len(questions),
+                        "failed": len(missing),
+                        "failed_ids": [q.req_id or q.id for q in missing]}
+
+    # A drafts failure that has since been drafted must stop being reported, otherwise the stage
+    # reads healthy while the error text next to it still describes the old outage.
+    if state == "ready":
+        errors = dict(status.get("errors") or {})
+        stale = errors.pop("drafts", None)
+        status["errors"] = errors
+        if stale and status.get("error") == stale:
+            status["error"] = None
+
+    await packs.set_gen_status(tenant, pack_id, _touch(status))
+    return status
+
+
 def _stage_error(status: dict, stage: str, message: str) -> None:
     """Record a stage failure both as the latest `error` (back-compat) AND under `errors[stage]`,
     so a poller can tell WHICH stage failed instead of the single field clobbering the others."""

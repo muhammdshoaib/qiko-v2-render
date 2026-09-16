@@ -37,6 +37,7 @@ from app.modules.rfp.generation import (
     StubProviderUnavailable,
     generate_question as generate_question_core,
     initial_gen_status,
+    refresh_drafts_status,
 )
 from app.modules.rfp.scoring import ScoringError, score_opportunity
 from app.modules.audit import registry as audit_actions
@@ -1251,8 +1252,12 @@ async def generate_question(pack_id: str, question_id: str, request: Request,
         question = await tree.get_question_for_pack(tenant, pack_id, question_id)
     except PackQuestionNotFound as e:
         raise HTTPException(status_code=404, detail="question not found") from e
-    return await _generate_question(tenant, question, worker, tree, recheck,
-                                    pack.reference_doc_id)
+    drafted = await _generate_question(tenant, question, worker, tree, recheck,
+                                       pack.reference_doc_id)
+    # Keep gen_status.drafts truthful: regenerating the last missing question has to be able to
+    # clear the failure banner, which reads that stored block (IDG-1010).
+    await refresh_drafts_status(tenant=tenant, pack_id=pack_id, packs=packs, tree=tree)
+    return drafted
 
 
 @router.post("/{pack_id}/sections/{section_id}/generate")
@@ -1273,6 +1278,7 @@ async def generate_section(pack_id: str, section_id: str, request: Request,
         await tree.get_question_for_pack(tenant, pack_id, q.id)
         out.append(await _generate_question(tenant, q, worker, tree, recheck,
                                             pack.reference_doc_id))
+    await refresh_drafts_status(tenant=tenant, pack_id=pack_id, packs=packs, tree=tree)
     return out
 
 
@@ -1346,6 +1352,10 @@ async def generate_pack(pack_id: str, request: Request, only_missing: bool = Fal
     # sections that did not are already surfaced by the partial/failed state the banner renders.
     if not out and last_outage is not None:
         raise last_outage
+    # The banner that triggered this call reads gen_status.drafts, which only the background job
+    # used to write. Without this, a retry that fixed everything left the failure on screen
+    # forever (IDG-1010).
+    await refresh_drafts_status(tenant=tenant, pack_id=pack_id, packs=packs, tree=tree)
     return out
 
 
