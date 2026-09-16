@@ -171,6 +171,12 @@ class Opportunity:
     # 2026-09-14 - a notice that stayed awaiting_review across per-minute re-scans got a full
     # Synthesizer/Critic Sonnet 4.5 run every single scan, unbounded).
     pipeline_last_enqueued_at: datetime | None = None
+    # Total number of times the agentic pipeline has been enqueued for this opportunity.
+    # OpportunityService._may_enqueue_pipeline stops re-enqueueing once this reaches
+    # idg_pipeline_max_attempts, however many times the cooldown above elapses -- an opportunity
+    # that never resolves must not accrue unbounded Bedrock spend (QIW cost incident
+    # continuation, 2026-09-16).
+    pipeline_attempt_count: int = 0
     competitor_readiness: str | None = None
     qualification_summary: str | None = None
     qualification_reasons: list[str] = field(default_factory=list)

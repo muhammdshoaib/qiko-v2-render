@@ -614,6 +614,9 @@ class SalesIntelOpportunity(Base):
     # Enqueue-cooldown marker for OpportunityService._may_enqueue_pipeline (QIW cost incident,
     # 2026-09-14). See the matching field docstring on the domain Opportunity model.
     pipeline_last_enqueued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Total pipeline enqueues for this opportunity (QIW cost incident continuation, 2026-09-16).
+    # See the matching field docstring on the domain Opportunity model.
+    pipeline_attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     competitor_readiness: Mapped[str | None] = mapped_column(String(40), nullable=True)
     qualification_summary: Mapped[str | None] = mapped_column(String, nullable=True)
     qualification_reasons: Mapped[list] = mapped_column(JSON, default=list)

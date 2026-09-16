@@ -128,6 +128,12 @@ class OpportunityService:
     # opportunity that stays awaiting_review across re-scans got a fresh Synthesizer/Critic
     # (Sonnet 4.5) run on every single scan cycle, unbounded (QIW cost incident, 2026-09-14).
     pipeline_reenqueue_cooldown_minutes: int = 60
+    # Total pipeline enqueues a single opportunity may ever accrue. The cooldown above only
+    # bounds the RATE, not the total: an opportunity that never resolves (stays awaiting_review
+    # forever) still got a fresh run every time the cooldown elapsed, unbounded, so spend kept
+    # climbing even with the cooldown in place (QIW cost incident continuation, 2026-09-16). None
+    # means unlimited.
+    pipeline_max_attempts: int | None = 3
 
     def __post_init__(self) -> None:
         if self.sources is None:
@@ -296,22 +302,28 @@ class OpportunityService:
         return self.qualification.with_config(agent_config)
 
     async def _may_enqueue_pipeline(self, tenant: str, agent_id: str, opportunity: Opportunity) -> bool:
-        """Both halves of the cost-control gate for the agentic pipeline, checked right before an
-        enqueue that _scan_source() would otherwise make unconditionally on every scan cycle.
+        """The full cost-control gate for the agentic pipeline, checked right before an enqueue
+        that _scan_source() would otherwise make unconditionally on every scan cycle.
 
         Cooldown first (cheap, no I/O): an opportunity that already got a pipeline run enqueued
         recently -- whether it is still in flight or just finished and is still awaiting_review --
         does not get another one until pipeline_reenqueue_cooldown_minutes has passed. Then the
-        cost cap (one cached DB-backed read via CostGuard): even a correctly-cooling-down pipeline
-        can still exceed a tenant's configured monthly AI spend if enough opportunities are
-        ambiguous at once, so this is a second, independent backstop, not a substitute for the
-        cooldown.
+        total-attempts cap (also cheap, no I/O): the cooldown only bounds the rate for one
+        opportunity, not how many times it can ever run, so an opportunity that never resolves
+        would otherwise accrue an unbounded number of runs, one per cooldown window, forever.
+        Then the cost cap (one cached DB-backed read via CostGuard): even a correctly-capped
+        pipeline can still exceed a tenant's configured monthly AI spend if enough opportunities
+        are ambiguous at once, so this is a third, independent backstop, not a substitute for
+        either of the above.
         """
         last = opportunity.pipeline_last_enqueued_at
         if last is not None:
             cooldown = timedelta(minutes=self.pipeline_reenqueue_cooldown_minutes)
             if _now() - last < cooldown:
                 return False
+        if (self.pipeline_max_attempts is not None
+                and opportunity.pipeline_attempt_count >= self.pipeline_max_attempts):
+            return False
         if self.cost_guard is not None:
             decision = await self.cost_guard.check(tenant, agent_id)
             if not decision.allowed:
@@ -419,6 +431,7 @@ class OpportunityService:
                         pipeline_run = Pipeline.new_run(pipeline_config)
                         await self.pipeline_run_store.add(pipeline_run)
                         opportunity.pipeline_last_enqueued_at = _now()
+                        opportunity.pipeline_attempt_count += 1
                         await self.opportunities.update(opportunity)
                         await self.task_queue.enqueue(
                             "run_idg_qualification_pipeline", tenant=tenant, agent_id=agent_id,
