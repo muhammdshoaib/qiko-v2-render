@@ -90,15 +90,20 @@ export function CockpitChatPanel({
 
   return (
     <>
-      {/* Dim backdrop on mobile/tablet where the chat is an overlay drawer, not a fixed column. */}
+      {/* Dim backdrop only below lg, where the chat is a modal drawer over the whole view. At lg+
+          the panel floats above the content without dimming it, so a reviewer can keep reading the
+          tender (and copy from it) while asking questions. */}
       <div onClick={onClose} className="fixed inset-0 top-14 z-30 bg-black/50 lg:hidden" aria-hidden="true" />
       <aside
         className={cn(
-          "z-40 flex min-h-0 w-[300px] shrink-0 flex-col border-l border-white/[0.06] bg-[#05070d]",
-          // < lg: overlay drawer anchored under the header on the right.
-          "fixed bottom-0 right-0 top-14 max-w-[86vw]",
-          // lg+: revert to the inline side column.
-          "lg:static lg:max-w-none",
+          "z-40 flex min-h-0 w-[300px] flex-col border-l border-white/[0.06] bg-[#05070d]",
+          // Overlay anchored under the header on the right, at every width. It is deliberately NOT
+          // an inline flex column at lg+ any more: as a column it took permanent horizontal space
+          // and squeezed <main> into a narrow strip, which read as a thin sidebar rather than a
+          // chat (client feedback, 2026-09-16). Floating it leaves the content full-width.
+          "fixed bottom-0 right-0 top-14 max-w-[86vw] shadow-2xl shadow-black/50",
+          // Wider on desktop, which an overlay can afford now that it no longer steals layout.
+          "lg:w-[420px] lg:max-w-none",
         )}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-white/[0.06] px-4 py-3.5">
