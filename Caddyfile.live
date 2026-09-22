@@ -31,13 +31,15 @@ qiko.ai, www.qiko.ai {
 	# "Multi Zones" pattern). /assets/* is its public/ folder (logo etc), not covered by
 	# assetPrefix, and not a path creator uses. Both must route here too, or the marketing pages
 	# render with no styles/logo, this broke on the first live cutover attempt (QIKO-1074).
-	# /signal, /signal/guest-audit, /signal/sample-report are this app's own unified-nav versions
-	# of Signal's marketing pages. The "signal-proxy" Cloudflare Worker (bound to qiko.ai/signal*
-	# ahead of this origin) forwards everything under /signal/* to signal-origin.qiko.ai (the
-	# real Signal app: login, dashboard, api, register etc) EXCEPT these exact three paths,
-	# which it explicitly lets fall through to this origin instead. Both sides must agree on the
-	# same three paths or one side 404s/misroutes; update the Worker if this list changes.
-	@marketing path / /labs /about /terms /privacy /cookies /assets/* /mkt-static/* /signal /signal/guest-audit /signal/sample-report
+	# /signal, /signal/guest-audit, /signal/sample-report, /signal/terms and /signal/privacy are
+	# this app's own unified-nav versions of Signal's marketing pages (terms/privacy added for
+	# WEB-1008: qiko-signal's own /signal/terms and /signal/privacy are retired). The
+	# "signal-proxy" Cloudflare Worker (bound to qiko.ai/signal* ahead of this origin) forwards
+	# everything under /signal/* to signal-origin.qiko.ai (the real Signal app: login, dashboard,
+	# api, register etc) EXCEPT these exact five paths, which it explicitly lets fall through to
+	# this origin instead. Both sides must agree on the same path list or one side
+	# 404s/misroutes; update the Worker if this list changes.
+	@marketing path / /labs /about /terms /privacy /cookies /assets/* /mkt-static/* /signal /signal/guest-audit /signal/sample-report /signal/terms /signal/privacy
 	@app {
 		not path /embed/* /widget.js
 	}
