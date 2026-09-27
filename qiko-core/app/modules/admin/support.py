@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.deps import current_claims, get_agents, get_chat, require_platform_capability
@@ -173,10 +173,13 @@ async def worker_discrepancies(
     claims: dict = Depends(current_claims),
     _identity=Depends(require_platform_capability(Capability.support_view_worker)),
     agents: AgentService = Depends(get_agents),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
 ) -> dict:
     agent = await _resolve_intelligence_worker(agents, agent_id)
     engine = DiscrepancyEngine(request.app.state.intelligence_signal_store)
-    discrepancies, total, counts = await engine.analyze_paginated(agent.tenant, agent_id)
+    discrepancies, total, counts = await engine.analyze_paginated(
+        agent.tenant, agent_id, limit=limit, offset=offset)
     await _audit(request, claims, agent, "discrepancies")
     return {
         "items": [d.to_dict() for d in discrepancies],

@@ -218,9 +218,9 @@ export const listSupportConversations = (agentId: string) =>
 export const getSupportConversationHistory = (agentId: string, conversationId: string) =>
   request<SupportMessage[]>(
     `/admin/support/workers/${encodeURIComponent(agentId)}/conversations/${encodeURIComponent(conversationId)}`);
-export const listSupportDiscrepancies = (agentId: string) =>
+export const listSupportDiscrepancies = (agentId: string, limit = 50, offset = 0) =>
   request<{ items: SupportDiscrepancy[]; total: number; projects: { key: string; count: number }[] }>(
-    `/admin/support/workers/${encodeURIComponent(agentId)}/discrepancies`);
+    `/admin/support/workers/${encodeURIComponent(agentId)}/discrepancies?${new URLSearchParams({ limit: String(limit), offset: String(offset) })}`);
 
 export type UsageTotals = {
   calls: number; input_tokens: number; output_tokens: number;

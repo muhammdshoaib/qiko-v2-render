@@ -116,7 +116,7 @@ def test_support_view_writes_one_audit_row_without_content(client):
     assert row["metadata"] == {"view": "conversations"}
 
 
-def _seed_discrepancy(client) -> None:
+def _seed_discrepancy(client, *, ref: str = "QIW-1004", suffix: str = "1") -> None:
     from datetime import datetime, timedelta, timezone
 
     from app.modules.intelligence.models import Signal
@@ -131,14 +131,14 @@ def _seed_discrepancy(client) -> None:
     async def seed() -> None:
         await client.app.state.intelligence_signal_store.add(Signal(
             tenant="acme", agent_id="qiw-1", source="slack", kind="message",
-            external_id="s1", container="T1/C1", actor="dev", ref="QIW-1004",
+            external_id=f"s{suffix}", container="T1/C1", actor="dev", ref=ref,
             title="pricing is done", body="pricing is done", url=None,
             occurred_at=now - timedelta(days=1),
             tags=[], flagged=False))
         await client.app.state.intelligence_signal_store.add(Signal(
             tenant="acme", agent_id="qiw-1", source="qiko_track", kind="ticket_moved",
-            external_id="qt1", container="QIW", actor="qiko_track", ref="QIW-1004",
-            title="QIW-1004", body="", url=None,
+            external_id=f"qt{suffix}", container="QIW", actor="qiko_track", ref=ref,
+            title=ref, body="", url=None,
             occurred_at=now - timedelta(days=1) + timedelta(minutes=5),
             tags=[], flagged=False, meta={"state": {"status": "IN_PROGRESS"}}))
 
@@ -155,3 +155,26 @@ def test_support_view_discrepancies_matches_the_tenant_facing_engine(client):
     assert body["total"] == 1
     assert body["items"][0]["class"] == "claimed_not_done"
     assert body["items"][0]["ref"] == "QIW-1004"
+
+
+def test_support_view_discrepancies_paginates_with_total_and_validates_bounds(client):
+    _seed(client)
+    _seed_discrepancy(client)
+    _seed_discrepancy(client, ref="QIW-1005", suffix="2")
+    granted = _grant(client, "paged.support@invalid", [Capability.support_view_worker.value])
+    url = "/api/v1/admin/support/workers/qiw-1/discrepancies"
+
+    first = client.get(url, params={"limit": 1, "offset": 0}, cookies=granted)
+    second = client.get(url, params={"limit": 1, "offset": 1}, cookies=granted)
+    assert first.status_code == second.status_code == 200
+    assert first.json()["total"] == second.json()["total"] == 2
+    assert len(first.json()["items"]) == len(second.json()["items"]) == 1
+    assert first.json()["items"][0]["ref"] != second.json()["items"][0]["ref"]
+
+    for params in ({"limit": 0}, {"limit": 201}, {"offset": -1}):
+        assert client.get(url, params=params, cookies=granted).status_code == 422
+
+    rows = asyncio.run(client.app.state.audit.list(action="access.support_worker_viewed"))
+    assert len(rows) == 2
+    assert all(row["tenant_id"] == "acme" and row["target_id"] == "qiw-1"
+               and row["metadata"] == {"view": "discrepancies"} for row in rows)

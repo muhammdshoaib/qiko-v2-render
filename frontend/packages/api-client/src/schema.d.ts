@@ -10461,7 +10461,10 @@ export interface operations {
     };
     worker_discrepancies_api_v1_admin_support_workers__agent_id__discrepancies_get: {
         parameters: {
-            query?: never;
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
             header?: never;
             path: {
                 agent_id: string;
