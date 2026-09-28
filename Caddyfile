@@ -102,6 +102,10 @@ www.preprod.qiko.ai {
 # Signal preprod (qiko-signal-preprod stack) -- own DB/Redis/13 services on this host, this
 # vhost is the only thing shared with the platform stack (the frontend container's alias on
 # the shared proxy network). Does not touch the blocks above.
+#
+# WEB-1015: the old qiko-signal marketing surface is retired. Public pages are owned by the
+# website (www.preprod.qiko.ai), so the marketing paths on this host redirect there and only
+# the app itself (/login, /register, /dashboard, /api, assets) still proxies to Signal.
 signal.preprod.qiko.ai {
 	request_body {
 		max_size 10MB
@@ -110,6 +114,22 @@ signal.preprod.qiko.ai {
 		-Server
 		Strict-Transport-Security "max-age=31536000"
 	}
+	@home path /
+	redir @home https://www.preprod.qiko.ai/signal permanent
+	@guest_audit path /guest-audit /guest-audit/*
+	redir @guest_audit https://www.preprod.qiko.ai/signal/guest-audit permanent
+	@sample_report path /sample-report /sample-report/*
+	redir @sample_report https://www.preprod.qiko.ai/signal/sample-report permanent
+	@legal_terms path /terms /terms/*
+	redir @legal_terms https://www.preprod.qiko.ai/signal/terms permanent
+	@legal_privacy path /privacy /privacy/*
+	redir @legal_privacy https://www.preprod.qiko.ai/signal/privacy permanent
+	@legal_cookies path /cookies /cookies/*
+	redir @legal_cookies https://www.preprod.qiko.ai/cookies permanent
+	@status_page path /system /system/*
+	redir @status_page https://www.preprod.qiko.ai/status permanent
+	@retired_marketing path /pricing /pricing/* /features /blog /blog/* /about /about/* /faq /docs /docs/* /case-studies /case-studies/* /contact /contact/* /volatility /feed.xml /sitemap.xml /robots.txt
+	redir @retired_marketing https://www.preprod.qiko.ai/signal permanent
 	handle {
 		reverse_proxy signal-frontend:3000 {
 			lb_try_duration 45s
