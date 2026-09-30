@@ -16,10 +16,10 @@ preprod.qiko.ai {
 	# external site, so it uses frame-ancestors * and no X-Frame-Options. Everything else stays
 	# clickjacking-locked (SAMEORIGIN + frame-ancestors 'self'). QIK-336.
 	@embed path /embed/* /widget.js
-	@marketing path / /labs /about /terms /privacy /cookies /signal /signal/guest-audit /signal/sample-report /signal/terms /signal/privacy /visibility /communication /transaction /agents /hotels /subscriptions /status /assets/* /qiko-static/* /mkt-static/* /api/labs/contact /api/calendly/availability /api/calendly/book /api/signal/guest-audit /api/signal/guest-audit/status
+	@marketing path / /labs /about /terms /privacy /cookies /signal /signal/guest-audit /signal/sample-report /signal/terms /signal/privacy /visibility /communication /transaction /agents /hotels /subscriptions /status /assets/* /qiko-static/* /mkt-static/* /api/labs/contact /api/calendly/availability /api/calendly/book /api/signal/guest-audit /api/signal/guest-audit/status /api/signal/waitlist
 	@core_api {
 		path /api/*
-		not path /api/labs/contact /api/calendly/availability /api/calendly/book /api/signal/guest-audit /api/signal/guest-audit/status
+		not path /api/labs/contact /api/calendly/availability /api/calendly/book /api/signal/guest-audit /api/signal/guest-audit/status /api/signal/waitlist
 	}
 	@app {
 		not path /embed/* /widget.js
