@@ -39,7 +39,18 @@ qiko.ai, www.qiko.ai {
 	# api, register etc) EXCEPT these exact five paths, which it explicitly lets fall through to
 	# this origin instead. Both sides must agree on the same path list or one side
 	# 404s/misroutes; update the Worker if this list changes.
-	@marketing path / /labs /about /terms /privacy /cookies /assets/* /mkt-static/* /signal /signal/guest-audit /signal/sample-report /signal/terms /signal/privacy
+	# /qiko-static/* serves this app's newer nav and footer assets and is likewise not covered
+	# by assetPrefix; omitting it is the same QIKO-1074 failure class as /assets/*. The five
+	# website-owned API paths below (the Labs contact form, the two Calendly endpoints, and
+	# guest-audit submit + status) live in the website container, not in qiko-core, so they are
+	# listed in @marketing and excluded from @core_api. handle @marketing must stay ahead of
+	# handle @core_api below: Caddy picks the first matching handle block, and a bare /api/*
+	# handler ahead of @marketing would send these five to qiko-core and 404 them (WEB-1029).
+	@marketing path / /labs /about /terms /privacy /cookies /signal /signal/guest-audit /signal/sample-report /signal/terms /signal/privacy /visibility /communication /transaction /agents /hotels /subscriptions /status /assets/* /qiko-static/* /mkt-static/* /api/labs/contact /api/calendly/availability /api/calendly/book /api/signal/guest-audit /api/signal/guest-audit/status
+	@core_api {
+		path /api/*
+		not path /api/labs/contact /api/calendly/availability /api/calendly/book /api/signal/guest-audit /api/signal/guest-audit/status
+	}
 	@app {
 		not path /embed/* /widget.js
 	}
@@ -65,11 +76,11 @@ qiko.ai, www.qiko.ai {
 	handle /widget.js {
 		reverse_proxy creator:3000
 	}
-	handle /api/* {
-		reverse_proxy qiko-core:8000
-	}
 	handle @marketing {
 		reverse_proxy website:3000
+	}
+	handle @core_api {
+		reverse_proxy qiko-core:8000
 	}
 	handle {
 		reverse_proxy creator:3000

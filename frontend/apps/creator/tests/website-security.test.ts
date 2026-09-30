@@ -29,6 +29,44 @@ test("CI validates Caddy changes through the compose security job", () => {
   assert.match(workflow, /caddy validate --config/);
 });
 
+test("live and preprod agree on marketing and core API path ownership", () => {
+  const marketingPaths = (text: string): Set<string> => {
+    const line = /@marketing path ([^\n]+)/.exec(text);
+    assert.ok(line, "missing @marketing path matcher");
+    return new Set(line[1].trim().split(/\s+/));
+  };
+  const coreApiExclusions = (text: string): Set<string> => {
+    const block = /@core_api \{[^}]*\}/.exec(text);
+    assert.ok(block, "missing @core_api matcher");
+    const notPath = /not path ([^\n]+)/.exec(block[0]);
+    assert.ok(notPath, "@core_api must carry a not path exclusion list");
+    return new Set(notPath[1].trim().split(/\s+/));
+  };
+  const caddys: Record<string, string> = {};
+  for (const filename of ["Caddyfile", "Caddyfile.live"]) {
+    caddys[filename] = readFileSync(resolve(repositoryRoot, filename), "utf8");
+    const marketing = marketingPaths(caddys[filename]);
+    const excluded = coreApiExclusions(caddys[filename]);
+    for (const owned of ["/qiko-static/*", "/visibility", "/status", "/api/labs/contact"]) {
+      assert.ok(marketing.has(owned), `${filename}: @marketing must own ${owned}`);
+    }
+    for (const foreign of ["/login", "/signup", "/dashboard", "/embed/*", "/widget.js"]) {
+      assert.ok(!marketing.has(foreign), `${filename}: @marketing must not capture ${foreign}`);
+    }
+    const websiteApis = new Set([...marketing].filter((p) => p.startsWith("/api/")));
+    assert.deepEqual([...excluded].sort(), [...websiteApis].sort(), `${filename}: @core_api exclusions must equal the website-owned API paths in @marketing`);
+    const marketingHandle = caddys[filename].indexOf("handle @marketing");
+    const coreApiHandle = caddys[filename].indexOf("handle @core_api");
+    assert.ok(marketingHandle !== -1 && coreApiHandle !== -1, filename);
+    assert.ok(marketingHandle < coreApiHandle, `${filename}: handle @marketing must be evaluated before handle @core_api`);
+    const bareApi = caddys[filename].indexOf("handle /api/*");
+    assert.ok(bareApi === -1 || bareApi > coreApiHandle, `${filename}: no bare handle /api/* may sit ahead of handle @core_api`);
+  }
+  const live = [...marketingPaths(caddys["Caddyfile.live"])].sort();
+  const preprod = [...marketingPaths(caddys["Caddyfile"])].sort();
+  assert.deepEqual(live, preprod, "live and preprod @marketing path lists must not drift");
+});
+
 test("preprod and live expose one strict creator CSP without unsafe eval or broad HTTPS", () => {
   for (const filename of ["Caddyfile", "Caddyfile.live"]) {
     const caddy = readFileSync(resolve(repositoryRoot, filename), "utf8");
