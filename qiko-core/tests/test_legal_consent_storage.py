@@ -38,15 +38,16 @@ def test_consent_revisions_use_big_integer_for_millisecond_values():
     assert isinstance(ConsentRecordRow.__table__.c.client_revision.type, BigInteger)
 
 
-def test_policy_release_digests_match_exact_current_legal_tsx_files():
-    repository = Path(__file__).resolve().parents[2]
-    files = {
-        "terms-2026-07-24": repository / "frontend/apps/creator/app/terms/page.tsx",
-        "privacy-2026-07-24": repository / "frontend/apps/creator/app/privacy/page.tsx",
-        "cookies-2026-07-24": repository / "frontend/apps/creator/app/cookies/page.tsx",
-    }
-    for release_id, path in files.items():
-        assert hashlib.sha256(path.read_bytes()).hexdigest() == CURRENT_POLICY_RELEASES[release_id][1]
+def test_policy_release_digests_match_exact_archived_tsx_files():
+    # A release is a frozen point in time: the anchor is the archive in
+    # app/modules/consent/policy_releases/, not the live page. Live pages change;
+    # the digest written into each ConsentRecord must still resolve to the exact
+    # text the user agreed to.
+    archive = Path(__file__).resolve().parents[1] / "app/modules/consent/policy_releases"
+    for release_id, (_, digest) in CURRENT_POLICY_RELEASES.items():
+        path = archive / f"{release_id}.tsx"
+        assert path.is_file(), f"missing archived policy release {release_id}"
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == digest
 
 
 def test_sqlite_rejects_policy_and_consent_updates_and_deletes(tmp_path):
