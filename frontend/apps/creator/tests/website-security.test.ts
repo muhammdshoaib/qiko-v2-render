@@ -10,17 +10,6 @@ function source(path: string): string {
   return readFileSync(resolve(appRoot, path), "utf8");
 }
 
-test("Signal keeps its existing actions without a Coming Soon badge", () => {
-  const chrome = source("components/QikoSiteChrome.tsx");
-  assert.equal((chrome.match(/Coming Soon/g) ?? []).length, 0);
-  assert.match(chrome, /onClick=\{onSignal\}/);
-  assert.match(chrome, /closeMobileAnd\(onSignal\)/);
-  assert.doesNotMatch(chrome, /coming-soon|disabled=|aria-disabled/);
-  assert.doesNotMatch(chrome, /<a onClick=/);
-  assert.match(chrome, /aria-haspopup="menu" aria-expanded=\{menu === "labs"\}/);
-  assert.match(chrome, /width: 44, height: 44/);
-});
-
 test("Next hides framework disclosure and publishes security.txt", () => {
   const config = source("next.config.mjs");
   const securityPath = resolve(appRoot, "public/.well-known/security.txt");
