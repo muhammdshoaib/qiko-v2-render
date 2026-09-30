@@ -2468,6 +2468,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/contact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Contact
+         * @description Forward a /contact submission to the configured inbox. Transactional only: no list, no
+         *     subscription, no lead record.
+         */
+        post: operations["contact_api_v1_contact_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/crm/actions/{action_id}": {
         parameters: {
             query?: never;
@@ -6244,6 +6265,17 @@ export interface components {
              * @constant
              */
             terms_release_id: "terms-2026-07-24";
+        };
+        /** ContactBody */
+        ContactBody: {
+            /** Email */
+            email?: string | null;
+            /** Message */
+            message?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Topic */
+            topic?: string | null;
         };
         /** ConversationBody */
         ConversationBody: {
@@ -14392,6 +14424,41 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     }[];
+                };
+            };
+        };
+    };
+    contact_api_v1_contact_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContactBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

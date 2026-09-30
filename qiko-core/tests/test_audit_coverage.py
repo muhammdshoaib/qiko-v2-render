@@ -617,6 +617,9 @@ AUDIT_BACKLOG: dict[tuple[str, str], str] = {
         "MEDIUM: leg E2. State change with an identifiable actor, not yet instrumented."),
     ("POST", "/api/v1/marketing/labs-contact"): (
         "MEDIUM: leg E2. State change with an identifiable actor, not yet instrumented."),
+    ("POST", "/api/v1/contact"): (
+        "MEDIUM: leg E2. Public contact form like labs-contact; no tenant actor exists, the "
+        "delivered message is the record."),
     ("POST", "/api/v1/rfp/packs"): (
         "MEDIUM: leg E2. State change with an identifiable actor, not yet instrumented."),
     ("POST", "/api/v1/rfp/packs/{pack_id}/ask"): (
