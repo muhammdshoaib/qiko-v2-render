@@ -126,6 +126,7 @@ from app.modules.knowledge.sources_router import router as sources_router
 from app.modules.leads.router import router as leads_router
 from app.modules.leads.service import LeadService
 from app.modules.marketing.router import router as marketing_router
+from app.modules.marketing.contact_router import router as contact_router
 from app.modules.teams.router import router as teams_router
 from app.modules.teams.service import TeamService
 from app.modules.voice.pipeline import SpeechUnavailable, UnavailableSpeechGateway, VoicePipeline
@@ -474,6 +475,8 @@ def create_app() -> FastAPI:
                                     # unauthenticated and sends mail to a human inbox: 120/min/IP
                                     # was enough to flood it and burn sending reputation.
                                     "/api/v1/marketing/labs-contact",
+                                    # same shape: unauthenticated and sends mail to a human inbox.
+                                    "/api/v1/contact",
                                     # money endpoint: a dedicated tighter per-IP budget stops abuse.
                                     "/api/v1/billing/checkout"))
     app.add_middleware(
@@ -652,7 +655,7 @@ def create_app() -> FastAPI:
               leads_router, billing_router,
               channels_router, excel_router, voice_router, signal_router, intelligence_router,
               public_chat_router, sources_router, twofa_router, onboarding_router, admin_org_router,
-              batch_router, marketing_router, crm_router, sales_intelligence_router, finance_router,
+              batch_router, marketing_router, contact_router, crm_router, sales_intelligence_router, finance_router,
               notifications_router, consent_router, joseph_mews_router,
               api_docs_router):
         app.include_router(r, prefix="/api/v1")

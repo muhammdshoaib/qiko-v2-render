@@ -193,6 +193,7 @@ class Settings(BaseSettings):
     smtp_timeout_seconds: int = 10
     email_from: str = "no-reply" + "@" + "qiko.ai"
     labs_contact_email: str = "support" + "@" + "qiko.ai"
+    contact_inbox: str = "contact" + "@" + "qiko.ai"
 
     # API hardening
     # First-party origins. Two separate powers, not one: browsers there may read our responses,
