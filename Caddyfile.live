@@ -48,7 +48,7 @@ qiko.ai, www.qiko.ai {
 	# listed in @marketing and excluded from @core_api. handle @marketing must stay ahead of
 	# handle @core_api below: Caddy picks the first matching handle block, and a bare /api/*
 	# handler ahead of @marketing would send these seven to qiko-core and 404 them (WEB-1029).
-	@marketing path / /labs /about /terms /privacy /cookies /signal /signal/guest-audit /signal/sample-report /signal/terms /signal/privacy /visibility /communication /transaction /agents /hotels /subscriptions /status /contact /assets/* /qiko-static/* /mkt-static/* /api/labs/contact /api/calendly/availability /api/calendly/book /api/signal/guest-audit /api/signal/guest-audit/status /api/signal/waitlist /api/contact
+	@marketing path / /labs /about /terms /privacy /cookies /signal /signal/guest-audit /signal/sample-report /signal/terms /signal/privacy /visibility /communication /transaction /agents /hotels /subscriptions /status /contact /robots.txt /sitemap.xml /assets/* /qiko-static/* /mkt-static/* /api/labs/contact /api/calendly/availability /api/calendly/book /api/signal/guest-audit /api/signal/guest-audit/status /api/signal/waitlist /api/contact
 	@core_api {
 		path /api/*
 		not path /api/labs/contact /api/calendly/availability /api/calendly/book /api/signal/guest-audit /api/signal/guest-audit/status /api/signal/waitlist /api/contact
