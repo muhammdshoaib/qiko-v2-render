@@ -6,7 +6,7 @@ import { FileText, Loader2, Trash2, Upload, XCircle } from "lucide-react";
 import { Badge, Button, cn, Dialog } from "@qiko/ui";
 import { deleteIntelligenceDocument, listIntelligenceDocuments, uploadIntelligenceDocument, type IntelligenceDocument } from "@/lib/api";
 
-const SUPPORTED = new Set(["txt", "md", "csv", "json", "jsonl", "pdf", "docx", "xlsx", "xls", "html", "htm"]);
+const SUPPORTED = new Set(["txt", "md", "csv", "json", "jsonl", "pdf", "docx", "xlsx", "pptx", "html", "htm"]);
 
 export function DocumentsTab({ agentId }: { agentId: string }) {
   const qc = useQueryClient();

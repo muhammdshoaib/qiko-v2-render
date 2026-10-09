@@ -64,7 +64,7 @@ export function SourcesTab({ agentId }: { agentId: string }) {
             <Upload className="size-4" /> Choose file
             <input
               type="file"
-              accept=".pdf,.docx,.txt,.md"
+              accept=".pdf,.docx,.pptx,.txt,.md"
               className="hidden"
               aria-label="Choose knowledge document"
               onChange={(e) => { setError(null); setFile(e.target.files?.[0] ?? null); e.target.value = ""; }}
