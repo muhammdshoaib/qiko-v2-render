@@ -10,15 +10,20 @@ from datetime import datetime, timezone
 from typing import Protocol
 
 from app.modules.intelligence.models import Signal
-from app.modules.knowledge.parsing import MAX_UPLOAD_BYTES, UnsupportedDocumentError, extract_text
+from app.modules.knowledge.parsing import (
+    MAX_UPLOAD_BYTES,
+    SUPPORTED,
+    UnsupportedDocumentError,
+    extract_text,
+)
 from app.modules.knowledge.service import KnowledgeService
 from app.tasks.queue import EagerTaskQueue
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_DOCUMENT_EXTENSIONS = {
-    "txt", "md", "csv", "json", "jsonl", "pdf", "docx", "xlsx", "xls", "html", "htm"
-}
+# One source of truth with the parser: a second hand-maintained list is how .pptx ended up
+# rejected here while the extractor was ready for it.
+SUPPORTED_DOCUMENT_EXTENSIONS = SUPPORTED
 
 
 def sanitize_filename(filename: str) -> str:

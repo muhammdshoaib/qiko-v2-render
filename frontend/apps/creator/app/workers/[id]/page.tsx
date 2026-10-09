@@ -1809,7 +1809,7 @@ function KnowledgeTab({ id, docs, loading, onChange }: { id: string; docs?: Doc[
         <div className="flex flex-wrap items-center gap-3">
           <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-white/[0.06] focus-within:ring-2 focus-within:ring-cyan-500">
             <Upload className="size-4" /> Choose file
-            <input type="file" accept=".pdf,.docx,.txt,.md" className="hidden" aria-label="Choose knowledge document"
+            <input type="file" accept=".pdf,.docx,.pptx,.txt,.md" className="hidden" aria-label="Choose knowledge document"
               onChange={(e) => { setFile(e.target.files?.[0] ?? null); e.target.value = ""; }} />
           </label>
           <span className="min-w-0 flex-1 truncate text-xs text-slate-500">{file?.name ?? "No file chosen"}</span>
