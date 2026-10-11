@@ -5,7 +5,7 @@
 // other (fix/qiko-1005-cookie-logout moved it off Logout onto the chat send button, EL-1001).
 // AppShell'd routes keep an in-app entry point instead (Settings > Privacy choices), so the
 // floating button only needs to render on shell-less public/marketing/auth pages.
-export const APP_SHELL_ROUTE_PREFIXES = ["/workers", "/studio", "/settings", "/dashboard", "/chat", "/billing"] as const;
+export const APP_SHELL_ROUTE_PREFIXES = ["/workers", "/studio", "/settings", "/dashboard", "/chat", "/billing", "/crm"] as const;
 
 export function isAppShellRoute(pathname: string): boolean {
   return APP_SHELL_ROUTE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));

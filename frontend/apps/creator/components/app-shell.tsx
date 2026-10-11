@@ -3,12 +3,13 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronLeft, LayoutDashboard, Lock, LogOut, Menu, Settings, Sparkles, Users, CreditCard, Wrench, X } from "lucide-react";
+import { Briefcase, ChevronLeft, LayoutDashboard, Lock, LogOut, Menu, Settings, Sparkles, Users, CreditCard, Wrench, X } from "lucide-react";
 import { Logo, cn } from "@qiko/ui";
 import { logout } from "@/lib/api";
 
 const NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/crm", label: "CRM", icon: Briefcase },
   { href: "/workers", label: "Workers", icon: Users },
   { href: "/billing", label: "Pricing", icon: CreditCard, locked: true },
   { href: "/settings", label: "Settings", icon: Settings },

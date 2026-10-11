@@ -203,3 +203,11 @@ select:-webkit-autofill {
     font-size: 13.5px !important;
   }
 }
+
+@keyframes qiko-flow {
+  to { stroke-dashoffset: -28; }
+}
+@keyframes qiko-breathe {
+  0%, 100% { opacity: 0.28; transform: scale(1); }
+  50% { opacity: 0.55; transform: scale(1.03); }
+}

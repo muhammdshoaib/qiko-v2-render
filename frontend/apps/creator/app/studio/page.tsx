@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { ArrowRight, BarChart3, FileText, MessageSquare, Plus, Radar, Search } from "lucide-react";
+import { ArrowRight, BarChart3, FileText, MessageSquare, Network, Plus, Radar, Search } from "lucide-react";
 import { Button } from "@qiko/ui";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -104,10 +104,16 @@ export default function StudioPage() {
               <h1 className="text-2xl font-bold tracking-[-0.02em] text-white" style={{ fontFamily: "var(--font-display)" }}>Studio</h1>
               <p className="mt-1 text-[13px] text-slate-500">Your deployed workers, ready to manage and use</p>
             </div>
-            <button onClick={() => router.push("/workers")}
-              className="flex items-center gap-2 rounded-xl bg-indigo-500 px-4 py-2.5 text-[13px] font-semibold text-white shadow-lg shadow-indigo-500/15 transition-all hover:bg-indigo-400">
-              <Plus className="size-4" /> Deploy Worker
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button onClick={() => router.push("/studio/intelligence")}
+                className="flex items-center gap-2 rounded-xl border border-cyan-500/25 bg-cyan-500/10 px-4 py-2.5 text-[13px] font-semibold text-cyan-100 transition-all hover:bg-cyan-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60">
+                <Network className="size-4" /> Intelligence layer
+              </button>
+              <button onClick={() => router.push("/workers")}
+                className="flex items-center gap-2 rounded-xl bg-indigo-500 px-4 py-2.5 text-[13px] font-semibold text-white shadow-lg shadow-indigo-500/15 transition-all hover:bg-indigo-400">
+                <Plus className="size-4" /> Deploy Worker
+              </button>
+            </div>
           </div>
 
           {agentsQ.isLoading && <p className="text-sm text-slate-400">Loading…</p>}

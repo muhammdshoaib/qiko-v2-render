@@ -36,12 +36,12 @@ test("KPI cards render V1's four headline metrics with no detail breakdown lines
 // EL-1001: the global floating cookie-settings button must not render on AppShell'd routes,
 // where it has twice collided with in-app chrome (Logout, then the chat send button).
 test("AppShell route predicate matches every authenticated app route and no public route", () => {
-  assert.deepEqual([...APP_SHELL_ROUTE_PREFIXES].sort(), ["/billing", "/chat", "/dashboard", "/settings", "/studio", "/workers"]);
+  assert.deepEqual([...APP_SHELL_ROUTE_PREFIXES].sort(), ["/billing", "/chat", "/crm", "/dashboard", "/settings", "/studio", "/workers"]);
 
   for (const appRoute of [
     "/dashboard", "/workers", "/workers/abc123", "/studio", "/studio/el-finance-001",
     "/studio/el-finance-001/finance", "/studio/el-finance-001/finance/property/A001",
-    "/settings", "/chat/abc123", "/billing",
+    "/settings", "/chat/abc123", "/billing", "/crm", "/crm/pipeline", "/crm/companies/albemarle",
   ]) {
     assert.equal(isAppShellRoute(appRoute), true, `${appRoute} should be treated as an AppShell route`);
   }
