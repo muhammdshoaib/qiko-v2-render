@@ -105,13 +105,14 @@ export function WorkflowBoardProvider({ children }: { children: ReactNode }) {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<BoardState>;
+        const viewport = parsed.viewport;
         setState({
           positions: { ...DEFAULT_POSITIONS, ...parsed.positions },
           edges: Array.isArray(parsed.edges) ? parsed.edges : seed().edges,
           viewport: {
-            x: Number.isFinite(parsed.viewport?.x) ? parsed.viewport.x : DEFAULT_VIEWPORT.x,
-            y: Number.isFinite(parsed.viewport?.y) ? parsed.viewport.y : DEFAULT_VIEWPORT.y,
-            zoom: clampZoom(Number.isFinite(parsed.viewport?.zoom) ? parsed.viewport.zoom : DEFAULT_VIEWPORT.zoom),
+            x: typeof viewport?.x === "number" && Number.isFinite(viewport.x) ? viewport.x : DEFAULT_VIEWPORT.x,
+            y: typeof viewport?.y === "number" && Number.isFinite(viewport.y) ? viewport.y : DEFAULT_VIEWPORT.y,
+            zoom: clampZoom(typeof viewport?.zoom === "number" && Number.isFinite(viewport.zoom) ? viewport.zoom : DEFAULT_VIEWPORT.zoom),
           },
         });
       }

@@ -36,6 +36,8 @@ function DemoPathInner({ compact }: { compact: boolean }) {
     return <div className="h-16 animate-pulse rounded-2xl bg-muted" aria-busy="true" aria-label="Loading demo path" />;
   }
   const current = resolveStep(pathname, params.get("surface"), params.get("channel"), crm);
+  const prev = DEMO_STEPS.find((step) => step.n === current.n - 1);
+  const next = DEMO_STEPS.find((step) => step.n === current.n + 1);
 
   return (
     <nav aria-label="Guided demo" className={cn("rounded-2xl border border-white/[0.06] bg-white/[0.015]", compact ? "p-3" : "p-4")}>
@@ -48,13 +50,13 @@ function DemoPathInner({ compact }: { compact: boolean }) {
           {!compact && <p className="mt-1 text-[12px] text-slate-500">{current.hint}</p>}
         </div>
         <div className="flex flex-wrap gap-2">
-          {current.n > 1 && (
-            <Link href={DEMO_STEPS[current.n - 2].href} className="inline-flex min-h-11 items-center rounded-lg border border-white/10 px-3 text-sm text-slate-300 hover:text-white">
+          {prev && (
+            <Link href={prev.href} className="inline-flex min-h-11 items-center rounded-lg border border-white/10 px-3 text-sm text-slate-300 hover:text-white">
               Previous
             </Link>
           )}
-          {current.n < DEMO_STEPS.length && (
-            <Link href={DEMO_STEPS[current.n].href} className="inline-flex min-h-11 items-center rounded-lg bg-white/10 px-3 text-sm text-white hover:bg-white/15">
+          {next && (
+            <Link href={next.href} className="inline-flex min-h-11 items-center rounded-lg bg-white/10 px-3 text-sm text-white hover:bg-white/15">
               Next
             </Link>
           )}

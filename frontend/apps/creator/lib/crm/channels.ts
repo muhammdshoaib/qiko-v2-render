@@ -4,6 +4,7 @@ import {
   hasRestrictedValue,
   projectOpenPipeline,
   projectOpportunity,
+  type AccessDecision,
 } from "./policy";
 import type {
   Activity,
@@ -83,7 +84,7 @@ function pushMessages(
   userText: string,
   agentText: string,
   outcome: ChannelMessage["outcome"],
-  key = scenarioId,
+  key: string = scenarioId,
 ): CrmState {
   if (state.channelMessages.some((item) => item.id === `${key}-user`)) return state;
   const at = now();
