@@ -11,6 +11,7 @@ import { Loader2, Eye, EyeOff, ArrowLeft, AlertCircle } from "lucide-react";
 import { Link } from "@/lib/wouter";
 import { toast } from "sonner";
 import { loginAvatar } from "@/lib/avatarApi";
+import { waitForApi } from "@/lib/wait-for-api";
 import { ConsentSettingsButton } from "@/components/consent/ConsentUI";
 
 export default function Login() {
@@ -24,9 +25,16 @@ export default function Login() {
   const [twoFactorRequired, setTwoFactorRequired] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [apiReady, setApiReady] = useState(false);
 
   useEffect(() => {
-    void fetch("/health", { cache: "no-store" }).catch(() => undefined);
+    let cancelled = false;
+    void waitForApi().then((ready) => {
+      if (!cancelled) setApiReady(ready);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -35,6 +43,12 @@ export default function Login() {
     setIsLoading(true);
 
     try {
+      const ready = apiReady || (await waitForApi());
+      if (!ready) {
+        setErrorMessage("The server is still starting. Wait 20 seconds, then sign in again.");
+        return;
+      }
+      setApiReady(true);
       const res = await loginAvatar({ email, password, totp: totp.trim() || undefined });
 
       if (res?.data?.token) {
@@ -54,6 +68,10 @@ export default function Login() {
           : "This account has two-factor authentication. Enter the code from your authenticator app.";
         setErrorMessage(prompt);
         toast.message(prompt);
+      } else if (/502|503|504|starting up|waking/i.test(errorMsg)) {
+        const prompt = "The server is still starting. Wait 20 seconds, then sign in again.";
+        setErrorMessage(prompt);
+        toast.error(prompt);
       } else {
         setErrorMessage(errorMsg);
         toast.error(errorMsg);
@@ -89,7 +107,7 @@ export default function Login() {
             />
             <CardTitle className="text-2xl text-white">Welcome back</CardTitle>
             <CardDescription className="text-slate-400">
-              Sign in to continue. After idle, the free server can take up to a minute to start.
+              {apiReady ? "Server is ready. Sign in to continue." : "Starting the server. You can enter your details now."}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -170,7 +188,7 @@ export default function Login() {
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Starting server, then signing in...
+                    {apiReady ? "Signing in..." : "Starting server, then signing in..."}
                   </>
                 ) : (
                   "Sign in"
