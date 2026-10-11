@@ -4,18 +4,32 @@ import type { OnboardingWorkerConfig, OnboardingWorkerSignup } from "./onboardin
 // Compatibility shim: exposes the qiko-frontend avatarApi surface, backed by the V2 /api/v1 FastAPI.
 const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000/api/v1";
 
-async function req<T = unknown>(path: string, opts: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...opts,
-    headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
-    credentials: "include",
-  });
-  if (!res.ok) {
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isColdStartStatus(status: number) {
+  return status === 502 || status === 503 || status === 504;
+}
+
+async function req<T = unknown>(path: string, opts: RequestInit = {}, retries = 0): Promise<T> {
+  let lastError = new Error("Request failed");
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const res = await fetch(`${BASE}${path}`, {
+      ...opts,
+      headers: { "Content-Type": "application/json", ...(opts.headers || {}) },
+      credentials: "include",
+    });
+    if (res.ok) {
+      return res.status === 204 ? (undefined as T) : res.json();
+    }
     let detail = `Request failed (${res.status})`;
     try { detail = (await res.json()).detail || detail; } catch { /* ignore */ }
-    throw new Error(detail);
+    lastError = new Error(detail);
+    if (!isColdStartStatus(res.status) || attempt === retries) break;
+    await sleep(4000);
   }
-  return res.status === 204 ? (undefined as T) : res.json();
+  throw lastError;
 }
 
 export interface SubscriptionPlan {
@@ -65,7 +79,7 @@ export async function loginAvatar(body: { email: string; password: string; totp?
   const r = await req<{ user: Record<string, unknown> }>("/auth/login", {
     method: "POST",
     body: JSON.stringify(body),
-  });
+  }, 4);
   return { data: { token: "cookie", user: r.user } };
 }
 

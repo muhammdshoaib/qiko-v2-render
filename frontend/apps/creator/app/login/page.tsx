@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useLocation } from "@/lib/wouter";
 import { useAppDispatch } from "@/store/hooks";
 import { setAuth } from "@/store/slices/authSlice";
@@ -24,6 +24,10 @@ export default function Login() {
   const [twoFactorRequired, setTwoFactorRequired] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    void fetch("/health", { cache: "no-store" }).catch(() => undefined);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,7 +89,7 @@ export default function Login() {
             />
             <CardTitle className="text-2xl text-white">Welcome back</CardTitle>
             <CardDescription className="text-slate-400">
-              Sign in to your account to continue
+              Sign in to continue. After idle, the free server can take up to a minute to start.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -166,7 +170,7 @@ export default function Login() {
                 {isLoading ? (
                   <>
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Signing in...
+                    Starting server, then signing in...
                   </>
                 ) : (
                   "Sign in"

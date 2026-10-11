@@ -13,7 +13,7 @@ const HOP = new Set([
   "content-length",
 ]);
 
-const RETRIES = 5;
+const RETRIES = 2;
 const RETRY_STATUSES = new Set([502, 503, 504]);
 
 function sleep(ms: number) {
