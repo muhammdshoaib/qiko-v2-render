@@ -14,18 +14,33 @@ import {
   TrainTab,
 } from "@/components/intelligence-layer/support-tabs";
 import {
+  WORKER_IDS,
+  isWorkerId,
   type ActivityFilter,
   type ActivityItem,
   type CockpitTab,
   type FocusId,
+  type WorkerId,
 } from "@/components/intelligence-layer/model";
 import { capturedDecisionCount, mergeActivity } from "@/components/intelligence-layer/feed";
+import { ChannelSurfaces } from "@/components/intelligence-layer/channel-surfaces";
+import { extraCompleted, useBrain } from "@/lib/brain/store";
 import { WorkflowBoardProvider, useWorkflowBoard } from "@/components/intelligence-layer/workflow-board";
-import { useCrm } from "@/lib/crm/store";
 
-const TABS: CockpitTab[] = ["intelligence", "observability", "train", "sources", "connections", "settings"];
+const TABS: CockpitTab[] = ["intelligence", "observability", "train", "sources", "connections", "channels", "settings"];
+
+type UrlPatch = {
+  tab?: CockpitTab;
+  focus?: FocusId | null;
+  edge?: string | null;
+  activity?: ActivityFilter;
+  event?: string | null;
+  replay?: boolean;
+  surface?: "claude" | "slack";
+  channel?: "ops" | "leadership";
+};
 const FILTERS: ActivityFilter[] = ["all", "allowed", "blocked", "approval", "completed"];
-const FOCUSES: FocusId[] = ["crm-agent", "crm", "claude", "slack-sales", "slack-revenue", "email", "record"];
+const FOCUSES: FocusId[] = ["property-insights", "intent-intelligence", "properties", "investor-app", "knowledge", "chat", "record"];
 function isTab(value: string | null): value is CockpitTab {
   return !!value && TABS.includes(value as CockpitTab);
 }
@@ -38,7 +53,7 @@ function isFilter(value: string | null): value is ActivityFilter {
 
 export default function IntelligenceLayerPage() {
   return (
-    <Suspense fallback={<div className="flex h-[100dvh] items-center justify-center bg-[#05070d] text-sm text-slate-400">Loading control room…</div>}>
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#05070d] text-sm text-slate-400">Loading intelligence…</div>}>
       <WorkflowBoardProvider>
         <IntelligenceLayerScreen />
       </WorkflowBoardProvider>
@@ -49,26 +64,20 @@ export default function IntelligenceLayerPage() {
 function IntelligenceLayerScreen() {
   const router = useRouter();
   const params = useSearchParams();
-  const crm = useCrm();
   const board = useWorkflowBoard();
-  const feed = useMemo(() => mergeActivity(crm.workflowEvents), [crm.workflowEvents]);
+  const brain = useBrain();
+  const feed = useMemo(() => mergeActivity(brain.events), [brain.events]);
+  const captured = capturedDecisionCount(extraCompleted(brain.events));
   const tab: CockpitTab = isTab(params.get("tab")) ? params.get("tab") as CockpitTab : "intelligence";
   const focusParam = params.get("focus");
-  const focus: FocusId | null = focusParam === "none" ? null : isFocus(focusParam) ? focusParam : "crm-agent";
+  const focus: FocusId | null = !focusParam || focusParam === "none" ? null : isFocus(focusParam) ? focusParam : null;
   const edgeParam = params.get("edge");
   const edgeId = edgeParam && board.edges.some((edge) => edge.id === edgeParam) ? edgeParam : null;
   const activityFilter: ActivityFilter = isFilter(params.get("activity")) ? params.get("activity") as ActivityFilter : "all";
   const eventId = feed.some((item) => item.id === params.get("event")) ? params.get("event") : null;
   const playing = params.get("replay") === "1";
 
-  const replace = useCallback((next: {
-    tab?: CockpitTab;
-    focus?: FocusId | null;
-    edge?: string | null;
-    activity?: ActivityFilter;
-    event?: string | null;
-    replay?: boolean;
-  }) => {
+  const replace = useCallback((next: UrlPatch) => {
     const query = new URLSearchParams();
     const nextTab = next.tab ?? tab;
     const nextFocus = next.focus === undefined ? focus : next.focus;
@@ -77,15 +86,24 @@ function IntelligenceLayerScreen() {
     const nextEvent = next.event === undefined ? eventId : next.event;
     const nextReplay = next.replay === undefined ? playing : next.replay;
     if (nextTab !== "intelligence") query.set("tab", nextTab);
-    if (nextFocus && nextFocus !== "crm-agent") query.set("focus", nextFocus);
-    if (nextFocus === null) query.set("focus", "none");
+    if (nextFocus) query.set("focus", nextFocus);
     if (nextEdge) query.set("edge", nextEdge);
     if (nextActivity !== "all") query.set("activity", nextActivity);
     if (nextEvent) query.set("event", nextEvent);
     if (nextReplay) query.set("replay", "1");
+    if (nextTab === "channels") {
+      query.set("surface", next.surface ?? params.get("surface") ?? "claude");
+      const channel = next.channel ?? params.get("channel");
+      if (channel) query.set("channel", channel);
+    }
+    if (params.get("demo") === "1") {
+      query.set("demo", "1");
+      const step = params.get("step");
+      if (step) query.set("step", step);
+    }
     const suffix = query.toString();
     router.replace(suffix ? `/studio/intelligence?${suffix}` : "/studio/intelligence", { scroll: false });
-  }, [activityFilter, edgeId, eventId, focus, playing, router, tab]);
+  }, [activityFilter, edgeId, eventId, focus, params, playing, router, tab]);
 
   const eventIndex = useMemo(
     () => Math.max(0, feed.findIndex((item) => item.id === eventId)),
@@ -102,7 +120,7 @@ function IntelligenceLayerScreen() {
       }
       replace({
         event: next.id,
-        focus: next.focus === "crm" || next.focus === "claude" || next.focus === "email" || next.focus === "slack-sales" || next.focus === "slack-revenue" ? next.focus : "crm-agent",
+        focus: next.focus,
         edge: next.edgeId,
         replay: true,
       });
@@ -135,43 +153,36 @@ function IntelligenceLayerScreen() {
     });
   };
 
-  if (!crm.ready) {
-    return (
-      <div className="flex h-[100dvh] items-center justify-center bg-[#05070d] text-sm text-slate-400">
-        Loading recorded events…
-      </div>
-    );
-  }
-
   return (
     <IntelligenceCockpitShell tab={tab} onTabChange={(next) => replace({ tab: next })}>
       {tab === "intelligence" && (
-        <div className="grid h-full min-h-0 grid-cols-1 gap-3 overflow-y-auto p-3 lg:grid-cols-[300px_minmax(0,1fr)_320px] lg:overflow-hidden lg:p-4">
+        <div className="flex h-full min-h-0 flex-col">
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-y-auto p-3 lg:grid-cols-[280px_minmax(0,1fr)_300px] lg:overflow-hidden lg:p-4">
           <div className="min-h-0 lg:overflow-hidden">
             <LeftPanel
               focus={focus}
-              capturedCount={capturedDecisionCount(crm.workflowEvents)}
-              onSelectWorker={() => replace({ focus: "crm-agent", edge: null, event: null })}
-              onSelectEvidence={(id) => replace({ edge: id, focus: focus ?? "crm-agent" })}
+              capturedCount={captured}
+              onSelectWorker={(id: WorkerId) => replace({ focus: id, edge: null, event: null })}
+              onSelectEvidence={(id) => replace({ edge: id, focus: focus && isWorkerId(focus) ? focus : WORKER_IDS[0] })}
               onShowAll={() => replace({ focus: null, edge: null, event: null, replay: false })}
             />
           </div>
           <NetworkCanvas
             focus={focus}
             edgeId={edgeId}
-            capturedCount={capturedDecisionCount(crm.workflowEvents)}
+            capturedCount={captured}
             pulseEdge={playing ? edgeId : null}
             onFocus={(id) => replace({ focus: id, event: null, edge: null })}
             onSelectEdge={(id) => {
               const edge = board.edgeById(id);
-              replace({ edge: id, focus: edge?.to === "record" ? "record" : edge?.to ?? "crm-agent", event: null });
+              replace({ edge: id, focus: edge?.to === "record" ? "record" : edge?.from ?? "property-insights", event: null });
             }}
             onClear={() => replace({ focus: null, edge: null, event: null, replay: false })}
           />
           <div className="min-h-0 lg:overflow-hidden">
             <RightRail
               items={feed}
-              capturedCount={capturedDecisionCount(crm.workflowEvents)}
+              capturedCount={captured}
               edgeId={edgeId}
               activityFilter={activityFilter}
               selectedEventId={eventId}
@@ -182,6 +193,7 @@ function IntelligenceLayerScreen() {
               onPause={() => replace({ replay: false })}
               onStep={step}
             />
+          </div>
           </div>
         </div>
       )}
@@ -198,7 +210,15 @@ function IntelligenceLayerScreen() {
       )}
       {tab === "connections" && (
         <div className="h-full overflow-y-auto p-4 lg:p-6">
-          <ConnectionsTab onViewBoundary={(next) => replace({ tab: "intelligence", focus: next })} />
+          <ConnectionsTab
+            onViewBoundary={(next) => replace({ tab: "intelligence", focus: next })}
+            onOpenChannels={(surface) => replace({ tab: "channels", surface })}
+          />
+        </div>
+      )}
+      {tab === "channels" && (
+        <div className="h-full overflow-y-auto p-4 lg:p-6">
+          <ChannelSurfaces />
         </div>
       )}
       {tab === "settings" && (

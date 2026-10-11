@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
-import Link from "next/link";
 import { HonestyBadge } from "./honesty-badge";
+import { ChannelSettings } from "./channel-surfaces";
 import {
   ACTIVITY,
   ACTIVITY_FILTERS,
@@ -27,7 +27,7 @@ export function ObservabilityTab({
   return (
     <Panel
       title="What actually happened"
-      description="Filterable sample activity. These events are illustrative until event capture is connected."
+      description="Demonstration Claude and Slack events sit above labelled sample activity. Prototype playbook runs are not live automation."
     >
       <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filter observability">
         {ACTIVITY_FILTERS.map((item) => (
@@ -57,7 +57,7 @@ export function ObservabilityTab({
               >
                 <div>
                   <p className="text-sm text-white">{card.title}</p>
-                  <p className="text-[12px] text-slate-400">CRM Agent · {card.detail}</p>
+                  <p className="text-[12px] text-slate-400">{card.detail}</p>
                 </div>
                 <HonestyBadge kind="illustrative" />
               </button>
@@ -65,7 +65,7 @@ export function ObservabilityTab({
           ))}
         </ul>
       )}
-      <p className="mt-3 text-[12px] text-slate-500">{feed.length} events. Prototype playbook runs are labelled illustrative — not live automation.</p>
+      <p className="mt-3 text-[12px] text-slate-500">{feed.length} events. Allowed, blocked, and approved actions from this walkthrough appear first.</p>
     </Panel>
   );
 }
@@ -78,7 +78,7 @@ export function TrainTab() {
     >
       <div className="rounded-2xl border border-dashed border-white/10 p-6">
         <p className="text-sm text-white">No reviewed training events yet.</p>
-        <p className="mt-2 text-[13px] text-slate-400">This is a labelled preview, not automatic learning from the CRM Agent.</p>
+        <p className="mt-2 text-[13px] text-slate-400">This is a labelled preview, not automatic learning from the workers.</p>
         <div className="mt-3"><HonestyBadge kind="planned" /></div>
         <button
           type="button"
@@ -118,16 +118,25 @@ export function SourcesTab() {
   );
 }
 
-export function ConnectionsTab({ onViewBoundary }: { onViewBoundary: (focus: FocusId) => void }) {
-  const cards: { id: FocusId; name: string; actions: string; walkthrough?: string }[] = [
-    { id: "crm", name: SYSTEMS.crm.name, actions: "Companies, leads, tasks, invoices" },
-    { id: "claude", name: SYSTEMS.claude.name, actions: "Retrieval and approval-controlled actions", walkthrough: "/crm/channels?surface=claude" },
-    { id: "slack-sales", name: SYSTEMS["slack-sales"].name, actions: "Ops allowed · money blocked", walkthrough: "/crm/channels?surface=slack&channel=sales" },
-    { id: "slack-revenue", name: SYSTEMS["slack-revenue"].name, actions: "Finance for authorised users", walkthrough: "/crm/channels?surface=slack&channel=revenue" },
-    { id: "email", name: SYSTEMS.email.name, actions: "Outbound needs confirmation", walkthrough: "/crm/channels?surface=claude" },
+export function ConnectionsTab({
+  onViewBoundary,
+  onOpenChannels,
+}: {
+  onViewBoundary: (focus: FocusId) => void;
+  onOpenChannels?: (surface: "claude" | "slack") => void;
+}) {
+  const cards: { id: FocusId; name: string; actions: string }[] = [
+    { id: "properties", name: SYSTEMS.properties.name, actions: "Income, spend, and risk the operator can already see" },
+    { id: "investor-app", name: SYSTEMS["investor-app"].name, actions: "Intent signals · no outbound contact" },
+    { id: "knowledge", name: SYSTEMS.knowledge.name, actions: "Uploaded sources · grounded retrieval" },
+    { id: "chat", name: SYSTEMS.chat.name, actions: "Critic + gate on operator questions" },
+  ];
+  const surfaces = [
+    { id: "claude" as const, name: "Claude", actions: "Ask a worker for a grounded insight, then approve a recommended review." },
+    { id: "slack" as const, name: "Slack", actions: "Same workers. Channel and user walls decide what can be said." },
   ];
   return (
-    <Panel title="Where the worker operates" description="Each connection has a readable boundary. Walkthroughs are simulated integrations until live connectors exist.">
+    <Panel title="Where the worker operates" description="Each connection has a readable boundary. Claude and Slack walkthroughs are simulated until live connectors exist.">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (
           <article key={card.id} className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4">
@@ -140,15 +149,28 @@ export function ConnectionsTab({ onViewBoundary }: { onViewBoundary: (focus: Foc
               <button
                 type="button"
                 onClick={() => onViewBoundary(card.id)}
-                className="text-[12px] font-medium text-indigo-300 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+                className="min-h-11 text-[12px] font-medium text-indigo-300 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
               >
                 View boundary
               </button>
-              {card.walkthrough && (
-                <Link href={card.walkthrough} className="text-[12px] font-medium text-indigo-300 underline-offset-2 hover:underline">
-                  Open walkthrough
-                </Link>
-              )}
+            </div>
+          </article>
+        ))}
+        {surfaces.map((card) => (
+          <article key={card.id} className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-white">{card.name}</h3>
+              <HonestyBadge kind="illustrative" />
+            </div>
+            <p className="mt-3 text-[12px] text-slate-300">{card.actions}</p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => onOpenChannels?.(card.id)}
+                className="min-h-11 text-[12px] font-medium text-indigo-300 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+              >
+                Open walkthrough
+              </button>
             </div>
           </article>
         ))}
@@ -163,7 +185,7 @@ export function SettingsTab() {
     ["Environment", "Demo / preview"],
     ["Viewer access", "Internal walkthrough only"],
     ["Rules version", "v0 · not enforced in this UI"],
-    ["Worker ownership", "CRM Agent"],
+    ["Worker ownership", "Property Insights + Intelligence Worker"],
     ["Data visibility", "Labelled prototype samples only"],
   ];
   return (
@@ -176,6 +198,9 @@ export function SettingsTab() {
           </div>
         ))}
       </dl>
+      <div className="pt-2">
+        <ChannelSettings />
+      </div>
     </Panel>
   );
 }

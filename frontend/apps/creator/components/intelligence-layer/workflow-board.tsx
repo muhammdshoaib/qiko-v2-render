@@ -3,12 +3,12 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { EDGES, EDGE_KIND_LABEL, type EdgeKind, type FocusId, type GraphEdge } from "./model";
 
-export const BOARD_NODES: FocusId[] = ["crm-agent", "record", "crm", "claude", "slack-sales", "slack-revenue", "email"];
+export const BOARD_NODES: FocusId[] = ["property-insights", "intent-intelligence", "record", "properties", "investor-app", "knowledge", "chat"];
 export type WireColor = "cyan" | "emerald" | "amber" | "red" | "violet" | "slate";
 export type Point = { x: number; y: number };
 export type BoardEdge = Omit<GraphEdge, "id"> & { id: string; color?: WireColor };
 
-const STORAGE_KEY = "qiko-creator-board-v2";
+const STORAGE_KEY = "qiko-studio-board-v3";
 export const MIN_ZOOM = 0.35;
 export const MAX_ZOOM = 2.4;
 export const ZOOM_STEP = 1.18;
@@ -16,16 +16,16 @@ export const GRID_SIZE = 22;
 
 export type Viewport = { x: number; y: number; zoom: number };
 
-export const DEFAULT_VIEWPORT: Viewport = { x: 32, y: 24, zoom: 1 };
+export const DEFAULT_VIEWPORT: Viewport = { x: 24, y: 16, zoom: 1 };
 
 export const DEFAULT_POSITIONS: Record<FocusId, Point> = {
-  "crm-agent": { x: 220, y: 250 },
-  record: { x: 520, y: 330 },
-  crm: { x: 860, y: 120 },
-  claude: { x: 880, y: 280 },
-  "slack-sales": { x: 880, y: 440 },
-  "slack-revenue": { x: 780, y: 580 },
-  email: { x: 200, y: 560 },
+  record: { x: 300, y: 220 },
+  "property-insights": { x: 120, y: 220 },
+  "intent-intelligence": { x: 480, y: 220 },
+  properties: { x: 70, y: 80 },
+  knowledge: { x: 300, y: 58 },
+  "investor-app": { x: 530, y: 80 },
+  chat: { x: 300, y: 380 },
 };
 
 export const KIND_COLOR: Record<EdgeKind, WireColor> = {

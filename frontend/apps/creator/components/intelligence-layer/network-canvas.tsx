@@ -1,18 +1,20 @@
 "use client";
 
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Briefcase, Cpu, Mail, Maximize2, MessageSquare, Minus, Plus, Receipt } from "lucide-react";
+import { BookOpen, Building2, Maximize2, MessageSquare, Minus, Plus, Radar } from "lucide-react";
 import { Button, Input, cn } from "@qiko/ui";
 import { toast } from "sonner";
 import {
   CAPTURED_DECISIONS,
-  CRM_AGENT,
   EDGE_KIND_LABEL,
   MONTHLY_DECISIONS,
   SYSTEMS,
+  WORKERS,
+  isWorkerId,
   type EdgeKind,
   type FocusId,
   type SystemId,
+  type WorkerId,
 } from "./model";
 import {
   BOARD_NODES,
@@ -33,12 +35,11 @@ import {
   type WireColor,
 } from "./workflow-board";
 
-const NODE_ICONS: Record<SystemId, typeof Mail> = {
-  crm: Briefcase,
-  claude: Cpu,
-  "slack-sales": MessageSquare,
-  "slack-revenue": Receipt,
-  email: Mail,
+const NODE_ICONS: Record<SystemId, typeof BookOpen> = {
+  properties: Building2,
+  "investor-app": Radar,
+  knowledge: BookOpen,
+  chat: MessageSquare,
 };
 
 const KINDS = Object.keys(EDGE_KIND_LABEL) as EdgeKind[];
@@ -80,6 +81,8 @@ export function NetworkCanvas({
   const [camera, setCamera] = useState<Viewport>(DEFAULT_VIEWPORT);
   const [draft, setDraft] = useState<Partial<Record<FocusId, Point>>>({});
   const [tick, setTick] = useState(0);
+  const [editable, setEditable] = useState(false);
+  const didFit = useRef(false);
   const cameraRef = useRef(camera);
   const draftRef = useRef(draft);
   cameraRef.current = camera;
@@ -131,11 +134,12 @@ export function NetworkCanvas({
     if (!rect) return;
     const xs = BOARD_NODES.map((id) => positions[id].x);
     const ys = BOARD_NODES.map((id) => positions[id].y);
-    const minX = Math.min(...xs) - 160;
-    const maxX = Math.max(...xs) + 160;
-    const minY = Math.min(...ys) - 120;
-    const maxY = Math.max(...ys) + 120;
-    const zoom = clampZoom(Math.min((rect.width - 72) / (maxX - minX), (rect.height - 96) / (maxY - minY)));
+    const minX = Math.min(...xs) - 90;
+    const maxX = Math.max(...xs) + 90;
+    const minY = Math.min(...ys) - 70;
+    const maxY = Math.max(...ys) + 70;
+    const raw = Math.min((rect.width - 48) / (maxX - minX), (rect.height - 72) / (maxY - minY));
+    const zoom = clampZoom(Math.min(1.05, Math.max(0.8, raw)));
     commitCamera({
       zoom,
       x: (rect.width - (maxX - minX) * zoom) / 2 - minX * zoom,
@@ -237,8 +241,18 @@ export function NetworkCanvas({
 
   const startDrag = (id: FocusId, event: ReactPointerEvent) => {
     event.stopPropagation();
+    if (!editable) {
+      onFocus(id);
+      return;
+    }
     setGesture({ type: "pending", id, start: { x: event.clientX, y: event.clientY }, origin: positions[id] });
   };
+
+  useEffect(() => {
+    if (!board.ready || didFit.current) return;
+    didFit.current = true;
+    commitCamera({ ...DEFAULT_VIEWPORT }, true);
+  }, [board.ready]);
 
   const startConnect = (id: FocusId, side: HandleSide, event: ReactPointerEvent) => {
     event.stopPropagation();
@@ -308,18 +322,18 @@ export function NetworkCanvas({
             const end = handlePoint(nodeRefs.current, edge.to, "in", positions[edge.to]);
             const color = board.wireColor(edge);
             const active = related.has(edge.id);
-            const isLive = edgeId === edge.id || pulseEdge === edge.id || gesture?.type === "connect";
+            const isLive = edgeId === edge.id || pulseEdge === edge.id;
             return (
               <path
                 key={edge.id}
                 d={curve(start, end)}
                 className={cn(
-                  "fill-none stroke-[3] transition-opacity duration-200 motion-reduce:transition-none",
+                  "fill-none stroke-[2.5] transition-opacity duration-200 motion-reduce:transition-none",
                   WIRE_STROKE[color],
                   (edge.kind === "blocked" || color === "red") && "[stroke-dasharray:18_14]",
-                  isLive && "stroke-[4.5] opacity-100 [stroke-dasharray:12_16] [animation:qiko-flow_1.4s_linear_infinite] motion-reduce:animate-none",
-                  !isLive && active && "opacity-85",
-                  !active && "opacity-25",
+                  isLive && "stroke-[4] opacity-100 [stroke-dasharray:12_16] [animation:qiko-flow_1.4s_linear_infinite] motion-reduce:animate-none",
+                  !isLive && active && "opacity-80",
+                  !active && "opacity-10",
                 )}
               />
             );
@@ -372,40 +386,44 @@ export function NetworkCanvas({
             className="absolute z-10 -translate-x-1/2 -translate-y-1/2"
             onClick={(event) => event.stopPropagation()}
           >
+            {editable && (
             <Handle
               side="in"
               hot={Boolean(connecting && gesture.side === "out")}
               snapped={Boolean(snapIn)}
               onPointerDown={(event) => startConnect(id, "in", event)}
             />
-            {id === "crm-agent" ? (
+            )}
+            {isWorkerId(id) ? (
               <AgentNode
+                workerId={id}
                 selected={focus === id}
-                dimmed={isDimmed(focus, id)}
-                capturedCount={capturedCount}
+                dimmed={isDimmed(focus, id, board.edges)}
                 onPointerDown={(event) => startDrag(id, event)}
               />
             ) : id === "record" ? (
               <RecordNode
                 selected={focus === id}
-                dimmed={isDimmed(focus, id)}
+                dimmed={isDimmed(focus, id, board.edges)}
                 capturedCount={capturedCount}
                 onPointerDown={(event) => startDrag(id, event)}
               />
             ) : (
               <SystemNode
-                id={id}
+                id={id as SystemId}
                 selected={focus === id}
-                dimmed={isDimmed(focus, id)}
+                dimmed={isDimmed(focus, id, board.edges)}
                 onPointerDown={(event) => startDrag(id, event)}
               />
             )}
+            {editable && (
             <Handle
               side="out"
               hot={Boolean(connecting && gesture.side === "in")}
               snapped={Boolean(snapOut)}
               onPointerDown={(event) => startConnect(id, "out", event)}
             />
+            )}
           </div>
         );
       })}
@@ -426,7 +444,7 @@ export function NetworkCanvas({
         </button>
       </div>
 
-      {selected && (
+      {editable && selected && (
         <WireEditor
           edge={selected}
           color={board.wireColor(selected)}
@@ -447,17 +465,16 @@ export function NetworkCanvas({
 
       <div className="absolute bottom-0 left-0 right-0 z-20 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/[0.06] bg-[#070a12]/95 px-3 py-2 text-[10px] text-slate-500">
         {KINDS.map((kind) => (
-          <span key={kind} className={WIRE_TEXT[board.wireColor({ kind, id: kind, from: "crm-agent", to: "crm", label: "", rule: "", example: "" })]}>
+          <span key={kind} className={WIRE_TEXT[board.wireColor({ kind, id: kind, from: "property-insights", to: "properties", label: "", rule: "", example: "" })]}>
             {EDGE_KIND_LABEL[kind]}
           </span>
         ))}
-        <span className="text-slate-600">Scroll to zoom. Drag the grid to pan. Drag nodes or handles anywhere on the board.</span>
         <span className="ml-auto flex gap-2">
-          <Button type="button" size="sm" variant="outline" className="h-8 text-[11px]" onClick={(event) => { event.stopPropagation(); board.resetLayout(); setCamera(DEFAULT_VIEWPORT); }}>
-            Reset layout
+          <Button type="button" size="sm" variant="outline" className="h-8 text-[11px]" aria-pressed={editable} onClick={(event) => { event.stopPropagation(); setEditable((value) => !value); }}>
+            {editable ? "Done arranging" : "Arrange"}
           </Button>
-          <Button type="button" size="sm" variant="outline" className="h-8 text-[11px]" onClick={(event) => { event.stopPropagation(); board.resetBoard(); setCamera(DEFAULT_VIEWPORT); onClear(); }}>
-            Restore default wires
+          <Button type="button" size="sm" variant="outline" className="h-8 text-[11px]" onClick={(event) => { event.stopPropagation(); board.resetBoard(); commitCamera({ ...DEFAULT_VIEWPORT }, true); onClear(); }}>
+            Reset
           </Button>
         </span>
       </div>
@@ -499,17 +516,18 @@ function Handle({
 }
 
 function AgentNode({
+  workerId,
   selected,
   dimmed,
-  capturedCount,
   onPointerDown,
 }: {
+  workerId: WorkerId;
   selected: boolean;
   dimmed: boolean;
-  capturedCount: number;
   onPointerDown: (event: ReactPointerEvent<HTMLButtonElement>) => void;
 }) {
-  const size = 124 + Math.round(Math.min(capturedCount, 60) * 0.55);
+  const worker = WORKERS[workerId];
+  const size = 112 + Math.round(Math.min(worker.decisions, 24) * 1.4);
   return (
     <button
       type="button"
@@ -523,11 +541,11 @@ function AgentNode({
         dimmed && "opacity-40",
       )}
     >
-      <span className="flex h-full flex-col items-center justify-center px-4 text-center">
+      <span className="flex h-full flex-col items-center justify-center px-3 text-center">
         <span className="text-[10px] uppercase tracking-wider text-cyan-300">Worker</span>
-        <span className="mt-1 text-sm font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>{CRM_AGENT.name}</span>
-        <span className="mt-2 text-2xl font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>{capturedCount}</span>
-        <span className="text-[10px] text-slate-500">captured decisions</span>
+        <span className="mt-1 text-[13px] font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>{worker.name}</span>
+        <span className="mt-2 text-xl font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>{worker.decisions}</span>
+        <span className="text-[10px] text-slate-500">outcomes</span>
       </span>
     </button>
   );
@@ -567,7 +585,7 @@ function RecordNode({
         />
       ))}
       <span className={cn("relative flex size-[88px] flex-col items-center justify-center rounded-full border bg-[#0c111c]", selected ? "border-indigo-300/70" : "border-white/10")}>
-        <span className="text-[10px] uppercase tracking-wider text-indigo-300">Record</span>
+        <span className="text-[10px] uppercase tracking-wider text-indigo-300">Company</span>
         <span className="text-sm font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>Qiko</span>
         <span className="text-[10px] text-slate-500">{capturedCount}</span>
       </span>
@@ -673,15 +691,27 @@ function WireEditor({
   );
 }
 
+function connectedIds(focus: FocusId, edges: BoardEdge[]) {
+  const ids = new Set<FocusId>([focus]);
+  for (const edge of edges) {
+    if (edge.from === focus || edge.to === focus) {
+      ids.add(edge.from);
+      ids.add(edge.to);
+    }
+  }
+  return ids;
+}
+
 function relatedEdges(focus: FocusId | null, edges: BoardEdge[]) {
-  if (!focus || focus === "crm-agent") return new Set(edges.map((edge) => edge.id));
+  if (!focus) {
+    return new Set(edges.filter((edge) => edge.from === "record" || edge.to === "record").map((edge) => edge.id));
+  }
   return new Set(edges.filter((edge) => edge.from === focus || edge.to === focus).map((edge) => edge.id));
 }
 
-function isDimmed(focus: FocusId | null, id: FocusId) {
-  if (!focus || focus === "crm-agent") return false;
-  if (focus === "record") return id !== "record" && id !== "crm-agent";
-  return focus !== id && id !== "crm-agent";
+function isDimmed(focus: FocusId | null, id: FocusId, edges: BoardEdge[]) {
+  if (!focus) return false;
+  return !connectedIds(focus, edges).has(id);
 }
 
 function isTyping() {

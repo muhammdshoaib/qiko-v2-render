@@ -1,8 +1,6 @@
-"use client";
-
 import type { ReactNode } from "react";
-import { CrmShell } from "@/components/crm/crm-shell";
+import { redirect } from "next/navigation";
 
-export default function CrmLayout({ children }: { children: ReactNode }) {
-  return <CrmShell>{children}</CrmShell>;
+export default function CrmLayout({ children: _children }: { children: ReactNode }) {
+  redirect("/studio");
 }

@@ -3,13 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Briefcase, ChevronLeft, LayoutDashboard, Lock, LogOut, Menu, Settings, Sparkles, Users, CreditCard, Wrench, X } from "lucide-react";
+import { ChevronLeft, LayoutDashboard, Lock, LogOut, Menu, Settings, Sparkles, Users, CreditCard, Wrench, X } from "lucide-react";
 import { Logo, cn } from "@qiko/ui";
 import { logout } from "@/lib/api";
+import { DemoGuide } from "@/components/studio/demo-guide";
 
 const NAV = [
+  { href: "/studio", label: "Studio", icon: Sparkles },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/crm", label: "CRM", icon: Briefcase },
   { href: "/workers", label: "Workers", icon: Users },
   { href: "/billing", label: "Pricing", icon: CreditCard, locked: true },
   { href: "/settings", label: "Settings", icon: Settings },
@@ -155,8 +156,39 @@ export function AppShell({ title, children }: { title: string; children: React.R
             <div className="w-9" />
           </div>
         </header>
+        {inStudio && <StudioSectionNav pathname={pathname} />}
+        {inStudio && <DemoGuide />}
         <div className="min-w-0 flex-1 overflow-x-hidden">{children}</div>
       </main>
     </div>
+  );
+}
+
+function StudioSectionNav({ pathname }: { pathname: string }) {
+  const intelligence = pathname.startsWith("/studio/intelligence");
+  const overview = pathname.startsWith("/studio") && !intelligence;
+  return (
+    <nav aria-label="Studio sections" className="flex gap-1 border-b border-white/[0.06] bg-[#05070d] px-3 sm:px-6">
+      <Link
+        href="/studio"
+        aria-current={overview ? "page" : undefined}
+        className={cn(
+          "inline-flex min-h-11 items-center border-b-2 px-3 text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
+          overview ? "border-cyan-400 text-white" : "border-transparent text-slate-400 hover:text-white",
+        )}
+      >
+        Overview
+      </Link>
+      <Link
+        href="/studio/intelligence"
+        aria-current={intelligence ? "page" : undefined}
+        className={cn(
+          "inline-flex min-h-11 items-center border-b-2 px-3 text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
+          intelligence ? "border-cyan-400 text-white" : "border-transparent text-slate-400 hover:text-white",
+        )}
+      >
+        Intelligence
+      </Link>
+    </nav>
   );
 }

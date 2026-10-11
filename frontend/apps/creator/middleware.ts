@@ -11,7 +11,7 @@ export function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   // Creator has no marketing homepage; / would 404. Send testers to login or the app.
   if (pathname === "/") {
-    return NextResponse.redirect(new URL(hasSession ? "/dashboard" : "/login", req.url));
+    return NextResponse.redirect(new URL(hasSession ? "/studio" : "/login", req.url));
   }
   const isPublic = pathname === "/.well-known/security.txt" || pathname.startsWith("/labs") || pathname.startsWith("/login") || pathname.startsWith("/signup") || pathname.startsWith("/onboarding") || pathname.startsWith("/forgot-password") || pathname.startsWith("/reset-password") || pathname.startsWith("/verify-email") || pathname.startsWith("/terms") || pathname.startsWith("/privacy") || pathname.startsWith("/cookies") || pathname.startsWith("/chat/");
   if (!hasSession && !isPublic) return NextResponse.redirect(new URL("/login", req.url));

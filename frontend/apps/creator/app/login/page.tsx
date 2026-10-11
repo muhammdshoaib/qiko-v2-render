@@ -55,7 +55,7 @@ export default function Login() {
         // The session lives in an httpOnly cookie; nothing usable is returned to the client.
         dispatch(setAuth({ token: res.data.token, userInfo: (res?.data?.user as never) ?? null }));
         toast.success("Welcome back!");
-        window.location.href = "/dashboard";
+        window.location.href = "/studio";
       }
     } catch (error: unknown) {
       const errorMsg = error instanceof Error ? error.message : "Login failed. Please try again.";

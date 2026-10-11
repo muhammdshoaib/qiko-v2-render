@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { ConsentProvider } from "@/components/consent/ConsentProvider";
 import { CrmProvider } from "@/lib/crm/store";
+import { BrainProvider } from "@/lib/brain/store";
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [client] = useState(() => new QueryClient());
@@ -12,8 +13,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={client}>
       <ConsentProvider>
         <CrmProvider>
-          {children}
-          <Toaster />
+          <BrainProvider>
+            {children}
+            <Toaster />
+          </BrainProvider>
         </CrmProvider>
       </ConsentProvider>
     </QueryClientProvider>

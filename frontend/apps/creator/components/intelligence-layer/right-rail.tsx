@@ -1,19 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
-import Link from "next/link";
 import { Pause, Play, SkipBack, SkipForward } from "lucide-react";
 import { Button, cn } from "@qiko/ui";
-import { toast } from "sonner";
-import { useCrm } from "@/lib/crm/store";
-import { channelRunLabel } from "@/lib/crm/channels";
-import { runLabel } from "@/lib/crm/workflows";
 import { HonestyBadge } from "./honesty-badge";
 import {
   ACTIVITY_FILTERS,
   EDGES,
   MONTHLY_DECISIONS,
-  SOURCES,
   filterActivity,
   type ActivityFilter,
   type ActivityItem,
@@ -52,37 +46,26 @@ export function RightRail({
   onPause: () => void;
   onStep: (direction: -1 | 1) => void;
 }) {
-  const crm = useCrm();
   const board = useWorkflowBoard();
   const visible = filterActivity(items, activityFilter);
   const edge = board.edgeById(edgeId) ?? EDGES.find((item) => item.id === edgeId);
   const selected = items.find((item) => item.id === selectedEventId) ?? null;
   const maxMonth = Math.max(...MONTHLY_DECISIONS.map((row) => row.value));
-  const meeting = crm.workflowRuns.find((run) => run.id === "meeting");
-  const email = crm.channelRuns?.find((run) => run.id === "claude-email");
-  const channelChecks = crm.channelRuns?.filter((run) => run.status !== "idle") ?? [];
+
+  const waiting = items.filter((item) => item.filter === "approval");
+  const blocked = items.filter((item) => item.filter === "blocked");
 
   return (
     <aside className="flex h-full min-h-0 flex-col gap-3 overflow-y-auto">
-      <RailCard title="Company record">
+      <RailCard title="Record growth">
         <p className="text-3xl font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>{capturedCount}</p>
-        <p className="mt-1 text-[12px] text-slate-400">Captured decisions · prototype + sample</p>
-        <dl className="mt-3 grid grid-cols-2 gap-2 text-[12px]">
-          <div className="rounded-lg border border-white/[0.05] bg-white/[0.02] px-2.5 py-2">
-            <dt className="text-slate-500">Recent events</dt>
-            <dd className="mt-0.5 text-white">{items.length}</dd>
-          </div>
-          <div className="rounded-lg border border-white/[0.05] bg-white/[0.02] px-2.5 py-2">
-            <dt className="text-slate-500">Knowledge sources</dt>
-            <dd className="mt-0.5 text-white">{SOURCES.length}</dd>
-          </div>
-        </dl>
-        <div className="mt-4 flex items-end gap-1.5" aria-label="Monthly captured decisions">
+        <p className="mt-1 text-[12px] text-slate-400">Captured outcomes on the company record</p>
+        <div className="mt-4 flex items-end gap-1.5" aria-label="Monthly captured outcomes">
           {MONTHLY_DECISIONS.map((row) => (
             <div key={row.month} className="flex flex-1 flex-col items-center gap-1">
               <div className="flex h-14 w-full items-end rounded-sm bg-white/[0.03]">
                 <div
-                  className="w-full rounded-sm bg-indigo-400/70"
+                  className="w-full rounded-sm bg-cyan-400/70"
                   style={{ height: `${Math.max(18, (row.value / maxMonth) * 100)}%` }}
                 />
               </div>
@@ -93,57 +76,43 @@ export function RightRail({
         <div className="mt-2"><HonestyBadge kind="illustrative" /></div>
       </RailCard>
 
-      <RailCard title="Workflow runs">
-        <ul className="space-y-2 text-[12px]">
-          {crm.workflowRuns.map((run) => (
-            <li key={run.id} className="flex items-center justify-between gap-2">
-              <span className="text-slate-300">{runLabel(run.id)}</span>
-              <span className="capitalize text-slate-500">{run.status.replaceAll("_", " ")}</span>
-            </li>
-          ))}
-        </ul>
-        <Link href="/crm" className="mt-3 inline-block text-[12px] text-indigo-300 hover:underline">Open CRM playbooks</Link>
-      </RailCard>
-
-      <RailCard title="Channel surfaces">
-        {channelChecks.length === 0 ? (
-          <p className="text-[13px] text-slate-400">No Claude or Slack checks yet.</p>
+      <RailCard title="Needs a person">
+        {waiting.length === 0 ? (
+          <p className="text-[13px] text-slate-500">Nothing waiting for review.</p>
         ) : (
-          <ul className="space-y-2 text-[12px]">
-            {channelChecks.map((run) => (
-              <li key={run.id} className="flex items-center justify-between gap-2">
-                <span className="text-slate-300">{channelRunLabel(run.id)}</span>
-                <span className="capitalize text-slate-500">{run.status.replaceAll("_", " ")}</span>
+          <ul className="space-y-2">
+            {waiting.map((item) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  onClick={() => onSelectEvent(item)}
+                  className="w-full rounded-lg border border-amber-400/20 bg-amber-400/[0.06] px-3 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+                >
+                  <p className="text-[13px] text-white">{item.title}</p>
+                  <p className="mt-1 text-[12px] text-slate-400">{item.detail}</p>
+                </button>
               </li>
             ))}
           </ul>
         )}
-        <Link href="/crm/channels" className="mt-3 inline-block text-[12px] text-indigo-300 hover:underline">Open walkthroughs</Link>
       </RailCard>
 
-      <RailCard title="Approvals">
-        {meeting?.status === "awaiting_approval" ? (
-          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
-            <p className="text-[13px] text-white">Harrow Street · Negotiation → Confirmed</p>
-            <p className="mt-1 text-[12px] text-slate-400">{meeting.pendingApproval?.reason}</p>
-            <Button type="button" size="sm" className="mt-3" onClick={() => toast.message(crm.approveMeetingStage())}>
-              Approve stage change
-            </Button>
-          </div>
-        ) : email?.status === "awaiting_approval" ? (
-          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2">
-            <p className="text-[13px] text-white">Albemarle follow-up email</p>
-            <p className="mt-1 text-[12px] text-slate-400">Draft waiting. Nothing sends until approved.</p>
-            <Button type="button" size="sm" className="mt-3" onClick={() => toast.message(crm.approveClaudeEmail())}>
-              Approve send
-            </Button>
-          </div>
+      <RailCard title="Blocked">
+        {blocked.length === 0 ? (
+          <p className="text-[13px] text-slate-500">No blocked actions in this preview.</p>
         ) : (
-          <p className="text-[13px] text-slate-400">No open approvals.</p>
+          <ul className="space-y-2">
+            {blocked.map((item) => (
+              <li key={item.id} className="rounded-lg border border-red-400/15 bg-red-400/[0.04] px-3 py-2">
+                <p className="text-[13px] text-white">{item.title}</p>
+                <p className="mt-1 text-[12px] text-slate-400">{item.detail}</p>
+              </li>
+            ))}
+          </ul>
         )}
       </RailCard>
 
-      <RailCard title="Live activity">
+      <RailCard title="Insights and activity">
         <div className="mb-3 flex flex-wrap gap-1.5" role="group" aria-label="Filter activity">
           {ACTIVITY_FILTERS.map((filter) => (
             <button
@@ -209,7 +178,7 @@ export function RightRail({
       </RailCard>
 
       <RailCard title="History replay">
-        <p className="text-[12px] text-slate-400">Replays prototype events, including CRM playbook runs. Not live operations.</p>
+        <p className="text-[12px] text-slate-400">Replays labelled sample outcomes from the two Studio workers.</p>
         <div className="mt-3 flex items-center gap-2">
           <Button type="button" size="sm" variant="outline" onClick={() => onStep(-1)} aria-label="Previous sample event">
             <SkipBack className="size-3.5" />
