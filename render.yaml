@@ -50,8 +50,8 @@ services:
     plan: free
     region: oregon
     rootDir: frontend
-    buildCommand: corepack enable && corepack prepare pnpm@9.12.0 --activate && pnpm install --frozen-lockfile && pnpm --filter creator build
-    startCommand: pnpm --filter creator exec next start --hostname 0.0.0.0 --port $PORT
+    buildCommand: npm install -g pnpm@9.12.0 && pnpm install --frozen-lockfile && pnpm --filter creator build
+    startCommand: apps/creator/node_modules/.bin/next start apps/creator --hostname 0.0.0.0 --port $PORT
     envVars:
       - key: NODE_VERSION
         value: "20.18.0"

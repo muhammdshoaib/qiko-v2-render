@@ -17,4 +17,4 @@ export function middleware(req: NextRequest) {
 }
 
 // Landing (/), /login, /signup, /embed/*, /widget.js and /fonts/* are public.
-export const config = { matcher: ["/((?!_next|favicon.ico|qiko-logo|qiko-icon|embed|widget.js|fonts/).*)"] };
+export const config = { matcher: ["/((?!_next|api|health|favicon.ico|qiko-logo|qiko-icon|embed|widget.js|fonts/).*)"] };
