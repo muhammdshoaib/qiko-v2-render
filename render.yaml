@@ -1,0 +1,69 @@
+# Render Blueprint: API + Creator in one workspace.
+# Secrets (DATABASE_URL, SESSION_SECRET) are set in the dashboard / API, not here.
+services:
+  - type: web
+    name: qiko-v2-api
+    runtime: python
+    plan: free
+    region: oregon
+    rootDir: qiko-core
+    healthCheckPath: /health
+    buildCommand: pip install uv==0.11.23 && uv sync --frozen --no-dev
+    startCommand: uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.11"
+      - key: ENVIRONMENT
+        value: dev
+      - key: USE_DB_STORES
+        value: "true"
+      - key: TASK_BACKEND
+        value: eager
+      - key: AI_PROVIDER
+        value: stub
+      - key: AI_FALLBACK_PROVIDER
+        value: stub
+      - key: EMBEDDINGS_PROVIDER
+        value: local
+      - key: EMAIL_BACKEND
+        value: console
+      - key: PUBLIC_CHAT_ENABLED
+        value: "false"
+      - key: COOKIE_DOMAIN
+        value: ""
+      - key: DATABASE_URL
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: CONSENT_PSEUDONYM_KEYS
+        sync: false
+      - key: CONSENT_PSEUDONYM_ACTIVE_VERSION
+        value: v1
+      - key: PUBLIC_BASE_URL
+        value: https://qiko-v2-creator.onrender.com
+      - key: CORS_ALLOW_ORIGINS
+        value: '["https://qiko-v2-creator.onrender.com"]'
+
+  - type: web
+    name: qiko-v2-creator
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: frontend
+    buildCommand: corepack enable && corepack prepare pnpm@9.12.0 --activate && pnpm install --frozen-lockfile && pnpm --filter creator build
+    startCommand: pnpm --filter creator exec next start --hostname 0.0.0.0 --port $PORT
+    envVars:
+      - key: NODE_VERSION
+        value: "20.18.0"
+      - key: NEXT_PUBLIC_API_BASE
+        value: /api/v1
+      - key: API_UPSTREAM
+        fromService:
+          name: qiko-v2-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: NEXT_PUBLIC_CREATOR_BASE_URL
+        fromService:
+          name: qiko-v2-creator
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
