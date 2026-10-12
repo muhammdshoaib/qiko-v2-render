@@ -25,13 +25,13 @@ const BLOCK_COPY: Record<SystemId, { name: string; kicker: string; summary: stri
   "investor-app": {
     name: "Investors",
     kicker: "Knowledge block",
-    summary: "Repeat attention, referred arrivals, and quiet listings — knowledge the Intelligence Worker may read and record.",
+    summary: "4,180 on the book: intent, reachouts, and quiet listings. Lombe House is the worked example.",
     connects: ["Intelligence Worker", "Company intelligence"],
   },
   properties: {
     name: "Properties",
     kicker: "Knowledge block",
-    summary: "Income, spend, and risk already visible in the finance cockpit — notes, not a second ledger.",
+    summary: "Reads each advised investor’s portfolio, then writes their insight cards. 3,104 with insights. 412 concentration.",
     connects: ["Property Insights", "Company intelligence"],
   },
   knowledge: {
@@ -55,7 +55,7 @@ export function pulseNode(id: FocusId, workerNames?: Partial<Record<WorkerId, st
       kind: "record",
       name: "Joseph Mews",
       kicker: "Company intelligence",
-      summary: "Shared memory of recorded notes and decisions from Investors and Properties — not a score, and not a CRM.",
+      summary: "Shared memory of portfolio insights, concentration, intent, and reachouts — not a score, and not a CRM.",
       connects: ["Investors", "Properties", "Property Insights", "Intelligence Worker"],
     };
   }
@@ -82,11 +82,11 @@ export function pulseNode(id: FocusId, workerNames?: Partial<Record<WorkerId, st
 }
 
 export const MAP_LAYOUT: Record<FocusId, { x: string; y: string }> = {
-  record: { x: "50%", y: "48%" },
-  "investor-app": { x: "22%", y: "22%" },
-  properties: { x: "78%", y: "22%" },
-  "intent-intelligence": { x: "24%", y: "82%" },
-  "property-insights": { x: "76%", y: "82%" },
+  record: { x: "50%", y: "52%" },
+  "investor-app": { x: "24%", y: "28%" },
+  properties: { x: "76%", y: "28%" },
+  "intent-intelligence": { x: "26%", y: "78%" },
+  "property-insights": { x: "74%", y: "78%" },
   knowledge: { x: "10%", y: "68%" },
   chat: { x: "90%", y: "68%" },
 };

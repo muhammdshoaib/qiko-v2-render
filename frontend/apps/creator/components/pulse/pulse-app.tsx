@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { isWorkerId, type FocusId, type WorkerId } from "@/components/intelligence-layer/model";
 import { useReferral } from "@/lib/brain/referral-store";
 import { useBrain } from "@/lib/brain/store";
 import type { ShowcaseWorker } from "@/lib/studio/showcase";
 import { AgentView } from "./agent-view";
+import { AskBrainChat, AskBrainTrigger, useAskBrainShortcut } from "./ask-brain";
 import { BlockView } from "./block-view";
 import { PulseOverview } from "./pulse-overview";
 import { blockFromFocus, mergeNav, type PulseNav } from "./route";
@@ -23,8 +24,11 @@ export function PulseApp({
   embedded?: boolean;
 }) {
   const [open, setOpen] = useState(nav);
+  const [brainOpen, setBrainOpen] = useState(false);
   const brain = useBrain();
   const referral = useReferral();
+  const toggleBrain = useCallback(() => setBrainOpen((current) => !current), []);
+  useAskBrainShortcut(toggleBrain);
 
   useEffect(() => {
     setOpen(nav);
@@ -41,12 +45,17 @@ export function PulseApp({
   const hold = brain.approval === "awaiting"
     ? () => toast.message(brain.holdFollowUp())
     : undefined;
+
   const approveReferral = () => {
     toast.message(referral.approve());
     go({ block: "investors", pane: "outcomes", detail: "o-referral", sheet: null });
   };
   const rejectReferral = () => {
     toast.message(referral.reject());
+    go({ block: "investors", pane: "outcomes", detail: "o-referral", sheet: null });
+  };
+  const deferReferral = () => {
+    toast.message(referral.defer());
     go({ block: "investors", pane: "outcomes", detail: "o-referral", sheet: null });
   };
 
@@ -70,42 +79,50 @@ export function PulseApp({
     go({ focus: id, block: null, worker: null, detail: null });
   };
 
-  if (open.worker) {
-    return (
-      <AgentView
-        nav={open}
-        workerNames={workerNames}
-        onNav={go}
-        onApprove={approve}
-        onHold={hold}
-        onApproveReferral={approveReferral}
-        onRejectReferral={rejectReferral}
-      />
-    );
-  }
-
-  if (open.block) {
-    return (
-      <BlockView
-        nav={open}
-        workerNames={workerNames}
-        onNav={go}
-        onApprove={approve}
-        onHold={hold}
-        onApproveReferral={approveReferral}
-        onRejectReferral={rejectReferral}
-      />
-    );
-  }
+  const askBrain = <AskBrainTrigger open={brainOpen} onToggle={toggleBrain} />;
 
   return (
-    <PulseOverview
-      workers={workers}
-      focus={open.focus}
-      onFocus={openFromMap}
-      onHighlight={highlightOnMap}
-      onNav={go}
-      embedded={embedded}
-    />
+    <>
+      {open.worker ? (
+        <>
+          <div className="mx-auto flex w-full max-w-[1400px] justify-end px-4 pt-4 sm:px-6 lg:px-8">{askBrain}</div>
+          <AgentView
+            nav={open}
+            workerNames={workerNames}
+            onNav={go}
+            onApprove={approve}
+            onHold={hold}
+            onApproveReferral={approveReferral}
+            onRejectReferral={rejectReferral}
+            onDeferReferral={deferReferral}
+          />
+        </>
+      ) : open.block ? (
+        <>
+          <div className="mx-auto flex w-full max-w-[1400px] justify-end px-4 pt-4 sm:px-6 lg:px-8">{askBrain}</div>
+          <BlockView
+            nav={open}
+            workerNames={workerNames}
+            onNav={go}
+            onApprove={approve}
+            onHold={hold}
+            onApproveReferral={approveReferral}
+            onRejectReferral={rejectReferral}
+            onDeferReferral={deferReferral}
+          />
+        </>
+      ) : (
+        <PulseOverview
+          workers={workers}
+          focus={open.focus}
+          onFocus={openFromMap}
+          onHighlight={highlightOnMap}
+          onNav={go}
+          embedded={embedded}
+          askBrain={askBrain}
+        />
+      )}
+      {brainOpen && <AskBrainChat onClose={() => setBrainOpen(false)} onNav={go} />}
+    </>
   );
 }

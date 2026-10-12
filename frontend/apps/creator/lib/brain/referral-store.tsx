@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 
 const STORAGE_KEY = "qiko-pulse-referral-v1";
 
-export type ReferralStatus = "proposed" | "exploring" | "approved" | "rejected";
+export type ReferralStatus = "proposed" | "exploring" | "deferred" | "approved" | "rejected";
 export type ClaudeStep = 0 | 1 | 2 | 3 | 4;
 
 type ReferralState = {
@@ -22,6 +22,7 @@ type ReferralApi = ReferralState & {
   setStep: (step: ClaudeStep) => void;
   approve: () => string;
   reject: () => string;
+  defer: () => string;
   setRate: (rate: number) => void;
   reset: () => void;
 };
@@ -34,7 +35,7 @@ function load(): ReferralState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return SEED;
     const parsed = JSON.parse(raw) as Partial<ReferralState>;
-    const status = parsed.status === "approved" || parsed.status === "rejected" || parsed.status === "exploring"
+    const status = parsed.status === "approved" || parsed.status === "rejected" || parsed.status === "exploring" || parsed.status === "deferred"
       ? parsed.status
       : "proposed";
     const step = [0, 1, 2, 3, 4].includes(Number(parsed.step)) ? Number(parsed.step) as ClaudeStep : 0;
@@ -87,6 +88,12 @@ export function ReferralProvider({ children }: { children: ReactNode }) {
         if (state.status === "approved") return "This recommendation is already on the record.";
         commit((prev) => ({ ...prev, status: "rejected", decidedAt: stamp(), step: 4 }));
         return "Declined. The insight stays. The action was not written.";
+      },
+      defer: () => {
+        if (state.status === "approved") return "This recommendation is already on the company record.";
+        if (state.status === "rejected") return "This recommendation was declined. Reset the demo to try again.";
+        commit((prev) => ({ ...prev, status: "deferred", decidedAt: null }));
+        return "Deferred. The recommendation stays open. Nothing was written.";
       },
       setRate: (rate) => {
         commit((prev) => ({ ...prev, rate }));

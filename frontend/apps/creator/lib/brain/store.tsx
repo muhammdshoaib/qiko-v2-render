@@ -32,9 +32,9 @@ export const USERS: Record<DemoUserId, { id: DemoUserId; name: string; role: str
   owen: { id: "owen", name: "Owen Blake", role: "Analyst", sensitive: false },
 };
 
-export const SENSITIVE_QUESTION = "How much did the high-cost unit spend this period?";
-export const SENSITIVE_ANSWER = "Labelled sample: £4,200 this period. Property Insights cannot change the invoice or pay the vendor.";
-export const OPS_QUESTION = "What's the next step on Lombay House?";
+export const SENSITIVE_QUESTION = "How concentrated is this client's London portfolio?";
+export const SENSITIVE_ANSWER = "Labelled sample: this client has 3 holdings in London. Property Insights wrote that as a concentration card. It cannot contact them or tell them to buy or sell.";
+export const OPS_QUESTION = "What's the next step on Lombe House?";
 export const OPS_ANSWER = "The Intelligence Worker flagged repeat views. A leadership review is recommended. No investor was contacted.";
 
 const DEFAULT_CONFIG: ChannelConfig = {
@@ -159,11 +159,11 @@ export function BrainProvider({ children }: { children: ReactNode }) {
             text: "What is Property Insights seeing on the portfolio?", at,
           }, {
             id: `m-${crypto.randomUUID().slice(0, 6)}`, surface: "claude", role: "worker",
-            text: "Property Insights read the finance cockpit and wrote a risk note: one high-cost unit is running above the recent spend band. Portfolio income held flat. It cannot change invoices or pay a vendor.", at,
+            text: "I read each advised investor’s holdings and wrote grounded cards into their app. 3,104 of 4,180 received at least one insight this month. 412 got a concentration card. I did not contact anyone or advise a trade.", at,
           }],
           events: [event({
             title: "Claude retrieved a property insight",
-            detail: "Grounded in the existing finance cockpit. Illustrative — not a live Claude session.",
+            detail: "Grounded in per-investor portfolio checks. Illustrative — not a live Claude session.",
             at, filter: "allowed", edgeId: "property-chat", focus: "property-insights", source: "claude",
           }), ...prev.events],
         }));
@@ -181,10 +181,10 @@ export function BrainProvider({ children }: { children: ReactNode }) {
             ...prev,
             messages: [...prev.messages, {
               id: `m-${crypto.randomUUID().slice(0, 6)}`, surface: "claude", role: "user",
-              text: "Recommend a follow-up for the Lombay House cluster.", at,
+              text: "Recommend a follow-up for the Lombe House cluster.", at,
             }, {
               id: `m-${crypto.randomUUID().slice(0, 6)}`, surface: "claude", role: "worker",
-              text: "Recommend a leadership review of repeat views on Lombay House / Derby. No investor email will be sent. Approve to write this to company intelligence.", at,
+              text: "Recommend a leadership review of repeat views on Lombe House / Derby. No investor email will be sent. Approve to write this to company intelligence.", at,
             }],
             events: [event({
               title: "Follow-up recommended",
@@ -207,7 +207,7 @@ export function BrainProvider({ children }: { children: ReactNode }) {
             ...prev,
             approval: "approved",
             events: [event({
-              title: "Lombay review approved",
+              title: "Lombe House review approved",
               detail: "The cluster is on the company record. No outbound contact was sent.",
               at, filter: "completed", edgeId: "intent-record", focus: "intent-intelligence", source: "studio",
             }), ...prev.events],
@@ -227,7 +227,7 @@ export function BrainProvider({ children }: { children: ReactNode }) {
             ...prev,
             approval: "held",
             events: [event({
-              title: "Lombay review held",
+              title: "Lombe House review held",
               detail: "No write to the company record. No investor was contacted.",
               at, filter: "allowed", edgeId: "intent-record", focus: "intent-intelligence", source: "studio",
             }), ...prev.events],
@@ -245,8 +245,8 @@ export function BrainProvider({ children }: { children: ReactNode }) {
           const asked = kind === "sensitive" ? SENSITIVE_QUESTION : OPS_QUESTION;
           if (kind === "sensitive" && !access.sensitive) {
             const blocked = access.deniedBy === "user"
-              ? `${user.name} is not authorised for spend figures, even in ${label}.`
-              : `${label} may share operational updates only. Spend figures stay out of this channel.`;
+              ? `${user.name} is not authorised for client portfolio figures, even in ${label}.`
+              : `${label} may share operational updates only. Client portfolio figures stay out of this channel.`;
             result = blocked;
             return {
               ...prev,
@@ -272,7 +272,7 @@ export function BrainProvider({ children }: { children: ReactNode }) {
               id: `m-${crypto.randomUUID().slice(0, 6)}`, surface, role: "worker", text: answer, at,
             }],
             events: [event({
-              title: kind === "sensitive" ? `Spend figure shared in ${label}` : `Operational update in ${label}`,
+              title: kind === "sensitive" ? `Portfolio figure shared in ${label}` : `Operational update in ${label}`,
               detail: answer,
               at, filter: "allowed", edgeId: kind === "sensitive" ? "property-chat" : "intent-chat", focus: kind === "sensitive" ? "property-insights" : "intent-intelligence", source: "slack",
             }), ...prev.events],
@@ -297,8 +297,8 @@ export function useBrain() {
 export function studioAttention(approval: ApprovalStatus): { title: string; detail: string; at: string; status: "attention" | "completed"; origin: FocusId; originLabel: string; href: string }[] {
   if (approval === "awaiting") {
     return [{
-      title: "Intent spike needs a human look",
-      detail: "Lombay House / Derby attracted repeated investor views. The Intelligence Worker flagged it — no outreach was sent.",
+      title: "Lombe House intent captured",
+      detail: "Lombe House / Derby attracted repeated investor views. The Intelligence Worker flagged interest — no outreach was sent.",
       at: "Today, 09:40",
       status: "attention",
       origin: "intent-intelligence",
@@ -308,17 +308,17 @@ export function studioAttention(approval: ApprovalStatus): { title: string; deta
   }
   if (approval === "approved") {
     return [{
-      title: "Lombay review recorded",
+      title: "Lombe House review recorded",
       detail: "Leadership review is on the company record. No investor email was sent.",
       at: "Just now",
       status: "completed",
       origin: "record",
       originLabel: "Company intelligence",
-      href: "/studio?block=investors",
+      href: "/studio/intelligence?block=investors",
     }];
   }
   return [{
-    title: "Lombay review held",
+    title: "Lombe House review held",
     detail: "The recommendation is on hold. Nothing was written or sent.",
     at: "Just now",
     status: "completed",

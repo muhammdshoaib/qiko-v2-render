@@ -126,7 +126,7 @@ export function ConnectionsTab({
   onOpenChannels?: (surface: "claude" | "slack") => void;
 }) {
   const cards: { id: FocusId; name: string; actions: string }[] = [
-    { id: "properties", name: SYSTEMS.properties.name, actions: "Income, spend, and risk the operator can already see" },
+    { id: "properties", name: SYSTEMS.properties.name, actions: "Each advised investor’s portfolio, read to write their insight cards" },
     { id: "investor-app", name: SYSTEMS["investor-app"].name, actions: "Intent signals · no outbound contact" },
     { id: "knowledge", name: SYSTEMS.knowledge.name, actions: "Uploaded sources · grounded retrieval" },
     { id: "chat", name: SYSTEMS.chat.name, actions: "Critic + gate on operator questions" },

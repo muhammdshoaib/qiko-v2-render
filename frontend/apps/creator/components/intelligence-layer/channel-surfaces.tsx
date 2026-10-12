@@ -80,14 +80,14 @@ function ClaudePanel() {
             Ask for a portfolio insight
           </Button>
           <Button type="button" size="sm" variant="outline" onClick={() => toast.message(brain.askClaudeFollowUp())}>
-            Request a Lombay follow-up
+            Request a Lombe House follow-up
           </Button>
         </div>
         <Thread messages={messages} empty="Ask one of the questions above. The worker answers from knowledge it already has." />
         {brain.approval === "awaiting" && (
           <article className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-4">
             <h4 className="text-sm font-semibold text-white">Recommended action</h4>
-            <p className="mt-2 text-[13px] text-slate-300">Flag Lombay House / Derby for a leadership review. No investor email will be sent.</p>
+            <p className="mt-2 text-[13px] text-slate-300">Flag Lombe House / Derby for a leadership review. No investor email will be sent.</p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Button type="button" size="sm" onClick={() => toast.message(brain.approveFollowUp())}>
                 Approve review
@@ -107,7 +107,7 @@ function ClaudePanel() {
       </section>
       <aside className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4 text-[13px] text-slate-400">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">What this writes</p>
-        <p className="mt-2">Insight questions are reads. Approving the Lombay review writes a completed decision to Creator. A draft does not.</p>
+        <p className="mt-2">Insight questions are reads. Approving the Lombe House review writes a completed decision to Creator. A draft does not.</p>
       </aside>
     </div>
   );
@@ -187,11 +187,11 @@ function SlackPanel() {
             Ask next steps
           </Button>
           <Button type="button" size="sm" variant="outline" onClick={() => toast.message(brain.askSlack(slack, userId, "sensitive"))}>
-            Ask the spend figure
+            Ask the portfolio figure
           </Button>
         </div>
         <p className="mt-2 text-[12px] text-slate-500">Same restricted question: “{SENSITIVE_QUESTION}”</p>
-        <Thread messages={messages} empty={`Ask in ${channelLabel(slack, brain.config)}. Operational updates are allowed. Spend figures follow the walls below.`} />
+        <Thread messages={messages} empty={`Ask in ${channelLabel(slack, brain.config)}. Operational updates are allowed. Client portfolio figures follow the walls below.`} />
       </section>
       <aside className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4 text-[13px] text-slate-400">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Walls</p>
@@ -210,7 +210,7 @@ function Gate({ access, label }: { access: ReturnType<typeof authorize>; label: 
   return (
     <p className={cn("mt-3 rounded-lg border px-3 py-2 text-[12px]", access.sensitive ? "border-emerald-500/20 text-emerald-300" : "border-amber-500/20 text-amber-200")}>
       {access.sensitive
-        ? `${label} may include labelled sample spend figures for this operator.`
+        ? `${label} may include labelled sample client portfolio figures for this operator.`
         : access.reason}
     </p>
   );

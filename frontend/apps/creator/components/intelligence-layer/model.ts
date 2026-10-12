@@ -59,31 +59,32 @@ export const WORKERS: Record<WorkerId, {
   "property-insights": {
     id: "property-insights",
     name: "Property Insights",
-    role: "Portfolio and property analyst",
-    purpose: "Read property and spend records so operators can see income, cost, and risk.",
+    role: "Per-investor portfolio insights",
+    purpose: "Joseph Mews is the property advisor. For each advised investor, read their portfolio and write grounded insight cards into their app — without contacting anyone, advising a trade, or moving money.",
     responsibilities: [
-      "Summarise income, spend, and net position",
-      "Flag expenditure drift",
-      "Write operator-readable risk notes",
+      "Inspect each advised investor’s holdings",
+      "Write that investor a grounded card in the app",
+      "Count insight types across clients for the operator",
     ],
     reads: [
-      { title: "Property records", detail: "Existing finance / property cockpit figures." },
-      { title: "Knowledge library", detail: "Uploaded finance files when a finance worker is linked." },
+      { title: "Investor portfolios", detail: "Each advised investor’s holdings. The worker inspects them to ground that investor’s cards." },
+      { title: "Investor app", detail: "Where each client already sees their own card." },
+      { title: "Knowledge library", detail: "Uploaded files when a property worker is linked." },
     ],
     writes: [
-      { title: "Company intelligence", detail: "Accepted risk notes become part of the shared record." },
+      { title: "Company intelligence", detail: "Portfolio-insight counts and concentration patterns become part of the shared record." },
     ],
     tools: [
-      { name: "Read property figures", mode: "allowed" },
-      { name: "Draft a risk note", mode: "allowed" },
-      { name: "Pay a vendor or change invoices", mode: "blocked" },
+      { name: "Read client portfolios", mode: "allowed" },
+      { name: "Write a per-investor insight card", mode: "allowed" },
+      { name: "Contact an investor, advise a trade, or pay a vendor", mode: "blocked" },
     ],
     hardWalls: [
       "Cannot move money or edit invoices.",
-      "Does not contact investors.",
+      "Does not contact investors or advise a buy or sell.",
     ],
     runs: [
-      { id: "p1", time: "08:15", result: "Expenditure drift note written for a high-cost unit." },
+      { id: "p1", time: "08:15", result: "3,104 portfolios received insights. 412 concentration cards written." },
     ],
     decisions: 11,
   },
@@ -114,14 +115,14 @@ export const WORKERS: Record<WorkerId, {
       "Research answers stay inside attached documents.",
     ],
     runs: [
-      { id: "i1", time: "09:40", result: "Repeat views on Lombay House flagged for review." },
+      { id: "i1", time: "09:40", result: "Repeat views on Lombe House flagged as intent." },
     ],
     decisions: 7,
   },
 };
 
 export const SYSTEMS: Record<SystemId, { name: string; subtitle: string }> = {
-  properties: { name: "Property records", subtitle: "Income · spend · risk" },
+  properties: { name: "Properties", subtitle: "Client portfolio insights" },
   "investor-app": { name: "Investor activity", subtitle: "Intent signals" },
   knowledge: { name: "Knowledge library", subtitle: "Uploaded sources" },
   chat: { name: "Grounded chat", subtitle: "Critic + gate" },
@@ -135,7 +136,7 @@ export const EDGES: GraphEdge[] = [
     kind: "handoff",
     label: "Portfolio facts",
     rule: "Accepted property notes become company intelligence.",
-    example: "Expenditure drift note added to the shared record.",
+    example: "412 concentration cards counted on the shared record.",
   },
   {
     id: "intent-record",
@@ -144,25 +145,25 @@ export const EDGES: GraphEdge[] = [
     kind: "handoff",
     label: "Intent facts",
     rule: "Flagged attention clusters become company intelligence.",
-    example: "Lombay House cluster recorded.",
+    example: "Lombe House intent recorded.",
   },
   {
     id: "property-properties",
     from: "property-insights",
     to: "properties",
     kind: "read",
-    label: "Reads properties",
-    rule: "May read figures the operator can already see in the finance cockpit.",
-    example: "Income snapshot for the watched portfolio.",
+    label: "Reads client portfolios",
+    rule: "May read holdings each advised investor already owns.",
+    example: "412 concentration cards — 3+ holdings in one city.",
   },
   {
     id: "property-knowledge",
     from: "property-insights",
     to: "knowledge",
     kind: "read",
-    label: "Reads finance files",
-    rule: "Uses uploaded finance documents when present.",
-    example: "Vendor spend file used for a drift note.",
+    label: "Reads portfolio files",
+    rule: "Uses uploaded portfolio documents when present.",
+    example: "Holdings file used to ground a concentration card.",
   },
   {
     id: "property-chat",
@@ -171,7 +172,7 @@ export const EDGES: GraphEdge[] = [
     kind: "read",
     label: "Grounded answers",
     rule: "Chat stays behind critic + gate.",
-    example: "Operator asked for net profit on one property.",
+    example: "Operator asked how many clients received a concentration card.",
   },
   {
     id: "intent-investor",
@@ -203,16 +204,16 @@ export const EDGES: GraphEdge[] = [
 ];
 
 export const ACTIVITY: ActivityItem[] = [
-  { id: "ev-risk", title: "Property risk note", detail: "Expenditure drift on a high-cost unit.", at: "08:15", filter: "completed", edgeId: "property-record", focus: "property-insights" },
-  { id: "ev-intent", title: "Intent cluster flagged", detail: "Lombay House / Derby repeat views.", at: "09:40", filter: "approval", edgeId: "intent-record", focus: "intent-intelligence" },
-  { id: "ev-income", title: "Income snapshot", detail: "Portfolio income held flat.", at: "Mon 11:02", filter: "allowed", edgeId: "property-properties", focus: "properties" },
-  { id: "ev-pay-block", title: "Vendor payment blocked", detail: "Property Insights cannot change invoices or pay a vendor.", at: "08:16", filter: "blocked", edgeId: "property-properties", focus: "property-insights" },
+  { id: "ev-risk", title: "412 concentration cards written", detail: "412 of 4,180 advised investors received a concentration card in their app.", at: "08:15", filter: "completed", edgeId: "property-record", focus: "property-insights" },
+  { id: "ev-intent", title: "Lombe House intent captured", detail: "Lombe House / Derby repeat views flagged as interest.", at: "09:40", filter: "completed", edgeId: "intent-record", focus: "intent-intelligence" },
+  { id: "ev-income", title: "Portfolio insight", detail: "Concentration card written from holdings.", at: "Mon 11:02", filter: "allowed", edgeId: "property-properties", focus: "properties" },
+  { id: "ev-pay-block", title: "Advice and payment blocked", detail: "Property Insights cannot contact an investor, advise a trade, or pay a vendor.", at: "08:16", filter: "blocked", edgeId: "property-properties", focus: "property-insights" },
   { id: "ev-contact-block", title: "Investor email blocked", detail: "The Intelligence Worker cannot contact an investor.", at: "09:41", filter: "blocked", edgeId: "intent-chat", focus: "intent-intelligence" },
 ];
 
 export const SOURCES = [
-  { name: "Finance uploads", owner: "Property Insights", connected: "Property Insights", sensitivity: "Commercial", assistant: "Grounded only", honesty: "illustrative" as HonestyKind },
-  { name: "Property ledger", owner: "Studio finance", connected: "Property Insights", sensitivity: "Internal ops", assistant: "Yes, scoped", honesty: "illustrative" as HonestyKind },
+  { name: "Portfolio documents", owner: "Property Insights", connected: "Property Insights", sensitivity: "Commercial", assistant: "Grounded only", honesty: "illustrative" as HonestyKind },
+  { name: "Investor portfolios", owner: "Advised clients", connected: "Property Insights", sensitivity: "Client holdings", assistant: "Yes, scoped", honesty: "illustrative" as HonestyKind },
   { name: "Investor activity", owner: "Intent paths", connected: "Intelligence Worker", sensitivity: "Behavioural", assistant: "Yes, scoped", honesty: "illustrative" as HonestyKind },
   { name: "Knowledge library", owner: "Intelligence Worker", connected: "Intelligence Worker", sensitivity: "Internal", assistant: "Critic + gate", honesty: "illustrative" as HonestyKind },
 ];
@@ -245,7 +246,7 @@ export const ACTIVITY_FILTERS: { id: ActivityFilter; label: string }[] = [
 
 export const RECORD = {
   name: "Company intelligence",
-  purpose: "Shared memory of what workers accomplished — property facts and intent clusters, not a separate CRM.",
+  purpose: "Shared memory of what workers accomplished — per-investor portfolio insights and intent clusters, not a separate CRM.",
   rings: "Each ring is a month of captured outcomes. Outer rings are more recent.",
 };
 
@@ -256,10 +257,10 @@ export const SYSTEM_DETAIL: Record<SystemId, {
   blocked: string[];
 }> = {
   properties: {
-    purpose: "Property, unit, and spend figures from the existing finance cockpit.",
-    allowed: ["Read income, spend, and risk the operator can already see"],
+    purpose: "Joseph Mews advises these investors. Property Insights reads each client’s portfolio and writes grounded cards into their app. Pulse counts that work across ~4,000 clients.",
+    allowed: ["Read each advised investor’s holdings", "Write a per-investor insight card"],
     approval: [],
-    blocked: ["Changing invoices or paying vendors"],
+    blocked: ["Contacting an investor", "Advising a buy or sell", "Changing invoices or paying vendors"],
   },
   "investor-app": {
     purpose: "Investor attention already captured as intent signals.",

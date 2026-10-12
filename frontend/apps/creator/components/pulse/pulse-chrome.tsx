@@ -172,7 +172,7 @@ export function GhostButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex min-h-11 items-center rounded-lg border border-white/10 bg-white/[0.03] px-3.5 text-[13px] font-semibold text-slate-200 hover:border-white/20 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
+        "inline-flex min-h-11 items-center rounded-lg border border-white/15 bg-white/[0.04] px-3.5 text-[13px] font-semibold text-white hover:border-white/25 hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
         className,
       )}
     >

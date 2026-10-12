@@ -7,15 +7,15 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@qiko/ui";
 
 export const DEMO_STEPS = [
-  { n: 1, title: "Pulse", href: "/studio", hint: "Open Investors to follow the referral insight through evidence, recommendation, and a decision." },
-  { n: 2, title: "Investors", href: "/studio?block=investors", hint: "The same insight. See evidence, then open the Intelligence Worker." },
-  { n: 3, title: "Intelligence Worker", href: "/studio?block=investors&worker=intent-intelligence", hint: "See evidence, then open the outcome to review the recommended action." },
-  { n: 4, title: "Explore in Claude", href: "/studio?block=investors&worker=intent-intelligence&pane=outcomes&detail=o-referral&sheet=claude", hint: "Labelled walkthrough — live Claude is not connected. Confirm at the last step." },
+  { n: 1, title: "Pulse", href: "/studio/intelligence", hint: "Open Investors to follow the referral insight through evidence, recommendation, and a decision." },
+  { n: 2, title: "Investors", href: "/studio/intelligence?block=investors", hint: "The same insight. See evidence, then open the Intelligence Worker." },
+  { n: 3, title: "Intelligence Worker", href: "/studio/intelligence?block=investors&worker=intent-intelligence", hint: "See evidence, then open the outcome to review the recommended action." },
+  { n: 4, title: "Explore in Claude", href: "/studio/intelligence?block=investors&worker=intent-intelligence&pane=outcomes&detail=o-referral&sheet=claude", hint: "Labelled walkthrough — live Claude is not connected. Confirm at the last step." },
   { n: 5, title: "Ask Claude (channel)", href: "/studio/intelligence?tab=channels&surface=claude", hint: "Separate channel demo. The Pulse walkthrough is labelled, not live Claude." },
-  { n: 6, title: "Approve a follow-up", href: "/studio/intelligence?tab=channels&surface=claude", hint: "Lombay review remains a second path. Nothing is sent outbound." },
-  { n: 7, title: "Slack walls", href: "/studio/intelligence?tab=channels&surface=slack", hint: "Ask the same spend question in both channels, then as an unauthorised user." },
+  { n: 6, title: "Approve a follow-up", href: "/studio/intelligence?tab=channels&surface=claude", hint: "Lombe House review remains a second path. Nothing is sent outbound." },
+  { n: 7, title: "Slack walls", href: "/studio/intelligence?tab=channels&surface=slack", hint: "Ask the same portfolio question in both channels, then as an unauthorised user." },
   { n: 8, title: "Captured activity", href: "/studio/intelligence?tab=observability", hint: "Allowed, blocked, and approved actions in one feed." },
-  { n: 9, title: "Company record", href: "/studio?focus=record", hint: "After a decision, Pulse and the company record show what was captured. The worker does not learn automatically." },
+  { n: 9, title: "Company record", href: "/studio/intelligence?focus=record", hint: "After a decision, Pulse and the company record show what was captured. The worker does not learn automatically." },
 ] as const;
 
 export function DemoGuide() {
@@ -69,7 +69,7 @@ function DemoGuideInner() {
             </Button>
           )}
           <Link
-            href={pathname.startsWith("/studio/intelligence") ? "/studio/intelligence" : "/studio"}
+            href="/studio/intelligence"
             className="inline-flex min-h-11 items-center px-3 text-[13px] text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
           >
             Exit
@@ -85,13 +85,14 @@ function withDemo(href: string, step: number) {
 }
 
 function resolveStep(pathname: string, params: URLSearchParams) {
-  if (pathname === "/studio") return 1;
   if (pathname.startsWith("/studio/w/")) return 2;
   if (params.get("tab") === "channels" && params.get("surface") === "slack") return 7;
   if (params.get("tab") === "channels") return 5;
   if (params.get("tab") === "observability") return 8;
-  if (params.get("focus") === "intent-intelligence") return 4;
-  if (params.get("focus") === "record") return 3;
-  if (pathname.startsWith("/studio/intelligence")) return 3;
+  if (params.get("block") === "investors" && params.get("sheet") === "claude") return 4;
+  if (params.get("worker") === "intent-intelligence") return 3;
+  if (params.get("block") === "investors") return 2;
+  if (params.get("focus") === "record") return 9;
+  if (pathname.startsWith("/studio/intelligence") || pathname === "/studio") return 1;
   return 1;
 }

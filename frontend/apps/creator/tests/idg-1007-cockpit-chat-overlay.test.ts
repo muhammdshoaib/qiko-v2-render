@@ -13,7 +13,8 @@ function source(path: string): string {
 // its full width when the chat is open.
 test("cockpit chat panel is a fixed overlay at every breakpoint, never an inline column", () => {
   const src = source("components/cockpit/chat-panel.tsx");
-  assert.match(src, /"fixed bottom-0 right-0 top-14/);
+  assert.match(src, /"fixed bottom-0 right-0/);
+  assert.match(src, /insetClassName = "top-14"/);
   assert.doesNotMatch(src, /lg:static/);
   // shrink-0 only mattered while it was a flex child; as an overlay it must not reappear.
   const asideClasses = src.slice(src.indexOf("<aside"), src.indexOf("</aside>"));

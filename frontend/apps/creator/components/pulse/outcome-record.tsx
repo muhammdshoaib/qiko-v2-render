@@ -8,6 +8,7 @@ import {
   REFERRAL_EVIDENCE_ID,
   decisionLabel,
   destinationLabel,
+  isDecided,
   referralHours,
   referralValue,
   statusLabel,
@@ -19,15 +20,17 @@ export function OutcomeRecord({
   onNav,
   onApprove,
   onReject,
+  onDefer,
   compact = false,
 }: {
   onNav: (next: Partial<PulseNav>) => void;
   onApprove?: () => void;
   onReject?: () => void;
+  onDefer?: () => void;
   compact?: boolean;
 }) {
   const referral = useReferral();
-  const decided = referral.status === "approved" || referral.status === "rejected";
+  const decided = isDecided(referral.status);
   const hours = referralHours();
   const value = referralValue(referral.rate);
   const recorded = referral.status === "approved"
@@ -62,7 +65,7 @@ export function OutcomeRecord({
             })}
             className="mt-2 text-[12.5px] font-medium text-primary hover:underline"
           >
-            Open the labelled sample
+            Open the Lombe House evidence
           </button>
         )}
       </Field>
@@ -75,7 +78,7 @@ export function OutcomeRecord({
         <p className="mt-1 text-slate-500">{destinationLabel(referral.status)}</p>
       </Field>
 
-      {decided && <CompoundingPanel compact />}
+      <CompoundingPanel />
 
       <Field label="How will the result be measured?">{REFERRAL.measurement}</Field>
 
@@ -130,6 +133,7 @@ export function OutcomeRecord({
                 <>
                   <GhostButton onClick={onApprove}>Approve to company record</GhostButton>
                   <GhostButton onClick={onReject}>Decline</GhostButton>
+                  {onDefer && <GhostButton onClick={onDefer}>Defer</GhostButton>}
                 </>
               )}
             </>

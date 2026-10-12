@@ -1,19 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Presentation } from "lucide-react";
-import { toast } from "sonner";
 import { HonestyBadge } from "@/components/intelligence-layer/honesty-badge";
 import type { FocusId, WorkerId } from "@/components/intelligence-layer/model";
 import { useReferral } from "@/lib/brain/referral-store";
-import { studioAttention, useBrain } from "@/lib/brain/store";
+import { useBrain } from "@/lib/brain/store";
 import { RECENT_ACTIONS, type ShowcaseWorker } from "@/lib/studio/showcase";
 import { JourneyCard } from "./journey-card";
+import { KnowledgeGrowth } from "./knowledge-growth";
 import { PulseDrawer } from "./pulse-drawer";
 import { PulseFeed } from "./pulse-feed";
 import { PulseMap } from "./pulse-map";
-import { REFERRAL, decisionLabel } from "./referral";
+import { companyIntel } from "./record-summary";
+import { REFERRAL, decisionLabel, isDecided } from "./referral";
 import type { PulseNav } from "./route";
 
 export function PulseOverview({
@@ -23,6 +24,7 @@ export function PulseOverview({
   onHighlight,
   onNav,
   embedded = false,
+  askBrain,
 }: {
   workers: ShowcaseWorker[];
   focus: FocusId | null;
@@ -30,13 +32,26 @@ export function PulseOverview({
   onHighlight?: (id: FocusId | null) => void;
   onNav: (next: Partial<PulseNav>) => void;
   embedded?: boolean;
+  askBrain?: ReactNode;
 }) {
   const [open, setOpen] = useState<FocusId | null>(focus);
+  const [growthMonth, setGrowthMonth] = useState<string | null>(null);
   const brain = useBrain();
   const referral = useReferral();
-  const decided = referral.status === "approved" || referral.status === "rejected";
-  const attention = !brain.ready ? [] : studioAttention(brain.approval).filter((item) => item.status === "attention");
-  const completedReview = !brain.ready ? [] : studioAttention(brain.approval).filter((item) => item.status === "completed");
+  const intel = companyIntel(referral.status, brain.approval);
+  const decided = isDecided(referral.status);
+  const attention: typeof RECENT_ACTIONS = [];
+  const completedReview: typeof RECENT_ACTIONS = [
+    {
+      title: "Lombe House intent captured",
+      detail: "An investor viewed Lombe House repeatedly. The intent worker flagged interest. Labelled sample — not the live admin feed. No outreach was sent.",
+      at: "Today, 09:40",
+      status: "completed",
+      origin: "investor-app",
+      originLabel: "Investors · Intelligence Worker",
+    },
+    ...RECENT_ACTIONS,
+  ];
   const referralLead = {
     title: REFERRAL.title,
     at: referral.decidedAt ? `Today, ${referral.decidedAt}` : "Today, 10:12",
@@ -61,7 +76,10 @@ export function PulseOverview({
 
   return (
     <div className="min-h-full bg-background text-foreground">
-      <div className="mx-auto flex w-full max-w-[1400px] flex-col gap-5 px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+      <div className={`mx-auto flex w-full max-w-[1400px] flex-col gap-4 px-4 sm:px-6 lg:px-8 ${embedded ? "py-4" : "py-6 sm:py-8"}`}>
+        {embedded && askBrain && (
+          <div className="flex justify-end">{askBrain}</div>
+        )}
         {!embedded && (
         <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -70,13 +88,14 @@ export function PulseOverview({
               Company intelligence
             </h1>
             <p className="mt-1 max-w-[54ch] text-[13.5px] text-slate-400">
-              Joseph Mews · two knowledge blocks, two workers, and one end-to-end outcome on Investors.
+              What Joseph Mews knows, what it has learned, and how that record is accumulating.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex w-full flex-wrap items-center gap-3 sm:w-auto">
+            {askBrain}
             <HonestyBadge kind="illustrative" />
             <Link
-              href="/studio?demo=1&step=1"
+              href="/studio/intelligence?demo=1&step=1"
               className="inline-flex min-h-11 items-center gap-2 text-[13px] text-slate-500 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
             >
               <Presentation className="size-4" /> Present
@@ -87,12 +106,22 @@ export function PulseOverview({
 
         <JourneyCard onNav={onNav} />
         <PulseMap focus={open} workerNames={workerNames} onSelect={openNode} />
+        {open !== "record" && (
+        <KnowledgeGrowth
+          compact
+          points={intel.growth}
+          selected={growthMonth ?? intel.growth[intel.growth.length - 1]?.month ?? "Oct"}
+          onSelect={setGrowthMonth}
+        />
+        )}
         <PulseFeed
           attention={attention}
-          recent={[...completedReview, ...RECENT_ACTIONS]}
+          recent={completedReview}
           leadAttention={!decided ? {
             ...referralLead,
-            detail: "Awaiting a decision on the labelled referral sample.",
+            detail: referral.status === "deferred"
+              ? "Deferred — still needs a person. Nothing was written."
+              : "1 of 9 labelled reachouts still needs a person. Lombe House intent is the worked example. Nothing will be sent automatically.",
             status: "attention",
             onOpen: () => onNav({ block: "investors", pane: "overview" }),
           } : null}
@@ -103,13 +132,13 @@ export function PulseOverview({
             onOpen: () => highlight("record"),
           } : null}
           onOpen={highlight}
-          onApprove={brain.approval === "awaiting" ? () => toast.message(brain.approveFollowUp()) : undefined}
-          onHold={brain.approval === "awaiting" ? () => toast.message(brain.holdFollowUp()) : undefined}
         />
       </div>
       <PulseDrawer
         focus={open}
         workerNames={workerNames}
+        growthMonth={growthMonth ?? intel.growth[intel.growth.length - 1]?.month ?? "Oct"}
+        onGrowthMonth={setGrowthMonth}
         onClose={() => highlight(null)}
         onSelect={highlight}
         onOpen={openNode}

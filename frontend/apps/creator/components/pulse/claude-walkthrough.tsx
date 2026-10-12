@@ -2,27 +2,30 @@
 
 import { useReferral, type ClaudeStep } from "@/lib/brain/referral-store";
 import { GhostButton, IllustrativeMark, PulseChip } from "./pulse-chrome";
-import { CLAUDE_STEPS, REFERRAL, statusLabel, statusTone } from "./referral";
+import { CLAUDE_STEPS, REFERRAL, isDecided, statusLabel, statusTone } from "./referral";
 
 export function ClaudeWalkthrough({
   onApprove,
   onReject,
+  onDefer,
   onClose,
   onViewRecord,
 }: {
-  onApprove: () => void;
-  onReject: () => void;
+  onApprove?: () => void;
+  onReject?: () => void;
+  onDefer?: () => void;
   onClose: () => void;
   onViewRecord?: () => void;
 }) {
   const referral = useReferral();
-  const decided = referral.status === "approved" || referral.status === "rejected";
+  const decided = isDecided(referral.status);
   const visible = CLAUDE_STEPS.filter((item) => item.id <= referral.step);
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <IllustrativeMark />
+        <PulseChip>Simulated Claude</PulseChip>
         <PulseChip tone={statusTone(referral.status)}>{statusLabel(referral.status)}</PulseChip>
       </div>
 
@@ -74,8 +77,9 @@ export function ClaudeWalkthrough({
           <p className="text-[13.5px] font-medium text-foreground">Confirm the action</p>
           <p className="mt-1 text-[12.5px] text-slate-400">Approving writes the recommendation to the shared Investors record. Declining keeps the insight and writes nothing.</p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <GhostButton onClick={onApprove}>Approve to company record</GhostButton>
-            <GhostButton onClick={onReject}>Decline</GhostButton>
+            {onApprove && <GhostButton onClick={onApprove}>Approve to company record</GhostButton>}
+            {onReject && <GhostButton onClick={onReject}>Decline</GhostButton>}
+            {onDefer && <GhostButton onClick={onDefer}>Defer</GhostButton>}
           </div>
         </aside>
       )}

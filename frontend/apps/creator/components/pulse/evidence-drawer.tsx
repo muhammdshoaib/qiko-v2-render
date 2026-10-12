@@ -22,7 +22,7 @@ import {
 import { ClaudeWalkthrough } from "./claude-walkthrough";
 import { OutcomeRecord } from "./outcome-record";
 import { PulseChip } from "./pulse-chrome";
-import { REFERRAL_ID, conversationStage } from "./referral";
+import { REFERRAL_ID, conversationStage, isDecided } from "./referral";
 import type { PulseNav } from "./route";
 import { ValueSheet } from "./value-sheet";
 
@@ -34,6 +34,7 @@ export function EvidenceDrawer({
   onHold,
   onApproveReferral,
   onRejectReferral,
+  onDeferReferral,
 }: {
   nav: PulseNav;
   onClose: () => void;
@@ -42,12 +43,10 @@ export function EvidenceDrawer({
   onHold?: () => void;
   onApproveReferral?: () => void;
   onRejectReferral?: () => void;
+  onDeferReferral?: () => void;
 }) {
   const referral = useReferral();
-  const raw = findDetail(nav.detail);
-  const item = raw?.kind === "learning" && raw.id === "l-referral"
-    ? { ...raw, state: (referral.status === "approved" ? "rule" : referral.status === "rejected" ? "observed" : "proposed") as Learning["state"] }
-    : raw;
+  const item = findDetail(nav.detail);
   const open = Boolean(item || nav.sheet);
   const kind = nav.sheet === "claude"
     ? "Claude walkthrough"
@@ -59,7 +58,7 @@ export function EvidenceDrawer({
             : item?.kind === "source" ? "Source"
               : "Segment";
   const title = nav.sheet === "claude"
-    ? "Explore the referral recommendation"
+    ? "Explore the Lombe House recommendation"
     : nav.sheet === "value"
       ? "Time saved × an agreed hourly rate"
       : item && "name" in item ? item.name : item && "title" in item ? item.title : item && "who" in item ? item.who : "Detail";
@@ -89,10 +88,11 @@ export function EvidenceDrawer({
               </DialogDescription>
             </DialogHeader>
             <div className="flex flex-1 flex-col gap-5 px-6 py-5">
-              {nav.sheet === "claude" && onApproveReferral && onRejectReferral && (
+              {nav.sheet === "claude" && (
                 <ClaudeWalkthrough
                   onApprove={onApproveReferral}
                   onReject={onRejectReferral}
+                  onDefer={onDeferReferral}
                   onClose={() => onNav({ sheet: null, detail: REFERRAL_ID })}
                   onViewRecord={() => onNav({ block: null, worker: null, pane: "overview", detail: null, sheet: null, focus: "record" })}
                 />
@@ -112,6 +112,7 @@ export function EvidenceDrawer({
                   } : undefined}
                   onApprove={item.id === "c-referral" ? onApproveReferral : undefined}
                   onReject={item.id === "c-referral" ? onRejectReferral : undefined}
+                  onDefer={item.id === "c-referral" ? onDeferReferral : undefined}
                 />
               )}
               {!nav.sheet && item?.kind === "learning" && (
@@ -123,8 +124,8 @@ export function EvidenceDrawer({
                   onOutcome={item.id === "l-referral" ? () => onNav({ pane: "outcomes", detail: REFERRAL_ID }) : undefined}
                 />
               )}
-              {!nav.sheet && item?.kind === "outcome" && item.id === REFERRAL_ID && onApproveReferral && onRejectReferral && (
-                <OutcomeRecord onNav={onNav} onApprove={onApproveReferral} onReject={onRejectReferral} />
+              {!nav.sheet && item?.kind === "outcome" && item.id === REFERRAL_ID && (
+                <OutcomeRecord onNav={onNav} onApprove={onApproveReferral} onReject={onRejectReferral} onDefer={onDeferReferral} />
               )}
               {!nav.sheet && item?.kind === "outcome" && item.id !== REFERRAL_ID && <OutcomeBody item={item} />}
               {!nav.sheet && item?.kind === "source" && <p className="text-[13.5px] leading-relaxed text-slate-400">{item.detail}</p>}
@@ -134,7 +135,12 @@ export function EvidenceDrawer({
                   <p className="font-medium text-foreground">{item.signal}</p>
                   {item.id === "referrals" && (
                     <Button type="button" variant="outline" onClick={() => onNav({ pane: "outcomes", detail: REFERRAL_ID })}>
-                      Open the referral outcome
+                      Open the referral reachout
+                    </Button>
+                  )}
+                  {item.id === "holdings-link" && (
+                    <Button type="button" variant="outline" onClick={() => onNav({ block: "properties", worker: null, pane: "overview", detail: "portfolios" })}>
+                      Open portfolio insights
                     </Button>
                   )}
                 </div>
@@ -155,6 +161,7 @@ function ConversationBody({
   onClaude,
   onApprove,
   onReject,
+  onDefer,
 }: {
   item: Conversation;
   onBlock: () => void;
@@ -163,9 +170,10 @@ function ConversationBody({
   onClaude?: () => void;
   onApprove?: () => void;
   onReject?: () => void;
+  onDefer?: () => void;
 }) {
   const referral = useReferral();
-  const decided = referral.status === "approved" || referral.status === "rejected";
+  const decided = isDecided(referral.status);
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
@@ -216,6 +224,7 @@ function ConversationBody({
           <>
             <Button type="button" variant="outline" onClick={onApprove}>Approve to company record</Button>
             <Button type="button" variant="ghost" onClick={onReject}>Decline</Button>
+            {onDefer && <Button type="button" variant="ghost" onClick={onDefer}>Defer</Button>}
           </>
         )}
         <Button type="button" variant="ghost" onClick={onBlock}>Back to {BLOCKS[item.block].name}</Button>

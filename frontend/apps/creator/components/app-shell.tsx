@@ -156,7 +156,6 @@ export function AppShell({ title, children }: { title: string; children: React.R
             <div className="w-9" />
           </div>
         </header>
-        {inStudio && <StudioSectionNav pathname={pathname} />}
         {inStudio && <DemoGuide />}
         <div className="min-w-0 flex-1 overflow-x-hidden">{children}</div>
       </main>
@@ -164,31 +163,3 @@ export function AppShell({ title, children }: { title: string; children: React.R
   );
 }
 
-function StudioSectionNav({ pathname }: { pathname: string }) {
-  const intelligence = pathname.startsWith("/studio/intelligence");
-  const pulse = pathname.startsWith("/studio") && !intelligence;
-  return (
-    <nav aria-label="Studio sections" className="flex gap-1 border-b border-white/[0.06] bg-[#05070d] px-3 sm:px-6">
-      <Link
-        href="/studio"
-        aria-current={pulse ? "page" : undefined}
-        className={cn(
-          "inline-flex min-h-11 items-center border-b-2 px-3 text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
-          pulse ? "border-cyan-400 text-white" : "border-transparent text-slate-400 hover:text-white",
-        )}
-      >
-        Pulse
-      </Link>
-      <Link
-        href="/studio/intelligence"
-        aria-current={intelligence ? "page" : undefined}
-        className={cn(
-          "inline-flex min-h-11 items-center border-b-2 px-3 text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
-          intelligence ? "border-cyan-400 text-white" : "border-transparent text-slate-400 hover:text-white",
-        )}
-      >
-        Intelligence
-      </Link>
-    </nav>
-  );
-}

@@ -2,11 +2,11 @@
 
 import { useReferral } from "@/lib/brain/referral-store";
 import { PulseChip } from "./pulse-chrome";
-import { REFERRAL, statusLabel, statusTone } from "./referral";
+import { REFERRAL, isDecided, statusLabel, statusTone } from "./referral";
 
 export function CompoundingPanel({ compact = false }: { compact?: boolean }) {
   const referral = useReferral();
-  const decided = referral.status === "approved" || referral.status === "rejected";
+  const decided = isDecided(referral.status);
   const captured = referral.status === "approved"
     ? REFERRAL.captured.approved
     : referral.status === "rejected"
@@ -46,9 +46,10 @@ export function CompoundingPanel({ compact = false }: { compact?: boolean }) {
       <article className="rounded-2xl border border-white/10 bg-muted p-4">
         <p className="font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">What the company knew</p>
         <ul className="mt-2 list-disc space-y-1.5 pl-4 text-[13px] leading-relaxed text-foreground">
-          <li>Repeat investor-app views can cluster on one development (Lombay House).</li>
-          <li>Quiet listings can be recorded without contacting anyone.</li>
-          <li>No referral pattern sat on the shared Investors record.</li>
+          <li>Joseph Mews advises ~4,000 investors. Property Insights reads each client’s portfolio and writes their cards.</li>
+          <li>Repeat views can cluster on one development (Lombe House is the worked example).</li>
+          <li>412 concentration cards this month — counted across clients, not treated as Joseph Mews stock.</li>
+          <li>8 reachouts already sit on the record. This Lombe House reachout did not.</li>
         </ul>
       </article>
       <article className="rounded-2xl border border-white/10 bg-card p-4">

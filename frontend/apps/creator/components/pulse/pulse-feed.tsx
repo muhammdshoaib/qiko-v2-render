@@ -70,7 +70,7 @@ function FeedCard({
     <section className="rounded-2xl border border-white/10 bg-card p-5" aria-label={title}>
       <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>{title}</h2>
       {vacant ? (
-        <p className="mt-4 text-sm text-slate-500">{empty}</p>
+        <p className="mt-4 text-sm text-slate-400">{empty}</p>
       ) : (
         <ul className="mt-3 divide-y divide-white/[0.06]">
           {lead && (
@@ -82,12 +82,12 @@ function FeedCard({
               >
                 <div className="flex items-start justify-between gap-3">
                   <p className="text-[13.5px] font-medium text-foreground">{lead.title}</p>
-                  <span className={cn("shrink-0 font-mono text-[10.5px] uppercase tracking-wider", lead.status === "attention" ? "text-amber-400" : "text-slate-500")}>
+                  <span className={cn("shrink-0 font-mono text-[10.5px] uppercase tracking-wider", lead.status === "attention" ? "text-amber-400" : "text-slate-400")}>
                     {lead.status === "attention" ? "Review" : "Done"}
                   </span>
                 </div>
-                <p className="mt-1 text-[12.5px] leading-relaxed text-slate-400">{lead.detail}</p>
-                <p className="mt-2 font-mono text-[11px] text-slate-500">{lead.originLabel} · {lead.at}</p>
+                <p className="mt-1 text-[12.5px] leading-relaxed text-slate-300">{lead.detail}</p>
+                <p className="mt-2 font-mono text-[11px] text-slate-400">{lead.originLabel} · {lead.at}</p>
               </button>
               {lead.actions}
             </li>
@@ -101,12 +101,12 @@ function FeedCard({
               >
                 <div className="flex items-start justify-between gap-3">
                   <p className="text-[13.5px] font-medium text-foreground">{item.title}</p>
-                  <span className={cn("shrink-0 font-mono text-[10.5px] uppercase tracking-wider", item.status === "attention" ? "text-amber-400" : "text-slate-500")}>
+                  <span className={cn("shrink-0 font-mono text-[10.5px] uppercase tracking-wider", item.status === "attention" ? "text-amber-400" : "text-slate-400")}>
                     {item.status === "attention" ? "Review" : "Done"}
                   </span>
                 </div>
-                <p className="mt-1 text-[12.5px] leading-relaxed text-slate-400">{item.detail}</p>
-                <p className="mt-2 font-mono text-[11px] text-slate-500">
+                <p className="mt-1 text-[12.5px] leading-relaxed text-slate-300">{item.detail}</p>
+                <p className="mt-2 font-mono text-[11px] text-slate-400">
                   {item.originLabel} · {item.at}
                 </p>
               </button>

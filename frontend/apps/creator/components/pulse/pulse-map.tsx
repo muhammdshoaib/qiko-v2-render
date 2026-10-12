@@ -1,19 +1,47 @@
 "use client";
 
-import { useEffect, useId, useRef, useState } from "react";
-import { Building2, Radar } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { cn } from "@qiko/ui";
-import { HonestyBadge } from "@/components/intelligence-layer/honesty-badge";
 import type { FocusId, WorkerId } from "@/components/intelligence-layer/model";
 import { useReferral } from "@/lib/brain/referral-store";
 import { useBrain } from "@/lib/brain/store";
-import { MAP_EDGES, MAP_LAYOUT, MAP_NODES, pulseNode, type PulseNode } from "./nodes";
+import { LIVE_CAPTURES, type LiveCapture } from "./live-captures";
+import { MAP_NODES, pulseNode } from "./nodes";
 import { companyIntel } from "./record-summary";
 
-const ICONS = {
-  "investor-app": Radar,
-  properties: Building2,
-} as const;
+type AreaId = "investor-app" | "properties" | "crm";
+
+type Area = {
+  id: AreaId;
+  name: string;
+  live: boolean;
+  dark?: boolean;
+  ang: number;
+  col: string;
+  agents: number;
+};
+
+type Sys = { name: string; to: AreaId[] };
+type Pt = { x: number; y: number };
+type Node = { a: Area; x: number; y: number; r: number; c: string; phase: number; flash: number };
+type SysN = { s: Sys; x: number; y: number };
+type Part = { from: Pt; to: Node; c: Pt; t: number; sp: number; kind: "in" | "up"; col: string };
+
+const AREAS: Area[] = [
+  { id: "investor-app", name: "Investors", live: true, ang: -2.45, col: "#6366F1", agents: 1 },
+  { id: "properties", name: "Properties", live: true, ang: 0.55, col: "#22D3EE", agents: 1 },
+  { id: "crm", name: "Client CRM", live: false, dark: true, ang: 2.55, col: "#E5484D", agents: 0 },
+];
+
+const SYSTEMS: Sys[] = [
+  { name: "Investor app", to: ["investor-app"] },
+  { name: "Investor portfolios", to: ["properties"] },
+  { name: "Knowledge library", to: ["investor-app", "properties"] },
+  { name: "Grounded chat", to: ["investor-app", "properties"] },
+];
+
+type TickerRow = LiveCapture & { ago: string };
 
 export function PulseMap({
   focus,
@@ -24,281 +52,528 @@ export function PulseMap({
   workerNames?: Partial<Record<WorkerId, string>>;
   onSelect: (id: FocusId) => void;
 }) {
-  const [hover, setHover] = useState<FocusId | null>(null);
-  const canvas = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ w: 0, h: 0 });
-  const gradientId = useId();
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
+  const [hover, setHover] = useState<{
+    name: string;
+    lines: [string, string][];
+    cta: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const [ticker, setTicker] = useState<TickerRow[]>(() =>
+    LIVE_CAPTURES.slice(0, 4).map((item, index) => ({ ...item, ago: `${(index + 1) * 3}m` })),
+  );
+  const flashRef = useRef<AreaId | null>(null);
   const referral = useReferral();
   const brain = useBrain();
   const intel = companyIntel(referral.status, brain.approval);
+  const hubCaption = intel.hubCaption;
   const mapFocus = focus && MAP_NODES.includes(focus) ? focus : null;
-  const hovered = hover && MAP_NODES.includes(hover) ? pulseNode(hover, workerNames) : null;
-  const hoverText = hovered ? intel.hover[hovered.id] ?? hovered.summary : "";
 
   useEffect(() => {
-    const el = canvas.current;
-    if (!el) return;
-    const sync = () => {
-      const box = el.getBoundingClientRect();
-      setSize({ w: box.width, h: box.height });
+    const canvas = canvasRef.current;
+    const wrap = wrapRef.current;
+    if (!canvas || !wrap) return;
+
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let raf = 0;
+    let W = 0;
+    let H = 0;
+    let dpr = 1;
+    let nodes: Node[] = [];
+    let sysNodes: SysN[] = [];
+    let parts: Part[] = [];
+    let core: Pt = { x: 0, y: 0 };
+    let hoverNode: Node | null = null;
+    let zoom: { n: Node; t0: number; done: boolean } | null = null;
+    let lastSpawn = 0;
+    let lastEvent = 0;
+    let evIdx = 4;
+    let cancelled = false;
+
+    const layout = () => {
+      const box = wrap.getBoundingClientRect();
+      W = box.width;
+      H = box.height;
+      dpr = Math.min(2, window.devicePixelRatio || 1);
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      canvas.style.width = `${W}px`;
+      canvas.style.height = `${H}px`;
+      const cx = W / 2;
+      const cy = H / 2 + 12;
+      const rx = Math.min(W * 0.34, 460);
+      const ry = Math.min(H * 0.32, 250);
+      const base = Math.min(W, H);
+      nodes = AREAS.map((a) => ({
+        a,
+        x: cx + Math.cos(a.ang) * rx * (a.dark ? 0.62 : 1),
+        y: cy + Math.sin(a.ang) * ry * (a.dark ? 0.62 : 1),
+        r: a.dark ? base * 0.042 : base * 0.082,
+        c: a.col,
+        phase: Math.random() * 6,
+        flash: 0,
+      }));
+      const sx = Math.min(W * 0.44, 580);
+      const sy = Math.min(H * 0.40, 290);
+      sysNodes = SYSTEMS.map((s, i) => {
+        const t = -Math.PI / 2 + ((i + 0.5) / SYSTEMS.length) * Math.PI * 2;
+        return { s, x: cx + Math.cos(t) * sx, y: cy + Math.sin(t) * sy };
+      });
+      core = { x: cx, y: cy };
     };
-    sync();
-    const observer = new ResizeObserver(sync);
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, []);
+
+    const spawn = () => {
+      const s = sysNodes[Math.floor(Math.random() * sysNodes.length)];
+      const id = s.s.to[Math.floor(Math.random() * s.s.to.length)];
+      const n = nodes.find((x) => x.a.id === id);
+      if (!n || n.a.dark) return;
+      parts.push({ from: s, to: n, c: ctrl(s, n, 0.18), t: 0, sp: 0.005 + Math.random() * 0.006, kind: "in", col: n.c });
+    };
+    const spawnUp = (n: Node) => {
+      parts.push({ from: n, to: n, c: ctrl(n, core, -0.12), t: 0, sp: 0.011, kind: "up", col: n.c });
+    };
+
+    const hit = (e: PointerEvent) => {
+      const r = canvas.getBoundingClientRect();
+      const x = e.clientX - r.left;
+      const y = e.clientY - r.top;
+      if (Math.hypot(x - core.x, y - core.y) < 28) return { kind: "core" as const };
+      for (const n of nodes) {
+        if (Math.hypot(x - n.x, y - n.y) < n.r + 12) return { kind: "area" as const, n };
+      }
+      return null;
+    };
+
+    const onMove = (e: PointerEvent) => {
+      const found = hit(e);
+      if (found?.kind === "area") {
+        hoverNode = found.n;
+        canvas.style.cursor = "pointer";
+        const a = found.n.a;
+        setHover({
+          name: a.name,
+          lines: a.dark
+            ? [["Status", "Not connected"], ["Next", "A hand-off stays planned"]]
+            : a.id === "investor-app"
+              ? [["Register", "4,180 advised"], ["High-intent", "28"], ["Reachouts awaiting", "1 of 9"]]
+              : [["Portfolios with insights", "3,104"], ["Concentration cards", "412"], ["Holdings read", "2,140"]],
+          cta: a.live ? "Click to open →" : "Connect to start capturing",
+          x: found.n.x,
+          y: found.n.y - found.n.r - 8,
+        });
+      } else if (found?.kind === "core") {
+        hoverNode = null;
+        canvas.style.cursor = "pointer";
+        setHover({
+          name: "Joseph Mews",
+          lines: [["Record", hubCaption], ["Blocks", "Investors · Properties"]],
+          cta: "Click to open →",
+          x: core.x,
+          y: core.y - 36,
+        });
+      } else {
+        hoverNode = null;
+        canvas.style.cursor = "default";
+        setHover(null);
+      }
+    };
+
+    const onClick = (e: PointerEvent) => {
+      const found = hit(e);
+      if (!found) return;
+      if (found.kind === "core") {
+        onSelectRef.current("record");
+        return;
+      }
+      const a = found.n.a;
+      if (a.dark) {
+        toast.message("Client CRM is not connected. A hand-off stays a planned next step.");
+        return;
+      }
+      if (reduced) {
+        onSelectRef.current(a.id);
+        return;
+      }
+      setHover(null);
+      zoom = { n: found.n, t0: performance.now(), done: false };
+    };
+
+    const draw = (ts: number) => {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, W, H);
+      if (zoom) {
+        const p = Math.min(1, (ts - zoom.t0) / 520);
+        const ease = 1 - (1 - p) ** 3;
+        const sc = 1 + ease * 2.2;
+        ctx.translate(W / 2, H / 2);
+        ctx.scale(sc, sc);
+        ctx.translate(-W / 2 + (W / 2 - zoom.n.x) * ease, -H / 2 + (H / 2 - zoom.n.y) * ease);
+        if (p >= 1 && !zoom.done) {
+          zoom.done = true;
+          const id = zoom.n.a.id;
+          setTimeout(() => onSelectRef.current(id), 40);
+        }
+      }
+      const tint = ctx.createRadialGradient(core.x, core.y, 10, core.x, core.y, Math.max(W, H) * 0.55);
+      tint.addColorStop(0, "rgba(99,102,241,.10)");
+      tint.addColorStop(1, "rgba(99,102,241,0)");
+      ctx.fillStyle = tint;
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = "rgba(255,255,255,.08)";
+      for (let x = 12; x < W; x += 22) {
+        for (let y = 12; y < H; y += 22) ctx.fillRect(x, y, 1.2, 1.2);
+      }
+      ctx.lineWidth = 1;
+      for (const s of sysNodes) {
+        for (const id of s.s.to) {
+          const n = nodes.find((x) => x.a.id === id);
+          if (!n) continue;
+          const c = ctrl(s, n, 0.18);
+          const hl = hoverNode?.a.id === id;
+          ctx.strokeStyle = hl ? hexA(n.c, 0.5) : "rgba(148,163,184,.18)";
+          ctx.beginPath();
+          ctx.moveTo(s.x, s.y);
+          ctx.quadraticCurveTo(c.x, c.y, n.x, n.y);
+          ctx.stroke();
+        }
+      }
+      for (const n of nodes) {
+        if (n.a.dark) continue;
+        const c = ctrl(n, core, -0.12);
+        ctx.strokeStyle = hexA(n.c, 0.28);
+        ctx.setLineDash([2, 5]);
+        ctx.beginPath();
+        ctx.moveTo(n.x, n.y);
+        ctx.quadraticCurveTo(c.x, c.y, core.x, core.y);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      const beat = ((ts / 1000) % 2.4) / 2.4;
+      for (let k = 0; k < 2; k++) {
+        const p = (beat + k * 0.5) % 1;
+        ctx.strokeStyle = `rgba(34,211,238,${(1 - p) * 0.28})`;
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.arc(core.x, core.y, 20 + p * 64, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      const cg = ctx.createLinearGradient(core.x - 22, core.y - 22, core.x + 22, core.y + 22);
+      cg.addColorStop(0, "#6366F1");
+      cg.addColorStop(1, "#22D3EE");
+      ctx.shadowColor = "rgba(99,102,241,.45)";
+      ctx.shadowBlur = 22;
+      ctx.fillStyle = cg;
+      ctx.beginPath();
+      ctx.arc(core.x, core.y, 20, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(core.x - 9, core.y);
+      ctx.lineTo(core.x - 4, core.y);
+      ctx.lineTo(core.x - 1, core.y - 5);
+      ctx.lineTo(core.x + 2, core.y + 5);
+      ctx.lineTo(core.x + 5, core.y);
+      ctx.lineTo(core.x + 9, core.y);
+      ctx.stroke();
+      ctx.textAlign = "center";
+      ctx.font = '500 9.5px ui-monospace, "Roboto Mono", monospace';
+      ctx.fillStyle = "rgba(148,163,184,.9)";
+      ctx.fillText("COMPANY INTELLIGENCE", core.x, core.y + 36);
+      ctx.font = '800 15px var(--font-display), Inter, sans-serif';
+      ctx.fillStyle = "#F8FAFC";
+      ctx.fillText(hubCaption, core.x, core.y + 54);
+
+      if (!reduced) {
+        for (let i = parts.length - 1; i >= 0; i--) {
+          const p = parts[i];
+          p.t += p.sp;
+          const dest = p.kind === "in" ? p.to : core;
+          const curve = p.kind === "in" ? p.c : ctrl(p.to, core, -0.12);
+          if (p.t >= 1) {
+            if (p.kind === "in") {
+              p.to.flash = 1;
+              if (Math.random() < 0.35) spawnUp(p.to);
+            }
+            parts.splice(i, 1);
+            continue;
+          }
+          for (let k = 0; k < 6; k++) {
+            const q = qp(p.from, curve, dest, Math.max(0, p.t - k * 0.012));
+            ctx.fillStyle = hexA(p.kind === "in" ? p.col : "#22D3EE", 0.55 * (1 - k / 6));
+            ctx.beginPath();
+            ctx.arc(q.x, q.y, (p.kind === "in" ? 2.2 : 1.7) * (1 - k / 8), 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+
+      ctx.font = "500 11px Inter, sans-serif";
+      for (const s of sysNodes) {
+        const tw = ctx.measureText(s.s.name).width + 18;
+        roundRect(ctx, s.x - tw / 2, s.y - 11, tw, 22, 11);
+        ctx.fillStyle = "rgba(15,23,42,.92)";
+        ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,.12)";
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.fillStyle = "#94A3B8";
+        ctx.fillText(s.s.name, s.x, s.y + 4);
+      }
+
+      const t = ts / 1000;
+      if (flashRef.current) {
+        const n = nodes.find((x) => x.a.id === flashRef.current);
+        if (n) n.flash = 1;
+        flashRef.current = null;
+      }
+      for (const n of nodes) {
+        const isH = hoverNode === n;
+        const r = n.r * (1 + Math.sin(t * 1.6 + n.phase) * 0.025) * (isH ? 1.07 : 1);
+        n.flash = Math.max(0, n.flash - 0.04);
+        if (n.a.dark) {
+          ctx.setLineDash([4, 5]);
+          ctx.strokeStyle = hexA(n.c, 0.8);
+          ctx.lineWidth = 1.4;
+          ctx.fillStyle = hexA(n.c, 0.08);
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.setLineDash([]);
+        } else {
+          const gl = ctx.createRadialGradient(n.x, n.y, r * 0.6, n.x, n.y, r * 1.9);
+          gl.addColorStop(0, hexA(n.c, 0.18 + n.flash * 0.2));
+          gl.addColorStop(1, hexA(n.c, 0));
+          ctx.fillStyle = gl;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, r * 1.9, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = "rgba(15,23,42,.92)";
+          ctx.shadowColor = hexA(n.c, 0.35);
+          ctx.shadowBlur = 18;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.shadowBlur = 0;
+          ctx.strokeStyle = hexA(n.c, isH ? 0.95 : 0.45);
+          ctx.lineWidth = isH ? 2 : 1.3;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+          ctx.stroke();
+          for (let k = 0; k < n.a.agents; k++) {
+            const ang = t * 0.5 + k * (Math.PI * 2 / Math.max(n.a.agents, 1)) + n.phase;
+            const ax = n.x + Math.cos(ang) * (r + 16);
+            const ay = n.y + Math.sin(ang) * (r + 16);
+            ctx.fillStyle = "#0F172A";
+            ctx.strokeStyle = n.c;
+            ctx.lineWidth = 1.6;
+            ctx.beginPath();
+            ctx.arc(ax, ay, 4.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+          }
+        }
+        ctx.textAlign = "center";
+        ctx.fillStyle = "#F8FAFC";
+        ctx.font = `700 ${n.a.id === "investor-app" ? 14.5 : 12.5}px var(--font-display), Inter, sans-serif`;
+        ctx.fillText(n.a.name, n.x, n.y + (n.a.dark ? 2 : -2));
+        ctx.font = '500 10.5px ui-monospace, "Roboto Mono", monospace';
+        if (n.a.dark) {
+          ctx.fillStyle = "#E5484D";
+          ctx.fillText("NOT CONNECTED", n.x, n.y + 16);
+        } else {
+          ctx.fillStyle = "#94A3B8";
+          ctx.fillText(n.a.id === "investor-app" ? "28 high-intent" : "3,104 insights", n.x, n.y + 14);
+        }
+      }
+
+      if (!zoom && !reduced && ts - lastSpawn > 170) {
+        spawn();
+        lastSpawn = ts;
+      }
+      if (!zoom && ts - lastEvent > (reduced ? 9000 : 4200)) {
+        lastEvent = ts;
+        const event = LIVE_CAPTURES[evIdx++ % LIVE_CAPTURES.length];
+        setTicker((rows) => {
+          const aged = rows.map((row) => ({ ...row, ago: row.ago === "NOW" ? "1m" : row.ago }));
+          return [{ ...event, ago: "NOW" }, ...aged].slice(0, 5);
+        });
+        const n = nodes.find((x) => x.a.id === event.block);
+        if (n) {
+          n.flash = 1;
+          if (!reduced) for (let k = 0; k < 4; k++) setTimeout(() => spawnUp(n), k * 120);
+        }
+      }
+      if (!cancelled) raf = requestAnimationFrame(draw);
+    };
+
+    layout();
+    if (!reduced) for (let i = 0; i < 12; i++) spawn();
+    const observer = new ResizeObserver(layout);
+    observer.observe(wrap);
+    const onLeave = () => {
+      hoverNode = null;
+      setHover(null);
+      canvas.style.cursor = "default";
+    };
+    canvas.addEventListener("pointermove", onMove);
+    canvas.addEventListener("pointerleave", onLeave);
+    canvas.addEventListener("click", onClick);
+    raf = requestAnimationFrame(draw);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+      observer.disconnect();
+      canvas.removeEventListener("pointermove", onMove);
+      canvas.removeEventListener("pointerleave", onLeave);
+      canvas.removeEventListener("click", onClick);
+    };
+  }, [hubCaption]);
 
   return (
-    <section aria-label="Company intelligence map" className="rounded-2xl border border-white/10 bg-muted">
-      <div className="flex items-start justify-between gap-3 p-4 sm:px-5 sm:pt-5">
-        <div>
-          <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
-            Knowledge map
-          </h2>
-          <p className="mt-0.5 text-[12px] text-slate-500">Hover for a summary. Click a block or worker to open it.</p>
+    <div className="flex flex-col gap-3.5">
+      <section aria-label="Company intelligence map" className="relative overflow-hidden rounded-2xl border border-white/10 bg-muted">
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-start justify-between gap-3 p-4 sm:px-5 sm:pt-5">
+          <div>
+            <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
+              Knowledge map
+            </h2>
+            <p className="mt-0.5 text-[12.5px] text-slate-300">Systems feed blocks, blocks feed your company brain. Click a block to open it.</p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-white/[0.06] px-2 py-1 font-mono text-[10px] tracking-[0.08em] text-slate-300 uppercase">
+            <i className="size-1.5 rounded-full bg-emerald-400 motion-safe:animate-pulse" />
+            Capturing
+          </span>
         </div>
-        <HonestyBadge kind="illustrative" />
-      </div>
 
-      <div className="space-y-2 px-4 pb-4 md:hidden">
-        {MAP_NODES.map((id) => {
-          const node = pulseNode(id, workerNames);
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => onSelect(id)}
-              className={cn(
-                "flex min-h-11 w-full flex-col rounded-xl border bg-card px-3 py-3 text-left",
-                mapFocus === id ? "border-primary" : "border-white/10",
-              )}
-            >
-              <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-slate-500">{node.kicker}</span>
-              <span className="mt-0.5 text-[14px] font-semibold text-foreground">{node.name}</span>
-              <span className="mt-1 text-[12.5px] text-slate-400">{intel.hover[id] ?? node.summary}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div ref={canvas} className="relative hidden min-h-[360px] overflow-hidden md:block xl:min-h-[440px]">
-        <div
-          className="pointer-events-none absolute inset-3 rounded-xl"
-          style={{
-            backgroundImage: "radial-gradient(circle at 1px 1px, rgba(255,255,255,.08) 1.1px, transparent 0)",
-            backgroundSize: "22px 22px",
-          }}
-        />
-        {size.w > 0 && (
-        <svg
-          className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
-          viewBox={`0 0 ${size.w} ${size.h}`}
-          aria-hidden="true"
-        >
-          <defs>
-            <linearGradient id={gradientId} x1="0" x2="1">
-              <stop offset="0" stopColor="#6366F1" />
-              <stop offset="1" stopColor="#22D3EE" />
-            </linearGradient>
-          </defs>
-          {MAP_EDGES.map(([from, to], index) => {
-            const edge = curvePath(xy(from, size), xy(to, size), bendFor(from, to));
-            const active = !mapFocus || related(mapFocus, from, to);
-            const toCore = from === "record" || to === "record";
+        <div className="space-y-2 px-4 pb-4 pt-16 md:hidden">
+          {MAP_NODES.map((id) => {
+            const node = pulseNode(id, workerNames);
             return (
-              <g key={`${from}-${to}`} opacity={active ? 1 : 0.16}>
-                <path
-                  d={edge}
-                  fill="none"
-                  stroke={active ? `url(#${gradientId})` : "rgba(255,255,255,0.16)"}
-                  strokeWidth={toCore ? 1.35 : 1.2}
-                  strokeOpacity={toCore ? 0.38 : 0.22}
-                />
-                <path
-                  d={edge}
-                  className={toCore ? "pulse-flowline pulse-flowline-fast" : "pulse-flowline"}
-                  stroke={toCore ? "#22D3EE" : "#6366F1"}
-                  strokeOpacity={active ? 0.72 : 0.14}
-                />
-                {active && (
-                  <>
-                    <circle r="2.3" fill={toCore ? "#22D3EE" : "#A5B4FC"} className="pulse-dot">
-                      <animateMotion dur={`${2.2 + (index % 4) * 0.35}s`} repeatCount="indefinite" begin={`${(index % 5) * 0.28}s`} path={edge} />
-                    </circle>
-                    <circle r="1.6" fill="#22D3EE" className="pulse-dot" opacity="0.75">
-                      <animateMotion dur={`${2.8 + (index % 3) * 0.4}s`} repeatCount="indefinite" begin={`${0.9 + (index % 4) * 0.22}s`} path={edge} />
-                    </circle>
-                  </>
+              <button
+                key={id}
+                type="button"
+                onClick={() => onSelect(id)}
+                className={cn(
+                  "flex min-h-11 w-full flex-col rounded-xl border bg-card px-3 py-3 text-left",
+                  mapFocus === id ? "border-primary" : "border-white/10",
                 )}
-              </g>
+              >
+                <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-slate-400">{node.kicker}</span>
+                <span className="mt-0.5 text-[15px] font-semibold text-foreground">{node.name}</span>
+                <span className="mt-1 text-[13px] leading-relaxed text-slate-300">{intel.hover[id] ?? node.summary}</span>
+              </button>
             );
           })}
-        </svg>
-        )}
+        </div>
 
-        {MAP_NODES.map((id) => {
-          const node = pulseNode(id, workerNames);
-          const pos = MAP_LAYOUT[id];
-          const dimmed = Boolean(mapFocus && mapFocus !== id && !connectedTo(mapFocus, id));
-          return (
-            <MapNode
-              key={id}
-              node={node}
-              left={pos.x}
-              top={pos.y}
-              selected={mapFocus === id}
-              dimmed={dimmed}
-              recordedCount={intel.recordedCount}
-              hubCaption={intel.hubCaption}
-              onSelect={() => onSelect(id)}
-              onHover={setHover}
-            />
-          );
-        })}
-
-        {hovered && (
-          <div
-            role="tooltip"
-            className="pointer-events-none absolute z-20 w-[260px] rounded-xl border border-white/10 bg-popover px-3.5 py-3 shadow-[0_16px_40px_-16px_rgba(0,0,0,.55)]"
-            style={{
-              left: MAP_LAYOUT[hovered.id].x,
-              top: MAP_LAYOUT[hovered.id].y,
-              transform: hovered.kind === "block"
-                ? "translate(-50%, 36px)"
-                : hovered.id === "record"
-                  ? "translate(-50%, calc(-100% - 48px))"
-                  : "translate(-50%, calc(-100% - 16px))",
-            }}
-          >
-            <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-slate-500">{hovered.kicker}</p>
-            <p className="mt-1 text-[14px] font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{hovered.name}</p>
-            <p className="mt-1 text-[12.5px] leading-relaxed text-slate-400">{hoverText}</p>
-            <p className="mt-2 text-[12px] font-semibold text-primary">Click to open →</p>
+        <div ref={wrapRef} className="relative hidden min-h-[500px] h-[min(58vh,640px)] md:block">
+          <canvas ref={canvasRef} className="block h-full w-full" aria-label="Live knowledge map. Click a block to open it." />
+          {hover && (
+            <div
+              role="tooltip"
+              className="pointer-events-none absolute z-20 min-w-[210px] -translate-x-1/2 -translate-y-full rounded-xl border border-white/15 bg-popover px-3.5 py-3"
+              style={{ left: hover.x, top: Math.max(hover.y, 92) }}
+            >
+              <p className="text-[14px] font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{hover.name}</p>
+              {hover.lines.map(([label, value]) => (
+                <p key={label} className="mt-1 flex justify-between gap-3 text-[12.5px] text-slate-400">
+                  <span>{label}</span>
+                  <span className="font-semibold text-foreground">{value}</span>
+                </p>
+              ))}
+              <p className="mt-2 text-[12px] font-semibold text-primary">{hover.cta}</p>
+            </div>
+          )}
+          <div className="pointer-events-none absolute bottom-4 left-5 flex flex-wrap gap-3.5 text-[12px] text-slate-400">
+            {AREAS.filter((a) => !a.dark).map((a) => (
+              <span key={a.id} className="inline-flex items-center gap-1.5">
+                <i className="size-2 rounded-full" style={{ background: a.col }} />
+                {a.name}
+              </span>
+            ))}
+            <span className="inline-flex items-center gap-1.5">
+              <i className="size-2 rounded-full border border-dashed border-red-400 bg-transparent" />
+              Not connected
+            </span>
           </div>
-        )}
-      </div>
-    </section>
-  );
-}
+        </div>
+      </section>
 
-function MapNode({
-  node,
-  left,
-  top,
-  selected,
-  dimmed,
-  recordedCount,
-  hubCaption,
-  onSelect,
-  onHover,
-}: {
-  node: PulseNode;
-  left: string;
-  top: string;
-  selected: boolean;
-  dimmed: boolean;
-  recordedCount: number;
-  hubCaption: string;
-  onSelect: () => void;
-  onHover: (id: FocusId | null) => void;
-}) {
-  const Icon = node.kind === "block" ? ICONS[node.id as keyof typeof ICONS] : null;
-  const rings = Math.min(Math.max(recordedCount, 1), 2);
-  return (
-    <button
-      type="button"
-      aria-pressed={selected}
-      aria-label={`${node.kicker}: ${node.name}`}
-      onClick={onSelect}
-      onMouseEnter={() => onHover(node.id)}
-      onMouseLeave={() => onHover(null)}
-      onFocus={() => onHover(node.id)}
-      onBlur={() => onHover(null)}
-      className={cn(
-        "absolute z-10 -translate-x-1/2 -translate-y-1/2 text-left transition duration-150 motion-reduce:transition-none",
-        dimmed && "opacity-30",
-      )}
-      style={{ left, top }}
-    >
-      {node.kind === "record" ? (
-        <span
-          className={cn(
-            "relative flex size-[120px] flex-col items-center justify-center rounded-full text-center",
-            selected && "ring-4 ring-primary/25",
-          )}
-        >
-          {Array.from({ length: rings }, (_, index) => (
-            <span
-              key={index}
-              className="absolute rounded-full border border-cyan-400/20"
-              style={{ inset: -6 - index * 7 }}
-            />
+      <aside className="rounded-2xl border border-white/10 bg-card" aria-label="Captured just now">
+        <div className="flex items-center gap-2 px-5 pt-4 sm:px-6">
+          <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
+            Captured just now
+          </h2>
+          <span className="flex-1" />
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-white/[0.06] px-2 py-1 font-mono text-[10px] tracking-[0.08em] text-slate-300 uppercase">
+            <i className="size-1.5 rounded-full bg-emerald-400 motion-safe:animate-pulse" />
+            Live
+          </span>
+        </div>
+        <ul className="p-5 pt-3 sm:px-6">
+          {ticker.map((row, index) => (
+            <li key={`${row.text}-${index}`} className="border-t border-white/[0.06] first:border-t-0 first:pt-0">
+              <button
+                type="button"
+                onClick={() => {
+                  flashRef.current = row.block;
+                  onSelect(row.block);
+                }}
+                className="grid min-h-11 w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 py-3.5 text-left"
+              >
+                <span className="flex size-8 items-center justify-center rounded-full bg-indigo-500/15 font-mono text-[10px] font-medium text-indigo-300">
+                  {row.initials}
+                </span>
+                <span className="min-w-0">
+                  <span className="block text-[13.5px] font-semibold leading-snug text-foreground">{row.text}</span>
+                  <span className="mt-0.5 block text-[12px] text-slate-400">{row.worker} · {row.block === "investor-app" ? "Investors" : "Properties"}</span>
+                </span>
+                <span className="font-mono text-[10.5px] text-slate-500">{row.ago}</span>
+              </button>
+            </li>
           ))}
-          <span className="absolute inset-0 rounded-full bg-indigo-500/15 motion-safe:animate-[qiko-breathe_2.8s_ease-in-out_infinite]" />
-          <span className="relative flex size-[84px] flex-col items-center justify-center rounded-full bg-gradient-to-br from-[#6366F1] to-[#22D3EE] text-white shadow-[0_10px_24px_-10px_rgba(99,102,241,.55)]">
-            <span className="text-[9px] font-medium uppercase tracking-[0.14em] text-white/80">Company</span>
-            <span className="mt-0.5 px-2 text-[13px] font-extrabold leading-tight" style={{ fontFamily: "var(--font-display)" }}>{node.name}</span>
-            <span className="mt-1 max-w-[5.5rem] text-[9px] font-medium leading-tight text-white/75">{hubCaption}</span>
-          </span>
-        </span>
-      ) : node.kind === "worker" ? (
-        <span
-          className={cn(
-            "flex w-[168px] flex-col rounded-2xl border bg-card px-3.5 py-3 shadow-[0_1px_3px_rgba(0,0,0,.35)]",
-            selected ? "border-primary ring-4 ring-primary/10" : "border-white/10 hover:border-primary/40",
-          )}
-        >
-          <span className="text-[9.5px] font-medium uppercase tracking-[0.1em] text-primary">Worker</span>
-          <span className="mt-1 text-[14px] font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{node.name}</span>
-        </span>
-      ) : (
-        <span
-          className={cn(
-            "flex w-[180px] items-start gap-2.5 rounded-2xl border bg-card px-3 py-3 shadow-[0_8px_24px_-16px_rgba(99,102,241,.65)]",
-            selected ? "border-primary ring-4 ring-primary/15" : "border-white/15 hover:border-primary/50",
-          )}
-        >
-          {Icon && (
-            <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
-              <Icon className="size-4" />
-            </span>
-          )}
-          <span>
-            <span className="block text-[10px] font-medium uppercase tracking-[0.1em] text-primary">{node.kicker}</span>
-            <span className="mt-0.5 block text-[16px] font-extrabold leading-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
-              {node.name}
-            </span>
-          </span>
-        </span>
-      )}
-    </button>
+        </ul>
+      </aside>
+    </div>
   );
 }
 
-function connectedTo(focus: FocusId, id: FocusId) {
-  return MAP_EDGES.some(([from, to]) => (from === focus && to === id) || (to === focus && from === id));
+function hexA(hex: string, alpha: number) {
+  const n = Number.parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
 }
 
-function related(focus: FocusId, from: FocusId, to: FocusId) {
-  return from === focus || to === focus;
-}
-
-function xy(id: FocusId, size: { w: number; h: number }) {
+function ctrl(a: Pt, b: Pt, bend: number): Pt {
   return {
-    x: (Number.parseFloat(MAP_LAYOUT[id].x) / 100) * size.w,
-    y: (Number.parseFloat(MAP_LAYOUT[id].y) / 100) * size.h,
+    x: (a.x + b.x) / 2 - (b.y - a.y) * bend,
+    y: (a.y + b.y) / 2 + (b.x - a.x) * bend,
   };
 }
 
-function bendFor(from: FocusId, to: FocusId) {
-  if (from === "record" || to === "record") return -0.1;
-  return 0.08;
+function qp(a: Pt, c: Pt, b: Pt, t: number): Pt {
+  const u = 1 - t;
+  return {
+    x: u * u * a.x + 2 * u * t * c.x + t * t * b.x,
+    y: u * u * a.y + 2 * u * t * c.y + t * t * b.y,
+  };
 }
 
-function curvePath(a: { x: number; y: number }, b: { x: number; y: number }, bend: number) {
-  const mx = (a.x + b.x) / 2;
-  const my = (a.y + b.y) / 2;
-  const cx = mx - (b.y - a.y) * bend;
-  const cy = my + (b.x - a.x) * bend;
-  return `M ${a.x.toFixed(1)} ${a.y.toFixed(1)} Q ${cx.toFixed(1)} ${cy.toFixed(1)} ${b.x.toFixed(1)} ${b.y.toFixed(1)}`;
+function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
 }

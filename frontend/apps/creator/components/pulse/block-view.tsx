@@ -3,11 +3,10 @@
 import { ArrowRight } from "lucide-react";
 import { WORKERS, type WorkerId } from "@/components/intelligence-layer/model";
 import { useReferral } from "@/lib/brain/referral-store";
-import { CompoundingPanel } from "./compounding";
-import { BLOCKS, LEARNING_LABEL, type BlockContent } from "./drilldown-data";
+import { BLOCKS, KNOWLEDGE_LAYER, LEARNING_LABEL, type BlockContent, type SnapshotItem } from "./drilldown-data";
 import { EvidenceDrawer } from "./evidence-drawer";
 import { GhostButton, IllustrativeMark, PulseCard, PulseChip, PulseHeader, PulsePage, PulseTabs } from "./pulse-chrome";
-import { REFERRAL, REFERRAL_EVIDENCE_ID, REFERRAL_ID, conversationStage, statusLabel, statusTone } from "./referral";
+import { REFERRAL, REFERRAL_EVIDENCE_ID, REFERRAL_ID, conversationStage, decisionLabel, isDecided, statusLabel, statusTone } from "./referral";
 import type { BlockPane, PulseNav } from "./route";
 import { blockPane } from "./route";
 
@@ -26,6 +25,7 @@ export function BlockView({
   onHold,
   onApproveReferral,
   onRejectReferral,
+  onDeferReferral,
 }: {
   nav: PulseNav;
   workerNames?: Partial<Record<WorkerId, string>>;
@@ -34,18 +34,23 @@ export function BlockView({
   onHold?: () => void;
   onApproveReferral?: () => void;
   onRejectReferral?: () => void;
+  onDeferReferral?: () => void;
 }) {
   const block = BLOCKS[nav.block ?? "investors"];
-  const referral = useReferral();
   const pane = blockPane(nav.pane);
-  const decided = referral.status === "approved" || referral.status === "rejected";
 
-  const openSnapshot = (opens: (typeof block.snapshot)[number]["opens"]) => {
-    if (opens === "worker") onNav({ block: block.id, worker: block.workers[0], detail: null });
-    else if (opens === "review") onNav({ pane: "outcomes", detail: block.id === "investors" ? REFERRAL_ID : block.outcomes[0]?.id ?? null });
-    else if (opens === "record") onNav({ pane: "learning", detail: null });
-    else if (opens === "sources") onNav({ pane: "overview", detail: null });
-    else onNav({ pane: "overview", detail: null });
+  const openSnapshot = (item: SnapshotItem) => {
+    if (item.opens === "activity" || item.id === "active") onNav({ pane: "activity", detail: item.detail ?? null });
+    else if (item.opens === "segments") onNav({ pane: "overview", detail: item.detail ?? null });
+    else if (item.opens === "worker") onNav({ block: block.id, worker: block.workers[0], detail: null });
+    else if (item.opens === "review") {
+      onNav({
+        pane: block.id === "investors" ? "outcomes" : "activity",
+        detail: item.detail ?? (block.id === "investors" ? REFERRAL_ID : "c-spend"),
+      });
+    }
+    else if (item.opens === "record") onNav({ pane: "learning", detail: null });
+    else onNav({ pane: "overview", detail: item.detail ?? null });
   };
 
   return (
@@ -86,7 +91,6 @@ export function BlockView({
         <Overview
           block={block}
           workerNames={workerNames}
-          reviewValue={block.id === "investors" ? (decided ? "Decided" : "1 awaiting") : undefined}
           onNav={onNav}
           onSnapshot={openSnapshot}
         />
@@ -103,6 +107,7 @@ export function BlockView({
         onHold={onHold}
         onApproveReferral={onApproveReferral}
         onRejectReferral={onRejectReferral}
+        onDeferReferral={onDeferReferral}
       />
     </PulsePage>
   );
@@ -111,38 +116,30 @@ export function BlockView({
 function Overview({
   block,
   workerNames,
-  reviewValue,
   onNav,
   onSnapshot,
 }: {
   block: BlockContent;
   workerNames?: Partial<Record<WorkerId, string>>;
-  reviewValue?: string;
   onNav: (next: Partial<PulseNav>) => void;
-  onSnapshot: (opens: BlockContent["snapshot"][number]["opens"]) => void;
+  onSnapshot: (item: SnapshotItem) => void;
 }) {
   const referral = useReferral();
 
   return (
     <>
       {block.id === "investors" ? (
-        <section className="rounded-2xl border border-primary/25 bg-card p-5">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <p className="font-mono text-[10.5px] tracking-[0.1em] text-primary uppercase">Highlighted insight</p>
-              <h2 className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
-                {REFERRAL.title}
-              </h2>
-            </div>
-            <PulseChip tone={statusTone(referral.status)}>{statusLabel(referral.status)}</PulseChip>
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-card px-4 py-3.5">
+          <div>
+            <p className="font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">
+              {isDecided(referral.status) ? "Latest decision" : referral.status === "deferred" ? "Deferred" : "Awaiting a person"}
+            </p>
+            <p className="mt-0.5 text-[13.5px] text-foreground">{REFERRAL.title}</p>
           </div>
-          <p className="mt-2 max-w-[68ch] text-[13.5px] leading-relaxed text-foreground">{REFERRAL.insight}</p>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <PulseChip tone={statusTone(referral.status)}>{statusLabel(referral.status)}</PulseChip>
             <GhostButton onClick={() => onNav({ pane: "activity", detail: REFERRAL_EVIDENCE_ID })}>See evidence</GhostButton>
-            <GhostButton onClick={() => onNav({ block: "investors", worker: "intent-intelligence", pane: "conversations", detail: null })}>
-              Open Intelligence Worker
-            </GhostButton>
-            <GhostButton onClick={() => onNav({ pane: "outcomes", detail: REFERRAL_ID })}>View outcome</GhostButton>
+            <GhostButton onClick={() => onNav({ pane: "outcomes", detail: REFERRAL_ID })}>Open Outcomes</GhostButton>
           </div>
         </section>
       ) : (
@@ -160,23 +157,26 @@ function Overview({
         </section>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        {block.snapshot.map((item) => {
-          const value = item.id === "review" && reviewValue ? reviewValue : item.value;
-          return (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onSnapshot(item.opens)}
-              className="rounded-2xl border border-white/10 bg-card px-4 py-4 text-left hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
-            >
-              <span className="block font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">{item.label}</span>
-              <span className="mt-1 block text-[20px] font-extrabold tracking-[-0.02em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
-                {value}
+      <div className={block.snapshot.length > 3 ? "grid gap-3 sm:grid-cols-2 lg:grid-cols-4" : "grid gap-3 sm:grid-cols-3"}>
+        {block.snapshot.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onSnapshot(item)}
+            className="rounded-2xl border border-white/10 bg-card px-4 py-4 text-left hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+          >
+            <span className="block font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">{item.label}</span>
+            <span className="mt-1 block text-[20px] font-extrabold tracking-[-0.02em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
+              {item.value}
+            </span>
+            <span className="mt-1.5 block text-[11.5px] leading-snug text-slate-500">{item.hint}</span>
+            {item.honesty && (
+              <span className="mt-2 block">
+                <IllustrativeMark kind={item.honesty} />
               </span>
-            </button>
-          );
-        })}
+            )}
+          </button>
+        ))}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
@@ -327,16 +327,19 @@ function Learning({
   onNav: (next: Partial<PulseNav>) => void;
 }) {
   const referral = useReferral();
-  const decided = referral.status === "approved" || referral.status === "rejected";
+  const decided = isDecided(referral.status);
+  const measured = referral.status === "approved"
+    ? REFERRAL.recordedResult.approved
+    : referral.status === "rejected"
+      ? REFERRAL.recordedResult.rejected
+      : REFERRAL.recordedResult.pending;
 
-  return (
-    <>
+  if (block.id !== "investors") {
+    return (
       <PulseCard title="Patterns and knowledge" hint="Click a row for evidence.">
         <ul className="divide-y divide-white/[0.06]">
           {block.learnings.map((item) => {
-            const state = item.id === "l-referral"
-              ? LEARNING_LABEL[referral.status === "approved" ? "rule" : referral.status === "rejected" ? "observed" : "proposed"]
-              : LEARNING_LABEL[item.state];
+            const state = LEARNING_LABEL[item.state];
             return (
               <li key={item.id} className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-start sm:justify-between">
                 <button type="button" onClick={() => onNav({ detail: item.id })} className="text-left">
@@ -349,23 +352,79 @@ function Learning({
           })}
         </ul>
       </PulseCard>
+    );
+  }
 
-      <PulseCard title="How knowledge changes" hint="Illustrative trail — not a live ledger.">
-        {block.id === "investors" && <div className="mb-4"><CompoundingPanel /></div>}
-        <ol className="space-y-3">
-          {block.accumulation.map((row) => (
-            <li key={row.month} className="grid grid-cols-[48px_minmax(0,1fr)] gap-3">
-              <span className="font-mono text-[12px] text-slate-500">{row.month}</span>
-              <span className="text-[13.5px] text-foreground">
-                {block.id === "investors" && row.month === "Oct" && decided
-                  ? referral.status === "approved"
-                    ? "Referral recommendation written to company intelligence. No investor was contacted."
-                    : "Referral recommendation declined. The insight stays; the action was not written."
-                  : row.note}
-              </span>
+  const observations = block.learnings.filter((item) => item.id === "l-referral" || item.id === "l-review" || item.id === "l-quiet");
+  const walls = block.learnings.filter((item) => item.state === "rule");
+  const decisionTone = referral.status === "approved" ? "good" : referral.status === "rejected" ? "bad" : "warn";
+
+  return (
+    <>
+      <PulseCard title="Observed" hint="What the Intelligence Worker noticed, and the evidence behind it.">
+        <ul className="divide-y divide-white/[0.06]">
+          {observations.map((item) => (
+            <li key={item.id} className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-start sm:justify-between">
+              <button type="button" onClick={() => onNav({ detail: item.id })} className="text-left">
+                <p className="text-[13.5px] font-medium text-foreground">{item.title}</p>
+                <p className="mt-1 text-[12.5px] text-slate-400">{item.evidence}</p>
+              </button>
+              <PulseChip tone={KNOWLEDGE_LAYER.observation.tone}>{KNOWLEDGE_LAYER.observation.label}</PulseChip>
             </li>
           ))}
-        </ol>
+        </ul>
+        {walls.length > 0 && (
+          <p className="mt-3 text-[12.5px] text-slate-500">
+            Hard walls in force: {walls.map((item) => item.title.toLowerCase()).join(" · ")}.
+          </p>
+        )}
+      </PulseCard>
+
+      <PulseCard title="Recommendation and decision" hint="A person still writes this to the company record.">
+        <div className="space-y-4">
+          <button
+            type="button"
+            onClick={() => onNav({ pane: "outcomes", detail: REFERRAL_ID })}
+            className="flex w-full flex-col rounded-xl border border-white/10 px-3 py-3 text-left hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 sm:flex-row sm:items-start sm:justify-between"
+          >
+            <span>
+              <span className="block text-[13.5px] font-medium text-foreground">{REFERRAL.title}</span>
+              <span className="mt-1 block text-[12.5px] text-slate-400">{REFERRAL.action}</span>
+            </span>
+            <PulseChip tone={KNOWLEDGE_LAYER.recommendation.tone}>{KNOWLEDGE_LAYER.recommendation.label}</PulseChip>
+          </button>
+          <div className="rounded-xl border border-white/10 bg-muted px-3 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[13.5px] font-medium text-foreground">
+                {decided ? decisionLabel(referral.status) : "Nothing captured yet. Approve or decline on Outcomes to write this to the company record."}
+              </p>
+              <PulseChip tone={decisionTone}>{KNOWLEDGE_LAYER.decision.label}</PulseChip>
+            </div>
+            {decided && (
+              <div className="mt-3">
+                <p className="text-[12.5px] text-slate-400">This now sits on October in company knowledge.</p>
+                <div className="mt-2">
+                  <GhostButton onClick={() => onNav({ block: null, worker: null, detail: null, focus: "record" })}>
+                    View company timeline
+                  </GhostButton>
+                </div>
+              </div>
+            )}
+            {!decided && (
+              <div className="mt-3">
+                <GhostButton onClick={() => onNav({ pane: "outcomes", detail: REFERRAL_ID })}>Open Outcomes</GhostButton>
+              </div>
+            )}
+          </div>
+        </div>
+      </PulseCard>
+
+      <PulseCard title="Measured outcome" hint="What can be claimed after a human decision — not a forecast.">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <p className="max-w-[68ch] text-[13.5px] leading-relaxed text-foreground">{measured}</p>
+          <PulseChip tone={KNOWLEDGE_LAYER.outcome.tone}>{KNOWLEDGE_LAYER.outcome.label}</PulseChip>
+        </div>
+        <p className="mt-2 text-[12.5px] text-slate-500">{REFERRAL.caution}</p>
       </PulseCard>
     </>
   );

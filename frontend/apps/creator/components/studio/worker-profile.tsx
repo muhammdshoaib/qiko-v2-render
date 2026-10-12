@@ -15,13 +15,13 @@ export function WorkerProfile({ worker }: { worker: ShowcaseWorker }) {
   const pending = brain.ready && worker.slug === "intent-intelligence" && brain.approval === "awaiting";
   const recorded = brain.ready && worker.slug === "intent-intelligence" && brain.approval !== "awaiting";
   const insights = worker.insights.map((item) =>
-    recorded && item.title.includes("Lombay")
+    recorded && item.title.includes("Lombe")
       ? { ...item, status: "completed" as const, detail: "Leadership review is on the company record. No investor email was sent." }
       : item,
   );
   const actions = recorded
     ? [{
-        title: brain.approval === "approved" ? "Lombay review recorded" : "Lombay review held",
+        title: brain.approval === "approved" ? "Lombe House review recorded" : "Lombe House review held",
         detail: brain.approval === "approved"
           ? "The cluster is on the company record. No outbound contact was sent."
           : "The recommendation stays open. Nothing was written or sent.",
@@ -36,7 +36,7 @@ export function WorkerProfile({ worker }: { worker: ShowcaseWorker }) {
     <div className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 sm:px-6 lg:px-12">
       <button
         type="button"
-        onClick={() => router.push("/studio")}
+        onClick={() => router.push("/studio/intelligence")}
         className="inline-flex min-h-11 items-center gap-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
       >
         <ArrowLeft className="size-4" /> Back to Pulse
@@ -56,7 +56,7 @@ export function WorkerProfile({ worker }: { worker: ShowcaseWorker }) {
           {worker.liveHref && (
             <Button type="button" onClick={() => router.push(worker.liveHref!)}>Open live cockpit</Button>
           )}
-          <Button type="button" variant="outline" onClick={() => router.push(`/studio?focus=${worker.slug}`)}>
+          <Button type="button" variant="outline" onClick={() => router.push(`/studio/intelligence?focus=${worker.slug}`)}>
             <Network className="size-4" /> See in Pulse
           </Button>
           <Button type="button" variant="outline" onClick={() => router.push("/studio/intelligence?tab=channels&surface=claude")}>
@@ -78,7 +78,7 @@ export function WorkerProfile({ worker }: { worker: ShowcaseWorker }) {
             Recommended follow-up
           </h2>
           <p className="mt-2 text-[13px] text-slate-300">
-            Flag Lombay House / Derby for a leadership review. This writes to company intelligence. No investor email will be sent.
+            Flag Lombe House / Derby for a leadership review. This writes to company intelligence. No investor email will be sent.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button type="button" size="sm" onClick={() => toast.message(brain.approveFollowUp())}>Approve review</Button>

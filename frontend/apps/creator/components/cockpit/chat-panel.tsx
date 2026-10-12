@@ -44,7 +44,7 @@ export function CockpitChatPanel({
   workerName, onClose, onAsk, ready = true,
   emptyPrompt, notReadyTitle, notReadyPrompt,
   placeholder, notReadyPlaceholder, inputHint, errorText,
-  loadHistory, historyKey,
+  loadHistory, historyKey, insetClassName = "top-14",
 }: {
   workerName: string;
   onClose: () => void;
@@ -67,6 +67,8 @@ export function CockpitChatPanel({
   loadHistory?: () => Promise<ChatMessage[]>;
   /** Identifies the conversation being shown; changing it reloads history for the new context. */
   historyKey?: string | null;
+  /** Viewport offset for the overlay. Cockpits sit under the h-14 top bar; Pulse sits under Intelligence chrome. */
+  insetClassName?: string;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
@@ -162,7 +164,7 @@ export function CockpitChatPanel({
       {/* Dim backdrop only below lg, where the chat is a modal drawer over the whole view. At lg+
           the panel floats above the content without dimming it, so a reviewer can keep reading the
           tender (and copy from it) while asking questions. */}
-      <div onClick={onClose} className="fixed inset-0 top-14 z-30 bg-black/50 lg:hidden" aria-hidden="true" />
+      <div onClick={onClose} className={cn("fixed inset-0 z-30 bg-black/50 lg:hidden", insetClassName)} aria-hidden="true" />
       <aside
         // The width lives in a custom property, not an inline width: below lg the panel is a touch
         // drawer whose width is the class-driven one, and only the lg+ class consumes the variable.
@@ -174,7 +176,8 @@ export function CockpitChatPanel({
           // an inline flex column at lg+ any more: as a column it took permanent horizontal space
           // and squeezed <main> into a narrow strip, which read as a thin sidebar rather than a
           // chat (client feedback, 2026-09-16). Floating it leaves the content full-width.
-          "fixed bottom-0 right-0 top-14 max-w-[86vw] shadow-2xl shadow-black/50",
+          "fixed bottom-0 right-0 max-w-[86vw] shadow-2xl shadow-black/50",
+          insetClassName,
           // Resizable on desktop, where there is a pointer to drag the edge with.
           "lg:w-[var(--cockpit-chat-width)] lg:max-w-none",
           // A drag that crosses the transcript would otherwise select its text.

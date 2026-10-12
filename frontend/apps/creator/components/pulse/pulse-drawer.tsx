@@ -11,7 +11,6 @@ import {
 } from "@/components/ui/dialog";
 import { HonestyBadge } from "@/components/intelligence-layer/honesty-badge";
 import {
-  RECORD,
   SYSTEM_DETAIL,
   WORKERS,
   isWorkerId,
@@ -21,16 +20,18 @@ import {
 } from "@/components/intelligence-layer/model";
 import { useReferral } from "@/lib/brain/referral-store";
 import { useBrain } from "@/lib/brain/store";
-import { CompoundingPanel } from "./compounding";
+import { KnowledgeGrowth } from "./knowledge-growth";
 import { PULSE_BLOCKS, pulseNode } from "./nodes";
-import { GhostButton, PulseChip } from "./pulse-chrome";
-import { REFERRAL, decisionLabel, statusLabel, statusTone } from "./referral";
+import { GhostButton } from "./pulse-chrome";
+import { REFERRAL, decisionLabel, isDecided } from "./referral";
 import { companyIntel } from "./record-summary";
 import type { PulseNav } from "./route";
 
 export function PulseDrawer({
   focus,
   workerNames,
+  growthMonth,
+  onGrowthMonth,
   onClose,
   onSelect,
   onOpen,
@@ -38,6 +39,8 @@ export function PulseDrawer({
 }: {
   focus: FocusId | null;
   workerNames?: Partial<Record<WorkerId, string>>;
+  growthMonth?: string | null;
+  onGrowthMonth?: (month: string) => void;
   onClose: () => void;
   onSelect: (id: FocusId) => void;
   onOpen: (id: FocusId) => void;
@@ -52,7 +55,7 @@ export function PulseDrawer({
   return (
     <Dialog open={Boolean(focus)} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent
-        className="fixed inset-y-0 right-0 top-0 left-auto flex h-full max-h-none w-full max-w-[min(440px,100%)] translate-x-0 translate-y-0 flex-col gap-0 overflow-y-auto rounded-none border-y-0 border-l border-white/10 bg-popover text-popover-foreground p-0 shadow-[-20px_0_50px_-20px_rgba(0,0,0,.65)] sm:max-w-[min(440px,100%)] data-[state=open]:zoom-in-100"
+        className="fixed inset-y-0 right-0 top-0 left-auto flex h-full max-h-none w-full max-w-[min(340px,92vw)] translate-x-0 translate-y-0 flex-col gap-0 overflow-y-auto rounded-none border-y-0 border-l border-white/10 bg-popover text-popover-foreground p-0 shadow-[-20px_0_50px_-20px_rgba(0,0,0,.65)] sm:max-w-[min(340px,92vw)] data-[state=open]:zoom-in-100"
         aria-describedby={undefined}
       >
         {node && focus && (
@@ -65,13 +68,18 @@ export function PulseDrawer({
                 </DialogTitle>
                 <HonestyBadge kind="illustrative" />
               </div>
-              <DialogDescription className="text-[13.5px] leading-relaxed text-slate-400">{summary}</DialogDescription>
+              <DialogDescription className="text-[13.5px] leading-relaxed text-slate-300">{summary}</DialogDescription>
             </DialogHeader>
             <div className="flex flex-1 flex-col gap-5 px-6 py-5">
               {isWorkerId(focus) ? (
                 <WorkerBody id={focus} onSelect={onSelect} onOpen={onOpen} />
               ) : focus === "record" ? (
-                <RecordBody onOpen={onOpen} onNav={onNav} />
+                <RecordBody
+                  growthMonth={growthMonth}
+                  onGrowthMonth={onGrowthMonth}
+                  onOpen={onOpen}
+                  onNav={onNav}
+                />
               ) : (
                 <BlockBody id={focus} onSelect={onSelect} onOpen={onOpen} />
               )}
@@ -167,38 +175,29 @@ function BlockBody({
 }
 
 function RecordBody({
+  growthMonth,
+  onGrowthMonth,
   onOpen,
   onNav,
 }: {
+  growthMonth?: string | null;
+  onGrowthMonth?: (month: string) => void;
   onOpen: (id: FocusId) => void;
   onNav?: (next: Partial<PulseNav>) => void;
 }) {
   const referral = useReferral();
   const brain = useBrain();
   const intel = companyIntel(referral.status, brain.approval);
-  const decided = referral.status === "approved" || referral.status === "rejected";
+  const decided = isDecided(referral.status);
+  const selected = growthMonth ?? intel.growth[intel.growth.length - 1]?.month ?? "Oct";
 
   return (
     <>
-      <p className="text-[13px] leading-relaxed text-slate-400">{RECORD.purpose}</p>
-
-      <Section icon={BookOpen} title="Referral decision">
-        <div className="flex flex-wrap items-center gap-2">
-          <PulseChip tone={statusTone(referral.status)}>{statusLabel(referral.status)}</PulseChip>
-        </div>
-        <p className="mt-2 text-[13.5px] font-medium text-foreground">{REFERRAL.title}</p>
-        <p className="mt-1 text-[12.5px] text-foreground">{decisionLabel(referral.status)}</p>
-        {referral.decidedAt && <p className="mt-1 font-mono text-[11px] text-slate-500">Recorded at {referral.decidedAt}.</p>}
-        {decided && <div className="mt-3"><CompoundingPanel compact /></div>}
-        {onNav && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            <GhostButton onClick={() => onNav({ block: "investors", pane: "outcomes", detail: REFERRAL.id, focus: null })}>
-              Open outcome
-            </GhostButton>
-            <GhostButton onClick={() => onOpen("investor-app")}>Open Investors</GhostButton>
-          </div>
-        )}
-      </Section>
+      <KnowledgeGrowth
+        points={intel.growth}
+        selected={selected}
+        onSelect={(month) => onGrowthMonth?.(month)}
+      />
 
       <Section icon={BookOpen} title="Knowledge blocks">
         <ul className="space-y-2">
@@ -207,41 +206,22 @@ function RecordBody({
               <button
                 type="button"
                 onClick={() => onOpen(block.id)}
-                className="flex min-h-11 w-full flex-col rounded-xl border border-white/10 px-3 py-3 text-left hover:border-primary/40"
+                className="flex min-h-11 w-full flex-col rounded-xl border border-white/10 px-3 py-2.5 text-left hover:border-primary/40"
               >
                 <span className="flex items-center justify-between gap-2">
                   <span className="text-[14px] font-semibold text-foreground">{block.name}</span>
                   <span className="text-[12px] font-semibold text-primary">Open</span>
                 </span>
-                <span className="mt-1 text-[12.5px] text-slate-400">{block.worker} · {block.signal}</span>
+                <span className="mt-0.5 text-[12.5px] text-slate-300">{block.signal}</span>
               </button>
             </li>
           ))}
         </ul>
       </Section>
 
-      <Section icon={BookOpen} title="Added over time">
-        <ol className="space-y-2">
-          {intel.timeline.map((row) => (
-            <li key={row.month} className="grid grid-cols-[40px_minmax(0,1fr)] gap-2 text-[13px]">
-              <span className="font-mono text-slate-500">{row.month}</span>
-              <span className="text-foreground">{row.note}</span>
-            </li>
-          ))}
-        </ol>
-      </Section>
-
-      {!decided && (
-      <Section icon={BookOpen} title="Latest learning">
-        <p className="text-[13.5px] font-medium text-foreground">{intel.latestLearning.title}</p>
-        <p className="mt-1 text-[12.5px] text-slate-400">{intel.latestLearning.evidence}</p>
-        <div className="mt-2"><PulseChip tone="blue">{intel.latestLearning.label}</PulseChip></div>
-      </Section>
-      )}
-
-      <Section icon={Eye} title="Needs a person">
+      <Section icon={Eye} title="Pending decisions">
         {intel.awaiting.length === 0 ? (
-          <p>Nothing waiting on a decision.</p>
+          <p className="text-slate-300">Nothing waiting on a person.</p>
         ) : (
           <ul className="space-y-2">
             {intel.awaiting.map((item) => (
@@ -252,13 +232,24 @@ function RecordBody({
                   className="w-full rounded-lg text-left text-[13.5px] text-foreground hover:text-primary"
                 >
                   {item.title}
-                  <span className="mt-0.5 block font-mono text-[11px] text-slate-500">{item.when}</span>
+                  <span className="mt-0.5 block font-mono text-[11px] text-slate-400">{item.when}</span>
                 </button>
               </li>
             ))}
           </ul>
         )}
+        {decided && (
+          <p className="mt-2 text-[13px] text-slate-300">{decisionLabel(referral.status)}</p>
+        )}
+        {onNav && (
+          <div className="mt-3">
+            <GhostButton onClick={() => onNav({ block: "investors", pane: "outcomes", detail: REFERRAL.id, focus: null })}>
+              Open outcome
+            </GhostButton>
+          </div>
+        )}
       </Section>
+
     </>
   );
 }
@@ -266,7 +257,7 @@ function RecordBody({
 function Section({ icon: Icon, title, children }: { icon: typeof Eye; title: string; children: ReactNode }) {
   return (
     <section>
-      <p className="mb-2 flex items-center gap-1.5 font-mono text-[10.5px] font-medium uppercase tracking-[0.1em] text-slate-500">
+      <p className="mb-2 flex items-center gap-1.5 font-mono text-[10.5px] font-medium uppercase tracking-[0.1em] text-slate-400">
         <Icon className="size-3.5" /> {title}
       </p>
       <div className="text-[13.5px] leading-relaxed text-slate-400">{children}</div>

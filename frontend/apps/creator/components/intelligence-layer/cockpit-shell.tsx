@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+import { Presentation } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { cn } from "@qiko/ui";
 import { HonestyBadge } from "./honesty-badge";
@@ -20,9 +22,19 @@ export function IntelligenceCockpitShell({
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3 sm:px-6">
           <div>
             <h1 className="text-lg font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>Intelligence</h1>
-            <p className="text-[12px] text-slate-500">Sources, channels, and the record behind Pulse.</p>
+            <p className="text-[12px] text-slate-400">Pulse, sources, channels, and recorded knowledge.</p>
           </div>
-          <HonestyBadge kind="illustrative" />
+          <div className="flex items-center gap-3">
+            <HonestyBadge kind="illustrative" />
+            {tab === "intelligence" && (
+              <Link
+                href="/studio/intelligence?demo=1&step=1"
+                className="inline-flex min-h-11 items-center gap-2 text-[13px] text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+              >
+                <Presentation className="size-4" /> Present
+              </Link>
+            )}
+          </div>
         </div>
         <nav aria-label="Intelligence views" className="flex shrink-0 gap-1 overflow-x-auto border-b border-white/[0.06] px-3 sm:px-6">
           {TABS.map((item) => {

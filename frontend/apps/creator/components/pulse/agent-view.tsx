@@ -6,7 +6,7 @@ import { useReferral } from "@/lib/brain/referral-store";
 import { BLOCKS, LEARNING_LABEL } from "./drilldown-data";
 import { EvidenceDrawer } from "./evidence-drawer";
 import { GhostButton, IllustrativeMark, PulseCard, PulseChip, PulseHeader, PulsePage, PulseTabs } from "./pulse-chrome";
-import { REFERRAL, REFERRAL_ID, conversationStage, statusLabel, statusTone } from "./referral";
+import { REFERRAL, REFERRAL_ID, conversationStage, isDecided, statusLabel, statusTone } from "./referral";
 import type { AgentPane, PulseNav } from "./route";
 import { agentPane, blockForWorker } from "./route";
 
@@ -24,6 +24,7 @@ export function AgentView({
   onHold,
   onApproveReferral,
   onRejectReferral,
+  onDeferReferral,
 }: {
   nav: PulseNav;
   workerNames?: Partial<Record<WorkerId, string>>;
@@ -32,6 +33,7 @@ export function AgentView({
   onHold?: () => void;
   onApproveReferral?: () => void;
   onRejectReferral?: () => void;
+  onDeferReferral?: () => void;
 }) {
   const workerId = nav.worker ?? "intent-intelligence";
   const worker = WORKERS[workerId];
@@ -42,7 +44,7 @@ export function AgentView({
   const learnings = block.learnings.filter((item) => item.worker === workerId);
   const outcomes = block.outcomes.filter((item) => item.worker === workerId);
   const referral = useReferral();
-  const decided = referral.status === "approved" || referral.status === "rejected";
+  const decided = isDecided(referral.status);
   const pane = agentPane(nav.pane);
 
   return (
@@ -85,7 +87,6 @@ export function AgentView({
             </div>
             <PulseChip tone={statusTone(referral.status)}>{statusLabel(referral.status)}</PulseChip>
           </div>
-          <p className="mt-2 text-[13px] leading-relaxed text-slate-400">{REFERRAL.insight}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <GhostButton onClick={() => onNav({ pane: "conversations", detail: "c-referral" })}>See evidence</GhostButton>
             <GhostButton
@@ -140,9 +141,7 @@ export function AgentView({
         <PulseCard title="What it has learned or recorded" hint="Rules already in force sit beside proposed ones.">
           <ul className="divide-y divide-white/[0.06]">
             {learnings.map((item) => {
-              const state = item.id === "l-referral"
-                ? LEARNING_LABEL[referral.status === "approved" ? "rule" : referral.status === "rejected" ? "observed" : "proposed"]
-                : LEARNING_LABEL[item.state];
+              const state = LEARNING_LABEL[item.state];
               return (
                 <li key={item.id} className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:justify-between">
                   <button type="button" onClick={() => onNav({ detail: item.id })} className="text-left">
@@ -193,6 +192,7 @@ export function AgentView({
         onHold={onHold}
         onApproveReferral={onApproveReferral}
         onRejectReferral={onRejectReferral}
+        onDeferReferral={onDeferReferral}
       />
     </PulsePage>
   );
