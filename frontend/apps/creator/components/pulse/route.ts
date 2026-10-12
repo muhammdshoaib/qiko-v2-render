@@ -39,7 +39,11 @@ export function parsePulseNav(params: URLSearchParams): PulseNav {
   const focusRaw = params.get("focus");
   const blockParam = params.get("block");
   const workerParam = params.get("worker");
-  const worker = isWorkerId(workerParam) ? workerParam : isWorkerId(focusRaw ?? "") ? (focusRaw as WorkerId) : null;
+  const worker = isWorkerId(workerParam ?? "")
+    ? (workerParam as WorkerId)
+    : isWorkerId(focusRaw ?? "")
+      ? (focusRaw as WorkerId)
+      : null;
   const block = isBlockId(blockParam)
     ? blockParam
     : worker
