@@ -211,3 +211,25 @@ select:-webkit-autofill {
   0%, 100% { opacity: 0.28; transform: scale(1); }
   50% { opacity: 0.55; transform: scale(1.03); }
 }
+
+.pulse-flowline {
+  fill: none;
+  stroke-width: 1.4;
+  stroke-dasharray: 3 7;
+  animation: qiko-flow 1.4s linear infinite;
+}
+.pulse-flowline-fast {
+  animation-duration: 0.9s;
+}
+.pulse-dot {
+  filter: drop-shadow(0 0 4px rgba(34, 211, 238, 0.7));
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse-flowline,
+  .pulse-flowline-fast {
+    animation: none;
+  }
+  .pulse-dot {
+    display: none;
+  }
+}

@@ -2,7 +2,9 @@
 import type { OnboardingWorkerConfig, OnboardingWorkerSignup } from "./onboarding-worker";
 
 // Compatibility shim: exposes the qiko-frontend avatarApi surface, backed by the V2 /api/v1 FastAPI.
-const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000/api/v1";
+import { clientApiBase } from "@/lib/api-origin";
+
+const BASE = clientApiBase();
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));

@@ -294,13 +294,15 @@ export function useBrain() {
   return value;
 }
 
-export function studioAttention(approval: ApprovalStatus): { title: string; detail: string; at: string; status: "attention" | "completed"; href: string }[] {
+export function studioAttention(approval: ApprovalStatus): { title: string; detail: string; at: string; status: "attention" | "completed"; origin: FocusId; originLabel: string; href: string }[] {
   if (approval === "awaiting") {
     return [{
       title: "Intent spike needs a human look",
       detail: "Lombay House / Derby attracted repeated investor views. The Intelligence Worker flagged it — no outreach was sent.",
       at: "Today, 09:40",
       status: "attention",
+      origin: "intent-intelligence",
+      originLabel: "Intelligence Worker",
       href: "/studio/w/intent-intelligence",
     }];
   }
@@ -310,7 +312,9 @@ export function studioAttention(approval: ApprovalStatus): { title: string; deta
       detail: "Leadership review is on the company record. No investor email was sent.",
       at: "Just now",
       status: "completed",
-      href: "/studio/intelligence?focus=record",
+      origin: "record",
+      originLabel: "Company intelligence",
+      href: "/studio?block=investors",
     }];
   }
   return [{
@@ -318,6 +322,8 @@ export function studioAttention(approval: ApprovalStatus): { title: string; deta
     detail: "The recommendation is on hold. Nothing was written or sent.",
     at: "Just now",
     status: "completed",
+    origin: "intent-intelligence",
+    originLabel: "Intelligence Worker",
     href: "/studio/w/intent-intelligence",
   }];
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { resolveApiOrigin } from "@/lib/api-origin";
 
 const HOP = new Set([
   "connection",
@@ -36,10 +37,7 @@ function forward(res: Response) {
 }
 
 async function proxy(req: NextRequest, path: string[]) {
-  const upstream = process.env.API_UPSTREAM?.replace(/\/$/, "");
-  if (!upstream) {
-    return NextResponse.json({ detail: "API_UPSTREAM is not configured" }, { status: 502 });
-  }
+  const upstream = resolveApiOrigin();
 
   const url = `${upstream}/api/${path.join("/")}${req.nextUrl.search}`;
   const headers = new Headers();

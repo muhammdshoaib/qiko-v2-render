@@ -218,7 +218,7 @@ export const SOURCES = [
 ];
 
 export const TABS: { id: CockpitTab; label: string }[] = [
-  { id: "intelligence", label: "Intelligence" },
+  { id: "intelligence", label: "Pulse" },
   { id: "observability", label: "Observability" },
   { id: "train", label: "Train" },
   { id: "sources", label: "Sources" },

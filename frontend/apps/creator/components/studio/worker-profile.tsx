@@ -27,13 +27,10 @@ export function WorkerProfile({ worker }: { worker: ShowcaseWorker }) {
           : "The recommendation stays open. Nothing was written or sent.",
         at: "Just now",
         status: "completed" as const,
+        origin: "record" as const,
+        originLabel: "Company intelligence",
       }, ...worker.actions]
     : worker.actions;
-  const metrics = worker.metrics.map((metric) =>
-    metric.label === "Needs review"
-      ? { ...metric, value: pending ? "1" : "0" }
-      : metric,
-  );
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6 px-4 py-6 sm:px-6 lg:px-12">
@@ -42,7 +39,7 @@ export function WorkerProfile({ worker }: { worker: ShowcaseWorker }) {
         onClick={() => router.push("/studio")}
         className="inline-flex min-h-11 items-center gap-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
       >
-        <ArrowLeft className="size-4" /> Back to Studio
+        <ArrowLeft className="size-4" /> Back to Pulse
       </button>
 
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -59,23 +56,14 @@ export function WorkerProfile({ worker }: { worker: ShowcaseWorker }) {
           {worker.liveHref && (
             <Button type="button" onClick={() => router.push(worker.liveHref!)}>Open live cockpit</Button>
           )}
-          <Button type="button" variant="outline" onClick={() => router.push(`/studio/intelligence?focus=${worker.slug}`)}>
-            <Network className="size-4" /> See connections
+          <Button type="button" variant="outline" onClick={() => router.push(`/studio?focus=${worker.slug}`)}>
+            <Network className="size-4" /> See in Pulse
           </Button>
           <Button type="button" variant="outline" onClick={() => router.push("/studio/intelligence?tab=channels&surface=claude")}>
             Ask in Claude
           </Button>
         </div>
       </header>
-
-      <section className="grid gap-3 sm:grid-cols-4">
-        {metrics.map((metric) => (
-          <div key={metric.label} className="rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-3">
-            <p className="text-lg font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>{metric.value}</p>
-            <p className="mt-1 text-[12px] text-slate-500">{metric.label}</p>
-          </div>
-        ))}
-      </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Block icon={BookOpen} title="Responsibilities" items={worker.responsibilities} />

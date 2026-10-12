@@ -17,11 +17,15 @@ from __future__ import annotations
 import asyncio
 import os
 import platform
-import resource
 import sys
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
+
+try:
+    import resource
+except ImportError:  # Windows: stdlib `resource` is Unix-only
+    resource = None  # type: ignore[assignment]
 
 from sqlalchemy import text
 
@@ -100,9 +104,16 @@ def process_stats() -> dict:
     Deliberately no psutil: a new runtime dependency for numbers the stdlib already exposes is extra
     supply-chain surface on a service that handles customer data.
     """
-    usage = resource.getrusage(resource.RUSAGE_SELF)
-    # ru_maxrss is kilobytes on Linux and bytes on macOS. Normalise, and say which was assumed.
-    max_rss_kb = usage.ru_maxrss if sys.platform != "darwin" else usage.ru_maxrss // 1024
+    if resource is not None:
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        # ru_maxrss is kilobytes on Linux and bytes on macOS. Normalise, and say which was assumed.
+        max_rss_kb = usage.ru_maxrss if sys.platform != "darwin" else usage.ru_maxrss // 1024
+        cpu_user_seconds = round(usage.ru_utime, 2)
+        cpu_system_seconds = round(usage.ru_stime, 2)
+    else:
+        max_rss_kb = 0
+        cpu_user_seconds = 0.0
+        cpu_system_seconds = 0.0
     return {
         "uptime_seconds": int(time.monotonic() - _STARTED_AT),
         "started_at": _STARTED_WALL.isoformat(),
@@ -110,8 +121,8 @@ def process_stats() -> dict:
         "python": platform.python_version(),
         "platform": sys.platform,
         "max_rss_kb": int(max_rss_kb),
-        "cpu_user_seconds": round(usage.ru_utime, 2),
-        "cpu_system_seconds": round(usage.ru_stime, 2),
+        "cpu_user_seconds": cpu_user_seconds,
+        "cpu_system_seconds": cpu_system_seconds,
         # A load average is meaningful only relative to core count, so both or neither.
         "load_average": [round(value, 2) for value in os.getloadavg()] if hasattr(os, "getloadavg") else None,
         "cpu_count": os.cpu_count(),

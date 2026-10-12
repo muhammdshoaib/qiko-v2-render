@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { Suspense, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/app-shell";
 import { StudioHome } from "@/components/studio/studio-home";
@@ -15,10 +15,10 @@ export default function StudioPage() {
   );
 
   return (
-    <AppShell title="Studio">
-      <div className="min-h-screen bg-[#050810]">
+    <AppShell title="Pulse">
+      <Suspense fallback={<div className="min-h-[50vh] bg-[#F2F4FB]" aria-busy="true" />}>
         <StudioHome workers={workers} />
-      </div>
+      </Suspense>
     </AppShell>
   );
 }

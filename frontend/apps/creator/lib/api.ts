@@ -1,6 +1,8 @@
 // Thin client for the qiko-core API. Cookies (httpOnly qiko_access + CSRF) are sent automatically
 // with credentials: "include"; nothing is stored in localStorage.
-const BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000/api/v1";
+import { clientApiBase } from "@/lib/api-origin";
+
+const BASE = clientApiBase();
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {

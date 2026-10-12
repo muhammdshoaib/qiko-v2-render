@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
+import { resolveApiOrigin } from "@/lib/api-origin";
 
 export async function GET() {
-  const upstream = process.env.API_UPSTREAM?.replace(/\/$/, "");
-  if (!upstream) {
-    return NextResponse.json({ status: "ok", service: "creator" });
-  }
   try {
-    const res = await fetch(`${upstream}/health`, {
+    const res = await fetch(`${resolveApiOrigin()}/health`, {
       cache: "no-store",
       signal: AbortSignal.timeout(25_000),
     });

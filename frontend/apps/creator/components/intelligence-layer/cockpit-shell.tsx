@@ -20,7 +20,7 @@ export function IntelligenceCockpitShell({
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/[0.06] px-4 py-3 sm:px-6">
           <div>
             <h1 className="text-lg font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>Intelligence</h1>
-            <p className="text-[12px] text-slate-500">Company record, workers, and what they are allowed to do.</p>
+            <p className="text-[12px] text-slate-500">Sources, channels, and the record behind Pulse.</p>
           </div>
           <HonestyBadge kind="illustrative" />
         </div>

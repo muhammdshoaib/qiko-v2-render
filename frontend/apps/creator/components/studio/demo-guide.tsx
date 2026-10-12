@@ -3,16 +3,16 @@
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import { ChevronLeft, ChevronRight, Presentation } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@qiko/ui";
 
 export const DEMO_STEPS = [
-  { n: 1, title: "Studio workers", href: "/studio", hint: "Two deployed workers and the outcomes they just delivered." },
-  { n: 2, title: "Inspect a worker", href: "/studio/w/property-insights", hint: "Responsibilities, sources, and recent outcomes." },
-  { n: 3, title: "Company record", href: "/studio/intelligence?focus=record", hint: "The same outcomes land on company intelligence." },
-  { n: 4, title: "Connections", href: "/studio/intelligence?focus=intent-intelligence", hint: "What the Intelligence Worker may read, write, and must not do." },
-  { n: 5, title: "Ask Claude", href: "/studio/intelligence?tab=channels&surface=claude", hint: "Ask Property Insights for a grounded portfolio insight." },
-  { n: 6, title: "Approve a follow-up", href: "/studio/intelligence?tab=channels&surface=claude", hint: "Recommend a Lombay review. Approve it. Nothing is sent outbound." },
+  { n: 1, title: "Pulse", href: "/studio", hint: "Company intelligence and the referral recommendation awaiting a decision." },
+  { n: 2, title: "Investors block", href: "/studio?block=investors", hint: "Insight, evidence, compounding record, and the outcome on this block." },
+  { n: 3, title: "Intelligence Worker", href: "/studio?block=investors&worker=intent-intelligence&pane=outcomes&detail=o-referral", hint: "Evidence, insight, recommended action, and the outcome record." },
+  { n: 4, title: "Claude walkthrough", href: "/studio?block=investors&worker=intent-intelligence&pane=outcomes&detail=o-referral&sheet=claude", hint: "Labelled walkthrough: insight, context, action, output, confirm." },
+  { n: 5, title: "Ask Claude (channel)", href: "/studio/intelligence?tab=channels&surface=claude", hint: "Separate channel demo. The Pulse walkthrough is labelled, not live Claude." },
+  { n: 6, title: "Approve a follow-up", href: "/studio/intelligence?tab=channels&surface=claude", hint: "Lombay review remains a second path. Nothing is sent outbound." },
   { n: 7, title: "Slack walls", href: "/studio/intelligence?tab=channels&surface=slack", hint: "Ask the same spend question in both channels, then as an unauthorised user." },
   { n: 8, title: "Captured activity", href: "/studio/intelligence?tab=observability", hint: "Allowed, blocked, and approved actions in one feed." },
   { n: 9, title: "Intelligence layer", href: "/studio/intelligence?focus=record", hint: "Recorded decisions grow the company record." },
@@ -37,18 +37,7 @@ function DemoGuideInner() {
   const prev = DEMO_STEPS.find((item) => item.n === current.n - 1);
   const next = DEMO_STEPS.find((item) => item.n === current.n + 1);
 
-  if (!open) {
-    return (
-      <div className="flex justify-end border-b border-white/[0.04] px-3 py-1 sm:px-6">
-        <Link
-          href={`${DEMO_STEPS[0].href}${DEMO_STEPS[0].href.includes("?") ? "&" : "?"}demo=1&step=1`}
-          className="inline-flex min-h-11 items-center gap-2 px-2 text-[13px] text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
-        >
-          <Presentation className="size-4" /> Present
-        </Link>
-      </div>
-    );
-  }
+  if (!open) return null;
 
   return (
     <nav aria-label="Guided demonstration" className="border-b border-white/[0.06] bg-[#05070d] px-3 py-3 sm:px-6">

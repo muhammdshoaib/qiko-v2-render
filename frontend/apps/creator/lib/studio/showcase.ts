@@ -1,4 +1,5 @@
 import type { Agent } from "@/lib/api";
+import type { FocusId } from "@/components/intelligence-layer/model";
 
 export type ShowcaseSlug = "property-insights" | "intent-intelligence";
 
@@ -7,6 +8,8 @@ export type ShowcaseOutcome = {
   detail: string;
   at: string;
   status: "completed" | "attention";
+  origin: FocusId;
+  originLabel: string;
   href?: string;
 };
 
@@ -31,22 +34,14 @@ export type ShowcaseWorker = {
   intelligence: string;
 };
 
-export const COMPANY_SUMMARY = {
-  headline: "Two deployed workers are contributing to company intelligence.",
-  points: [
-    { label: "Active workers", value: "2" },
-    { label: "Insights this week", value: "6" },
-    { label: "Awaiting review", value: "1" },
-    { label: "Knowledge sources", value: "5" },
-  ],
-};
-
 export const ATTENTION: ShowcaseOutcome[] = [
   {
     title: "Intent spike needs a human look",
     detail: "Lombay House / Derby attracted repeated investor views. The Intelligence Worker flagged it — no outreach was sent.",
     at: "Today, 09:40",
     status: "attention",
+    origin: "intent-intelligence",
+    originLabel: "Intelligence Worker",
     href: "/studio/w/intent-intelligence",
   },
 ];
@@ -57,6 +52,8 @@ export const RECENT_ACTIONS: ShowcaseOutcome[] = [
     detail: "Property Insights summarised expenditure drift on a high-cost unit. Sample from the finance cockpit capability.",
     at: "Today, 08:15",
     status: "completed",
+    origin: "property-insights",
+    originLabel: "Property Insights · Properties",
     href: "/studio/w/property-insights",
   },
   {
@@ -64,6 +61,8 @@ export const RECENT_ACTIONS: ShowcaseOutcome[] = [
     detail: "Intelligence Worker recorded a cluster of investor-app views. Sample from existing intent-signal capability.",
     at: "Yesterday, 16:22",
     status: "completed",
+    origin: "investor-app",
+    originLabel: "Investors · Intelligence Worker",
     href: "/studio/w/intent-intelligence",
   },
 ];
@@ -102,11 +101,11 @@ export const SHOWCASE_WORKERS: ShowcaseWorker[] = [
       { name: "Company intelligence", detail: "Accepted notes become part of the shared record." },
     ],
     insights: [
-      { title: "Expenditure drift", detail: "One unit is running above the recent spend band.", at: "Today, 08:15", status: "completed" },
-      { title: "Income snapshot", detail: "Portfolio income held flat week-on-week.", at: "Mon, 11:02", status: "completed" },
+      { title: "Expenditure drift", detail: "One unit is running above the recent spend band.", at: "Today, 08:15", status: "completed", origin: "properties", originLabel: "Properties" },
+      { title: "Income snapshot", detail: "Portfolio income held flat week-on-week.", at: "Mon, 11:02", status: "completed", origin: "properties", originLabel: "Properties" },
     ],
     actions: [
-      { title: "Risk note written", detail: "Operator-readable summary, not an automated vendor payment.", at: "Today, 08:15", status: "completed" },
+      { title: "Risk note written", detail: "Operator-readable summary, not an automated vendor payment.", at: "Today, 08:15", status: "completed", origin: "property-insights", originLabel: "Property Insights" },
     ],
     permissions: [
       { name: "Read property and spend figures", mode: "allowed" },
@@ -148,11 +147,11 @@ export const SHOWCASE_WORKERS: ShowcaseWorker[] = [
       { name: "Company intelligence", detail: "Flagged clusters land in the shared activity feed." },
     ],
     insights: [
-      { title: "Repeat views on Lombay House", detail: "Same development watched several times in one session.", at: "Today, 09:40", status: "attention" },
-      { title: "Quiet developments", detail: "Two listings had no new intent in 7 days.", at: "Yesterday, 16:22", status: "completed" },
+      { title: "Repeat views on Lombay House", detail: "Same development watched several times in one session.", at: "Today, 09:40", status: "attention", origin: "investor-app", originLabel: "Investors" },
+      { title: "Quiet developments", detail: "Two listings had no new intent in 7 days.", at: "Yesterday, 16:22", status: "completed", origin: "investor-app", originLabel: "Investors" },
     ],
     actions: [
-      { title: "Signal recorded", detail: "Written to the activity feed. No investor email was sent.", at: "Yesterday, 16:22", status: "completed" },
+      { title: "Signal recorded", detail: "Written to the activity feed. No investor email was sent.", at: "Yesterday, 16:22", status: "completed", origin: "intent-intelligence", originLabel: "Intelligence Worker" },
     ],
     permissions: [
       { name: "Read intent and knowledge", mode: "allowed" },
