@@ -193,7 +193,7 @@ export function PulseMap({
         return;
       }
       const a = found.n.a;
-      if (a.dark) {
+      if (a.dark || a.id === "crm") {
         toast.message("Client CRM is not connected. A hand-off stays a planned next step.");
         return;
       }
@@ -218,6 +218,7 @@ export function PulseMap({
         if (p >= 1 && !zoom.done) {
           zoom.done = true;
           const id = zoom.n.a.id;
+          if (id === "crm" || zoom.n.a.dark) return;
           setTimeout(() => onSelectRef.current(id), 40);
         }
       }
