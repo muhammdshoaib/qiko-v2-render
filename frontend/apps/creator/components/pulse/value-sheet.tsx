@@ -17,7 +17,7 @@ export function ValueSheet({ onClose }: { onClose: () => void }) {
           Time saved × an agreed hourly rate
         </h3>
         <p className="mt-1 text-[12.5px] leading-relaxed text-slate-400">
-          Ed’s simple principle. This is not an IP valuation engine, and it is not a measured result from live operations.
+          Illustrative assumption. This is not a measured result from live operations.
         </p>
       </header>
 

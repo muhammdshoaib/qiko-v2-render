@@ -6,9 +6,9 @@ import { Presentation } from "lucide-react";
 import { toast } from "sonner";
 import { HonestyBadge } from "@/components/intelligence-layer/honesty-badge";
 import type { FocusId, WorkerId } from "@/components/intelligence-layer/model";
+import { useReferral } from "@/lib/brain/referral-store";
 import { studioAttention, useBrain } from "@/lib/brain/store";
 import { RECENT_ACTIONS, type ShowcaseWorker } from "@/lib/studio/showcase";
-import { useReferral } from "@/lib/brain/referral-store";
 import { JourneyCard } from "./journey-card";
 import { PulseDrawer } from "./pulse-drawer";
 import { PulseFeed } from "./pulse-feed";
@@ -20,37 +20,41 @@ export function PulseOverview({
   workers,
   focus,
   onFocus,
+  onHighlight,
   onNav,
   embedded = false,
 }: {
   workers: ShowcaseWorker[];
   focus: FocusId | null;
   onFocus: (id: FocusId | null) => void;
+  onHighlight?: (id: FocusId | null) => void;
   onNav: (next: Partial<PulseNav>) => void;
   embedded?: boolean;
 }) {
   const [open, setOpen] = useState<FocusId | null>(focus);
   const brain = useBrain();
   const referral = useReferral();
+  const decided = referral.status === "approved" || referral.status === "rejected";
   const attention = !brain.ready ? [] : studioAttention(brain.approval).filter((item) => item.status === "attention");
   const completedReview = !brain.ready ? [] : studioAttention(brain.approval).filter((item) => item.status === "completed");
-  const workerNames = Object.fromEntries(workers.map((worker) => [worker.slug, worker.name])) as Partial<Record<WorkerId, string>>;
-  const decided = referral.status === "approved" || referral.status === "rejected";
-  const openReferral = () => onNav({ block: "investors", worker: "intent-intelligence", pane: "outcomes", detail: REFERRAL.id });
-  const journeyLead = {
+  const referralLead = {
     title: REFERRAL.title,
-    detail: decided ? decisionLabel(referral.status) : REFERRAL.insight,
-    at: referral.decidedAt ?? "Today, 10:12",
-    originLabel: "Investors · Intelligence Worker",
-    status: decided ? "completed" as const : "attention" as const,
-    onOpen: openReferral,
+    at: referral.decidedAt ? `Today, ${referral.decidedAt}` : "Today, 10:12",
+    originLabel: decided ? "Company intelligence" : "Investors",
   };
+  const workerNames = Object.fromEntries(workers.map((worker) => [worker.slug, worker.name])) as Partial<Record<WorkerId, string>>;
+  const highlightOrigin = onHighlight ?? onFocus;
 
   useEffect(() => {
     setOpen(focus);
   }, [focus]);
 
-  const select = (id: FocusId | null) => {
+  const highlight = (id: FocusId | null) => {
+    setOpen(id);
+    highlightOrigin(id);
+  };
+
+  const openNode = (id: FocusId) => {
     setOpen(id);
     onFocus(id);
   };
@@ -82,18 +86,35 @@ export function PulseOverview({
         )}
 
         <JourneyCard onNav={onNav} />
-        <PulseMap focus={open} workerNames={workerNames} onSelect={select} />
+        <PulseMap focus={open} workerNames={workerNames} onSelect={openNode} />
         <PulseFeed
           attention={attention}
           recent={[...completedReview, ...RECENT_ACTIONS]}
-          leadAttention={decided ? null : journeyLead}
-          leadRecent={decided ? journeyLead : null}
-          onOpen={select}
+          leadAttention={!decided ? {
+            ...referralLead,
+            detail: "Awaiting a decision on the labelled referral sample.",
+            status: "attention",
+            onOpen: () => onNav({ block: "investors", pane: "overview" }),
+          } : null}
+          leadRecent={decided ? {
+            ...referralLead,
+            detail: decisionLabel(referral.status),
+            status: "completed",
+            onOpen: () => highlight("record"),
+          } : null}
+          onOpen={highlight}
           onApprove={brain.approval === "awaiting" ? () => toast.message(brain.approveFollowUp()) : undefined}
           onHold={brain.approval === "awaiting" ? () => toast.message(brain.holdFollowUp()) : undefined}
         />
       </div>
-      <PulseDrawer focus={open} workerNames={workerNames} onClose={() => select(null)} onSelect={select} />
+      <PulseDrawer
+        focus={open}
+        workerNames={workerNames}
+        onClose={() => highlight(null)}
+        onSelect={highlight}
+        onOpen={openNode}
+        onNav={onNav}
+      />
     </div>
   );
 }

@@ -24,6 +24,28 @@ export const REFERRAL = {
   usesLabel: "Times this insight was reused to brief someone",
   minutesLabel: "Minutes saved per briefing",
   measurement: "If this were production, you would compare next month’s referred sessions that reach review against this sample. This prototype does not measure that.",
+  estimatedNote: "Estimated benefit uses labelled assumptions (2 briefings × 25 minutes × an hourly rate). It is not a recorded result.",
+  captured: {
+    approved: [
+      "Human decision: approved.",
+      "Pattern captured: referred arrivals in the sample reached review more often than portal-only views.",
+      "Recommended thank-you brief written to company intelligence.",
+    ],
+    rejected: [
+      "Human decision: declined.",
+      "Insight retained on Investors.",
+      "The thank-you brief was not written.",
+    ],
+  },
+  futureUse: {
+    approved: "A later briefing could reuse this recorded pattern. That reuse is described here — the worker does not update itself automatically.",
+    rejected: "Later recommendations should not treat a thank-you programme as agreed. That constraint is now on the record — it is not an automatic model update.",
+  },
+  recordedResult: {
+    pending: "No result has been recorded yet. The estimated benefit is an assumption, not an outcome.",
+    approved: "Recorded: the recommendation was written to company intelligence. No outreach was sent. No conversion or revenue was recorded.",
+    rejected: "Recorded: the recommendation was declined. Nothing was written. No conversion or revenue was recorded.",
+  },
 };
 
 export function referralHours(uses = REFERRAL.uses, minutes = REFERRAL.minutes) {
@@ -49,9 +71,9 @@ export function statusTone(status: ReferralStatus): "good" | "warn" | "blue" | "
 }
 
 export function decisionLabel(status: ReferralStatus) {
-  if (status === "approved") return "Approved — write the recommendation to company intelligence.";
-  if (status === "rejected") return "Rejected — keep the insight, do not write the action.";
-  if (status === "exploring") return "Not decided yet. You are reviewing the defined example in Claude.";
+  if (status === "approved") return "Approved. The recommendation was written to company intelligence.";
+  if (status === "rejected") return "Declined. The insight stays; the action was not written.";
+  if (status === "exploring") return "Not decided yet. You are reviewing the labelled walkthrough.";
   return "Not decided yet.";
 }
 

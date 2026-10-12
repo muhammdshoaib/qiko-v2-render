@@ -67,7 +67,9 @@ export function EvidenceDrawer({
     ? "Live Claude is not connected. This is a labelled five-step walkthrough with a defined example output."
     : nav.sheet === "value"
       ? "Illustrative calculation. Uses and minutes are assumptions. Change only the hourly rate."
-      : item && "from" in item ? item.from : item && "role" in item ? item.role : item && "summary" in item ? item.summary : item && "evidence" in item ? item.evidence : "";
+      : item?.id === REFERRAL_ID
+        ? "What was discovered, the evidence, the recommendation, and what happens after a decision."
+        : item && "from" in item ? item.from : item && "role" in item ? item.role : item && "summary" in item ? item.summary : item && "evidence" in item ? item.evidence : "";
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
@@ -92,6 +94,7 @@ export function EvidenceDrawer({
                   onApprove={onApproveReferral}
                   onReject={onRejectReferral}
                   onClose={() => onNav({ sheet: null, detail: REFERRAL_ID })}
+                  onViewRecord={() => onNav({ block: null, worker: null, pane: "overview", detail: null, sheet: null, focus: "record" })}
                 />
               )}
               {nav.sheet === "value" && (
@@ -102,15 +105,22 @@ export function EvidenceDrawer({
                   item={item}
                   onBlock={() => onNav({ block: item.block, worker: null, detail: null })}
                   onWorker={() => onNav({ block: item.block, worker: item.worker, pane: "conversations", detail: null })}
-                  onOutcome={item.id === "c-referral" ? () => onNav({ block: "investors", worker: "intent-intelligence", pane: "outcomes", detail: REFERRAL_ID }) : undefined}
+                  onOutcome={item.id === "c-referral" ? () => onNav({ pane: "outcomes", detail: REFERRAL_ID, sheet: null }) : undefined}
+                  onClaude={item.id === "c-referral" ? () => {
+                    referral.explore();
+                    onNav({ pane: "outcomes", detail: REFERRAL_ID, sheet: "claude" });
+                  } : undefined}
+                  onApprove={item.id === "c-referral" ? onApproveReferral : undefined}
+                  onReject={item.id === "c-referral" ? onRejectReferral : undefined}
                 />
               )}
               {!nav.sheet && item?.kind === "learning" && (
                 <LearningBody
                   item={item}
-                  onApprove={item.id === "l-referral" ? onApproveReferral : onApprove}
-                  onHold={item.id === "l-referral" ? onRejectReferral : onHold}
-                  onOutcome={item.id === "l-referral" ? () => onNav({ block: "investors", worker: "intent-intelligence", pane: "outcomes", detail: REFERRAL_ID }) : undefined}
+                  onApprove={item.id === "l-referral" ? undefined : onApprove}
+                  onHold={item.id === "l-referral" ? undefined : onHold}
+                  onEvidence={item.id === "l-referral" ? () => onNav({ pane: nav.worker ? "conversations" : "activity", detail: "c-referral", sheet: null }) : undefined}
+                  onOutcome={item.id === "l-referral" ? () => onNav({ pane: "outcomes", detail: REFERRAL_ID }) : undefined}
                 />
               )}
               {!nav.sheet && item?.kind === "outcome" && item.id === REFERRAL_ID && onApproveReferral && onRejectReferral && (
@@ -123,7 +133,7 @@ export function EvidenceDrawer({
                   <p>{item.summary}</p>
                   <p className="font-medium text-foreground">{item.signal}</p>
                   {item.id === "referrals" && (
-                    <Button type="button" variant="outline" onClick={() => onNav({ block: "investors", worker: "intent-intelligence", pane: "outcomes", detail: REFERRAL_ID })}>
+                    <Button type="button" variant="outline" onClick={() => onNav({ pane: "outcomes", detail: REFERRAL_ID })}>
                       Open the referral outcome
                     </Button>
                   )}
@@ -142,13 +152,20 @@ function ConversationBody({
   onBlock,
   onWorker,
   onOutcome,
+  onClaude,
+  onApprove,
+  onReject,
 }: {
   item: Conversation;
   onBlock: () => void;
   onWorker: () => void;
   onOutcome?: () => void;
+  onClaude?: () => void;
+  onApprove?: () => void;
+  onReject?: () => void;
 }) {
   const referral = useReferral();
+  const decided = referral.status === "approved" || referral.status === "rejected";
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
@@ -189,9 +206,22 @@ function ConversationBody({
         </div>
       )}
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="outline" onClick={onBlock}>Back to {BLOCKS[item.block].name}</Button>
-        <Button type="button" variant="ghost" onClick={onWorker}>Open {WORKERS[item.worker].name}</Button>
-        {onOutcome && <Button type="button" variant="ghost" onClick={onOutcome}>Open outcome record</Button>}
+        {onOutcome && <Button type="button" onClick={onOutcome}>View recommendation</Button>}
+        {onClaude && (
+          <Button type="button" variant="outline" onClick={onClaude}>
+            {decided ? "Review in Claude" : "Explore in Claude"}
+          </Button>
+        )}
+        {item.id === "c-referral" && !decided && onApprove && onReject && (
+          <>
+            <Button type="button" variant="outline" onClick={onApprove}>Approve to company record</Button>
+            <Button type="button" variant="ghost" onClick={onReject}>Decline</Button>
+          </>
+        )}
+        <Button type="button" variant="ghost" onClick={onBlock}>Back to {BLOCKS[item.block].name}</Button>
+        {item.id !== "c-referral" && (
+          <Button type="button" variant="ghost" onClick={onWorker}>Open {WORKERS[item.worker].name}</Button>
+        )}
       </div>
     </>
   );
@@ -202,26 +232,29 @@ function LearningBody({
   onApprove,
   onHold,
   onOutcome,
+  onEvidence,
 }: {
   item: Learning;
   onApprove?: () => void;
   onHold?: () => void;
   onOutcome?: () => void;
+  onEvidence?: () => void;
 }) {
   const state = LEARNING_LABEL[item.state];
   return (
     <>
       <PulseChip tone={state.tone}>{state.label}</PulseChip>
       <Section title="Evidence">{item.evidence}</Section>
-      {onOutcome && (
-        <Button type="button" variant="outline" onClick={onOutcome}>Open the related outcome</Button>
-      )}
-      {item.needsApproval && onApprove && onHold && (
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" onClick={onApprove}>Approve review</Button>
-          <Button type="button" variant="outline" onClick={onHold}>Hold</Button>
-        </div>
-      )}
+      <div className="flex flex-wrap gap-2">
+        {onEvidence && <Button type="button" variant="outline" onClick={onEvidence}>See evidence</Button>}
+        {onOutcome && <Button type="button" variant="outline" onClick={onOutcome}>View recommendation</Button>}
+        {item.needsApproval && onApprove && onHold && (
+          <>
+            <Button type="button" onClick={onApprove}>Approve review</Button>
+            <Button type="button" variant="outline" onClick={onHold}>Hold</Button>
+          </>
+        )}
+      </div>
     </>
   );
 }

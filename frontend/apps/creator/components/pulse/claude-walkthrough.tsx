@@ -8,33 +8,23 @@ export function ClaudeWalkthrough({
   onApprove,
   onReject,
   onClose,
+  onViewRecord,
 }: {
   onApprove: () => void;
   onReject: () => void;
   onClose: () => void;
+  onViewRecord?: () => void;
 }) {
   const referral = useReferral();
-  const step = CLAUDE_STEPS[referral.step];
   const decided = referral.status === "approved" || referral.status === "rejected";
   const visible = CLAUDE_STEPS.filter((item) => item.id <= referral.step);
 
   return (
     <div className="space-y-4">
-      <header className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="font-mono text-[10.5px] tracking-[0.1em] text-primary uppercase">Claude · labelled walkthrough</p>
-          <h3 className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
-            Explore the referral recommendation
-          </h3>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-slate-400">
-            Live Claude is not connected. This is a defined five-step walkthrough with a fixed example output — not a simulation engine.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <IllustrativeMark />
-          <PulseChip tone={statusTone(referral.status)}>{statusLabel(referral.status)}</PulseChip>
-        </div>
-      </header>
+      <div className="flex flex-wrap items-center gap-2">
+        <IllustrativeMark />
+        <PulseChip tone={statusTone(referral.status)}>{statusLabel(referral.status)}</PulseChip>
+      </div>
 
       <ol className="flex flex-wrap gap-1.5" aria-label="Walkthrough steps">
         {CLAUDE_STEPS.map((item) => {
@@ -82,20 +72,28 @@ export function ClaudeWalkthrough({
       {referral.step === 4 && !decided && (
         <aside className="rounded-2xl border border-amber-400/20 bg-amber-400/10 p-4">
           <p className="text-[13.5px] font-medium text-foreground">Confirm the action</p>
-          <p className="mt-1 text-[12.5px] text-slate-400">Approving writes the recommendation to the shared Investors record. Rejecting keeps the insight and writes nothing.</p>
+          <p className="mt-1 text-[12.5px] text-slate-400">Approving writes the recommendation to the shared Investors record. Declining keeps the insight and writes nothing.</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <GhostButton onClick={onApprove}>Approve to company record</GhostButton>
-            <GhostButton onClick={onReject}>Reject</GhostButton>
+            <GhostButton onClick={onReject}>Decline</GhostButton>
           </div>
         </aside>
       )}
 
       {decided && (
-        <p className="text-[13px] text-slate-400">
-          {referral.status === "approved"
-            ? "Decision captured. The recommendation now sits on the Investors record and in Pulse activity."
-            : "Decision captured. The insight remains visible. The action was not written."}
-        </p>
+        <aside className="rounded-2xl border border-white/10 bg-muted p-4">
+          <p className="text-[13.5px] font-medium text-foreground">Decision captured in this prototype</p>
+          <p className="mt-1 text-[12.5px] text-slate-400">
+            {referral.status === "approved"
+              ? "The recommendation now sits on the Investors record and in Pulse activity. Nothing was sent to an investor."
+              : "The insight remains visible. The action was not written."}
+          </p>
+          {onViewRecord && (
+            <div className="mt-3">
+              <GhostButton onClick={onViewRecord}>View company record</GhostButton>
+            </div>
+          )}
+        </aside>
       )}
 
       <div className="flex flex-wrap gap-2">

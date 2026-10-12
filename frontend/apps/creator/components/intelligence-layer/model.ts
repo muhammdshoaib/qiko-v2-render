@@ -111,7 +111,7 @@ export const WORKERS: Record<WorkerId, {
     ],
     hardWalls: [
       "No outbound investor email.",
-      "Research answers stay behind the critic + gate.",
+      "Research answers stay inside attached documents.",
     ],
     runs: [
       { id: "i1", time: "09:40", result: "Repeat views on Lombay House flagged for review." },

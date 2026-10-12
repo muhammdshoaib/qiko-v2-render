@@ -1,28 +1,19 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
-import { Building2, MessageSquare, BookOpen, Radar } from "lucide-react";
+import { Building2, Radar } from "lucide-react";
 import { cn } from "@qiko/ui";
 import { HonestyBadge } from "@/components/intelligence-layer/honesty-badge";
 import type { FocusId, WorkerId } from "@/components/intelligence-layer/model";
-import { MAP_EDGES, MAP_LAYOUT, pulseNode, type PulseNode } from "./nodes";
+import { useReferral } from "@/lib/brain/referral-store";
+import { useBrain } from "@/lib/brain/store";
+import { MAP_EDGES, MAP_LAYOUT, MAP_NODES, pulseNode, type PulseNode } from "./nodes";
+import { companyIntel } from "./record-summary";
 
 const ICONS = {
   "investor-app": Radar,
   properties: Building2,
-  knowledge: BookOpen,
-  chat: MessageSquare,
 } as const;
-
-const ORDER: FocusId[] = [
-  "record",
-  "investor-app",
-  "properties",
-  "intent-intelligence",
-  "property-insights",
-  "knowledge",
-  "chat",
-];
 
 export function PulseMap({
   focus,
@@ -37,7 +28,12 @@ export function PulseMap({
   const canvas = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 0, h: 0 });
   const gradientId = useId();
-  const hovered = hover ? pulseNode(hover, workerNames) : null;
+  const referral = useReferral();
+  const brain = useBrain();
+  const intel = companyIntel(referral.status, brain.approval);
+  const mapFocus = focus && MAP_NODES.includes(focus) ? focus : null;
+  const hovered = hover && MAP_NODES.includes(hover) ? pulseNode(hover, workerNames) : null;
+  const hoverText = hovered ? intel.hover[hovered.id] ?? hovered.summary : "";
 
   useEffect(() => {
     const el = canvas.current;
@@ -65,7 +61,7 @@ export function PulseMap({
       </div>
 
       <div className="space-y-2 px-4 pb-4 md:hidden">
-        {ORDER.map((id) => {
+        {MAP_NODES.map((id) => {
           const node = pulseNode(id, workerNames);
           return (
             <button
@@ -74,18 +70,18 @@ export function PulseMap({
               onClick={() => onSelect(id)}
               className={cn(
                 "flex min-h-11 w-full flex-col rounded-xl border bg-card px-3 py-3 text-left",
-                focus === id ? "border-primary" : "border-white/10",
+                mapFocus === id ? "border-primary" : "border-white/10",
               )}
             >
               <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-slate-500">{node.kicker}</span>
               <span className="mt-0.5 text-[14px] font-semibold text-foreground">{node.name}</span>
-              <span className="mt-1 text-[12.5px] text-slate-400">{node.summary}</span>
+              <span className="mt-1 text-[12.5px] text-slate-400">{intel.hover[id] ?? node.summary}</span>
             </button>
           );
         })}
       </div>
 
-      <div ref={canvas} className="relative hidden min-h-[520px] md:block">
+      <div ref={canvas} className="relative hidden min-h-[360px] overflow-hidden md:block xl:min-h-[440px]">
         <div
           className="pointer-events-none absolute inset-3 rounded-xl"
           style={{
@@ -107,47 +103,53 @@ export function PulseMap({
           </defs>
           {MAP_EDGES.map(([from, to], index) => {
             const edge = curvePath(xy(from, size), xy(to, size), bendFor(from, to));
-            const active = !focus || focus === from || focus === to;
+            const active = !mapFocus || related(mapFocus, from, to);
             const toCore = from === "record" || to === "record";
             return (
-              <g key={`${from}-${to}`} opacity={active ? 1 : 0.28}>
+              <g key={`${from}-${to}`} opacity={active ? 1 : 0.16}>
                 <path
                   d={edge}
                   fill="none"
                   stroke={active ? `url(#${gradientId})` : "rgba(255,255,255,0.16)"}
-                  strokeWidth={toCore ? 1.2 : 1.35}
-                  strokeOpacity={toCore ? 0.32 : 0.2}
+                  strokeWidth={toCore ? 1.35 : 1.2}
+                  strokeOpacity={toCore ? 0.38 : 0.22}
                 />
                 <path
                   d={edge}
                   className={toCore ? "pulse-flowline pulse-flowline-fast" : "pulse-flowline"}
                   stroke={toCore ? "#22D3EE" : "#6366F1"}
-                  strokeOpacity={active ? 0.72 : 0.22}
+                  strokeOpacity={active ? 0.72 : 0.14}
                 />
-                <circle r="2.3" fill={toCore ? "#22D3EE" : "#A5B4FC"} className="pulse-dot">
-                  <animateMotion dur={`${2.2 + (index % 4) * 0.35}s`} repeatCount="indefinite" begin={`${(index % 5) * 0.28}s`} path={edge} />
-                </circle>
-                <circle r="1.6" fill="#22D3EE" className="pulse-dot" opacity="0.75">
-                  <animateMotion dur={`${2.8 + (index % 3) * 0.4}s`} repeatCount="indefinite" begin={`${0.9 + (index % 4) * 0.22}s`} path={edge} />
-                </circle>
+                {active && (
+                  <>
+                    <circle r="2.3" fill={toCore ? "#22D3EE" : "#A5B4FC"} className="pulse-dot">
+                      <animateMotion dur={`${2.2 + (index % 4) * 0.35}s`} repeatCount="indefinite" begin={`${(index % 5) * 0.28}s`} path={edge} />
+                    </circle>
+                    <circle r="1.6" fill="#22D3EE" className="pulse-dot" opacity="0.75">
+                      <animateMotion dur={`${2.8 + (index % 3) * 0.4}s`} repeatCount="indefinite" begin={`${0.9 + (index % 4) * 0.22}s`} path={edge} />
+                    </circle>
+                  </>
+                )}
               </g>
             );
           })}
         </svg>
         )}
 
-        {ORDER.map((id) => {
+        {MAP_NODES.map((id) => {
           const node = pulseNode(id, workerNames);
           const pos = MAP_LAYOUT[id];
-          const dimmed = Boolean(focus && focus !== id && !connectedTo(focus, id));
+          const dimmed = Boolean(mapFocus && mapFocus !== id && !connectedTo(mapFocus, id));
           return (
             <MapNode
               key={id}
               node={node}
               left={pos.x}
               top={pos.y}
-              selected={focus === id}
+              selected={mapFocus === id}
               dimmed={dimmed}
+              recordedCount={intel.recordedCount}
+              hubCaption={intel.hubCaption}
               onSelect={() => onSelect(id)}
               onHover={setHover}
             />
@@ -157,18 +159,20 @@ export function PulseMap({
         {hovered && (
           <div
             role="tooltip"
-            className="pointer-events-none absolute z-20 w-[240px] rounded-xl border border-white/10 bg-popover px-3.5 py-3 shadow-[0_16px_40px_-16px_rgba(0,0,0,.55)]"
+            className="pointer-events-none absolute z-20 w-[260px] rounded-xl border border-white/10 bg-popover px-3.5 py-3 shadow-[0_16px_40px_-16px_rgba(0,0,0,.55)]"
             style={{
               left: MAP_LAYOUT[hovered.id].x,
               top: MAP_LAYOUT[hovered.id].y,
-              transform: hovered.id === "record" || hovered.kind === "block"
-                ? "translate(-50%, calc(-100% - 36px))"
-                : "translate(-50%, calc(-100% - 20px))",
+              transform: hovered.kind === "block"
+                ? "translate(-50%, 36px)"
+                : hovered.id === "record"
+                  ? "translate(-50%, calc(-100% - 48px))"
+                  : "translate(-50%, calc(-100% - 16px))",
             }}
           >
             <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-slate-500">{hovered.kicker}</p>
             <p className="mt-1 text-[14px] font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{hovered.name}</p>
-            <p className="mt-1 text-[12.5px] leading-relaxed text-slate-400">{hovered.summary}</p>
+            <p className="mt-1 text-[12.5px] leading-relaxed text-slate-400">{hoverText}</p>
             <p className="mt-2 text-[12px] font-semibold text-primary">Click to open →</p>
           </div>
         )}
@@ -183,6 +187,8 @@ function MapNode({
   top,
   selected,
   dimmed,
+  recordedCount,
+  hubCaption,
   onSelect,
   onHover,
 }: {
@@ -191,10 +197,13 @@ function MapNode({
   top: string;
   selected: boolean;
   dimmed: boolean;
+  recordedCount: number;
+  hubCaption: string;
   onSelect: () => void;
   onHover: (id: FocusId | null) => void;
 }) {
-  const Icon = node.kind === "block" || node.kind === "source" ? ICONS[node.id as keyof typeof ICONS] : null;
+  const Icon = node.kind === "block" ? ICONS[node.id as keyof typeof ICONS] : null;
+  const rings = Math.min(Math.max(recordedCount, 1), 2);
   return (
     <button
       type="button"
@@ -207,28 +216,35 @@ function MapNode({
       onBlur={() => onHover(null)}
       className={cn(
         "absolute z-10 -translate-x-1/2 -translate-y-1/2 text-left transition duration-150 motion-reduce:transition-none",
-        dimmed && "opacity-35",
+        dimmed && "opacity-30",
       )}
       style={{ left, top }}
     >
       {node.kind === "record" ? (
         <span
           className={cn(
-            "relative flex size-[128px] flex-col items-center justify-center rounded-full text-center",
-            selected && "ring-4 ring-primary/20",
+            "relative flex size-[120px] flex-col items-center justify-center rounded-full text-center",
+            selected && "ring-4 ring-primary/25",
           )}
         >
-          <span className="absolute inset-0 rounded-full bg-indigo-500/15 motion-safe:animate-[qiko-breathe_2.4s_ease-in-out_infinite]" />
-          <span className="absolute inset-[-10px] rounded-full border border-violet-400/25 motion-safe:animate-[qiko-breathe_2.4s_ease-in-out_infinite]" />
-          <span className="relative flex size-[88px] flex-col items-center justify-center rounded-full bg-gradient-to-br from-[#6366F1] to-[#22D3EE] text-white shadow-[0_10px_24px_-10px_rgba(99,102,241,.55)]">
+          {Array.from({ length: rings }, (_, index) => (
+            <span
+              key={index}
+              className="absolute rounded-full border border-cyan-400/20"
+              style={{ inset: -6 - index * 7 }}
+            />
+          ))}
+          <span className="absolute inset-0 rounded-full bg-indigo-500/15 motion-safe:animate-[qiko-breathe_2.8s_ease-in-out_infinite]" />
+          <span className="relative flex size-[84px] flex-col items-center justify-center rounded-full bg-gradient-to-br from-[#6366F1] to-[#22D3EE] text-white shadow-[0_10px_24px_-10px_rgba(99,102,241,.55)]">
             <span className="text-[9px] font-medium uppercase tracking-[0.14em] text-white/80">Company</span>
             <span className="mt-0.5 px-2 text-[13px] font-extrabold leading-tight" style={{ fontFamily: "var(--font-display)" }}>{node.name}</span>
+            <span className="mt-1 max-w-[5.5rem] text-[9px] font-medium leading-tight text-white/75">{hubCaption}</span>
           </span>
         </span>
       ) : node.kind === "worker" ? (
         <span
           className={cn(
-            "flex w-[168px] flex-col rounded-2xl border bg-card px-3 py-3 shadow-[0_1px_3px_rgba(0,0,0,.35)]",
+            "flex w-[168px] flex-col rounded-2xl border bg-card px-3.5 py-3 shadow-[0_1px_3px_rgba(0,0,0,.35)]",
             selected ? "border-primary ring-4 ring-primary/10" : "border-white/10 hover:border-primary/40",
           )}
         >
@@ -238,15 +254,20 @@ function MapNode({
       ) : (
         <span
           className={cn(
-            "flex items-center gap-2 rounded-full border bg-card px-3 py-2 shadow-[0_1px_3px_rgba(0,0,0,.35)]",
-            node.kind === "source" ? "min-w-0" : "min-w-[132px]",
-            selected ? "border-primary ring-4 ring-primary/10" : "border-white/10 hover:border-primary/40",
+            "flex w-[180px] items-start gap-2.5 rounded-2xl border bg-card px-3 py-3 shadow-[0_8px_24px_-16px_rgba(99,102,241,.65)]",
+            selected ? "border-primary ring-4 ring-primary/15" : "border-white/15 hover:border-primary/50",
           )}
         >
-          {Icon && <Icon className="size-3.5 shrink-0 text-primary" />}
+          {Icon && (
+            <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+              <Icon className="size-4" />
+            </span>
+          )}
           <span>
-            <span className="block text-[13px] font-semibold text-foreground">{node.name}</span>
-            {node.kind === "block" && <span className="block text-[11px] text-slate-500">{node.kicker}</span>}
+            <span className="block text-[10px] font-medium uppercase tracking-[0.1em] text-primary">{node.kicker}</span>
+            <span className="mt-0.5 block text-[16px] font-extrabold leading-tight text-foreground" style={{ fontFamily: "var(--font-display)" }}>
+              {node.name}
+            </span>
           </span>
         </span>
       )}
@@ -258,6 +279,10 @@ function connectedTo(focus: FocusId, id: FocusId) {
   return MAP_EDGES.some(([from, to]) => (from === focus && to === id) || (to === focus && from === id));
 }
 
+function related(focus: FocusId, from: FocusId, to: FocusId) {
+  return from === focus || to === focus;
+}
+
 function xy(id: FocusId, size: { w: number; h: number }) {
   return {
     x: (Number.parseFloat(MAP_LAYOUT[id].x) / 100) * size.w,
@@ -266,9 +291,8 @@ function xy(id: FocusId, size: { w: number; h: number }) {
 }
 
 function bendFor(from: FocusId, to: FocusId) {
-  if (from === "record" || to === "record") return -0.12;
-  if (from === "knowledge" || from === "chat" || to === "knowledge" || to === "chat") return 0.18;
-  return 0.1;
+  if (from === "record" || to === "record") return -0.1;
+  return 0.08;
 }
 
 function curvePath(a: { x: number; y: number }, b: { x: number; y: number }, bend: number) {

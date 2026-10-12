@@ -125,6 +125,39 @@ export function PulseChip({
   );
 }
 
+export function PulseTabs<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: { id: T; label: string; count?: number }[];
+  onChange: (id: T) => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-1 rounded-xl bg-white/[0.04] p-1" role="tablist" aria-label={label}>
+      {options.map((pane) => {
+        const on = value === pane.id;
+        return (
+          <button
+            key={pane.id}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            onClick={() => onChange(pane.id)}
+            className={`inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-[12px] font-medium ${on ? "bg-white text-[#05070d]" : "text-slate-400 hover:text-white"}`}
+          >
+            {pane.label}
+            {pane.count != null && <span className="font-mono text-[10px] text-slate-500">{pane.count}</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function GhostButton({
   children,
   onClick,

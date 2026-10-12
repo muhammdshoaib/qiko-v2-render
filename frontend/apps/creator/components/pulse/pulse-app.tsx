@@ -43,11 +43,11 @@ export function PulseApp({
     : undefined;
   const approveReferral = () => {
     toast.message(referral.approve());
-    go({ block: "investors", worker: "intent-intelligence", pane: "outcomes", detail: "o-referral", sheet: null });
+    go({ block: "investors", pane: "outcomes", detail: "o-referral", sheet: null });
   };
   const rejectReferral = () => {
     toast.message(referral.reject());
-    go({ block: "investors", worker: "intent-intelligence", pane: "outcomes", detail: "o-referral", sheet: null });
+    go({ block: "investors", pane: "outcomes", detail: "o-referral", sheet: null });
   };
 
   const openFromMap = (id: FocusId | null) => {
@@ -66,12 +66,15 @@ export function PulseApp({
     go({ focus: id, block: null, worker: null, detail: null });
   };
 
+  const highlightOnMap = (id: FocusId | null) => {
+    go({ focus: id, block: null, worker: null, detail: null });
+  };
+
   if (open.worker) {
     return (
       <AgentView
         nav={open}
         workerNames={workerNames}
-        awaiting={brain.approval === "awaiting"}
         onNav={go}
         onApprove={approve}
         onHold={hold}
@@ -100,6 +103,7 @@ export function PulseApp({
       workers={workers}
       focus={open.focus}
       onFocus={openFromMap}
+      onHighlight={highlightOnMap}
       onNav={go}
       embedded={embedded}
     />

@@ -2,11 +2,44 @@
 
 import { useReferral } from "@/lib/brain/referral-store";
 import { PulseChip } from "./pulse-chrome";
-import { statusLabel, statusTone } from "./referral";
+import { REFERRAL, statusLabel, statusTone } from "./referral";
 
-export function CompoundingPanel() {
+export function CompoundingPanel({ compact = false }: { compact?: boolean }) {
   const referral = useReferral();
   const decided = referral.status === "approved" || referral.status === "rejected";
+  const captured = referral.status === "approved"
+    ? REFERRAL.captured.approved
+    : referral.status === "rejected"
+      ? REFERRAL.captured.rejected
+      : [];
+  const future = referral.status === "approved"
+    ? REFERRAL.futureUse.approved
+    : referral.status === "rejected"
+      ? REFERRAL.futureUse.rejected
+      : "";
+
+  if (compact) {
+    return (
+      <aside className="rounded-2xl border border-white/10 bg-muted p-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">What this captured</p>
+          <PulseChip tone={statusTone(referral.status)}>{statusLabel(referral.status)}</PulseChip>
+        </div>
+        {!decided ? (
+          <p className="mt-2 text-[13px] leading-relaxed text-slate-400">
+            Approve or decline to capture a decision. The worker does not learn automatically.
+          </p>
+        ) : (
+          <>
+            <ul className="mt-2 list-disc space-y-1.5 pl-4 text-[13px] leading-relaxed text-foreground">
+              {captured.map((line) => <li key={line}>{line}</li>)}
+            </ul>
+            <p className="mt-3 text-[12.5px] leading-relaxed text-slate-400">{future}</p>
+          </>
+        )}
+      </aside>
+    );
+  }
 
   return (
     <div className="grid gap-3 lg:grid-cols-2">
@@ -25,20 +58,15 @@ export function CompoundingPanel() {
         </div>
         {!decided ? (
           <p className="mt-2 text-[13px] leading-relaxed text-slate-400">
-            Nothing new is on the record yet. Approve or reject to capture a decision. The worker does not learn automatically.
+            Nothing new is on the record yet. Approve or decline to capture a decision. The worker does not learn automatically.
           </p>
-        ) : referral.status === "approved" ? (
-          <ul className="mt-2 list-disc space-y-1.5 pl-4 text-[13px] leading-relaxed text-foreground">
-            <li>The labelled sample is now a captured decision: referrals reached review more often than portal-only views.</li>
-            <li>The recommended thank-you brief is written to company intelligence.</li>
-            <li>A later briefing could reuse this recorded pattern. That reuse is described here — it is not an automatic model update.</li>
-          </ul>
         ) : (
-          <ul className="mt-2 list-disc space-y-1.5 pl-4 text-[13px] leading-relaxed text-foreground">
-            <li>The insight remains visible as a declined recommendation.</li>
-            <li>The action was not written. Later recommendations should not treat a thank-you programme as agreed.</li>
-            <li>That is the demonstrated learning: a human decision now sits on the record.</li>
-          </ul>
+          <>
+            <ul className="mt-2 list-disc space-y-1.5 pl-4 text-[13px] leading-relaxed text-foreground">
+              {captured.map((line) => <li key={line}>{line}</li>)}
+            </ul>
+            <p className="mt-3 text-[12.5px] leading-relaxed text-slate-400">{future}</p>
+          </>
         )}
       </article>
     </div>

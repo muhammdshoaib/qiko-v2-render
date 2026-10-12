@@ -7,15 +7,15 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@qiko/ui";
 
 export const DEMO_STEPS = [
-  { n: 1, title: "Pulse", href: "/studio", hint: "Company intelligence and the referral recommendation awaiting a decision." },
-  { n: 2, title: "Investors block", href: "/studio?block=investors", hint: "Insight, evidence, compounding record, and the outcome on this block." },
-  { n: 3, title: "Intelligence Worker", href: "/studio?block=investors&worker=intent-intelligence&pane=outcomes&detail=o-referral", hint: "Evidence, insight, recommended action, and the outcome record." },
-  { n: 4, title: "Claude walkthrough", href: "/studio?block=investors&worker=intent-intelligence&pane=outcomes&detail=o-referral&sheet=claude", hint: "Labelled walkthrough: insight, context, action, output, confirm." },
+  { n: 1, title: "Pulse", href: "/studio", hint: "Open Investors to follow the referral insight through evidence, recommendation, and a decision." },
+  { n: 2, title: "Investors", href: "/studio?block=investors", hint: "The same insight. See evidence, then open the Intelligence Worker." },
+  { n: 3, title: "Intelligence Worker", href: "/studio?block=investors&worker=intent-intelligence", hint: "See evidence, then open the outcome to review the recommended action." },
+  { n: 4, title: "Explore in Claude", href: "/studio?block=investors&worker=intent-intelligence&pane=outcomes&detail=o-referral&sheet=claude", hint: "Labelled walkthrough — live Claude is not connected. Confirm at the last step." },
   { n: 5, title: "Ask Claude (channel)", href: "/studio/intelligence?tab=channels&surface=claude", hint: "Separate channel demo. The Pulse walkthrough is labelled, not live Claude." },
   { n: 6, title: "Approve a follow-up", href: "/studio/intelligence?tab=channels&surface=claude", hint: "Lombay review remains a second path. Nothing is sent outbound." },
   { n: 7, title: "Slack walls", href: "/studio/intelligence?tab=channels&surface=slack", hint: "Ask the same spend question in both channels, then as an unauthorised user." },
   { n: 8, title: "Captured activity", href: "/studio/intelligence?tab=observability", hint: "Allowed, blocked, and approved actions in one feed." },
-  { n: 9, title: "Intelligence layer", href: "/studio/intelligence?focus=record", hint: "Recorded decisions grow the company record." },
+  { n: 9, title: "Company record", href: "/studio?focus=record", hint: "After a decision, Pulse and the company record show what was captured. The worker does not learn automatically." },
 ] as const;
 
 export function DemoGuide() {

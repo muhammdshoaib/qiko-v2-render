@@ -200,7 +200,7 @@ const INVESTOR_CONVOS: Conversation[] = [
     source: "Knowledge library",
     stage: "Answered",
     stageTone: "good",
-    learned: "Answer stayed inside attached documents. Critic + gate held.",
+    learned: "Answer stayed inside attached documents.",
     last: "Yesterday, 16:22",
     honesty: "illustrative",
     worker: "intent-intelligence",
@@ -221,7 +221,7 @@ const INVESTOR_CONVOS: Conversation[] = [
       },
     ],
     captured: ["Question scoped to attached knowledge", "No outbound email"],
-    insight: "Research answers stay behind the critic + gate. The library is the source, not the open web.",
+    insight: "Research answers stay inside attached documents. The library is the source, not the open web.",
     next: "Use the answer internally. Contacting anyone stays blocked.",
   },
   {
@@ -320,14 +320,12 @@ export const BLOCKS: Record<BlockId, BlockContent> = {
   investors: {
     id: "investors",
     name: "Investors",
-    eyebrow: "Knowledge block · 1 worker",
-    summary: "Repeat buyers, portfolio owners, and the attention they already show in the investor app. This is not a CRM — it is the knowledge the Intelligence Worker may read and record.",
+    eyebrow: "Knowledge block",
+    summary: "Repeat buyers and the attention they already show in the investor app — not a CRM.",
     snapshot: [
-      { id: "engagement", label: "App engagement", value: "Repeat views", hint: "Where data exists: clustered investor-app sessions, not a headcount.", opens: "segments" },
-      { id: "segments", label: "Segments", value: "2 groups", hint: "Repeat attention vs quiet listings.", opens: "segments" },
-      { id: "review", label: "Needs a person", value: "1 recommendation", hint: "Referral programme brief awaiting a decision. Sample evidence only.", opens: "review" },
-      { id: "worker", label: "Contributing worker", value: "Intelligence", hint: "Intent signals and grounded research.", opens: "worker" },
-      { id: "record", label: "On the record", value: "7 notes", hint: "Illustrative count of recorded decisions.", opens: "record" },
+      { id: "review", label: "Needs a person", value: "1 awaiting", hint: "Referral brief.", opens: "review" },
+      { id: "segments", label: "Repeat attention", value: "1 cluster", hint: "Lombay House.", opens: "segments" },
+      { id: "worker", label: "Worker", value: "Intelligence", hint: "Intent and research.", opens: "worker" },
     ],
     segments: [
       {
@@ -358,8 +356,8 @@ export const BLOCKS: Record<BlockId, BlockContent> = {
     sources: [
       { id: "src-app", kind: "source", name: "Investor app", role: "Intent signals", detail: "Existing viewing and calculator activity, when that path is linked. The worker may cluster it. It may not email an investor.", honesty: "illustrative" },
       { id: "src-lib", kind: "source", name: "Knowledge library", role: "Uploaded sources", detail: "Documents attached to the Intelligence Worker. Answers stay inside those files.", honesty: "connected" },
-      { id: "src-chat", kind: "source", name: "Grounded chat", role: "Critic + gate", detail: "Operator questions about research or intent. Outbound contact stays blocked.", honesty: "connected" },
-      { id: "src-crm", kind: "source", name: "Client CRM", role: "Not connected", detail: "Ed's HTML shows a CRM hand-off. This prototype does not create CRM records. A hand-off would stay a planned next step.", honesty: "planned" },
+      { id: "src-chat", kind: "source", name: "Grounded chat", role: "Operator questions", detail: "Operator questions about research or intent. Answers stay inside attached documents. Outbound contact stays blocked.", honesty: "connected" },
+      { id: "src-crm", kind: "source", name: "Client CRM", role: "Not connected", detail: "Not connected. A hand-off would stay a planned next step — this prototype does not create CRM records.", honesty: "planned" },
     ],
     workers: ["intent-intelligence"],
     captures: [
@@ -375,7 +373,7 @@ export const BLOCKS: Record<BlockId, BlockContent> = {
     ],
     accumulation: [
       { month: "Jul", note: "Intent paths described. No referral pattern on the record." },
-      { month: "Aug", note: "Grounded chat answers stay behind the critic + gate." },
+      { month: "Aug", note: "Grounded chat answers stay inside attached documents." },
       { month: "Sep", note: "Quiet-listing notes start landing on this block." },
       { month: "Oct", note: "Labelled referral sample surfaced. A person still decides whether to write the brief." },
     ],
@@ -384,7 +382,7 @@ export const BLOCKS: Record<BlockId, BlockContent> = {
       { id: "l-referral", kind: "learning", title: "Referred arrivals in the labelled sample reached review more often", evidence: "14 labelled past referrals; 9 reached a person. This is a sample count, not a live conversion rate.", state: "proposed", honesty: "illustrative", worker: "intent-intelligence", block: "investors" },
       { id: "l-review", kind: "learning", title: "Repeat views on one listing should be flagged for a person", evidence: "Lombay House / Derby is the worked example. The worker clusters; it does not outreach.", state: "proposed", honesty: "illustrative", worker: "intent-intelligence", block: "investors", needsApproval: true },
       { id: "l-wall", kind: "learning", title: "No outbound investor email", evidence: "Hard wall on the Intelligence Worker. Recorded every time a cluster is written.", state: "rule", honesty: "connected", worker: "intent-intelligence", block: "investors" },
-      { id: "l-gate", kind: "learning", title: "Research answers stay behind the critic + gate", evidence: "Listing questions are answered only from the knowledge library.", state: "rule", honesty: "connected", worker: "intent-intelligence", block: "investors" },
+      { id: "l-gate", kind: "learning", title: "Research answers stay inside attached documents", evidence: "Listing questions are answered only from the knowledge library.", state: "rule", honesty: "connected", worker: "intent-intelligence", block: "investors" },
       { id: "l-quiet", kind: "learning", title: "A 7-day gap in views is worth recording", evidence: "Two listings in the sample week. Too few to make a company rule.", state: "pattern", honesty: "illustrative", worker: "intent-intelligence", block: "investors" },
     ],
     outcomes: [
@@ -396,14 +394,12 @@ export const BLOCKS: Record<BlockId, BlockContent> = {
   properties: {
     id: "properties",
     name: "Properties",
-    eyebrow: "Knowledge block · 1 worker",
-    summary: "Income, spend, and risk the operator can already see in the finance cockpit. Property Insights writes notes here — it does not pay vendors or invent a second ledger.",
+    eyebrow: "Knowledge block",
+    summary: "Income, spend, and risk already visible in the finance cockpit. Property Insights writes notes — it does not pay vendors.",
     snapshot: [
-      { id: "known", label: "Known figures", value: "Cockpit", hint: "Existing property and spend records, not a new database.", opens: "sources" },
-      { id: "insights", label: "Insights", value: "2 notes", hint: "Expenditure drift and an income snapshot.", opens: "segments" },
-      { id: "review", label: "Payments", value: "Blocked", hint: "The worker cannot move money.", opens: "review" },
-      { id: "worker", label: "Contributing worker", value: "Property Insights", hint: "Reads the cockpit, writes operator notes.", opens: "worker" },
-      { id: "record", label: "On the record", value: "11 notes", hint: "Illustrative count of recorded decisions.", opens: "record" },
+      { id: "insights", label: "Risk notes", value: "1 drift", hint: "Expenditure above band.", opens: "segments" },
+      { id: "review", label: "Payments", value: "Blocked", hint: "Cannot move money.", opens: "review" },
+      { id: "worker", label: "Worker", value: "Property Insights", hint: "Reads the cockpit.", opens: "worker" },
     ],
     segments: [
       {
@@ -426,7 +422,7 @@ export const BLOCKS: Record<BlockId, BlockContent> = {
     sources: [
       { id: "src-fin", kind: "source", name: "Studio finance cockpit", role: "Property ledger", detail: "Income, unit, and vendor views the operator can already open. This is the source of truth for figures.", honesty: "connected" },
       { id: "src-up", kind: "source", name: "Finance uploads", role: "Knowledge library", detail: "Spreadsheets attached to Property Insights, used only when present.", honesty: "illustrative" },
-      { id: "src-chat", kind: "source", name: "Grounded chat", role: "Critic + gate", detail: "Ask for a spend or income summary. Paying a vendor stays blocked.", honesty: "connected" },
+      { id: "src-chat", kind: "source", name: "Grounded chat", role: "Operator questions", detail: "Ask for a spend or income summary. Paying a vendor stays blocked.", honesty: "connected" },
     ],
     workers: ["property-insights"],
     captures: [

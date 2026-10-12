@@ -1,6 +1,7 @@
 "use client";
 
 import { useReferral } from "@/lib/brain/referral-store";
+import { CompoundingPanel } from "./compounding";
 import { GhostButton, IllustrativeMark, PulseChip } from "./pulse-chrome";
 import {
   REFERRAL,
@@ -29,79 +30,141 @@ export function OutcomeRecord({
   const decided = referral.status === "approved" || referral.status === "rejected";
   const hours = referralHours();
   const value = referralValue(referral.rate);
+  const recorded = referral.status === "approved"
+    ? REFERRAL.recordedResult.approved
+    : referral.status === "rejected"
+      ? REFERRAL.recordedResult.rejected
+      : REFERRAL.recordedResult.pending;
 
   return (
-    <article className="space-y-4">
-      <header className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="font-mono text-[10.5px] tracking-[0.1em] text-primary uppercase">Outcome record · Investors</p>
-          <h3 className="mt-1 text-[16px] font-semibold tracking-[-0.02em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
-            {REFERRAL.title}
-          </h3>
-        </div>
-        <div className="flex items-center gap-2">
-          <IllustrativeMark />
-          <PulseChip tone={statusTone(referral.status)}>{statusLabel(referral.status)}</PulseChip>
-        </div>
-      </header>
+    <article className="space-y-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <IllustrativeMark />
+        <PulseChip tone={statusTone(referral.status)}>{statusLabel(referral.status)}</PulseChip>
+      </div>
 
-      <Field label="Original insight">{REFERRAL.insight}</Field>
-      <Field label="Supporting evidence">
+      <Field label="What was discovered?">{REFERRAL.insight}</Field>
+
+      <Field label="What evidence supports it?">
         {REFERRAL.why.map((line) => (
           <p key={line}>{line}</p>
         ))}
         <p className="mt-2 text-amber-300/80">{REFERRAL.caution}</p>
-        <button
-          type="button"
-          onClick={() => onNav({ block: "investors", worker: "intent-intelligence", pane: "conversations", detail: REFERRAL_EVIDENCE_ID })}
-          className="mt-2 text-[12.5px] font-medium text-primary hover:underline"
-        >
-          Open the labelled sample conversation
-        </button>
+        {!compact && (
+          <button
+            type="button"
+            onClick={() => onNav({
+              block: "investors",
+              worker: "intent-intelligence",
+              pane: "conversations",
+              detail: REFERRAL_EVIDENCE_ID,
+              sheet: null,
+            })}
+            className="mt-2 text-[12.5px] font-medium text-primary hover:underline"
+          >
+            Open the labelled sample
+          </button>
+        )}
       </Field>
-      <Field label="Recommended action">{REFERRAL.action}</Field>
-      <Field label="User decision">
-        {decisionLabel(referral.status)}
-        {referral.decidedAt ? <span className="mt-1 block text-slate-500">Recorded at {referral.decidedAt}.</span> : null}
+
+      <Field label="What does Qiko recommend?">{REFERRAL.action}</Field>
+
+      <Field label={decided ? "What happened after the action?" : "What action can you take?"}>
+        <p>{decisionLabel(referral.status)}</p>
+        {referral.decidedAt ? <p className="mt-1 text-slate-500">Recorded at {referral.decidedAt}.</p> : null}
+        <p className="mt-1 text-slate-500">{destinationLabel(referral.status)}</p>
       </Field>
-      <Field label="Current status">{statusLabel(referral.status)}</Field>
-      <Field label="Destination of the output">{destinationLabel(referral.status)}</Field>
-      <Field label="Benefit — illustrative assumption, not a measured result">
-        <p>
-          {REFERRAL.uses} uses × {REFERRAL.minutes} minutes × £{referral.rate}/hr = {hours.toFixed(2)} hours × £{referral.rate} ≈ £{value}.
-        </p>
-        <p className="mt-1">
-          Uses and minutes are labelled assumptions for this prototype. Change the hourly rate on the value sheet.
-        </p>
-        <button
-          type="button"
-          onClick={() => onNav({ block: "investors", worker: "intent-intelligence", pane: "outcomes", detail: REFERRAL.id, sheet: "value" })}
-          className="mt-2 text-[12.5px] font-medium text-primary hover:underline"
-        >
-          Show the calculation
-        </button>
-      </Field>
-      <Field label="Follow-up or measurement plan">{REFERRAL.measurement}</Field>
+
+      {decided && <CompoundingPanel compact />}
+
+      <Field label="How will the result be measured?">{REFERRAL.measurement}</Field>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <aside className="rounded-2xl border border-white/10 bg-muted p-4">
+          <p className="font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">Estimated benefit</p>
+          <p className="mt-2 text-[13px] leading-relaxed text-foreground">
+            {REFERRAL.uses} uses × {REFERRAL.minutes} min × £{referral.rate}/hr ≈ {hours.toFixed(2)} hours · £{value}
+          </p>
+          <p className="mt-2 text-[12.5px] text-amber-300/80">{REFERRAL.estimatedNote}</p>
+          {!compact && (
+            <button
+              type="button"
+              onClick={() => onNav({
+                block: "investors",
+                worker: "intent-intelligence",
+                pane: "outcomes",
+                detail: REFERRAL.id,
+                sheet: "value",
+              })}
+              className="mt-2 text-[12.5px] font-medium text-primary hover:underline"
+            >
+              Show the calculation
+            </button>
+          )}
+        </aside>
+        <aside className="rounded-2xl border border-white/10 bg-card p-4">
+          <p className="font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">Recorded result</p>
+          <p className="mt-2 text-[13px] leading-relaxed text-foreground">{recorded}</p>
+        </aside>
+      </div>
 
       {!compact && (
         <div className="flex flex-wrap gap-2 pt-1">
-          <GhostButton
-            onClick={() => {
-              referral.explore();
-              onNav({ block: "investors", worker: "intent-intelligence", pane: "outcomes", detail: REFERRAL.id, sheet: "claude" });
-            }}
-          >
-            {decided ? "Review in Claude" : "Explore in Claude"}
-          </GhostButton>
-          {!decided && onApprove && onReject && (
+          {!decided && (
             <>
-              <GhostButton onClick={onApprove}>Approve to company record</GhostButton>
-              <GhostButton onClick={onReject}>Reject</GhostButton>
+              <GhostButton
+                onClick={() => {
+                  referral.explore();
+                  onNav({
+                    block: "investors",
+                    worker: "intent-intelligence",
+                    pane: "outcomes",
+                    detail: REFERRAL.id,
+                    sheet: "claude",
+                  });
+                }}
+              >
+                Explore in Claude
+              </GhostButton>
+              {onApprove && onReject && (
+                <>
+                  <GhostButton onClick={onApprove}>Approve to company record</GhostButton>
+                  <GhostButton onClick={onReject}>Decline</GhostButton>
+                </>
+              )}
             </>
           )}
-          <GhostButton onClick={() => onNav({ block: "investors", worker: "intent-intelligence", pane: "outcomes" })}>
-            Intelligence Worker
-          </GhostButton>
+          {decided && (
+            <>
+              <GhostButton
+                onClick={() => onNav({
+                  block: null,
+                  worker: null,
+                  pane: "overview",
+                  detail: null,
+                  sheet: null,
+                  focus: "record",
+                })}
+              >
+                View company record
+              </GhostButton>
+              <GhostButton
+                onClick={() => {
+                  referral.explore();
+                  onNav({
+                    block: "investors",
+                    worker: "intent-intelligence",
+                    pane: "outcomes",
+                    detail: REFERRAL.id,
+                    sheet: "claude",
+                  });
+                }}
+              >
+                Review in Claude
+              </GhostButton>
+              <GhostButton onClick={() => referral.reset()}>Replay this example</GhostButton>
+            </>
+          )}
         </div>
       )}
     </article>

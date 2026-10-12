@@ -2,14 +2,13 @@
 
 import { Ban } from "lucide-react";
 import { WORKERS, type WorkerId } from "@/components/intelligence-layer/model";
-import { SHOWCASE_WORKERS } from "@/lib/studio/showcase";
 import { useReferral } from "@/lib/brain/referral-store";
 import { BLOCKS, LEARNING_LABEL } from "./drilldown-data";
 import { EvidenceDrawer } from "./evidence-drawer";
-import { GhostButton, IllustrativeMark, PulseCard, PulseChip, PulseHeader, PulsePage } from "./pulse-chrome";
+import { GhostButton, IllustrativeMark, PulseCard, PulseChip, PulseHeader, PulsePage, PulseTabs } from "./pulse-chrome";
 import { REFERRAL, REFERRAL_ID, conversationStage, statusLabel, statusTone } from "./referral";
 import type { AgentPane, PulseNav } from "./route";
-import { blockForWorker } from "./route";
+import { agentPane, blockForWorker } from "./route";
 
 const PANES: { id: AgentPane; label: string }[] = [
   { id: "conversations", label: "Conversations" },
@@ -20,7 +19,6 @@ const PANES: { id: AgentPane; label: string }[] = [
 export function AgentView({
   nav,
   workerNames,
-  awaiting,
   onNav,
   onApprove,
   onHold,
@@ -29,7 +27,6 @@ export function AgentView({
 }: {
   nav: PulseNav;
   workerNames?: Partial<Record<WorkerId, string>>;
-  awaiting?: boolean;
   onNav: (next: Partial<PulseNav>) => void;
   onApprove?: () => void;
   onHold?: () => void;
@@ -38,16 +35,15 @@ export function AgentView({
 }) {
   const workerId = nav.worker ?? "intent-intelligence";
   const worker = WORKERS[workerId];
-  const showcase = SHOWCASE_WORKERS.find((item) => item.slug === workerId);
   const blockId = blockForWorker(workerId);
   const block = BLOCKS[blockId];
   const name = workerNames?.[workerId] ?? worker.name;
   const conversations = block.conversations.filter((item) => item.worker === workerId);
   const learnings = block.learnings.filter((item) => item.worker === workerId);
   const outcomes = block.outcomes.filter((item) => item.worker === workerId);
-  const pending = awaiting && workerId === "intent-intelligence";
   const referral = useReferral();
   const decided = referral.status === "approved" || referral.status === "rejected";
+  const pane = agentPane(nav.pane);
 
   return (
     <PulsePage>
@@ -69,22 +65,15 @@ export function AgentView({
       />
 
       <PulseCard>
-        <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-          <Fact label="Uses" items={worker.reads.map((item) => item.title)} />
-          <Fact label="Writes" items={worker.writes.map((item) => item.title)} />
-          <Fact label="Allowed" items={worker.tools.filter((item) => item.mode === "allowed").map((item) => item.name)} />
-          <div>
-            <p className="font-mono text-[10.5px] tracking-[0.1em] text-slate-500 uppercase">Restrictions</p>
-            <ul className="mt-2 space-y-1.5">
-              {worker.hardWalls.map((item) => (
-                <li key={item} className="flex gap-2 text-[13px] text-foreground">
-                  <Ban className="mt-0.5 size-3.5 shrink-0 text-red-400" />
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
+        <p className="font-mono text-[10.5px] tracking-[0.1em] text-slate-500 uppercase">Restrictions</p>
+        <ul className="mt-2 flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:gap-x-5">
+          {worker.hardWalls.map((item) => (
+            <li key={item} className="flex gap-2 text-[13px] text-foreground">
+              <Ban className="mt-0.5 size-3.5 shrink-0 text-red-400" />
+              {item}
+            </li>
+          ))}
+        </ul>
       </PulseCard>
 
       {workerId === "intent-intelligence" && (
@@ -97,7 +86,6 @@ export function AgentView({
             <PulseChip tone={statusTone(referral.status)}>{statusLabel(referral.status)}</PulseChip>
           </div>
           <p className="mt-2 text-[13px] leading-relaxed text-slate-400">{REFERRAL.insight}</p>
-          <p className="mt-2 text-[12.5px] text-amber-300/80">{REFERRAL.caution}</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <GhostButton onClick={() => onNav({ pane: "conversations", detail: "c-referral" })}>See evidence</GhostButton>
             <GhostButton
@@ -113,41 +101,17 @@ export function AgentView({
         </section>
       )}
 
-      {pending && (
-        <section className="rounded-2xl border border-amber-400/20 bg-amber-400/10 p-5">
-          <p className="font-mono text-[10.5px] tracking-[0.1em] text-amber-400 uppercase">Also awaiting</p>
-          <p className="mt-1 text-[14px] font-semibold text-foreground">Lombay House cluster needs a human look.</p>
-          <p className="mt-1 text-[13px] text-slate-400">A second existing path. Approving writes the cluster to company intelligence. Nothing is sent outbound.</p>
-          {onApprove && onHold && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              <GhostButton onClick={onApprove}>Approve review</GhostButton>
-              <GhostButton onClick={onHold}>Hold</GhostButton>
-            </div>
-          )}
-        </section>
-      )}
+      <PulseTabs
+        label="Worker detail"
+        value={pane}
+        options={PANES.map((item) => ({
+          ...item,
+          count: item.id === "conversations" ? conversations.length : item.id === "learning" ? learnings.length : outcomes.length,
+        }))}
+        onChange={(id) => onNav({ pane: id, detail: null })}
+      />
 
-      <div className="flex flex-wrap gap-1 rounded-xl bg-white/[0.04] p-1" role="tablist" aria-label="Worker detail">
-        {PANES.map((pane) => {
-          const count = pane.id === "conversations" ? conversations.length : pane.id === "learning" ? learnings.length : outcomes.length;
-          const on = nav.pane === pane.id;
-          return (
-            <button
-              key={pane.id}
-              type="button"
-              role="tab"
-              aria-selected={on}
-              onClick={() => onNav({ pane: pane.id, detail: null })}
-              className={`inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-[12px] font-medium ${on ? "bg-white text-[#05070d]" : "text-slate-400 hover:text-white"}`}
-            >
-              {pane.label}
-              <span className="font-mono text-[10px] text-slate-500">{count}</span>
-            </button>
-          );
-        })}
-      </div>
-
-      {nav.pane === "conversations" && (
+      {pane === "conversations" && (
         <PulseCard title="Recent conversations" hint="What it used, what it captured, where it came from." badge={<IllustrativeMark />}>
           {conversations.length === 0 ? (
             <p className="text-sm text-slate-500">No conversations on this worker yet.</p>
@@ -172,7 +136,7 @@ export function AgentView({
         </PulseCard>
       )}
 
-      {nav.pane === "learning" && (
+      {pane === "learning" && (
         <PulseCard title="What it has learned or recorded" hint="Rules already in force sit beside proposed ones.">
           <ul className="divide-y divide-white/[0.06]">
             {learnings.map((item) => {
@@ -193,7 +157,7 @@ export function AgentView({
         </PulseCard>
       )}
 
-      {nav.pane === "outcomes" && (
+      {pane === "outcomes" && (
         <PulseCard title="Outputs and outcomes" hint="Each row is a recorded result, not a decorative counter.">
           {outcomes.length === 0 ? (
             <p className="text-sm text-slate-500">No outcomes recorded yet.</p>
@@ -221,37 +185,6 @@ export function AgentView({
         </PulseCard>
       )}
 
-      {showcase && (
-        <PulseCard title="Connections" hint="Same sources as the worker profile — not a second CRM.">
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <p className="font-mono text-[10.5px] tracking-[0.1em] text-slate-500 uppercase">Reads</p>
-              <ul className="mt-2 space-y-2">
-                {showcase.sources.map((item) => (
-                  <li key={item.name}>
-                    <p className="text-[13.5px] font-medium text-foreground">{item.name}</p>
-                    <p className="text-[12.5px] text-slate-400">{item.detail}</p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <p className="font-mono text-[10.5px] tracking-[0.1em] text-slate-500 uppercase">Permissions</p>
-              <ul className="mt-2 space-y-2">
-                {showcase.permissions.map((item) => (
-                  <li key={item.name} className="flex items-center justify-between gap-3 text-[13px]">
-                    <span className="text-foreground">{item.name}</span>
-                    <PulseChip tone={item.mode === "blocked" ? "bad" : item.mode === "requires review" ? "warn" : "good"}>
-                      {item.mode}
-                    </PulseChip>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </PulseCard>
-      )}
-
       <EvidenceDrawer
         nav={nav}
         onClose={() => onNav({ detail: null, sheet: null })}
@@ -262,16 +195,5 @@ export function AgentView({
         onRejectReferral={onRejectReferral}
       />
     </PulsePage>
-  );
-}
-
-function Fact({ label, items }: { label: string; items: string[] }) {
-  return (
-    <div>
-      <p className="font-mono text-[10.5px] tracking-[0.1em] text-slate-500 uppercase">{label}</p>
-      <ul className="mt-2 space-y-1.5 text-[13px] text-foreground">
-        {items.map((item) => <li key={item}>{item}</li>)}
-      </ul>
-    </div>
   );
 }

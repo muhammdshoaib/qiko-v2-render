@@ -25,13 +25,13 @@ const BLOCK_COPY: Record<SystemId, { name: string; kicker: string; summary: stri
   "investor-app": {
     name: "Investors",
     kicker: "Knowledge block",
-    summary: "Repeat buyers, portfolio owners, and the attention they already show in the investor app.",
+    summary: "Repeat attention, referred arrivals, and quiet listings — knowledge the Intelligence Worker may read and record.",
     connects: ["Intelligence Worker", "Company intelligence"],
   },
   properties: {
     name: "Properties",
     kicker: "Knowledge block",
-    summary: "Income, spend, and risk the operator can already see in the finance cockpit.",
+    summary: "Income, spend, and risk already visible in the finance cockpit — notes, not a second ledger.",
     connects: ["Property Insights", "Company intelligence"],
   },
   knowledge: {
@@ -55,7 +55,7 @@ export function pulseNode(id: FocusId, workerNames?: Partial<Record<WorkerId, st
       kind: "record",
       name: "Joseph Mews",
       kicker: "Company intelligence",
-      summary: "Shared memory of what the workers recorded — property facts and intent clusters, not a separate CRM.",
+      summary: "Shared memory of recorded notes and decisions from Investors and Properties — not a score, and not a CRM.",
       connects: ["Investors", "Properties", "Property Insights", "Intelligence Worker"],
     };
   }
@@ -82,24 +82,28 @@ export function pulseNode(id: FocusId, workerNames?: Partial<Record<WorkerId, st
 }
 
 export const MAP_LAYOUT: Record<FocusId, { x: string; y: string }> = {
-  record: { x: "50%", y: "46%" },
-  "investor-app": { x: "18%", y: "32%" },
-  properties: { x: "82%", y: "32%" },
-  "intent-intelligence": { x: "28%", y: "78%" },
-  "property-insights": { x: "72%", y: "78%" },
-  knowledge: { x: "8%", y: "68%" },
-  chat: { x: "92%", y: "68%" },
+  record: { x: "50%", y: "48%" },
+  "investor-app": { x: "22%", y: "22%" },
+  properties: { x: "78%", y: "22%" },
+  "intent-intelligence": { x: "24%", y: "82%" },
+  "property-insights": { x: "76%", y: "82%" },
+  knowledge: { x: "10%", y: "68%" },
+  chat: { x: "90%", y: "68%" },
 };
+
+export const MAP_NODES: FocusId[] = [
+  "record",
+  "investor-app",
+  "properties",
+  "intent-intelligence",
+  "property-insights",
+];
 
 export const MAP_EDGES: [FocusId, FocusId][] = [
   ["investor-app", "record"],
   ["properties", "record"],
-  ["intent-intelligence", "record"],
-  ["property-insights", "record"],
   ["intent-intelligence", "investor-app"],
   ["property-insights", "properties"],
-  ["knowledge", "intent-intelligence"],
-  ["knowledge", "property-insights"],
-  ["chat", "intent-intelligence"],
-  ["chat", "property-insights"],
+  ["intent-intelligence", "record"],
+  ["property-insights", "record"],
 ];
