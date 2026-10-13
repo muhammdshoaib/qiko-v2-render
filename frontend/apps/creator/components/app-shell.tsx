@@ -3,15 +3,15 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ChevronLeft, LayoutDashboard, Lock, LogOut, Menu, Settings, Sparkles, Users, CreditCard, Wrench, X } from "lucide-react";
+import { Activity, BookOpen, ChevronLeft, Lock, LogOut, Menu, Settings, Sparkles, CreditCard, Wrench, X } from "lucide-react";
 import { Logo, cn } from "@qiko/ui";
 import { logout } from "@/lib/api";
 import { DemoGuide } from "@/components/studio/demo-guide";
 
 const NAV = [
   { href: "/studio", label: "Studio", icon: Sparkles },
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/workers", label: "Workers", icon: Users },
+  { href: "/dashboard", label: "Pulse", icon: Activity },
+  { href: "/workers", label: "Knowledge", icon: BookOpen },
   { href: "/billing", label: "Pricing", icon: CreditCard, locked: true },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
@@ -102,7 +102,10 @@ export function AppShell({ title, children }: { title: string; children: React.R
                   </li>
                 );
               }
-              const active = pathname === href || pathname.startsWith(href + "/");
+              const active =
+                href === "/workers"
+                  ? pathname === "/workers" || pathname.startsWith("/workers/") || pathname.startsWith("/knowledge")
+                  : pathname === href || pathname.startsWith(href + "/");
               return (
                 <li key={href}>
                   <Link

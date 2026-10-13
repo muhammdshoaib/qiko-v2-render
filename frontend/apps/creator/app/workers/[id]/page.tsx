@@ -113,7 +113,7 @@ export default function WorkerDetailPage() {
         <div className="relative min-w-0 border-b border-white/[0.06] bg-[#070a12]/80 backdrop-blur-xl">
           <div className="flex items-center gap-4 px-4 py-4 sm:px-6">
             <Link href="/workers" className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm text-slate-400 transition-colors hover:bg-white/[0.04] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500">
-              <ArrowLeft className="size-4" /> All Workers
+              <ArrowLeft className="size-4" /> All knowledge blocks
             </Link>
           </div>
           <div className="flex flex-wrap items-center gap-4 bg-gradient-to-r from-cyan-500/10 to-violet-500/[0.06] px-4 py-4 sm:px-6">
