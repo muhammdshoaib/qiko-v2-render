@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { PulseApp } from "@/components/pulse/pulse-app";
 import { mergeNav, type PulseNav } from "@/components/pulse/route";
@@ -17,8 +17,23 @@ const INITIAL: PulseNav = {
 };
 
 export default function PulseDashboardPage() {
+  return (
+    <Suspense fallback={<AppShell title="Pulse"><div className="p-6 text-sm text-slate-400">Loading Pulse…</div></AppShell>}>
+      <PulseDashboardScreen />
+    </Suspense>
+  );
+}
+
+function PulseDashboardScreen() {
   const router = useRouter();
+  const params = useSearchParams();
   const [nav, setNav] = useState<PulseNav>(INITIAL);
+
+  useEffect(() => {
+    if (params.get("view") !== "outcomes") return;
+    const el = document.getElementById("outcomes");
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [params]);
 
   const onNav = useCallback((next: Partial<PulseNav>) => {
     // Sprint brief: Investors opens the knowledge-block screen (same tab bar as today's worker).

@@ -1,22 +1,165 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { Activity, BookOpen, ChevronLeft, Lock, LogOut, Menu, Settings, Sparkles, CreditCard, Wrench, X } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  Activity,
+  BookOpen,
+  ChevronLeft,
+  CircleDot,
+  GitBranch,
+  Link2,
+  LogOut,
+  Menu,
+  Network,
+  Settings,
+  Shield,
+  Users,
+  X,
+} from "lucide-react";
 import { Logo, cn } from "@qiko/ui";
 import { logout } from "@/lib/api";
+import { toast } from "sonner";
 import { DemoGuide } from "@/components/studio/demo-guide";
 
-const NAV = [
-  { href: "/studio", label: "Studio", icon: Sparkles },
-  { href: "/dashboard", label: "Pulse", icon: Activity },
-  { href: "/workers", label: "Knowledge", icon: BookOpen },
-  { href: "/billing", label: "Pricing", icon: CreditCard, locked: true },
-  { href: "/settings", label: "Settings", icon: Settings },
+type NavItem = {
+  id: string;
+  label: string;
+  icon: typeof Activity;
+  href?: string;
+  soon?: string;
+  badge?: string;
+  count?: string;
+  live?: boolean;
+};
+
+const COMPANY_BRAIN: NavItem[] = [
+  { id: "pulse", label: "Pulse", icon: Activity, href: "/dashboard", live: true },
+  { id: "knowledge-map", label: "Knowledge map", icon: Network, soon: "Knowledge map" },
+  { id: "outcomes", label: "Outcomes", icon: CircleDot, href: "/dashboard?view=outcomes", badge: "1" },
+  { id: "decisions", label: "Decisions", icon: GitBranch, soon: "Decisions", badge: "3" },
+  { id: "records", label: "Records", icon: BookOpen, soon: "Records", count: "6,884" },
+  { id: "rules", label: "Rules", icon: Shield, soon: "Rules", count: "13" },
+  { id: "workers", label: "Workers", icon: Users, href: "/workers", count: "7" },
 ];
 
+const SETUP: NavItem[] = [
+  { id: "connections", label: "Connections", icon: Link2, href: "/studio/intelligence?tab=connections", count: "11" },
+  { id: "settings", label: "Settings", icon: Settings, href: "/settings" },
+];
+
+function isActive(pathname: string, search: string, item: NavItem) {
+  if (!item.href) return false;
+  if (item.id === "pulse") {
+    return pathname === "/dashboard" && !search.includes("view=outcomes");
+  }
+  if (item.id === "outcomes") {
+    return pathname === "/dashboard" && search.includes("view=outcomes");
+  }
+  if (item.id === "workers") {
+    return pathname === "/workers" || pathname.startsWith("/workers/") || pathname.startsWith("/knowledge");
+  }
+  if (item.id === "connections") {
+    return pathname.startsWith("/studio/intelligence") && search.includes("tab=connections");
+  }
+  if (item.id === "settings") {
+    return pathname === "/settings" || pathname.startsWith("/settings/");
+  }
+  return pathname === item.href || pathname.startsWith(item.href + "/");
+}
+
+function NavButton({
+  item,
+  collapsed,
+  active,
+  onNavigate,
+  onSoon,
+}: {
+  item: NavItem;
+  collapsed: boolean;
+  active: boolean;
+  onNavigate: () => void;
+  onSoon: (label: string) => void;
+}) {
+  const Icon = item.icon;
+  const className = cn(
+    "group relative flex w-full items-center gap-3 rounded-[9px] px-2.5 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500",
+    active
+      ? "h-8 bg-indigo-500/15 font-semibold text-indigo-200"
+      : "h-[30px] text-slate-400 hover:bg-white/[0.04] hover:text-white",
+  );
+
+  const body = (
+    <>
+      {active && (
+        <span className="absolute -left-2.5 top-1/2 h-[22px] w-[3px] -translate-y-1/2 rounded-r bg-indigo-400" />
+      )}
+      <Icon className={cn("size-[17px] shrink-0", active ? "text-indigo-300" : "text-slate-500")} />
+      {!collapsed && (
+        <>
+          <span className="truncate text-[14px] font-medium whitespace-nowrap">{item.label}</span>
+          {item.live && <span className="ml-auto size-[7px] shrink-0 rounded-full bg-emerald-400 shadow-[0_0_0_3px_rgba(16,185,129,0.2)]" aria-label="Live" />}
+          {item.badge && !item.live && (
+            <span className="ml-auto rounded-full bg-indigo-500 px-1.5 font-mono text-[10px] leading-[17px] text-white">
+              {item.badge}
+            </span>
+          )}
+          {item.count && !item.badge && !item.live && (
+            <span className="ml-auto font-mono text-[10px] text-slate-500">{item.count}</span>
+          )}
+        </>
+      )}
+    </>
+  );
+
+  if (item.soon) {
+    return (
+      <button
+        type="button"
+        className={className}
+        onClick={() => onSoon(item.soon!)}
+        title={collapsed ? item.label : undefined}
+      >
+        {body}
+      </button>
+    );
+  }
+
+  return (
+    <Link
+      href={item.href!}
+      aria-current={active ? "page" : undefined}
+      onClick={onNavigate}
+      className={className}
+      title={collapsed ? item.label : undefined}
+    >
+      {body}
+    </Link>
+  );
+}
+
 export function AppShell({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <Suspense
+      fallback={(
+        <AppShellFrame title={title} search="">
+          {children}
+        </AppShellFrame>
+      )}
+    >
+      <AppShellWithSearch title={title}>{children}</AppShellWithSearch>
+    </Suspense>
+  );
+}
+
+function AppShellWithSearch({ title, children }: { title: string; children: React.ReactNode }) {
+  const searchParams = useSearchParams();
+  const search = searchParams?.toString() ? `?${searchParams.toString()}` : "";
+  return <AppShellFrame title={title} search={search}>{children}</AppShellFrame>;
+}
+
+function AppShellFrame({ title, children, search }: { title: string; children: React.ReactNode; search: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const inStudio = pathname.startsWith("/studio");
@@ -31,6 +174,11 @@ export function AppShell({ title, children }: { title: string; children: React.R
     } finally {
       router.push("/login");
     }
+  }
+
+  function onSoon(label: string) {
+    toast.message(`${label} opens the same way. Pulse and Investors are wired up in this prototype.`);
+    closeMobileMenu();
   }
 
   return (
@@ -50,95 +198,102 @@ export function AppShell({ title, children }: { title: string; children: React.R
           "transform transition-transform duration-300 ease-in-out -translate-x-full lg:translate-x-0",
           mobileOpen && "translate-x-0",
         )}
-        style={{ width: collapsed ? 72 : 200 }}
+        style={{ width: collapsed ? 72 : 220 }}
+        aria-label="Main"
       >
-        <div className="relative flex h-16 items-center justify-center border-b border-white/[0.06] px-4">
-          <div className="flex items-center justify-center overflow-hidden">
+        <div className="relative flex items-center gap-2.5 border-b border-white/[0.06] px-3 py-3.5">
+          <div className="flex min-w-0 items-center gap-2 overflow-hidden">
             <Logo iconOnly={collapsed} />
+            {!collapsed && (
+              <span className="truncate text-[16px] font-medium tracking-[-0.01em] text-slate-400" style={{ fontFamily: "var(--font-display)" }}>
+                Pulse
+              </span>
+            )}
           </div>
           <button
             onClick={() => setCollapsed((c) => !c)}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-            className="absolute -right-3 top-1/2 mr-5 hidden size-7 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-[#111827] text-slate-300 shadow-md transition-all hover:bg-[#1f2937] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 lg:flex"
+            className="absolute -right-3 top-1/2 hidden size-7 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-[#111827] text-slate-300 shadow-md transition-all hover:bg-[#1f2937] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 lg:flex"
           >
             <ChevronLeft className={cn("size-4 transition-transform", collapsed && "rotate-180")} />
           </button>
         </div>
-        <div className="border-b border-white/[0.06] px-3 py-3">
-          <button
-            onClick={() => {
-              closeMobileMenu();
-              router.push(inStudio ? "/dashboard" : "/studio");
-            }}
-            className="flex w-full items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.015] px-3 py-2.5 text-xs font-medium transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
-          >
-            {inStudio ? <Sparkles className="size-4 shrink-0 text-violet-400" /> : <Wrench className="size-4 shrink-0 text-cyan-400" />}
-            {!collapsed && (
-              <span className="text-slate-300">
-                {inStudio ? "Studio" : "Creator"} <span className="text-slate-500">- {inStudio ? "Creator" : "Studio"}</span>
-              </span>
-            )}
-          </button>
+
+        <div className="flex items-center gap-2.5 border-b border-white/[0.06] px-3 py-3">
+          <span className="grid size-[30px] shrink-0 place-items-center rounded-lg bg-white text-[12px] font-extrabold text-[#05070d]" style={{ fontFamily: "var(--font-display)" }}>
+            JM
+          </span>
+          {!collapsed && (
+            <span className="min-w-0">
+              <b className="block truncate text-[13px] font-semibold text-white">Joseph Mews</b>
+              <span className="block truncate text-[11.5px] text-slate-500">josephmews.co.uk</span>
+            </span>
+          )}
         </div>
-        <nav aria-label="Primary" className="flex-1 px-3 py-3">
-          <ul className="flex flex-col gap-1">
-            {NAV.map(({ href, label, icon: Icon, locked }) => {
-              if (locked) {
-                return (
-                  <li key={href}>
-                    <div
-                      aria-disabled="true"
-                      title="Locked"
-                      className="group relative flex w-full cursor-not-allowed items-center gap-3 rounded-xl border border-transparent px-3 py-3 text-slate-500 opacity-60"
-                    >
-                      <Icon className="size-5 shrink-0 text-slate-600" />
-                      {!collapsed && (
-                        <>
-                          <span className="text-sm font-medium whitespace-nowrap">{label}</span>
-                          <Lock className="ml-auto size-4 shrink-0 text-slate-500" />
-                        </>
-                      )}
-                    </div>
-                  </li>
-                );
-              }
-              const active =
-                href === "/workers"
-                  ? pathname === "/workers" || pathname.startsWith("/workers/") || pathname.startsWith("/knowledge")
-                  : pathname === href || pathname.startsWith(href + "/");
-              return (
-                <li key={href}>
-                  <Link
-                    href={href}
-                    aria-current={active ? "page" : undefined}
-                    onClick={closeMobileMenu}
-                    className={cn(
-                      "group relative flex w-full items-center gap-3 rounded-xl px-3 py-3 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500",
-                      active
-                        ? "border border-cyan-500/30 bg-cyan-500/10 text-white"
-                        : "border border-transparent text-slate-400 hover:bg-white/[0.04] hover:text-white",
-                    )}
-                  >
-                    {active && (
-                      <span className="absolute left-0 top-1/2 h-8 w-1 -translate-y-1/2 rounded-r-full bg-gradient-to-b from-cyan-400 to-violet-500" />
-                    )}
-                    <Icon className={cn("size-5 shrink-0", active ? "text-cyan-400" : "text-slate-500")} />
-                    {!collapsed && <span className="text-sm font-medium whitespace-nowrap">{label}</span>}
-                  </Link>
-                </li>
-              );
-            })}
+
+        <nav aria-label="Company brain" className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2.5 py-2">
+          {!collapsed && (
+            <div className="px-2.5 pb-1.5 pt-2 font-mono text-[10px] tracking-[0.12em] text-slate-500 uppercase">
+              Company brain
+            </div>
+          )}
+          <ul className="flex flex-col gap-0.5">
+            {COMPANY_BRAIN.map((item) => (
+              <li key={item.id}>
+                <NavButton
+                  item={item}
+                  collapsed={collapsed}
+                  active={isActive(pathname, search, item)}
+                  onNavigate={closeMobileMenu}
+                  onSoon={onSoon}
+                />
+              </li>
+            ))}
+          </ul>
+
+          {!collapsed && (
+            <div className="mt-2 border-t border-white/[0.06] px-2.5 pb-1.5 pt-4 font-mono text-[10px] tracking-[0.12em] text-slate-500 uppercase">
+              Setup
+            </div>
+          )}
+          {collapsed && <div className="my-2 border-t border-white/[0.06]" />}
+          <ul className="flex flex-col gap-0.5">
+            {SETUP.map((item) => (
+              <li key={item.id}>
+                <NavButton
+                  item={item}
+                  collapsed={collapsed}
+                  active={isActive(pathname, search, item)}
+                  onNavigate={closeMobileMenu}
+                  onSoon={onSoon}
+                />
+              </li>
+            ))}
           </ul>
         </nav>
-        <div className="sticky bottom-0 border-t border-white/[0.06] bg-[#070a12] p-3">
+
+        <div className="mt-auto space-y-2 border-t border-white/[0.06] p-3">
+          {!collapsed && (
+            <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
+              <div className="flex items-center justify-between text-[12.5px]">
+                <b className="font-semibold text-white">Worker capacity</b>
+                <span className="font-mono text-[11px] text-slate-400">7 / 12</span>
+              </div>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                <i className="block h-full w-[58%] rounded-full bg-gradient-to-r from-blue-500 to-violet-500" />
+              </div>
+              <p className="mt-1.5 text-[11.5px] text-slate-500">5 more workers on your plan</p>
+            </div>
+          )}
           <button
             onClick={onLogout}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-slate-400 transition-colors hover:bg-white/[0.04] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
+            className="flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-slate-400 transition-colors hover:bg-white/[0.04] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
           >
             <LogOut className="size-5 shrink-0" />
             {!collapsed && <span className="text-sm font-medium">Logout</span>}
           </button>
         </div>
+
         <button onClick={closeMobileMenu} aria-label="Close menu" className="absolute top-4 right-4 text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500 lg:hidden">
           <X className="size-5" />
         </button>
@@ -147,7 +302,7 @@ export function AppShell({ title, children }: { title: string; children: React.R
       <main
         className={cn(
           "flex min-h-screen min-w-0 flex-1 flex-col overflow-x-hidden transition-[margin-left] duration-300 ease-in-out",
-          collapsed ? "lg:ml-[72px]" : "lg:ml-[200px]",
+          collapsed ? "lg:ml-[72px]" : "lg:ml-[220px]",
         )}
       >
         <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-[#05070d]/95 backdrop-blur lg:hidden">
@@ -165,4 +320,3 @@ export function AppShell({ title, children }: { title: string; children: React.R
     </div>
   );
 }
-
