@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@qiko/ui";
-import { WorkerChatTab } from "@/app/workers/[id]/page";
+import { WorkerChatTab } from "@/components/worker-cockpit-tabs";
 import { BLOCK_AGENTS } from "@/components/knowledge/investors-data";
 import { createAgent, type Agent } from "@/lib/api";
 

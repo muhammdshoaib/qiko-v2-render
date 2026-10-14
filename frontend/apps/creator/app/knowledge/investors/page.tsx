@@ -32,7 +32,7 @@ import {
   WorkerCrmTab,
   WorkerSettingsTab,
   WorkerTrainTab,
-} from "@/app/workers/[id]/page";
+} from "@/components/worker-cockpit-tabs";
 
 type Tab = "Overview" | "Observability" | "Analytics" | "Chat" | "Train" | "Sources" | "CRM" | "Connections" | "Settings";
 
