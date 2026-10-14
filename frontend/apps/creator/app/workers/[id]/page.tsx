@@ -190,15 +190,15 @@ export default function WorkerDetailPage() {
           {tab === "Overview" && <OverviewTab id={id} worker={worker} />}
           {tab === "Analytics" && <AnalyticsTab id={id} />}
           {tab === "Train" && !isViewer && (
-            <TrainTab id={id} worker={worker} docs={docs.data} loading={docs.isLoading}
+            <WorkerTrainTab id={id} worker={worker} docs={docs.data} loading={docs.isLoading}
               onKnowledgeChange={refresh} onWorkerChange={refreshAgents} />
           )}
           {tab === "Sources" && !isViewer && <SourcesTab agentId={id} />}
-          {tab === "CRM" && <CrmTab id={id} readOnly={isViewer} />}
-          {tab === "Connections" && !isViewer && <ConnectionsTab id={id} worker={worker} />}
-          {tab === "Chat" && <ChatTab id={id} worker={worker} />}
+          {tab === "CRM" && <WorkerCrmTab id={id} readOnly={isViewer} />}
+          {tab === "Connections" && !isViewer && <WorkerConnectionsTab id={id} worker={worker} />}
+          {tab === "Chat" && <WorkerChatTab id={id} worker={worker} />}
           {tab === "Settings" && !isViewer && (
-            <SettingsTab key={worker ? "loaded" : "loading"} id={id} worker={worker} onWorkerChange={refreshAgents} />
+            <WorkerSettingsTab key={worker ? "loaded" : "loading"} id={id} worker={worker} onWorkerChange={refreshAgents} />
           )}
         </div>
       </div>
@@ -309,7 +309,7 @@ function AnalyticsTab({ id }: { id: string }) {
   );
 }
 
-function CrmTab({ id, readOnly }: { id: string; readOnly?: boolean }) {
+export function WorkerCrmTab({ id, readOnly }: { id: string; readOnly?: boolean }) {
   return (
     <div className="h-[70vh]">
       <CrmPipeline agentId={id} readOnly={readOnly} />
@@ -330,7 +330,7 @@ const CONNECTION_ICONS: Record<(typeof CONNECTIONS_SUBTABS)[number], LucideIcon>
   Teams: Users, Salesforce: Share2, "API Access": KeyRound,
 };
 
-function ConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
+export function WorkerConnectionsTab({ id, worker }: { id: string; worker?: Agent }) {
   const [sub, setSub] = useState<(typeof CONNECTIONS_SUBTABS)[number]>("Voice");
   return (
     <div className="space-y-4">
@@ -963,7 +963,7 @@ function GmailSubTab({ id }: { id: string }) {
 const TRAIN_STEPS = ["Background", "Tone", "Behavior", "Knowledge"] as const;
 type TrainStep = (typeof TRAIN_STEPS)[number];
 
-function TrainTab({ id, worker, docs, loading, onKnowledgeChange, onWorkerChange }: {
+export function WorkerTrainTab({ id, worker, docs, loading, onKnowledgeChange, onWorkerChange }: {
   id: string; worker?: Agent; docs?: Doc[]; loading: boolean;
   onKnowledgeChange: () => void; onWorkerChange: () => void;
 }) {
@@ -1517,7 +1517,7 @@ function newConversationId() {
   return `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
+export function WorkerChatTab({ id, worker }: { id: string; worker?: Agent }) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const [conversationId, setConversationId] = useState(() => searchParams.get("conversation") ?? "");
@@ -1624,7 +1624,7 @@ function ChatTab({ id, worker }: { id: string; worker?: Agent }) {
   );
 }
 
-function SettingsTab({ id, worker, onWorkerChange }: { id: string; worker?: Agent; onWorkerChange: () => void }) {
+export function WorkerSettingsTab({ id, worker, onWorkerChange }: { id: string; worker?: Agent; onWorkerChange: () => void }) {
   const { openConfirmationDialog, closeConfirmationDialog, setPending, ConfirmActionDialog } = useConfirmActionDialog();
   const cfg = worker?.config ?? {};
   // Full Name defaults to the agent's top-level name (which has no dedicated update endpoint),
