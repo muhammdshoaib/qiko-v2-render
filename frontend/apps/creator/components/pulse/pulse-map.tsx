@@ -6,7 +6,7 @@ import { cn } from "@qiko/ui";
 import type { FocusId, WorkerId } from "@/components/intelligence-layer/model";
 import { useReferral } from "@/lib/brain/referral-store";
 import { useBrain } from "@/lib/brain/store";
-import { LIVE_CAPTURES, type LiveCapture } from "./live-captures";
+import { LIVE_CAPTURES } from "./live-captures";
 import { MAP_NODES, pulseNode } from "./nodes";
 import { companyIntel } from "./record-summary";
 
@@ -41,8 +41,6 @@ const SYSTEMS: Sys[] = [
   { name: "Grounded chat", to: ["investor-app", "properties"] },
 ];
 
-type TickerRow = LiveCapture & { ago: string };
-
 export function PulseMap({
   focus,
   workerNames,
@@ -63,10 +61,6 @@ export function PulseMap({
     x: number;
     y: number;
   } | null>(null);
-  const [ticker, setTicker] = useState<TickerRow[]>(() =>
-    LIVE_CAPTURES.slice(0, 4).map((item, index) => ({ ...item, ago: `${(index + 1) * 3}m` })),
-  );
-  const flashRef = useRef<AreaId | null>(null);
   const referral = useReferral();
   const brain = useBrain();
   const intel = companyIntel(referral.status, brain.approval);
@@ -331,11 +325,6 @@ export function PulseMap({
       }
 
       const t = ts / 1000;
-      if (flashRef.current) {
-        const n = nodes.find((x) => x.a.id === flashRef.current);
-        if (n) n.flash = 1;
-        flashRef.current = null;
-      }
       for (const n of nodes) {
         const isH = hoverNode === n;
         const r = n.r * (1 + Math.sin(t * 1.6 + n.phase) * 0.025) * (isH ? 1.07 : 1);
@@ -404,10 +393,6 @@ export function PulseMap({
       if (!zoom && ts - lastEvent > (reduced ? 9000 : 4200)) {
         lastEvent = ts;
         const event = LIVE_CAPTURES[evIdx++ % LIVE_CAPTURES.length];
-        setTicker((rows) => {
-          const aged = rows.map((row) => ({ ...row, ago: row.ago === "NOW" ? "1m" : row.ago }));
-          return [{ ...event, ago: "NOW" }, ...aged].slice(0, 5);
-        });
         const n = nodes.find((x) => x.a.id === event.block);
         if (n) {
           n.flash = 1;
@@ -441,111 +426,73 @@ export function PulseMap({
   }, [hubCaption]);
 
   return (
-    <div className="flex flex-col gap-3.5">
-      <section aria-label="Company intelligence map" className="relative overflow-hidden rounded-2xl border border-white/10 bg-muted">
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-start justify-between gap-3 p-4 sm:px-5 sm:pt-5">
-          <div>
-            <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
-              Knowledge map
-            </h2>
-            <p className="mt-0.5 text-[12.5px] text-slate-300">Systems feed blocks, blocks feed your company brain. Click a block to open it.</p>
-          </div>
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-white/[0.06] px-2 py-1 font-mono text-[10px] tracking-[0.08em] text-slate-300 uppercase">
-            <i className="size-1.5 rounded-full bg-emerald-400 motion-safe:animate-pulse" />
-            Capturing
-          </span>
-        </div>
-
-        <div className="space-y-2 px-4 pb-4 pt-16 md:hidden">
-          {MAP_NODES.map((id) => {
-            const node = pulseNode(id, workerNames);
-            return (
-              <button
-                key={id}
-                type="button"
-                onClick={() => onSelect(id)}
-                className={cn(
-                  "flex min-h-11 w-full flex-col rounded-xl border bg-card px-3 py-3 text-left",
-                  mapFocus === id ? "border-primary" : "border-white/10",
-                )}
-              >
-                <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-slate-400">{node.kicker}</span>
-                <span className="mt-0.5 text-[15px] font-semibold text-foreground">{node.name}</span>
-                <span className="mt-1 text-[13px] leading-relaxed text-slate-300">{intel.hover[id] ?? node.summary}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        <div ref={wrapRef} className="relative hidden min-h-[500px] h-[min(58vh,640px)] md:block">
-          <canvas ref={canvasRef} className="block h-full w-full" aria-label="Live knowledge map. Click a block to open it." />
-          {hover && (
-            <div
-              role="tooltip"
-              className="pointer-events-none absolute z-20 min-w-[210px] -translate-x-1/2 -translate-y-full rounded-xl border border-white/15 bg-popover px-3.5 py-3"
-              style={{ left: hover.x, top: Math.max(hover.y, 92) }}
-            >
-              <p className="text-[14px] font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{hover.name}</p>
-              {hover.lines.map(([label, value]) => (
-                <p key={label} className="mt-1 flex justify-between gap-3 text-[12.5px] text-slate-400">
-                  <span>{label}</span>
-                  <span className="font-semibold text-foreground">{value}</span>
-                </p>
-              ))}
-              <p className="mt-2 text-[12px] font-semibold text-primary">{hover.cta}</p>
-            </div>
-          )}
-          <div className="pointer-events-none absolute bottom-4 left-5 flex flex-wrap gap-3.5 text-[12px] text-slate-400">
-            {AREAS.filter((a) => !a.dark).map((a) => (
-              <span key={a.id} className="inline-flex items-center gap-1.5">
-                <i className="size-2 rounded-full" style={{ background: a.col }} />
-                {a.name}
-              </span>
-            ))}
-            <span className="inline-flex items-center gap-1.5">
-              <i className="size-2 rounded-full border border-dashed border-red-400 bg-transparent" />
-              Not connected
-            </span>
-          </div>
-        </div>
-      </section>
-
-      <aside className="rounded-2xl border border-white/10 bg-card" aria-label="Captured just now">
-        <div className="flex items-center gap-2 px-5 pt-4 sm:px-6">
+    <section aria-label="Company intelligence map" className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-muted">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-start justify-between gap-3 p-4 sm:px-5 sm:pt-5">
+        <div>
           <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
-            Captured just now
+            Knowledge map
           </h2>
-          <span className="flex-1" />
-          <span className="inline-flex items-center gap-1.5 rounded-md bg-white/[0.06] px-2 py-1 font-mono text-[10px] tracking-[0.08em] text-slate-300 uppercase">
-            <i className="size-1.5 rounded-full bg-emerald-400 motion-safe:animate-pulse" />
-            Live
+          <p className="mt-0.5 text-[12.5px] text-slate-300">Systems feed blocks, blocks feed your company brain. Click a block to open it.</p>
+        </div>
+        <span className="inline-flex items-center gap-1.5 rounded-md bg-white/[0.06] px-2 py-1 font-mono text-[10px] tracking-[0.08em] text-slate-300 uppercase">
+          <i className="size-1.5 rounded-full bg-emerald-400 motion-safe:animate-pulse" />
+          Capturing
+        </span>
+      </div>
+
+      <div className="space-y-2 px-4 pb-4 pt-16 md:hidden">
+        {MAP_NODES.map((id) => {
+          const node = pulseNode(id, workerNames);
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => onSelect(id)}
+              className={cn(
+                "flex min-h-11 w-full flex-col rounded-xl border bg-card px-3 py-3 text-left",
+                mapFocus === id ? "border-primary" : "border-white/10",
+              )}
+            >
+              <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-slate-400">{node.kicker}</span>
+              <span className="mt-0.5 text-[15px] font-semibold text-foreground">{node.name}</span>
+              <span className="mt-1 text-[13px] leading-relaxed text-slate-300">{intel.hover[id] ?? node.summary}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div ref={wrapRef} className="relative hidden min-h-[500px] flex-1 md:block">
+        <canvas ref={canvasRef} className="block h-full w-full" aria-label="Live knowledge map. Click a block to open it." />
+        {hover && (
+          <div
+            role="tooltip"
+            className="pointer-events-none absolute z-20 min-w-[210px] -translate-x-1/2 -translate-y-full rounded-xl border border-white/15 bg-popover px-3.5 py-3"
+            style={{ left: hover.x, top: Math.max(hover.y, 92) }}
+          >
+            <p className="text-[14px] font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{hover.name}</p>
+            {hover.lines.map(([label, value]) => (
+              <p key={label} className="mt-1 flex justify-between gap-3 text-[12.5px] text-slate-400">
+                <span>{label}</span>
+                <span className="font-semibold text-foreground">{value}</span>
+              </p>
+            ))}
+            <p className="mt-2 text-[12px] font-semibold text-primary">{hover.cta}</p>
+          </div>
+        )}
+        <div className="pointer-events-none absolute bottom-4 left-5 flex flex-wrap gap-3.5 text-[12px] text-slate-400">
+          {AREAS.filter((a) => !a.dark).map((a) => (
+            <span key={a.id} className="inline-flex items-center gap-1.5">
+              <i className="size-2 rounded-full" style={{ background: a.col }} />
+              {a.name}
+            </span>
+          ))}
+          <span className="inline-flex items-center gap-1.5">
+            <i className="size-2 rounded-full border border-dashed border-red-400 bg-transparent" />
+            Not connected
           </span>
         </div>
-        <ul className="p-5 pt-3 sm:px-6">
-          {ticker.map((row, index) => (
-            <li key={`${row.text}-${index}`} className="border-t border-white/[0.06] first:border-t-0 first:pt-0">
-              <button
-                type="button"
-                onClick={() => {
-                  flashRef.current = row.block;
-                  onSelect(row.block);
-                }}
-                className="grid min-h-11 w-full grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 py-3.5 text-left"
-              >
-                <span className="flex size-8 items-center justify-center rounded-full bg-indigo-500/15 font-mono text-[10px] font-medium text-indigo-300">
-                  {row.initials}
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-[13.5px] font-semibold leading-snug text-foreground">{row.text}</span>
-                  <span className="mt-0.5 block text-[12px] text-slate-400">{row.worker} · {row.block === "investor-app" ? "Investors" : "Properties"}</span>
-                </span>
-                <span className="font-mono text-[10.5px] text-slate-500">{row.ago}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      </aside>
-    </div>
+      </div>
+    </section>
   );
 }
 

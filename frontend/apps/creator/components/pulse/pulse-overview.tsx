@@ -155,8 +155,8 @@ export function PulseOverview({
           </div>
         </header>
 
-        <div className="grid gap-3.5 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
-          <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-card px-6 py-5">
+        <div className="grid items-stretch gap-3.5 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
+          <section className="relative flex h-full flex-col overflow-hidden rounded-2xl border border-white/10 bg-card px-6 py-5">
             <span className="absolute inset-y-0 left-0 w-1 bg-gradient-to-b from-blue-500 to-violet-500" aria-hidden />
             <p className="font-mono text-[11px] tracking-[0.14em] text-violet-400 uppercase">Value from knowledge used this month</p>
             <button
@@ -190,7 +190,7 @@ export function PulseOverview({
             </div>
           </section>
 
-          <section className="flex flex-col rounded-2xl border border-indigo-400/25 bg-gradient-to-br from-indigo-500/15 via-card to-card px-6 py-5">
+          <section className="flex h-full flex-col rounded-2xl border border-indigo-400/25 bg-gradient-to-br from-indigo-500/15 via-card to-card px-6 py-5">
             <p className="font-mono text-[11px] tracking-[0.14em] text-violet-400 uppercase">Today&apos;s best next move</p>
             <h2 className="mt-2.5 text-[19px] font-extrabold leading-snug tracking-[-0.01em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
               Referrals close in half the time. Worth a referral programme?
@@ -224,14 +224,13 @@ export function PulseOverview({
               </GhostButton>
             </div>
           </section>
-        </div>
 
-        <div className="grid gap-3.5 lg:grid-cols-[minmax(0,1.85fr)_minmax(0,1fr)]">
-          <div className="min-h-0">
+          <div className="min-h-0 h-full lg:min-h-[560px]">
             <PulseMap focus={open} workerNames={workerNames} onSelect={openNode} />
           </div>
-          <section className="rounded-2xl border border-white/10 bg-card" aria-label="Captured just now">
-            <div className="flex items-center gap-2 px-5 pt-4">
+
+          <section className="flex h-full min-h-0 flex-col rounded-2xl border border-white/10 bg-card lg:min-h-[560px]" aria-label="Captured just now">
+            <div className="flex shrink-0 items-center gap-2 px-5 pt-4">
               <h3 className="text-[15px] font-semibold tracking-[-0.01em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
                 Captured just now
               </h3>
@@ -241,7 +240,7 @@ export function PulseOverview({
                 LIVE
               </span>
             </div>
-            <ul className="divide-y divide-white/[0.06] px-5 py-3">
+            <ul className="min-h-0 flex-1 divide-y divide-white/[0.06] overflow-y-auto px-5 py-3">
               {captures.map((item, index) => (
                 <li key={`${item.text}-${index}`} className="grid grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-3 py-3 first:pt-1">
                   <span className="grid size-8 place-items-center rounded-full bg-indigo-500/15 font-mono text-[10px] font-medium text-indigo-300">

@@ -5,43 +5,32 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   Activity,
-  BookOpen,
   ChevronLeft,
-  CircleDot,
-  GitBranch,
   Link2,
   LogOut,
   Menu,
-  Network,
   Settings,
-  Shield,
   Users,
   X,
 } from "lucide-react";
 import { Logo, cn } from "@qiko/ui";
 import { logout } from "@/lib/api";
-import { toast } from "sonner";
 import { DemoGuide } from "@/components/studio/demo-guide";
 
 type NavItem = {
   id: string;
   label: string;
   icon: typeof Activity;
-  href?: string;
-  soon?: string;
+  href: string;
   badge?: string;
   count?: string;
   live?: boolean;
 };
 
+/** Pulse sidebar: only surfaces called out in the Pulse functionality summary / sprint nav. */
 const COMPANY_BRAIN: NavItem[] = [
   { id: "pulse", label: "Pulse", icon: Activity, href: "/dashboard", live: true },
-  { id: "knowledge-map", label: "Knowledge map", icon: Network, soon: "Knowledge map" },
-  { id: "outcomes", label: "Outcomes", icon: CircleDot, href: "/dashboard?view=outcomes", badge: "1" },
-  { id: "decisions", label: "Decisions", icon: GitBranch, soon: "Decisions", badge: "3" },
-  { id: "records", label: "Records", icon: BookOpen, soon: "Records", count: "6,884" },
-  { id: "rules", label: "Rules", icon: Shield, soon: "Rules", count: "13" },
-  { id: "workers", label: "Workers", icon: Users, href: "/workers", count: "7" },
+  { id: "workers", label: "Knowledge", icon: Users, href: "/workers", count: "7" },
 ];
 
 const SETUP: NavItem[] = [
@@ -50,12 +39,8 @@ const SETUP: NavItem[] = [
 ];
 
 function isActive(pathname: string, search: string, item: NavItem) {
-  if (!item.href) return false;
   if (item.id === "pulse") {
-    return pathname === "/dashboard" && !search.includes("view=outcomes");
-  }
-  if (item.id === "outcomes") {
-    return pathname === "/dashboard" && search.includes("view=outcomes");
+    return pathname === "/dashboard";
   }
   if (item.id === "workers") {
     return pathname === "/workers" || pathname.startsWith("/workers/") || pathname.startsWith("/knowledge");
@@ -74,13 +59,11 @@ function NavButton({
   collapsed,
   active,
   onNavigate,
-  onSoon,
 }: {
   item: NavItem;
   collapsed: boolean;
   active: boolean;
   onNavigate: () => void;
-  onSoon: (label: string) => void;
 }) {
   const Icon = item.icon;
   const className = cn(
@@ -90,8 +73,14 @@ function NavButton({
       : "h-[30px] text-slate-400 hover:bg-white/[0.04] hover:text-white",
   );
 
-  const body = (
-    <>
+  return (
+    <Link
+      href={item.href}
+      aria-current={active ? "page" : undefined}
+      onClick={onNavigate}
+      className={className}
+      title={collapsed ? item.label : undefined}
+    >
       {active && (
         <span className="absolute -left-2.5 top-1/2 h-[22px] w-[3px] -translate-y-1/2 rounded-r bg-indigo-400" />
       )}
@@ -110,31 +99,6 @@ function NavButton({
           )}
         </>
       )}
-    </>
-  );
-
-  if (item.soon) {
-    return (
-      <button
-        type="button"
-        className={className}
-        onClick={() => onSoon(item.soon!)}
-        title={collapsed ? item.label : undefined}
-      >
-        {body}
-      </button>
-    );
-  }
-
-  return (
-    <Link
-      href={item.href!}
-      aria-current={active ? "page" : undefined}
-      onClick={onNavigate}
-      className={className}
-      title={collapsed ? item.label : undefined}
-    >
-      {body}
     </Link>
   );
 }
@@ -174,11 +138,6 @@ function AppShellFrame({ title, children, search }: { title: string; children: R
     } finally {
       router.push("/login");
     }
-  }
-
-  function onSoon(label: string) {
-    toast.message(`${label} opens the same way. Pulse and Investors are wired up in this prototype.`);
-    closeMobileMenu();
   }
 
   return (
@@ -245,7 +204,6 @@ function AppShellFrame({ title, children, search }: { title: string; children: R
                   collapsed={collapsed}
                   active={isActive(pathname, search, item)}
                   onNavigate={closeMobileMenu}
-                  onSoon={onSoon}
                 />
               </li>
             ))}
@@ -265,7 +223,6 @@ function AppShellFrame({ title, children, search }: { title: string; children: R
                   collapsed={collapsed}
                   active={isActive(pathname, search, item)}
                   onNavigate={closeMobileMenu}
-                  onSoon={onSoon}
                 />
               </li>
             ))}
