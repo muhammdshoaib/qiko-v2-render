@@ -51,6 +51,17 @@ export function blockFromFocus(id: FocusId): BlockId | null {
   return null;
 }
 
+/** Dedicated Knowledge screens — skip in-Pulse Agent/Block views to avoid a flash. */
+export function knowledgeBlockHref(next: Partial<PulseNav>): string | null {
+  if (next.block === "investors" || next.worker === "intent-intelligence") {
+    return "/knowledge/investors";
+  }
+  if (next.block === "properties" || next.worker === "property-insights") {
+    return "/knowledge/portfolio-reporter";
+  }
+  return null;
+}
+
 function coercePane(worker: WorkerId | null, pane: PulsePane): PulsePane {
   if (worker) {
     if (pane === "overview" || pane === "activity") return "conversations";

@@ -1,16 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
 import { cn } from "@qiko/ui";
 import type { FocusId, WorkerId } from "@/components/intelligence-layer/model";
-import { useReferral } from "@/lib/brain/referral-store";
-import { useBrain } from "@/lib/brain/store";
 import { LIVE_CAPTURES } from "./live-captures";
 import { MAP_NODES, pulseNode } from "./nodes";
-import { companyIntel } from "./record-summary";
 
-type AreaId = "investor-app" | "properties" | "crm";
+type AreaId = "investor-app" | "properties";
 
 type Area = {
   id: AreaId;
@@ -20,6 +16,7 @@ type Area = {
   ang: number;
   col: string;
   agents: number;
+  workerLabel: string;
 };
 
 type Sys = { name: string; to: AreaId[] };
@@ -28,10 +25,10 @@ type Node = { a: Area; x: number; y: number; r: number; c: string; phase: number
 type SysN = { s: Sys; x: number; y: number };
 type Part = { from: Pt; to: Node; c: Pt; t: number; sp: number; kind: "in" | "up"; col: string };
 
+/** One knowledge block = one worker. Map shows exactly these two. */
 const AREAS: Area[] = [
-  { id: "investor-app", name: "Investors", live: true, ang: -2.45, col: "#6366F1", agents: 1 },
-  { id: "properties", name: "Properties", live: true, ang: 0.55, col: "#22D3EE", agents: 1 },
-  { id: "crm", name: "Client CRM", live: false, dark: true, ang: 2.55, col: "#E5484D", agents: 0 },
+  { id: "investor-app", name: "Investor Concierge", workerLabel: "Intent Signal Agent", live: true, ang: -2.2, col: "#6366F1", agents: 1 },
+  { id: "properties", name: "Portfolio Reporter", workerLabel: "Portfolio Insights", live: true, ang: 0.85, col: "#22D3EE", agents: 1 },
 ];
 
 const SYSTEMS: Sys[] = [
@@ -60,11 +57,8 @@ export function PulseMap({
     cta: string;
     x: number;
     y: number;
+    placement: "above" | "below";
   } | null>(null);
-  const referral = useReferral();
-  const brain = useBrain();
-  const intel = companyIntel(referral.status, brain.approval);
-  const hubCaption = intel.hubCaption;
   const mapFocus = focus && MAP_NODES.includes(focus) ? focus : null;
 
   useEffect(() => {
@@ -145,32 +139,48 @@ export function PulseMap({
       return null;
     };
 
+    const tipPlace = (x: number, aboveAnchorY: number) => {
+      // Flip below when near the top so overflow:hidden on the map does not clip the card.
+      const tipH = 118;
+      const tipW = 230;
+      const above = aboveAnchorY >= tipH + 12;
+      return {
+        x: Math.min(Math.max(x, tipW / 2 + 8), Math.max(tipW / 2 + 8, W - tipW / 2 - 8)),
+        placement: (above ? "above" : "below") as "above" | "below",
+      };
+    };
+
     const onMove = (e: PointerEvent) => {
       const found = hit(e);
       if (found?.kind === "area") {
         hoverNode = found.n;
         canvas.style.cursor = "pointer";
         const a = found.n.a;
+        const aboveY = found.n.y - found.n.r - 8;
+        const belowY = found.n.y + found.n.r + 8;
+        const place = tipPlace(found.n.x, aboveY);
         setHover({
           name: a.name,
-          lines: a.dark
-            ? [["Status", "Not connected"], ["Next", "A hand-off stays planned"]]
-            : a.id === "investor-app"
-              ? [["Register", "4,180 advised"], ["High-intent", "28"], ["Reachouts awaiting", "1 of 9"]]
-              : [["Portfolios with insights", "3,104"], ["Concentration cards", "412"], ["Holdings read", "2,140"]],
-          cta: a.live ? "Click to open →" : "Connect to start capturing",
-          x: found.n.x,
-          y: found.n.y - found.n.r - 8,
+          lines:
+            a.id === "investor-app"
+              ? [["Role", a.workerLabel], ["High-intent", "28"], ["Reachouts awaiting", "1 of 9"]]
+              : [["Role", a.workerLabel], ["With insights", "3,104"], ["Concentration cards", "412"]],
+          cta: "Open knowledge block →",
+          x: place.x,
+          y: place.placement === "above" ? aboveY : belowY,
+          placement: place.placement,
         });
       } else if (found?.kind === "core") {
         hoverNode = null;
         canvas.style.cursor = "pointer";
+        const place = tipPlace(core.x, core.y - 36);
         setHover({
           name: "Joseph Mews",
-          lines: [["Record", hubCaption], ["Blocks", "Investors · Properties"]],
+          lines: [["Blocks", "Investor Concierge · Portfolio Reporter"]],
           cta: "Click to open →",
-          x: core.x,
-          y: core.y - 36,
+          x: place.x,
+          y: place.placement === "above" ? core.y - 36 : core.y + 28,
+          placement: place.placement,
         });
       } else {
         hoverNode = null;
@@ -187,10 +197,6 @@ export function PulseMap({
         return;
       }
       const a = found.n.a;
-      if (a.dark || a.id === "crm") {
-        toast.message("Client CRM is not connected. A hand-off stays a planned next step.");
-        return;
-      }
       if (reduced) {
         onSelectRef.current(a.id);
         return;
@@ -212,7 +218,6 @@ export function PulseMap({
         if (p >= 1 && !zoom.done) {
           zoom.done = true;
           const id = zoom.n.a.id;
-          if (id === "crm" || zoom.n.a.dark) return;
           setTimeout(() => onSelectRef.current(id), 40);
         }
       }
@@ -283,9 +288,6 @@ export function PulseMap({
       ctx.font = '500 9.5px ui-monospace, "Roboto Mono", monospace';
       ctx.fillStyle = "rgba(148,163,184,.9)";
       ctx.fillText("COMPANY INTELLIGENCE", core.x, core.y + 36);
-      ctx.font = '800 15px var(--font-display), Inter, sans-serif';
-      ctx.fillStyle = "#F8FAFC";
-      ctx.fillText(hubCaption, core.x, core.y + 54);
 
       if (!reduced) {
         for (let i = parts.length - 1; i >= 0; i--) {
@@ -423,7 +425,7 @@ export function PulseMap({
       canvas.removeEventListener("pointerleave", onLeave);
       canvas.removeEventListener("click", onClick);
     };
-  }, [hubCaption]);
+  }, []);
 
   return (
     <section aria-label="Company intelligence map" className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-muted">
@@ -432,7 +434,7 @@ export function PulseMap({
           <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
             Knowledge map
           </h2>
-          <p className="mt-0.5 text-[12.5px] text-slate-300">Systems feed blocks, blocks feed your company brain. Click a block to open it.</p>
+          <p className="mt-0.5 text-[12.5px] text-slate-300">Two knowledge blocks — click to open.</p>
         </div>
         <span className="inline-flex items-center gap-1.5 rounded-md bg-white/[0.06] px-2 py-1 font-mono text-[10px] tracking-[0.08em] text-slate-300 uppercase">
           <i className="size-1.5 rounded-full bg-emerald-400 motion-safe:animate-pulse" />
@@ -455,7 +457,7 @@ export function PulseMap({
             >
               <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-slate-400">{node.kicker}</span>
               <span className="mt-0.5 text-[15px] font-semibold text-foreground">{node.name}</span>
-              <span className="mt-1 text-[13px] leading-relaxed text-slate-300">{intel.hover[id] ?? node.summary}</span>
+              <span className="mt-1 text-[13px] leading-relaxed text-slate-300">{node.summary}</span>
             </button>
           );
         })}
@@ -466,8 +468,11 @@ export function PulseMap({
         {hover && (
           <div
             role="tooltip"
-            className="pointer-events-none absolute z-20 min-w-[210px] -translate-x-1/2 -translate-y-full rounded-xl border border-white/15 bg-popover px-3.5 py-3"
-            style={{ left: hover.x, top: Math.max(hover.y, 92) }}
+            className={cn(
+              "pointer-events-none absolute z-20 min-w-[210px] max-w-[280px] -translate-x-1/2 rounded-xl border border-white/15 bg-popover px-3.5 py-3 shadow-lg",
+              hover.placement === "above" ? "-translate-y-full" : "translate-y-0",
+            )}
+            style={{ left: hover.x, top: hover.y }}
           >
             <p className="text-[14px] font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{hover.name}</p>
             {hover.lines.map(([label, value]) => (
@@ -480,16 +485,12 @@ export function PulseMap({
           </div>
         )}
         <div className="pointer-events-none absolute bottom-4 left-5 flex flex-wrap gap-3.5 text-[12px] text-slate-400">
-          {AREAS.filter((a) => !a.dark).map((a) => (
+          {AREAS.map((a) => (
             <span key={a.id} className="inline-flex items-center gap-1.5">
               <i className="size-2 rounded-full" style={{ background: a.col }} />
               {a.name}
             </span>
           ))}
-          <span className="inline-flex items-center gap-1.5">
-            <i className="size-2 rounded-full border border-dashed border-red-400 bg-transparent" />
-            Not connected
-          </span>
         </div>
       </div>
     </section>

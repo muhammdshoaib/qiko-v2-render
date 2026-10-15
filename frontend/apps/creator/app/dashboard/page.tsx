@@ -4,7 +4,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { PulseApp } from "@/components/pulse/pulse-app";
-import { mergeNav, type PulseNav } from "@/components/pulse/route";
+import { knowledgeBlockHref, mergeNav, type PulseNav } from "@/components/pulse/route";
 import { SHOWCASE_WORKERS } from "@/lib/studio/showcase";
 
 const INITIAL: PulseNav = {
@@ -36,9 +36,9 @@ function PulseDashboardScreen() {
   }, [params]);
 
   const onNav = useCallback((next: Partial<PulseNav>) => {
-    // Sprint brief: Investors opens the knowledge-block screen (same tab bar as today's worker).
-    if (next.block === "investors" || next.worker === "intent-intelligence") {
-      router.push("/knowledge/investors");
+    const href = knowledgeBlockHref(next);
+    if (href) {
+      router.push(href);
       return;
     }
     setNav((current) => mergeNav(current, next));

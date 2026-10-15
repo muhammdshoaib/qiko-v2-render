@@ -145,8 +145,8 @@ export function companyIntel(referral: ReferralStatus, _approval: ApprovalStatus
       },
     ],
     workers: [
-      { id: "intent-intelligence" as WorkerId, name: "Intelligence Worker", writes: "Intent, attention, and reachouts across the register" },
-      { id: "property-insights" as WorkerId, name: "Property Insights", writes: "Per-investor portfolio insights across advised clients" },
+      { id: "intent-intelligence" as WorkerId, name: "Investor Concierge", writes: "Intent, attention, and reachouts across the register" },
+      { id: "property-insights" as WorkerId, name: "Portfolio Reporter", writes: "Per-investor portfolio insights across advised clients" },
     ],
     timeline: [
       { month: "Jul", note: BLOCKS.investors.accumulation[0].note },

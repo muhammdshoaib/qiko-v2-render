@@ -23,28 +23,28 @@ export const PULSE_SOURCES: SystemId[] = ["knowledge", "chat"];
 
 const BLOCK_COPY: Record<SystemId, { name: string; kicker: string; summary: string; connects: string[] }> = {
   "investor-app": {
-    name: "Investors",
-    kicker: "Knowledge block",
-    summary: "4,180 on the book: intent, reachouts, and quiet listings. Lombe House is the worked example.",
-    connects: ["Intelligence Worker", "Company intelligence"],
+    name: "Investor Concierge",
+    kicker: "Knowledge block · Intent Signal Agent",
+    summary: "Intent signals and reachouts from investor-app activity.",
+    connects: ["Investor Concierge", "Company intelligence"],
   },
   properties: {
-    name: "Properties",
-    kicker: "Knowledge block",
-    summary: "Reads each advised investor’s portfolio, then writes their insight cards. 3,104 with insights. 412 concentration.",
-    connects: ["Property Insights", "Company intelligence"],
+    name: "Portfolio Reporter",
+    kicker: "Knowledge block · Portfolio Insights",
+    summary: "Portfolio insight cards from advised investors’ holdings.",
+    connects: ["Portfolio Reporter", "Company intelligence"],
   },
   knowledge: {
     name: SYSTEMS.knowledge.name,
     kicker: "Source",
     summary: SYSTEMS.knowledge.subtitle,
-    connects: ["Both workers"],
+    connects: ["Both knowledge blocks"],
   },
   chat: {
     name: SYSTEMS.chat.name,
     kicker: "Source",
     summary: SYSTEMS.chat.subtitle,
-    connects: ["Both workers"],
+    connects: ["Both knowledge blocks"],
   },
 };
 
@@ -55,8 +55,8 @@ export function pulseNode(id: FocusId, workerNames?: Partial<Record<WorkerId, st
       kind: "record",
       name: "Joseph Mews",
       kicker: "Company intelligence",
-      summary: "Shared memory of portfolio insights, concentration, intent, and reachouts — not a score, and not a CRM.",
-      connects: ["Investors", "Properties", "Property Insights", "Intelligence Worker"],
+      summary: "Shared record across knowledge blocks.",
+      connects: ["Investor Concierge", "Portfolio Reporter"],
     };
   }
   if (isWorkerId(id)) {
@@ -65,7 +65,7 @@ export function pulseNode(id: FocusId, workerNames?: Partial<Record<WorkerId, st
       id,
       kind: "worker",
       name: workerNames?.[id] ?? worker.name,
-      kicker: "Worker",
+      kicker: "Knowledge block",
       summary: worker.purpose,
       connects: worker.writes.map((item) => item.title),
     };
@@ -91,19 +91,13 @@ export const MAP_LAYOUT: Record<FocusId, { x: string; y: string }> = {
   chat: { x: "90%", y: "68%" },
 };
 
+/** Knowledge-block circles on the Pulse map (one block = one worker). */
 export const MAP_NODES: FocusId[] = [
-  "record",
   "investor-app",
   "properties",
-  "intent-intelligence",
-  "property-insights",
 ];
 
 export const MAP_EDGES: [FocusId, FocusId][] = [
   ["investor-app", "record"],
   ["properties", "record"],
-  ["intent-intelligence", "investor-app"],
-  ["property-insights", "properties"],
-  ["intent-intelligence", "record"],
-  ["property-insights", "record"],
 ];

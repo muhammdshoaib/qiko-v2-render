@@ -115,12 +115,14 @@ function MapBubble({
   item,
   active,
   onSelect,
+  positions,
 }: {
   item: AnalyticsBubble;
   active: boolean;
   onSelect: () => void;
+  positions: Record<string, { x: number; y: number }>;
 }) {
-  const pos = BUBBLE_POS[item.id] ?? { x: 50, y: 50 };
+  const pos = positions[item.id] ?? { x: 50, y: 50 };
   const size = Math.max(64, Math.min(112, Math.round(52 + item.size * 0.55)));
   const tone = TONE_META[item.tone];
 
@@ -147,16 +149,48 @@ function MapBubble({
   );
 }
 
-export function InvestorsAnalytics({ agentId }: { agentId?: string }) {
-  const [active, setActive] = useState(ANALYTICS_BUBBLES[0]?.id ?? "referrals");
-  const bubble = ANALYTICS_BUBBLES.find((item) => item.id === active) ?? ANALYTICS_BUBBLES[0];
+export type KnowledgeAnalyticsProps = {
+  agentId?: string;
+  bubbles?: AnalyticsBubble[];
+  bubblePositions?: Record<string, { x: number; y: number }>;
+  hubId?: string;
+  skipLinkIds?: string[];
+  kicker?: string;
+  title?: string;
+  description?: string;
+  kpis?: {
+    strongestLift: string;
+    strongestHint: string;
+    evidenceSources: string;
+    evidenceHint: string;
+  };
+};
+
+export function InvestorsAnalytics({
+  agentId,
+  bubbles = ANALYTICS_BUBBLES,
+  bubblePositions = BUBBLE_POS,
+  hubId = "referrals",
+  skipLinkIds = ["selling"],
+  kicker = "Investors · Analytics",
+  title = "What Investors knows",
+  description = "Patterns the block has learned, how often they are used, and where coverage is still missing.",
+  kpis = {
+    strongestLift: "+41%",
+    strongestHint: "Referrals vs portal leads",
+    evidenceSources: "6",
+    evidenceHint: "CRM, chat, calendars",
+  },
+}: KnowledgeAnalyticsProps) {
+  const [active, setActive] = useState(bubbles[0]?.id ?? hubId);
+  const bubble = bubbles.find((item) => item.id === active) ?? bubbles[0];
   const analytics = useQuery({
     queryKey: ["agent-analytics", agentId],
     queryFn: () => getAgentAnalytics(agentId!),
     enabled: !!agentId,
   });
 
-  const strengthData = useMemo(() => patternBars(ANALYTICS_BUBBLES), []);
+  const strengthData = useMemo(() => patternBars(bubbles), [bubbles]);
   const usageData = useMemo(() => {
     if (!analytics.data) return SAMPLE_USAGE;
     const base = Math.max(8, analytics.data.calls || 12);
@@ -167,10 +201,11 @@ export function InvestorsAnalytics({ agentId }: { agentId?: string }) {
     }));
   }, [analytics.data]);
 
-  const covered = ANALYTICS_BUBBLES.filter((b) => !b.gap).length;
-  const gaps = ANALYTICS_BUBBLES.filter((b) => b.gap).length;
+  const covered = bubbles.filter((b) => !b.gap).length;
+  const gaps = bubbles.filter((b) => b.gap).length;
   const tone = bubble ? TONE_META[bubble.tone] : TONE_META.growing;
   const liveConnected = Boolean(agentId && analytics.data);
+  const hubPos = bubblePositions[hubId] ?? { x: 50, y: 50 };
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
@@ -178,7 +213,7 @@ export function InvestorsAnalytics({ agentId }: { agentId?: string }) {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <p className="font-mono text-[10px] tracking-[0.14em] text-violet-300/90 uppercase">
-              Investors · Analytics
+              {kicker}
             </p>
             <HonestyBadge kind={liveConnected ? "connected" : "illustrative"} />
           </div>
@@ -186,10 +221,10 @@ export function InvestorsAnalytics({ agentId }: { agentId?: string }) {
             className="mt-1 text-[24px] font-extrabold tracking-[-0.03em] text-white sm:text-[28px]"
             style={{ fontFamily: "var(--font-display)" }}
           >
-            What Investors knows
+            {title}
           </h1>
           <p className="mt-1 max-w-[62ch] text-[13.5px] text-slate-400">
-            Patterns the block has learned, how often they are used, and where coverage is still missing.
+            {description}
           </p>
         </div>
       </div>
@@ -197,8 +232,8 @@ export function InvestorsAnalytics({ agentId }: { agentId?: string }) {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           { label: "Patterns covered", value: String(covered), hint: `${gaps} gap${gaps === 1 ? "" : "s"} open`, icon: CircleDot },
-          { label: "Strongest lift", value: "+41%", hint: "Referrals vs portal leads", icon: TrendingBadge },
-          { label: "Evidence sources", value: "6", hint: "CRM, chat, calendars", icon: Activity },
+          { label: "Strongest lift", value: kpis.strongestLift, hint: kpis.strongestHint, icon: TrendingBadge },
+          { label: "Evidence sources", value: kpis.evidenceSources, hint: kpis.evidenceHint, icon: Activity },
           { label: "Selected use", value: bubble ? `${bubble.used}%` : "—", hint: bubble?.label ?? "Pick a pattern", icon: BarChart3 },
         ].map((kpi) => {
           const Icon = kpi.icon;
@@ -241,15 +276,14 @@ export function InvestorsAnalytics({ agentId }: { agentId?: string }) {
               aria-hidden
             />
             <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden>
-              {ANALYTICS_BUBBLES.filter((b) => b.id !== "selling").map((item) => {
-                const from = BUBBLE_POS.referrals;
-                const to = BUBBLE_POS[item.id];
-                if (!to || item.id === "referrals") return null;
+              {bubbles.filter((b) => !skipLinkIds.includes(b.id)).map((item) => {
+                const to = bubblePositions[item.id];
+                if (!to || item.id === hubId) return null;
                 return (
                   <line
                     key={item.id}
-                    x1={`${from.x}%`}
-                    y1={`${from.y}%`}
+                    x1={`${hubPos.x}%`}
+                    y1={`${hubPos.y}%`}
                     x2={`${to.x}%`}
                     y2={`${to.y}%`}
                     stroke="rgba(148,163,184,0.18)"
@@ -258,12 +292,13 @@ export function InvestorsAnalytics({ agentId }: { agentId?: string }) {
                 );
               })}
             </svg>
-            {ANALYTICS_BUBBLES.map((item) => (
+            {bubbles.map((item) => (
               <MapBubble
                 key={item.id}
                 item={item}
                 active={active === item.id}
                 onSelect={() => setActive(item.id)}
+                positions={bubblePositions}
               />
             ))}
           </div>

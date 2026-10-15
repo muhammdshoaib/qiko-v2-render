@@ -22,10 +22,8 @@ import { InvestorsAnalytics } from "@/components/knowledge/investors-analytics";
 import { InvestorsChat } from "@/components/knowledge/investors-chat";
 import { InvestorsOverview } from "@/components/knowledge/investors-overview";
 import { BLOCK_AGENTS, INVESTORS_BLOCK } from "@/components/knowledge/investors-data";
-import { ObservabilityTab } from "@/components/intelligence-layer/support-tabs";
-import { mergeActivity } from "@/components/intelligence-layer/feed";
+import { InvestorActivitySignals } from "@/components/knowledge/investor-activity-signals";
 import { SourcesTab } from "@/components/sources-tab";
-import { useBrain } from "@/lib/brain/store";
 import { listAgents, listDocuments, me, type Agent, type Doc } from "@/lib/api";
 import {
   WorkerConnectionsTab,
@@ -53,11 +51,9 @@ const MANAGE_TABS: Tab[] = ["Train", "Sources", "Connections", "Settings"];
 export default function InvestorsKnowledgePage() {
   const [tab, setTab] = useState<Tab>("Overview");
   const qc = useQueryClient();
-  const brain = useBrain();
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const account = useQuery({ queryKey: ["me"], queryFn: me });
   const isViewer = account.data?.role === "viewer";
-  const observabilityFeed = useMemo(() => mergeActivity(brain.events), [brain.events]);
 
   const linkedAgent = useMemo(() => {
     const list = agents.data ?? [];
@@ -95,7 +91,7 @@ export default function InvestorsKnowledgePage() {
                 {INVESTORS_BLOCK.name}
               </h1>
               <p className="text-sm text-slate-400">
-                {INVESTORS_BLOCK.kind} · {INVESTORS_BLOCK.agents} agents
+                {INVESTORS_BLOCK.kind} · {INVESTORS_BLOCK.role}
                 {linkedAgent ? ` · linked ${linkedAgent.name}` : ""}
               </p>
             </div>
@@ -131,12 +127,7 @@ export default function InvestorsKnowledgePage() {
 
         <div className="min-w-0 p-4 sm:p-6 lg:p-8">
           {tab === "Overview" && <InvestorsOverview />}
-          {tab === "Observability" && (
-            <ObservabilityTab
-              events={observabilityFeed}
-              onInspect={() => setTab("Overview")}
-            />
-          )}
+          {tab === "Observability" && <InvestorActivitySignals />}
           {tab === "Analytics" && <InvestorsAnalytics agentId={linkedAgentId} />}
           {tab === "Chat" && (
             <InvestorsChat agents={agents.data ?? []} agentsLoading={agents.isLoading} />

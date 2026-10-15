@@ -58,8 +58,8 @@ export const WORKERS: Record<WorkerId, {
 }> = {
   "property-insights": {
     id: "property-insights",
-    name: "Property Insights",
-    role: "Per-investor portfolio insights",
+    name: "Portfolio Reporter",
+    role: "Portfolio Insights",
     purpose: "Joseph Mews is the property advisor. For each advised investor, read their portfolio and write grounded insight cards into their app — without contacting anyone, advising a trade, or moving money.",
     responsibilities: [
       "Inspect each advised investor’s holdings",
@@ -90,8 +90,8 @@ export const WORKERS: Record<WorkerId, {
   },
   "intent-intelligence": {
     id: "intent-intelligence",
-    name: "Intelligence Worker",
-    role: "Intent signals and research",
+    name: "Investor Concierge",
+    role: "Intent Signal Agent",
     purpose: "Cluster investor attention and answer grounded research questions.",
     responsibilities: [
       "Capture intent signals",
@@ -207,15 +207,15 @@ export const ACTIVITY: ActivityItem[] = [
   { id: "ev-risk", title: "412 concentration cards written", detail: "412 of 4,180 advised investors received a concentration card in their app.", at: "08:15", filter: "completed", edgeId: "property-record", focus: "property-insights" },
   { id: "ev-intent", title: "Lombe House intent captured", detail: "Lombe House / Derby repeat views flagged as interest.", at: "09:40", filter: "completed", edgeId: "intent-record", focus: "intent-intelligence" },
   { id: "ev-income", title: "Portfolio insight", detail: "Concentration card written from holdings.", at: "Mon 11:02", filter: "allowed", edgeId: "property-properties", focus: "properties" },
-  { id: "ev-pay-block", title: "Advice and payment blocked", detail: "Property Insights cannot contact an investor, advise a trade, or pay a vendor.", at: "08:16", filter: "blocked", edgeId: "property-properties", focus: "property-insights" },
-  { id: "ev-contact-block", title: "Investor email blocked", detail: "The Intelligence Worker cannot contact an investor.", at: "09:41", filter: "blocked", edgeId: "intent-chat", focus: "intent-intelligence" },
+  { id: "ev-pay-block", title: "Advice and payment blocked", detail: "Portfolio Reporter cannot contact an investor, advise a trade, or pay a vendor.", at: "08:16", filter: "blocked", edgeId: "property-properties", focus: "property-insights" },
+  { id: "ev-contact-block", title: "Investor email blocked", detail: "Investor Concierge cannot contact an investor.", at: "09:41", filter: "blocked", edgeId: "intent-chat", focus: "intent-intelligence" },
 ];
 
 export const SOURCES = [
-  { name: "Portfolio documents", owner: "Property Insights", connected: "Property Insights", sensitivity: "Commercial", assistant: "Grounded only", honesty: "illustrative" as HonestyKind },
-  { name: "Investor portfolios", owner: "Advised clients", connected: "Property Insights", sensitivity: "Client holdings", assistant: "Yes, scoped", honesty: "illustrative" as HonestyKind },
-  { name: "Investor activity", owner: "Intent paths", connected: "Intelligence Worker", sensitivity: "Behavioural", assistant: "Yes, scoped", honesty: "illustrative" as HonestyKind },
-  { name: "Knowledge library", owner: "Intelligence Worker", connected: "Intelligence Worker", sensitivity: "Internal", assistant: "Critic + gate", honesty: "illustrative" as HonestyKind },
+  { name: "Portfolio documents", owner: "Portfolio Reporter", connected: "Portfolio Reporter", sensitivity: "Commercial", assistant: "Grounded only", honesty: "illustrative" as HonestyKind },
+  { name: "Investor portfolios", owner: "Advised clients", connected: "Portfolio Reporter", sensitivity: "Client holdings", assistant: "Yes, scoped", honesty: "illustrative" as HonestyKind },
+  { name: "Investor activity", owner: "Intent paths", connected: "Investor Concierge", sensitivity: "Behavioural", assistant: "Yes, scoped", honesty: "illustrative" as HonestyKind },
+  { name: "Knowledge library", owner: "Investor Concierge", connected: "Investor Concierge", sensitivity: "Internal", assistant: "Critic + gate", honesty: "illustrative" as HonestyKind },
 ];
 
 export const TABS: { id: CockpitTab; label: string }[] = [

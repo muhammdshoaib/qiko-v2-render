@@ -37,11 +37,11 @@ export type ShowcaseWorker = {
 export const ATTENTION: ShowcaseOutcome[] = [
   {
     title: "Lombe House intent captured",
-    detail: "Lombe House / Derby attracted repeated investor views. The Intelligence Worker flagged interest — no outreach was sent.",
+    detail: "Lombe House / Derby attracted repeated investor views. Investor Concierge flagged interest — no outreach was sent.",
     at: "Today, 09:40",
     status: "completed",
     origin: "intent-intelligence",
-    originLabel: "Intelligence Worker",
+    originLabel: "Investor Concierge",
     href: "/studio/w/intent-intelligence",
   },
 ];
@@ -49,12 +49,12 @@ export const ATTENTION: ShowcaseOutcome[] = [
 export const RECENT_ACTIONS: ShowcaseOutcome[] = [
   {
     title: "3,104 portfolios received insights",
-    detail: "Property Insights read each advised investor’s holdings and wrote grounded cards into their app. Empty portfolios got no invented card.",
+    detail: "Portfolio Reporter read each advised investor’s holdings and wrote grounded cards into their app. Empty portfolios got no invented card.",
     at: "Today, 07:40",
     status: "completed",
     origin: "properties",
-    originLabel: "Property Insights · Properties",
-    href: "/studio/w/property-insights",
+    originLabel: "Portfolio Reporter",
+    href: "/knowledge/portfolio-reporter",
   },
   {
     title: "2,140 client holdings read",
@@ -62,8 +62,8 @@ export const RECENT_ACTIONS: ShowcaseOutcome[] = [
     at: "Yesterday, 15:10",
     status: "completed",
     origin: "properties",
-    originLabel: "Property Insights · Properties",
-    href: "/studio/w/property-insights",
+    originLabel: "Portfolio Reporter",
+    href: "/knowledge/portfolio-reporter",
   },
   {
     title: "412 concentration cards",
@@ -71,8 +71,8 @@ export const RECENT_ACTIONS: ShowcaseOutcome[] = [
     at: "Today, 08:15",
     status: "completed",
     origin: "property-insights",
-    originLabel: "Property Insights · Properties",
-    href: "/studio/w/property-insights",
+    originLabel: "Portfolio Reporter",
+    href: "/knowledge/portfolio-reporter",
   },
   {
     title: "8 reachouts already on the record",
@@ -80,16 +80,16 @@ export const RECENT_ACTIONS: ShowcaseOutcome[] = [
     at: "This quarter",
     status: "completed",
     origin: "investor-app",
-    originLabel: "Investors · Intelligence Worker",
+    originLabel: "Investor Concierge",
     href: "/studio/w/intent-intelligence",
   },
   {
     title: "Intent signal captured",
-    detail: "Intelligence Worker recorded a cluster of investor-app views. Sample from existing intent-signal capability.",
+    detail: "Investor Concierge recorded a cluster of investor-app views.",
     at: "Yesterday, 16:22",
     status: "completed",
     origin: "investor-app",
-    originLabel: "Investors · Intelligence Worker",
+    originLabel: "Investor Concierge",
     href: "/studio/w/intent-intelligence",
   },
 ];
@@ -97,8 +97,8 @@ export const RECENT_ACTIONS: ShowcaseOutcome[] = [
 export const SHOWCASE_WORKERS: ShowcaseWorker[] = [
   {
     slug: "property-insights",
-    name: "Property Insights",
-    role: "Per-investor portfolio insights",
+    name: "Portfolio Reporter",
+    role: "Portfolio Insights",
     purpose: "Joseph Mews is the property advisor. For each advised investor, read their portfolio and write grounded insight cards into their app — without contacting anyone, advising a trade, or moving money.",
     status: "ready",
     sample: true,
@@ -132,19 +132,19 @@ export const SHOWCASE_WORKERS: ShowcaseWorker[] = [
       { title: "412 concentration cards", detail: "Clients with 3+ holdings in one city. Written per investor, counted here.", at: "Today, 08:15", status: "completed", origin: "properties", originLabel: "Properties" },
     ],
     actions: [
-      { title: "Client holdings read", detail: "2,140 holdings belong to advised investors. Input to insight generation — not Joseph Mews stock.", at: "Yesterday, 15:10", status: "completed", origin: "property-insights", originLabel: "Property Insights" },
+      { title: "Client holdings read", detail: "2,140 holdings belong to advised investors. Input to insight generation — not Joseph Mews stock.", at: "Yesterday, 15:10", status: "completed", origin: "property-insights", originLabel: "Portfolio Reporter" },
     ],
     permissions: [
       { name: "Read client portfolios", mode: "allowed" },
       { name: "Write a per-investor insight card", mode: "allowed" },
       { name: "Contact an investor, advise a trade, or pay a vendor", mode: "blocked" },
     ],
-    intelligence: "Property Insights contributes per-investor portfolio insights — what each advised client already holds, and the cards written from that — so company intelligence is not only intent noise.",
+    intelligence: "Portfolio Reporter contributes per-investor portfolio insights — what each advised client already holds, and the cards written from that — so company intelligence is not only intent noise.",
   },
   {
     slug: "intent-intelligence",
-    name: "Intelligence Worker",
-    role: "Intent signals and research",
+    name: "Investor Concierge",
+    role: "Intent Signal Agent",
     purpose: "Watch investor and research activity, cluster intent signals, and keep a grounded view of what people are looking at.",
     status: "ready",
     sample: true,
@@ -178,14 +178,14 @@ export const SHOWCASE_WORKERS: ShowcaseWorker[] = [
       { title: "Quiet developments", detail: "Two listings had no new intent in 7 days.", at: "Yesterday, 16:22", status: "completed", origin: "investor-app", originLabel: "Investors" },
     ],
     actions: [
-      { title: "Signal recorded", detail: "Written to the activity feed. No investor email was sent.", at: "Yesterday, 16:22", status: "completed", origin: "intent-intelligence", originLabel: "Intelligence Worker" },
+      { title: "Signal recorded", detail: "Written to the activity feed. No investor email was sent.", at: "Yesterday, 16:22", status: "completed", origin: "intent-intelligence", originLabel: "Investor Concierge" },
     ],
     permissions: [
       { name: "Read intent and knowledge", mode: "allowed" },
       { name: "Flag a cluster for review", mode: "requires review" },
       { name: "Contact an investor", mode: "blocked" },
     ],
-    intelligence: "The Intelligence Worker contributes attention and research — what people looked at, and what the knowledge base can safely say about it.",
+    intelligence: "Investor Concierge contributes attention and research — what people looked at, and what the knowledge base can safely say about it.",
   },
 ];
 

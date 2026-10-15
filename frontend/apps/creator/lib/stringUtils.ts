@@ -42,7 +42,7 @@ export function workerTypeLabel(atype?: string | null): string {
     case "finance":
       return "Financial Analyst";
     case "intelligence":
-      return "Intelligence Worker";
+      return "Investor Concierge";
     default:
       return atype ? toTitleFromSlug(atype) : "AI Worker";
   }

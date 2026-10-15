@@ -10,7 +10,7 @@ import { AgentView } from "./agent-view";
 import { AskBrainChat, AskBrainTrigger, useAskBrainShortcut } from "./ask-brain";
 import { BlockView } from "./block-view";
 import { PulseOverview } from "./pulse-overview";
-import { blockFromFocus, mergeNav, type PulseNav } from "./route";
+import { blockFromFocus, knowledgeBlockHref, mergeNav, type PulseNav } from "./route";
 
 export function PulseApp({
   workers,
@@ -35,6 +35,11 @@ export function PulseApp({
   }, [nav]);
 
   const go = (next: Partial<PulseNav>) => {
+    // Leave Pulse for Knowledge block pages without mounting Agent/Block view first.
+    if (knowledgeBlockHref(next)) {
+      onNav(next);
+      return;
+    }
     setOpen((current) => mergeNav(current, next));
     onNav(next);
   };
@@ -64,8 +69,13 @@ export function PulseApp({
       go({ focus: null, block: null, worker: null, detail: null });
       return;
     }
-    if (id === "investor-app" || id === "properties") {
-      go({ block: id === "investor-app" ? "investors" : "properties", worker: null, focus: null, detail: null });
+    // Knowledge block circle → that worker's detailed view (1 block = 1 worker).
+    if (id === "investor-app") {
+      go({ block: "investors", worker: "intent-intelligence", focus: null, detail: null });
+      return;
+    }
+    if (id === "properties") {
+      go({ block: "properties", worker: "property-insights", focus: null, detail: null });
       return;
     }
     if (isWorkerId(id)) {

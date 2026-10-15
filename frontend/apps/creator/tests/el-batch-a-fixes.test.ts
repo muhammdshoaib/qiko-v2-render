@@ -43,6 +43,7 @@ test("AppShell route predicate matches every authenticated app route and no publ
     "/studio/el-finance-001/finance", "/studio/el-finance-001/finance/property/A001",
     "/settings", "/chat/abc123", "/billing", "/crm", "/crm/pipeline", "/crm/companies/albemarle",
     "/studio/w/property-insights", "/studio/w/intent-intelligence", "/studio/intelligence",
+    "/knowledge/investors", "/knowledge/portfolio-reporter",
   ]) {
     assert.equal(isAppShellRoute(appRoute), true, `${appRoute} should be treated as an AppShell route`);
   }

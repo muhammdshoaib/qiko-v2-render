@@ -2,30 +2,31 @@
 
 export const INVESTORS_BLOCK = {
   id: "investors",
-  name: "Investors",
+  name: "Investor Concierge",
   kind: "Knowledge block",
-  agents: 3,
+  role: "Intent Signal Agent",
+  agents: 1,
   valueThisMonth: "£42.6k",
-  valueHint: "Illustrative · value from knowledge used this month.",
+  valueHint: "Value from knowledge used this month.",
   conversations: 186,
   patternsToDate: 24,
   handedToCrm: 11,
 };
 
 export const FUNNEL_STEPS = [
-  { id: "crm", label: "In CRM", count: 4180, system: "Client CRM · not connected", connected: false },
+  { id: "crm", label: "In CRM", count: 4180, system: "Client CRM", connected: false },
   { id: "aware", label: "Aware", count: 912, system: "Investor app", connected: true },
   { id: "intent", label: "Intent", count: 28, system: "Investor Concierge", connected: true, actOn: true },
   { id: "meeting", label: "Meeting", count: 9, system: "Advisor calendar", connected: true },
 ];
 
-/** Demo agents for Investors Overview — names match Pulse drill-down HTML. */
+/** One knowledge block = one worker (Investor Concierge / Intent Signal Agent). */
 export const BLOCK_AGENTS = [
   {
     id: "concierge",
     initials: "IC",
     name: "Investor Concierge",
-    role: "Customer-facing sales assistant",
+    role: "Intent Signal Agent",
     status: "Learning" as const,
     talkingNow: 38,
     thisMonth: 214,
@@ -34,34 +35,6 @@ export const BLOCK_AGENTS = [
     systems: ["HubSpot", "Calendly", "Stock sheet", "Rightmove"],
     workflow: "Qualify enquiry → match to stock → book call → hand over to CRM",
     spark: [6, 8, 7, 11, 9, 12, 14, 13, 16, 15, 18, 21],
-  },
-  {
-    id: "reporting",
-    initials: "PR",
-    name: "Portfolio Reporter",
-    role: "Monthly statements and portfolio Q&A",
-    status: "Learning" as const,
-    talkingNow: 12,
-    thisMonth: 96,
-    toCrm: 0,
-    learned: 4,
-    systems: ["Xero", "Arthur Online", "Google Drive", "Investor app"],
-    workflow: "Pull rents and costs → build statement → answer follow-ups",
-    spark: [4, 4, 5, 5, 6, 6, 7, 7, 7, 8, 8, 9],
-  },
-  {
-    id: "reinvest",
-    initials: "RS",
-    name: "Reinvestment Scout",
-    role: "Spots investors ready to buy again",
-    status: "Needs review" as const,
-    talkingNow: 7,
-    thisMonth: 41,
-    toCrm: 6,
-    learned: 2,
-    systems: ["HubSpot", "Deal pipeline", "Land Registry", "Investor app"],
-    workflow: "Watch portfolio events → score readiness → draft offer for adviser",
-    spark: [2, 3, 2, 4, 3, 5, 4, 6, 5, 7, 6, 8],
   },
 ];
 

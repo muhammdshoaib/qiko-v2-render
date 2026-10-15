@@ -23,8 +23,8 @@ const VALUE = {
 };
 
 const KNOWLEDGE_BLOCKS = [
-  { id: "investors" as const, name: "Investors", agents: 3, hours: 29, value: "£18.4k", status: "Growing" as const, color: "bg-indigo-400", bar: "w-[100%]" },
-  { id: "properties" as const, name: "Properties", agents: 1, hours: 18, value: "£12.1k", status: "Established" as const, color: "bg-cyan-400", bar: "w-[66%]" },
+  { id: "investors" as const, name: "Investor Concierge", role: "Intent Signal Agent", agents: 1, hours: 29, value: "£18.4k", status: "Growing" as const, color: "bg-indigo-400", bar: "w-[100%]", worker: "intent-intelligence" as const },
+  { id: "properties" as const, name: "Portfolio Reporter", role: "Portfolio Insights", agents: 1, hours: 18, value: "£12.1k", status: "Established" as const, color: "bg-cyan-400", bar: "w-[66%]", worker: "property-insights" as const },
 ];
 
 const WAITING = [
@@ -58,21 +58,21 @@ const OUTCOMES = [
   {
     id: "o1",
     title: "Referral programme simulation",
-    meta: "Investors · Today 11:20 · Claude",
+    worker: "Investor Concierge",
     status: "Run",
     tone: "good" as const,
   },
   {
     id: "o2",
     title: 'Ask "is this cash?" early',
-    meta: "Investors · Suggested today · Investor Concierge",
+    worker: "Investor Concierge",
     status: "Ready to run",
     tone: "blue" as const,
   },
   {
     id: "o3",
     title: "Spread Gulf relationships across the team",
-    meta: "Investors · Ready in about 2 weeks · Pulse",
+    worker: "Pulse",
     status: "Forming",
     tone: "" as const,
   },
@@ -260,8 +260,6 @@ export function PulseOverview({
         <section id="outcomes" aria-label="Outcomes">
           <div className="mb-3 flex flex-wrap items-center gap-3">
             <h2 className="text-[17px] font-extrabold tracking-[-0.01em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>Outcomes</h2>
-            <span className="hidden h-3.5 w-px bg-white/10 sm:block" />
-            <span className="text-[12.5px] text-slate-500">Processes run on your knowledge, used in Claude and your tools</span>
             <span className="flex-1" />
             <GhostButton className="!min-h-[30px] !px-3 !text-[12px]" onClick={() => onNav({ block: "investors", pane: "outcomes" })}>
               See all
@@ -280,7 +278,7 @@ export function PulseOverview({
                 </span>
                 <div className="min-w-0">
                   <b className="block truncate font-semibold text-foreground">{item.title}</b>
-                  <span className="block truncate text-[12.5px] text-slate-500">{item.meta}</span>
+                  <span className="block truncate text-[12.5px] text-slate-500">{item.worker}</span>
                 </div>
                 <PulseChip tone={item.tone}>{item.status}</PulseChip>
               </button>
@@ -340,13 +338,13 @@ export function PulseOverview({
                 <button
                   key={block.id}
                   type="button"
-                  onClick={() => onNav({ block: block.id === "investors" ? "investors" : "properties", worker: null, detail: null })}
+                  onClick={() => onNav({ block: block.id === "investors" ? "investors" : "properties", worker: block.worker, detail: null })}
                   className="grid w-full grid-cols-[10px_minmax(0,1fr)_auto_auto] items-center gap-x-3.5 gap-y-1 border-t border-white/[0.06] px-5 py-3.5 text-left first:border-t-0 hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
                 >
                   <i className={`size-2.5 rounded-full ${block.color}`} />
                   <div className="min-w-0">
                     <b className="block font-semibold text-foreground">{block.name}</b>
-                    <span className="text-[12.5px] text-slate-500">{block.agents} agents · {block.hours} hrs saved</span>
+                    <span className="text-[12.5px] text-slate-500">{block.role}</span>
                   </div>
                   <PulseChip tone={block.status === "Growing" ? "good" : ""}>{block.status}</PulseChip>
                   <span className="min-w-[80px] text-right text-[16px] font-extrabold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{block.value}</span>
