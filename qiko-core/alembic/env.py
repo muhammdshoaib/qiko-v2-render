@@ -20,7 +20,12 @@ def _sync_url() -> str:
     if override:
         return override
     url = get_settings().database_url
-    return url.replace("+asyncpg", "+psycopg").replace("+aiosqlite", "")
+    url = url.replace("+asyncpg", "+psycopg").replace("+aiosqlite", "")
+    return (
+        url.replace("ssl=require", "sslmode=require")
+        .replace("ssl=true", "sslmode=require")
+        .replace("ssl=1", "sslmode=require")
+    )
 
 
 config.set_main_option("sqlalchemy.url", _sync_url())

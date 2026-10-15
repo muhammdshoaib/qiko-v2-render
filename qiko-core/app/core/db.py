@@ -30,8 +30,16 @@ def build_sessionmaker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
 
 def to_sync_url(database_url: str) -> str:
     """Map the async DATABASE_URL to its synchronous-driver equivalent (same as alembic/env.py):
-    asyncpg -> psycopg (both installed), aiosqlite -> the stdlib sqlite driver."""
-    return database_url.replace("+asyncpg", "+psycopg").replace("+aiosqlite", "")
+    asyncpg -> psycopg (both installed), aiosqlite -> the stdlib sqlite driver.
+
+    Neon/asyncpg URLs commonly use `ssl=require`; psycopg rejects that key and wants `sslmode`.
+    """
+    url = database_url.replace("+asyncpg", "+psycopg").replace("+aiosqlite", "")
+    return (
+        url.replace("ssl=require", "sslmode=require")
+        .replace("ssl=true", "sslmode=require")
+        .replace("ssl=1", "sslmode=require")
+    )
 
 
 def build_sync_engine(database_url: str | None = None) -> Engine:
