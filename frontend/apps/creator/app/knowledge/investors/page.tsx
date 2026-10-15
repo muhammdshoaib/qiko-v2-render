@@ -159,11 +159,11 @@ export default function InvestorsKnowledgePage() {
               docs={docs.data}
               docsLoading={docs.isLoading}
               agentsLoading={agents.isLoading || ensureAgent.isPending}
-              agentsError={agents.isError || ensureAgent.isError}
+              agentsError={agents.isError}
               onRetryAgents={() => {
                 ensureAttempted.current = false;
                 void agents.refetch();
-                ensureAgent.mutate();
+                if (!linkedAgent) ensureAgent.mutate();
               }}
               onKnowledgeChange={() => qc.invalidateQueries({ queryKey: ["documents", linkedAgentId] })}
               onWorkerChange={() => qc.invalidateQueries({ queryKey: ["agents"] })}
