@@ -1,8 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   ArrowLeft,
@@ -24,7 +24,7 @@ import { PortfolioReporterObservability } from "@/components/knowledge/portfolio
 import { PortfolioReporterOverview } from "@/components/knowledge/portfolio-reporter-overview";
 import { PORTFOLIO_AGENTS, PORTFOLIO_BLOCK } from "@/components/knowledge/portfolio-reporter-data";
 import { SourcesTab } from "@/components/sources-tab";
-import { listAgents, listDocuments, me, type Agent, type Doc } from "@/lib/api";
+import { createAgent, listAgents, listDocuments, me, type Agent, type Doc } from "@/lib/api";
 import {
   WorkerConnectionsTab,
   WorkerCrmTab,
@@ -54,14 +54,31 @@ export default function PortfolioReporterKnowledgePage() {
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const account = useQuery({ queryKey: ["me"], queryFn: me });
   const isViewer = account.data?.role === "viewer";
+  const ensureAttempted = useRef(false);
 
   const linkedAgent = useMemo(() => {
     const list = agents.data ?? [];
-    const match = list.find((agent) =>
-      /portfolio|property.?insight|reporter/i.test(`${agent.name} ${agent.atype}`),
+    const target = PORTFOLIO_BLOCK.name.toLowerCase();
+    return (
+      list.find((agent) => agent.name.toLowerCase() === target) ??
+      list.find((agent) => /portfolio|property.?insight|reporter/i.test(`${agent.name} ${agent.atype}`))
     );
-    return match ?? list.find((a) => a.atype === "finance") ?? list[0];
   }, [agents.data]);
+
+  const ensureAgent = useMutation({
+    mutationFn: () => createAgent(PORTFOLIO_BLOCK.name, "intelligence"),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["agents"] });
+      await qc.invalidateQueries({ queryKey: ["agent-usage"] });
+    },
+  });
+
+  useEffect(() => {
+    if (agents.isLoading || agents.isError || linkedAgent || isViewer) return;
+    if (ensureAttempted.current || ensureAgent.isPending) return;
+    ensureAttempted.current = true;
+    ensureAgent.mutate();
+  }, [agents.isLoading, agents.isError, linkedAgent, isViewer, ensureAgent]);
 
   const linkedAgentId = linkedAgent?.id;
   const docs = useQuery({
@@ -141,9 +158,13 @@ export default function PortfolioReporterKnowledgePage() {
               worker={linkedAgent}
               docs={docs.data}
               docsLoading={docs.isLoading}
-              agentsLoading={agents.isLoading}
-              agentsError={agents.isError}
-              onRetryAgents={() => agents.refetch()}
+              agentsLoading={agents.isLoading || ensureAgent.isPending}
+              agentsError={agents.isError || ensureAgent.isError}
+              onRetryAgents={() => {
+                ensureAttempted.current = false;
+                void agents.refetch();
+                ensureAgent.mutate();
+              }}
               onKnowledgeChange={() => qc.invalidateQueries({ queryKey: ["documents", linkedAgentId] })}
               onWorkerChange={() => qc.invalidateQueries({ queryKey: ["agents"] })}
             />
