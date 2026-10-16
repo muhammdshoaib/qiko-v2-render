@@ -1350,7 +1350,7 @@ export function WorkerChatTab({ id, worker }: { id: string; worker?: Agent }) {
           {busy && <div className="flex justify-start"><TypingIndicator /></div>}
         </div>
         <form onSubmit={(e) => { e.preventDefault(); sendText(input); }} className="flex gap-2">
-          <Input placeholder="Ask your worker somethingâ€¦" value={input} onChange={(e) => setInput(e.target.value)} disabled={busy} aria-label="Ask your worker something" />
+          <Input placeholder="Ask your worker something…" value={input} onChange={(e) => setInput(e.target.value)} disabled={busy} aria-label="Ask your worker something" />
           <Button type="submit" aria-label="Send message" disabled={busy || !input}><SendHorizonal className="size-4" /></Button>
         </form>
       </CardContent>
@@ -1422,7 +1422,7 @@ export function WorkerSettingsTab({ id, worker, onWorkerChange }: { id: string; 
             title={ready ? "Reverting a ready worker to training isn't available yet" : undefined}
             onClick={() => { if (!ready) toggleStatus.mutate(); }}
           >
-            {ready ? "Switch to Training" : toggleStatus.isPending ? "Switchingâ€¦" : "Switch to Ready"}
+            {ready ? "Switch to Training" : toggleStatus.isPending ? "Switching…" : "Switch to Ready"}
           </Button>
         </div>
         {ready && (
@@ -1448,7 +1448,7 @@ export function WorkerSettingsTab({ id, worker, onWorkerChange }: { id: string; 
             title={!ready && !studioLinked ? "Make the worker Ready before pushing it to Studio" : undefined}
             onClick={() => pushStudio.mutate()}
           >
-            {pushStudio.isPending ? "Savingâ€¦" : studioLinked ? "Remove from Studio" : "Push to Studio"}
+            {pushStudio.isPending ? "Saving…" : studioLinked ? "Remove from Studio" : "Push to Studio"}
           </Button>
         </div>
         {pushStudio.isSuccess && !pushStudio.isPending && (
@@ -1483,7 +1483,7 @@ export function WorkerSettingsTab({ id, worker, onWorkerChange }: { id: string; 
         <div className="flex items-center justify-end gap-3">
           {dirty && <p className="text-xs text-amber-700">You have unsaved changes</p>}
           <Button disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
-            {save.isPending ? "Savingâ€¦" : "Save Changes"}
+            {save.isPending ? "Saving…" : "Save Changes"}
           </Button>
         </div>
       </CardContent></Card>
@@ -1512,7 +1512,7 @@ export function WorkerSettingsTab({ id, worker, onWorkerChange }: { id: string; 
             }, e.currentTarget)}
             className="border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-300"
           >
-            {archive.isPending ? "Archivingâ€¦" : "Archive worker"}
+            {archive.isPending ? "Archiving…" : "Archive worker"}
           </Button>
         </div>
         {archive.isError && <p className="text-xs text-red-500">Couldn&apos;t archive the worker. Please try again.</p>}
@@ -1549,7 +1549,7 @@ function KnowledgeTab({ id, docs, loading, onChange }: { id: string; docs?: Doc[
           <span className="min-w-0 flex-1 truncate text-xs text-slate-500">{file?.name ?? "No file chosen"}</span>
           <Button disabled={!file || ingestDoc.isPending} onClick={() => file && ingestDoc.mutate(file)}>
             {ingestDoc.isPending ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
-            {ingestDoc.isPending ? "Ingestingâ€¦" : "Ingest"}
+            {ingestDoc.isPending ? "Ingesting…" : "Ingest"}
           </Button>
         </div>
         {ingestDoc.isError && (
@@ -1561,7 +1561,7 @@ function KnowledgeTab({ id, docs, loading, onChange }: { id: string; docs?: Doc[
 
       <Card><CardContent className="space-y-3 pt-6">
         <p className="text-sm font-medium text-foreground">Or add free-text knowledge</p>
-        <Textarea id="f-knowledge" placeholder="Add free-text knowledgeâ€¦" value={text} onChange={(e) => setText(e.target.value)} />
+        <Textarea id="f-knowledge" placeholder="Add free-text knowledge…" value={text} onChange={(e) => setText(e.target.value)} />
         <div className="flex justify-end"><Button disabled={!text.trim() || add.isPending} onClick={() => add.mutate()}>Add knowledge</Button></div>
       </CardContent></Card>
 

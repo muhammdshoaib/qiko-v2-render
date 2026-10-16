@@ -69,7 +69,7 @@ export function InvestorsChat({ agents, agentsLoading }: { agents: Agent[]; agen
         <div className="rounded-2xl border border-border bg-card p-6">
           <div className="mb-4 flex min-h-48 flex-col items-center justify-center rounded-lg border border-border bg-muted/50 text-center">
             <p className="text-sm font-medium text-slate-700">
-              {agentsLoading || ensure.isPending ? `Starting ${selectedBlock.name}â€¦` : "Preparing chat"}
+              {agentsLoading || ensure.isPending ? `Starting ${selectedBlock.name}…` : "Preparing chat"}
             </p>
             <p className="mt-1 max-w-sm text-xs text-slate-500">
               Setting up this Investors agent so you can test replies here.
