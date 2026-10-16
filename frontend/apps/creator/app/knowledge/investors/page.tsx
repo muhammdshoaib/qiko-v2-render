@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
@@ -30,7 +30,7 @@ import {
   WorkerCrmTab,
   WorkerSettingsTab,
   WorkerTrainTab,
-} from "@/app/workers/[id]/page";
+} from "@/components/worker-cockpit-tabs";
 
 type Tab = "Overview" | "Observability" | "Analytics" | "Chat" | "Train" | "Sources" | "CRM" | "Connections" | "Settings";
 
@@ -91,8 +91,8 @@ export default function InvestorsKnowledgePage() {
                 {INVESTORS_BLOCK.name}
               </h1>
               <p className="text-sm text-slate-400">
-                {INVESTORS_BLOCK.kind} · {INVESTORS_BLOCK.role}
-                {linkedAgent ? ` · linked ${linkedAgent.name}` : ""}
+                {INVESTORS_BLOCK.kind} Â· {INVESTORS_BLOCK.role}
+                {linkedAgent ? ` Â· linked ${linkedAgent.name}` : ""}
               </p>
             </div>
           </div>
@@ -176,7 +176,7 @@ function ExistingWorkerTabBridge({
   onWorkerChange: () => void;
 }) {
   if (agentsLoading) {
-    return <p className="text-sm text-slate-400">Loading worker screens…</p>;
+    return <p className="text-sm text-slate-400">Loading worker screensâ€¦</p>;
   }
 
   if (agentsError) {
@@ -201,7 +201,7 @@ function ExistingWorkerTabBridge({
           {BLOCK_AGENTS.map((agent) => (
             <li key={agent.id} className="rounded-xl border border-border px-3 py-2.5 text-sm text-slate-600">
               <span className="font-medium text-foreground">{agent.name}</span>
-              <span className="text-slate-500"> · {agent.role}</span>
+              <span className="text-slate-500"> Â· {agent.role}</span>
             </li>
           ))}
         </ul>

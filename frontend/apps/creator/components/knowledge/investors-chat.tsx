@@ -1,9 +1,9 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@qiko/ui";
-import { WorkerChatTab } from "@/app/workers/[id]/page";
+import { WorkerChatTab } from "@/components/worker-cockpit-tabs";
 import { BLOCK_AGENTS } from "@/components/knowledge/investors-data";
 import { createAgent, type Agent } from "@/lib/api";
 
@@ -69,7 +69,7 @@ export function InvestorsChat({ agents, agentsLoading }: { agents: Agent[]; agen
         <div className="rounded-2xl border border-border bg-card p-6">
           <div className="mb-4 flex min-h-48 flex-col items-center justify-center rounded-lg border border-border bg-muted/50 text-center">
             <p className="text-sm font-medium text-slate-700">
-              {agentsLoading || ensure.isPending ? `Starting ${selectedBlock.name}…` : "Preparing chat"}
+              {agentsLoading || ensure.isPending ? `Starting ${selectedBlock.name}â€¦` : "Preparing chat"}
             </p>
             <p className="mt-1 max-w-sm text-xs text-slate-500">
               Setting up this Investors agent so you can test replies here.

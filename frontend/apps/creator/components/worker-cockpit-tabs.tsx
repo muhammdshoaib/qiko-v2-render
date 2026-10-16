@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -41,7 +41,7 @@ import {
 } from "@/lib/behavior-config";
 
 function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea {...props} className={cn("min-h-24 w-full rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-200 placeholder:text-slate-500 transition-colors focus-visible:border-cyan-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500", className)} />;
+  return <textarea {...props} className={cn("min-h-24 w-full rounded-lg border border-border bg-muted p-3 text-sm text-slate-700 placeholder:text-slate-500 transition-colors focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300", className)} />;
 }
 export function WorkerCrmTab({ id, readOnly }: { id: string; readOnly?: boolean }) {
   return (
@@ -68,11 +68,11 @@ export function WorkerConnectionsTab({ id, worker }: { id: string; worker?: Agen
   const [sub, setSub] = useState<(typeof CONNECTIONS_SUBTABS)[number]>("Voice");
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">
+      <div className="flex flex-wrap gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
         {CONNECTIONS_SUBTABS.map((s) => (
           <button key={s} onClick={() => setSub(s)}
-            className={cn("flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
-              sub === s ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>
+            className={cn("flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+              sub === s ? "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200" : "text-slate-500 hover:text-slate-800")}>
             {(() => { const Icon = CONNECTION_ICONS[s]; return <Icon className="size-3.5" />; })()} {s}
           </button>
         ))}
@@ -116,7 +116,7 @@ function SalesforceSubTab({ id }: { id: string }) {
       </div>
 
       {!creds.data?.salesforce_credentials_added && (
-        <Card className="border-amber-500/30 bg-amber-500/5"><CardContent className="space-y-2 pt-6 text-sm">
+        <Card className="border-indigo-200 bg-indigo-50/60"><CardContent className="space-y-2 pt-6 text-sm">
           <p className="font-medium">Connected App required</p>
           <p className="text-muted-foreground">Create a Connected App in your Salesforce org with the Client Credentials OAuth flow enabled, then paste its details here. This is the same connection for every worker -- nothing here is specific to one client.</p>
           <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
@@ -191,7 +191,7 @@ function WorkerApiKeySubTab({ id }: { id: string }) {
         <p className="text-sm text-muted-foreground">
           Lets an external system (jm-backend, joseph-mews-backend, or any other authorised system)
           call this tenant&apos;s insights and signals endpoints on this worker&apos;s behalf, using this
-          key as the <code className="rounded bg-white/10 px-1 py-0.5 text-xs">X-Api-Key</code> header.
+          key as the <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">X-Api-Key</code> header.
         </p>
       </div>
       <Card><CardContent className="space-y-4 pt-6">
@@ -251,16 +251,16 @@ function WorkerApiKeyRevealDialog({ apiKey, onAcknowledge }: { apiKey: string | 
   };
   return (
     <AlertDialog open={!!apiKey} onOpenChange={(open) => { if (!open) { setCopied(false); onAcknowledge(); } }}>
-      <AlertDialogContent className="border-white/10 bg-[#0a0f1a] text-white">
+      <AlertDialogContent className="border-border bg-card text-foreground">
         <AlertDialogHeader>
           <AlertDialogTitle>Copy this API key now</AlertDialogTitle>
-          <AlertDialogDescription className="text-slate-300">
+          <AlertDialogDescription className="text-slate-600">
             This is the only time the full key is shown. Once you close this dialog it cannot be
             retrieved again -- generating a new one is the only way back if you lose it.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-2">
-          <pre className="overflow-x-auto rounded bg-black/40 p-3 text-xs text-emerald-300"><code>{apiKey}</code></pre>
+          <pre className="overflow-x-auto rounded bg-slate-100 p-3 text-xs text-emerald-300"><code>{apiKey}</code></pre>
           <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={copyKey}>
             <Copy className="size-3.5" /> {copied ? "Copied" : "Copy key"}
           </Button>
@@ -304,7 +304,7 @@ function TeamsSubTab({ id }: { id: string }) {
       </div>
 
       {!status.data?.connected && (
-        <Card className="border-amber-500/30 bg-amber-500/5"><CardContent className="space-y-2 pt-6 text-sm">
+        <Card className="border-indigo-200 bg-indigo-50/60"><CardContent className="space-y-2 pt-6 text-sm">
           <p className="font-medium">Set up an Incoming Webhook</p>
           <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
             <li>In Teams, open the channel you want notifications in.</li>
@@ -362,36 +362,36 @@ function VoiceSubTab({ id }: { id: string }) {
       </div>
 
       {!creds.data?.vapi_credentials_added && (
-        <Card className="border-amber-500/30 bg-amber-500/5"><CardContent className="space-y-2 pt-6 text-sm">
-          <p className="font-medium">Vapi API Key Required</p>
-          <p className="text-muted-foreground">You need these 3 values from your Vapi account to enable voice for this worker.</p>
-          <ol className="list-decimal space-y-1 pl-5 text-muted-foreground">
-            <li><b>Assistant ID</b> - In Vapi, go to Assistants {"\u2192"} open your assistant {"\u2192"} copy the Assistant ID (this is not the assistant name).</li>
-            <li><b>Public Key</b> - In Vapi, go to Dashboard {"\u2192"} API Keys {"\u2192"} copy the Public Key (usually starts with pk-).</li>
-            <li><b>Private Key</b> - In Vapi, go to Dashboard {"\u2192"} API Keys {"\u2192"} copy the Private Key (keep this private).</li>
+        <Card className="border-indigo-200 bg-indigo-50/60"><CardContent className="space-y-2 pt-6 text-sm">
+          <p className="font-medium text-slate-900">Vapi API Key Required</p>
+          <p className="text-slate-600">You need these 3 values from your Vapi account to enable voice for this worker.</p>
+          <ol className="list-decimal space-y-1 pl-5 text-slate-600">
+            <li><b className="text-slate-800">Assistant ID</b> - In Vapi, go to Assistants {"\u2192"} open your assistant {"\u2192"} copy the Assistant ID (this is not the assistant name).</li>
+            <li><b className="text-slate-800">Public Key</b> - In Vapi, go to Dashboard {"\u2192"} API Keys {"\u2192"} copy the Public Key (usually starts with pk-).</li>
+            <li><b className="text-slate-800">Private Key</b> - In Vapi, go to Dashboard {"\u2192"} API Keys {"\u2192"} copy the Private Key (keep this private).</li>
           </ol>
-          <a href="https://vapi.ai" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-amber-600 hover:underline">
+          <a href="https://vapi.ai" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline">
             Get Vapi ID & Keys <ExternalLink className="size-3.5" />
           </a>
         </CardContent></Card>
       )}
 
-      <Card><CardContent className="space-y-4 pt-6">
-        <p className="text-sm">Voice Status: <span className="font-medium">{creds.data?.vapi_credentials_added ? "Voice is enabled for this worker" : "Voice is not enabled"}</span></p>
+      <Card className="border-slate-200 bg-white"><CardContent className="space-y-4 pt-6">
+        <p className="text-sm text-slate-700">Voice Status: <span className="font-medium text-slate-900">{creds.data?.vapi_credentials_added ? "Voice is enabled for this worker" : "Voice is not enabled"}</span></p>
         <div className="space-y-1.5">
           <Label htmlFor="vapi-assistant-id">Assistant ID</Label>
-          <Input id="vapi-assistant-id" placeholder="e.g. your-vapi-assistant-id" value={assistantId || creds.data?.vapi_assistant_id || ""}
+          <Input id="vapi-assistant-id" className="border-slate-200 bg-white text-slate-900" placeholder="e.g. your-vapi-assistant-id" value={assistantId || creds.data?.vapi_assistant_id || ""}
             onChange={(e) => setAssistantId(e.target.value)} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="vapi-public-key">Public Key</Label>
-          <Input id="vapi-public-key" placeholder="pk-..." value={publicKey || creds.data?.vapi_public_key || ""}
-            onChange={(e) => setPublicKey(e.target.value)} />
+          <Input id="vapi-public-key" className="border-slate-200 bg-white text-slate-900" placeholder="pk-..." value={publicKey || creds.data?.vapi_public_key || ""}
+            onChange={(e) => setPublicKey(e.target.value)} autoComplete="off" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="vapi-secret-key">Secret Key</Label>
-          <Input id="vapi-secret-key" type="password" placeholder={creds.data?.vapi_api_key_masked || "sk-..."} value={secretKey}
-            onChange={(e) => setSecretKey(e.target.value)} />
+          <Input id="vapi-secret-key" type="password" className="border-slate-200 bg-white text-slate-900" placeholder={creds.data?.vapi_api_key_masked || "sk-..."} value={secretKey}
+            onChange={(e) => setSecretKey(e.target.value)} autoComplete="new-password" />
         </div>
         {save.isSuccess && <p className="text-xs text-emerald-600">Voice credentials saved.</p>}
         {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save voice credentials. Check the values and try again.</p>}
@@ -469,7 +469,7 @@ function CalendlyTokenCard({ id }: { id: string }) {
     <Card><CardContent className="space-y-3 pt-6">
       <p className="text-sm font-medium">Calendly access token</p>
       {!connected && (
-        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-xs">
+        <div className="rounded-md border border-indigo-200 bg-indigo-50/60 p-3 text-xs text-slate-700">
           <p className="font-medium">Needed for scheduling</p>
           <p className="text-muted-foreground">In Calendly, go to Integrations {"\u2192"} API & webhooks {"\u2192"} generate a personal access token, then paste it here. It stays encrypted and is only used for this worker.</p>
         </div>
@@ -710,7 +710,7 @@ export function WorkerTrainTab({ id, worker, docs, loading, onKnowledgeChange, o
       <div className="flex gap-1 rounded-lg bg-muted p-1">
         {TRAIN_STEPS.map((s) => (
           <button key={s} onClick={() => setStep(s)}
-            className={cn("flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
+            className={cn("flex-1 rounded-md px-3 py-1.5 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
               step === s ? "bg-background shadow-sm" : "text-muted-foreground hover:text-foreground")}>
             {s}
           </button>
@@ -789,7 +789,7 @@ function ToneStep({ id, worker, onSaved }: { id: string; worker?: Agent; onSaved
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {TONE_OPTIONS.map((t) => (
           <button key={t.value} onClick={() => { setTone(t.value); save.mutate(t.value); }}
-            className={cn("flex items-center gap-3 rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
+            className={cn("flex items-center gap-3 rounded-lg border p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
               tone === t.value ? "border-primary bg-primary/5" : "border-border hover:border-primary/40")}>
             <span className="text-xl">{t.emoji}</span>
             <span>
@@ -961,7 +961,7 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
     <div className="space-y-4">
       {ConfirmActionDialog}
       <div>
-        <h2 className="text-lg font-semibold text-white">Behavior</h2>
+        <h2 className="text-lg font-semibold text-foreground">Behavior</h2>
         <p className="text-sm text-muted-foreground">Prompts &amp; rules</p>
       </div>
 
@@ -984,13 +984,13 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
             <Card key={c.key} className="overflow-hidden">
               <div className="flex items-center justify-between gap-2 px-4 py-3">
                 <button type="button" onClick={() => setOpen(isOpen ? null : c.key)}
-                  className="flex flex-1 items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60">
+                  className="flex flex-1 items-center gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
                   <ChevronDown className={cn("size-4 shrink-0 text-slate-500 transition-transform", !isOpen && "-rotate-90")} />
-                  <span className="text-sm font-semibold text-white">{c.label}</span>
+                  <span className="text-sm font-semibold text-foreground">{c.label}</span>
                   <button
                     type="button"
                     aria-label={`Help for ${c.label}`}
-                    className="cursor-help text-slate-500 hover:text-slate-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 rounded"
+                    className="cursor-help text-slate-500 hover:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 rounded"
                     onClick={(e) => {
                       helpOpenerRef.current = e.currentTarget;
                       setPendingHelp({ label: c.label, help: c.help });
@@ -1006,7 +1006,7 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
                 </Button>
               </div>
               {isOpen && (
-                <div className="space-y-2 border-t border-white/[0.06] px-4 py-3">
+                <div className="space-y-2 border-t border-border px-4 py-3">
                   {all.length === 0 && (
                     <p className="py-2 text-sm text-muted-foreground">{c.empty}</p>
                   )}
@@ -1018,7 +1018,7 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
                     const validationField = validationMessage?.startsWith("Title") ? "title" : validationMessage ? "content" : null;
                     const validationMessageId = `${c.key}-${entry.id}-validation`;
                     return (
-                      <div key={entry.id} className="space-y-2 rounded-lg border border-white/[0.06] bg-white/[0.015] p-3">
+                      <div key={entry.id} className="space-y-2 rounded-lg border border-border bg-muted/40 p-3">
                         <div className="flex items-start gap-2">
                           <Input value={entry.title} placeholder="Title" aria-label={`${c.label} title`} required
                             maxLength={BEHAVIOR_MAX_TITLE} disabled={save.isPending}
@@ -1064,10 +1064,10 @@ function BehaviorStep({ id, worker, onSaved }: { id: string; worker?: Agent; onS
       >
         {pendingHelp && (
           <div className="space-y-4">
-            <h3 id="behavior-help-title" className="pr-10 text-lg font-semibold text-white">
+            <h3 id="behavior-help-title" className="pr-10 text-lg font-semibold text-foreground">
               {pendingHelp.label}
             </h3>
-            <p className="text-sm text-slate-300">{pendingHelp.help}</p>
+            <p className="text-sm text-slate-600">{pendingHelp.help}</p>
             <div className="flex justify-end">
               <Button type="button" variant="outline" onClick={() => setPendingHelp(null)}>
                 Close
@@ -1101,7 +1101,7 @@ function KnowledgeStep({ id, docs, loading, onChange }: { id: string; docs?: Doc
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-white">Knowledge</h2>
+        <h2 className="text-lg font-semibold text-foreground">Knowledge</h2>
         <p className="text-sm text-muted-foreground">FAQs &amp; docs</p>
       </div>
 
@@ -1121,7 +1121,7 @@ function KnowledgeStep({ id, docs, loading, onChange }: { id: string; docs?: Doc
           {KNOWLEDGE_CARDS.map((c) => (
             <Card key={c.key}>
               <CardContent className="flex items-center justify-between py-4">
-                <button className="flex-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60" onClick={() => setOpen(open === c.key ? null : c.key)}>
+                <button className="flex-1 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300" onClick={() => setOpen(open === c.key ? null : c.key)}>
                   <p className="text-sm font-medium">{c.title}</p>
                   <p className="text-xs text-muted-foreground">{c.description}</p>
                 </button>
@@ -1162,11 +1162,11 @@ function DocumentLibrary({ id, docs, loading, onChange }: { id: string; docs?: D
       {ConfirmActionDialog}
       {loading && [0, 1, 2].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
       {!loading && (docs?.length ?? 0) === 0 && (
-        <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-12 text-center">
-          <span className="mb-3 flex size-11 items-center justify-center rounded-2xl bg-white/[0.04] text-slate-500">
+        <div className="flex flex-col items-center rounded-2xl border border-border bg-muted/40 px-4 py-12 text-center">
+          <span className="mb-3 flex size-11 items-center justify-center rounded-2xl bg-muted text-slate-500">
             <Database className="size-5" />
           </span>
-          <p className="text-sm font-medium text-slate-300">Knowledge base is empty</p>
+          <p className="text-sm font-medium text-slate-600">Knowledge base is empty</p>
           <p className="mt-1 max-w-sm text-xs text-slate-500">Add a document from the Add New tab and it will appear here (and in studio Sources).</p>
         </div>
       )}
@@ -1176,7 +1176,7 @@ function DocumentLibrary({ id, docs, loading, onChange }: { id: string; docs?: D
           <Card key={d.doc_id}><CardContent className="flex items-center justify-between gap-3 py-3">
             <div className="flex min-w-0 items-center gap-3">
               <FileText className="size-4 shrink-0 text-muted-foreground" />
-              <span className="truncate text-sm font-medium text-white">{label}</span>
+              <span className="truncate text-sm font-medium text-foreground">{label}</span>
               <Badge variant="muted">{d.chunks} passage{d.chunks === 1 ? "" : "s"}</Badge>
             </div>
             <Button variant="ghost" size="icon" aria-label={`Delete ${label}`}
@@ -1232,9 +1232,9 @@ function WorkerShare({ id, tenant }: { id: string; tenant: string }) {
         </Button>
       </div>
       {showEmbed && (
-        <div className="space-y-2 rounded-lg border border-border bg-white/[0.02] p-3">
+        <div className="space-y-2 rounded-lg border border-border bg-muted/50 p-3">
           <p className="text-xs text-muted-foreground">Paste this before the closing &lt;/body&gt; tag on your site to add a floating chat widget.</p>
-          <pre className="overflow-x-auto rounded bg-black/40 p-2 text-xs text-slate-200"><code>{embedSnippet}</code></pre>
+          <pre className="overflow-x-auto rounded bg-slate-100 p-2 text-xs text-slate-700"><code>{embedSnippet}</code></pre>
           <Button type="button" variant="outline" size="sm" onClick={() => copy("embed", embedSnippet)}>
             {copied === "embed" ? "Embed code copied" : "Copy embed code"}
           </Button>
@@ -1328,7 +1328,7 @@ export function WorkerChatTab({ id, worker }: { id: string; worker?: Agent }) {
           <div className="flex flex-wrap gap-2">
             {quickPrompts.map((p) => (
               <button key={p} type="button" onClick={() => sendText(p)}
-                className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60">
+                className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
                 {p}
               </button>
             ))}
@@ -1338,7 +1338,7 @@ export function WorkerChatTab({ id, worker }: { id: string; worker?: Agent }) {
           {messages.length === 0 && (
             <div className="flex min-h-40 flex-col items-center justify-center py-8 text-center">
               <MessageSquare className="mb-2 size-8 text-slate-600" />
-              <p className="text-sm font-medium text-slate-300">Test your worker</p>
+              <p className="text-sm font-medium text-slate-600">Test your worker</p>
               <p className="mt-0.5 max-w-xs text-xs text-slate-500">Ask a question to see a grounded reply from its knowledge base.</p>
             </div>
           )}
@@ -1350,7 +1350,7 @@ export function WorkerChatTab({ id, worker }: { id: string; worker?: Agent }) {
           {busy && <div className="flex justify-start"><TypingIndicator /></div>}
         </div>
         <form onSubmit={(e) => { e.preventDefault(); sendText(input); }} className="flex gap-2">
-          <Input placeholder="Ask your worker something…" value={input} onChange={(e) => setInput(e.target.value)} disabled={busy} aria-label="Ask your worker something" />
+          <Input placeholder="Ask your worker somethingâ€¦" value={input} onChange={(e) => setInput(e.target.value)} disabled={busy} aria-label="Ask your worker something" />
           <Button type="submit" aria-label="Send message" disabled={busy || !input}><SendHorizonal className="size-4" /></Button>
         </form>
       </CardContent>
@@ -1407,12 +1407,12 @@ export function WorkerSettingsTab({ id, worker, onWorkerChange }: { id: string; 
 
       <Card className="rounded-2xl"><CardContent className="space-y-4 pt-6">
         <div>
-          <p className="text-sm font-semibold text-white">Worker Status</p>
+          <p className="text-sm font-semibold text-foreground">Worker Status</p>
           <p className="text-xs text-muted-foreground">Control whether this worker is still training or ready to serve.</p>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium",
-            ready ? "bg-emerald-500/15 text-emerald-400" : "bg-white/[0.06] text-slate-300")}>
+            ready ? "bg-emerald-50 text-emerald-700" : "bg-muted text-slate-600")}>
             <span className={cn("size-1.5 rounded-full", ready ? "bg-emerald-400" : "bg-slate-400")} />
             {ready ? "Ready" : "Training"}
           </span>
@@ -1422,7 +1422,7 @@ export function WorkerSettingsTab({ id, worker, onWorkerChange }: { id: string; 
             title={ready ? "Reverting a ready worker to training isn't available yet" : undefined}
             onClick={() => { if (!ready) toggleStatus.mutate(); }}
           >
-            {ready ? "Switch to Training" : toggleStatus.isPending ? "Switching…" : "Switch to Ready"}
+            {ready ? "Switch to Training" : toggleStatus.isPending ? "Switchingâ€¦" : "Switch to Ready"}
           </Button>
         </div>
         {ready && (
@@ -1433,13 +1433,13 @@ export function WorkerSettingsTab({ id, worker, onWorkerChange }: { id: string; 
 
       <Card className="rounded-2xl"><CardContent className="space-y-4 pt-6">
         <div>
-          <p className="text-sm font-semibold text-white">Studio</p>
+          <p className="text-sm font-semibold text-foreground">Studio</p>
           <p className="text-xs text-muted-foreground">Push a ready worker to Studio to operate it day to day. Only ready workers can be pushed.</p>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <span className={cn("inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium",
-            studioLinked ? "bg-cyan-500/15 text-cyan-300" : "bg-white/[0.06] text-slate-300")}>
-            <span className={cn("size-1.5 rounded-full", studioLinked ? "bg-cyan-400" : "bg-slate-400")} />
+            studioLinked ? "bg-indigo-600/15 text-indigo-600" : "bg-muted text-slate-600")}>
+            <span className={cn("size-1.5 rounded-full", studioLinked ? "bg-indigo-500" : "bg-slate-400")} />
             {studioLinked ? "In Studio" : "Not in Studio"}
           </span>
           <Button
@@ -1448,18 +1448,18 @@ export function WorkerSettingsTab({ id, worker, onWorkerChange }: { id: string; 
             title={!ready && !studioLinked ? "Make the worker Ready before pushing it to Studio" : undefined}
             onClick={() => pushStudio.mutate()}
           >
-            {pushStudio.isPending ? "Saving…" : studioLinked ? "Remove from Studio" : "Push to Studio"}
+            {pushStudio.isPending ? "Savingâ€¦" : studioLinked ? "Remove from Studio" : "Push to Studio"}
           </Button>
         </div>
         {pushStudio.isSuccess && !pushStudio.isPending && (
-          <p className="text-xs text-emerald-400">{studioLinked ? "Worker pushed to Studio." : "Worker removed from Studio."}</p>
+          <p className="text-xs text-emerald-700">{studioLinked ? "Worker pushed to Studio." : "Worker removed from Studio."}</p>
         )}
         {pushStudio.isError && <p className="text-xs text-red-500">Couldn&apos;t update Studio. Please try again.</p>}
       </CardContent></Card>
 
       <Card className="rounded-2xl"><CardContent className="space-y-4 pt-6">
         <div>
-          <p className="text-sm font-semibold text-white">Profile Settings</p>
+          <p className="text-sm font-semibold text-foreground">Profile Settings</p>
           <p className="text-xs text-muted-foreground">Details your worker uses to introduce itself.</p>
         </div>
         <div className="space-y-1.5">
@@ -1481,20 +1481,20 @@ export function WorkerSettingsTab({ id, worker, onWorkerChange }: { id: string; 
         {save.isSuccess && !dirty && <p className="text-xs text-emerald-600">Profile saved.</p>}
         {save.isError && <p className="text-xs text-red-500">Couldn&apos;t save. Please try again.</p>}
         <div className="flex items-center justify-end gap-3">
-          {dirty && <p className="text-xs text-amber-400">You have unsaved changes</p>}
+          {dirty && <p className="text-xs text-amber-700">You have unsaved changes</p>}
           <Button disabled={!dirty || save.isPending} onClick={() => save.mutate()}>
-            {save.isPending ? "Saving…" : "Save Changes"}
+            {save.isPending ? "Savingâ€¦" : "Save Changes"}
           </Button>
         </div>
       </CardContent></Card>
 
       <Card className="rounded-2xl border-red-500/20"><CardContent className="space-y-4 pt-6">
         <div>
-          <p className="text-sm font-semibold text-white">Danger Zone</p>
+          <p className="text-sm font-semibold text-foreground">Danger Zone</p>
           <p className="text-xs text-muted-foreground">Archiving hides the worker from the dashboard. It is not permanently deleted and can be restored later.</p>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="text-sm text-slate-300">Remove this worker from the dashboard</span>
+          <span className="text-sm text-slate-600">Remove this worker from the dashboard</span>
           <Button
             variant="outline"
             disabled={archive.isPending}
@@ -1512,7 +1512,7 @@ export function WorkerSettingsTab({ id, worker, onWorkerChange }: { id: string; 
             }, e.currentTarget)}
             className="border-red-500/40 text-red-400 hover:bg-red-500/10 hover:text-red-300"
           >
-            {archive.isPending ? "Archiving…" : "Archive worker"}
+            {archive.isPending ? "Archivingâ€¦" : "Archive worker"}
           </Button>
         </div>
         {archive.isError && <p className="text-xs text-red-500">Couldn&apos;t archive the worker. Please try again.</p>}
@@ -1539,9 +1539,9 @@ function KnowledgeTab({ id, docs, loading, onChange }: { id: string; docs?: Doc[
     <div className="space-y-4">
       {ConfirmActionDialog}
       <Card><CardContent className="space-y-3 pt-6">
-        <p className="text-sm font-medium text-white">Add a document</p>
+        <p className="text-sm font-medium text-foreground">Add a document</p>
         <div className="flex flex-wrap items-center gap-3">
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-sm font-medium text-slate-200 transition-colors hover:bg-white/[0.06] focus-within:ring-2 focus-within:ring-cyan-500">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-muted px-3.5 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-muted focus-within:ring-2 focus-within:ring-indigo-300">
             <Upload className="size-4" /> Choose file
             <input type="file" accept=".pdf,.docx,.pptx,.txt,.md" className="hidden" aria-label="Choose knowledge document"
               onChange={(e) => { setFile(e.target.files?.[0] ?? null); e.target.value = ""; }} />
@@ -1549,7 +1549,7 @@ function KnowledgeTab({ id, docs, loading, onChange }: { id: string; docs?: Doc[
           <span className="min-w-0 flex-1 truncate text-xs text-slate-500">{file?.name ?? "No file chosen"}</span>
           <Button disabled={!file || ingestDoc.isPending} onClick={() => file && ingestDoc.mutate(file)}>
             {ingestDoc.isPending ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
-            {ingestDoc.isPending ? "Ingesting…" : "Ingest"}
+            {ingestDoc.isPending ? "Ingestingâ€¦" : "Ingest"}
           </Button>
         </div>
         {ingestDoc.isError && (
@@ -1560,8 +1560,8 @@ function KnowledgeTab({ id, docs, loading, onChange }: { id: string; docs?: Doc[
       </CardContent></Card>
 
       <Card><CardContent className="space-y-3 pt-6">
-        <p className="text-sm font-medium text-white">Or add free-text knowledge</p>
-        <Textarea id="f-knowledge" placeholder="Add free-text knowledge…" value={text} onChange={(e) => setText(e.target.value)} />
+        <p className="text-sm font-medium text-foreground">Or add free-text knowledge</p>
+        <Textarea id="f-knowledge" placeholder="Add free-text knowledgeâ€¦" value={text} onChange={(e) => setText(e.target.value)} />
         <div className="flex justify-end"><Button disabled={!text.trim() || add.isPending} onClick={() => add.mutate()}>Add knowledge</Button></div>
       </CardContent></Card>
 
