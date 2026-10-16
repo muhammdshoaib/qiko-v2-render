@@ -5,9 +5,9 @@ import { useRoute, Link } from "@/lib/wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
-import { Loader2, Eye, EyeOff, ArrowLeft, AlertCircle, Check } from "lucide-react";
+import { Loader2, Eye, EyeOff, AlertCircle, Check } from "lucide-react";
 import { toast } from "sonner";
 import { resetPasswordAvatar } from "@/lib/avatarApi";
 import { arePasswordRequirementsMet, getPasswordRequirements } from "@/lib/passwordRequirements";
@@ -16,6 +16,14 @@ import {
   getPasswordResetSessionStorage,
   resolvePasswordResetEmail,
 } from "@/lib/password-reset-session";
+import {
+  AUTH_BUTTON,
+  AUTH_INPUT,
+  AUTH_LABEL,
+  AUTH_MUTED,
+  AuthLogo,
+  AuthShell,
+} from "@/components/auth/auth-shell";
 
 export default function ResetPassword() {
   const router = useRouter();
@@ -53,8 +61,8 @@ export default function ResetPassword() {
 
   if (!emailResolved || !email) {
     return (
-      <div className="min-h-screen bg-[#050810] flex items-center justify-center">
-        <div className="text-slate-400">Loading...</div>
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="text-slate-500">Loading...</div>
       </div>
     );
   }
@@ -92,9 +100,10 @@ export default function ResetPassword() {
       clearPasswordResetEmail(storage);
       setSuccess(true);
       toast.success("Password reset successfully. You can now sign in with your new password.");
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Reset password error:", error);
-      const errorMsg = error.message || "Failed to reset password. Please try again.";
+      const errorMsg =
+        error instanceof Error ? error.message : "Failed to reset password. Please try again.";
       setErrorMessage(errorMsg);
       toast.error(errorMsg);
     } finally {
@@ -103,174 +112,159 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050810] flex items-center justify-center p-4">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
-      </div>
-
-      <div className="relative z-10 w-full max-w-md">
-        <Link href="/login" className="inline-flex items-center gap-2 text-slate-400 hover:text-white mb-8 transition-colors">
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </Link>
-
-        <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
-          <CardHeader className="text-center">
-            <img
-              src="/qiko-logo-email.png"
-              alt="Qiko"
-              width={120}
-              height={48}
-              className="mx-auto mb-4 h-12 w-[120px] object-contain"
-            />
-            <CardTitle className="text-2xl text-white">Reset your password</CardTitle>
-            {!success && (
-              <CardDescription className="text-slate-400">
-                We have sent a one-time code to the provided email address. Please check your email and enter the code below.
-              </CardDescription>
-            )}
-          </CardHeader>
-          <CardContent>
-            {success ? (
-              <div className="space-y-4">
-                <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
-                  <p className="text-green-400 text-sm text-center">
-                    Your password has been reset. You can now sign in with your new password.
-                  </p>
-                </div>
-                <Link href="/login">
-                  <Button className="min-h-11 w-full border-0 bg-gradient-to-r from-purple-600 to-cyan-600 text-white hover:from-purple-500 hover:to-cyan-500 sm:min-h-9">
-                    Sign in
-                  </Button>
-                </Link>
+    <AuthShell backHref="/login" backLabel="Back">
+      <CardHeader className="space-y-1 text-center">
+        <AuthLogo />
+        <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Reset your password</CardTitle>
+        {!success && (
+          <CardDescription className={AUTH_MUTED}>
+            We have sent a one-time code to the provided email address. Please check your email and enter the code
+            below.
+          </CardDescription>
+        )}
+      </CardHeader>
+      <CardContent>
+        {success ? (
+          <div className="space-y-4">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+              <p className="text-center text-sm text-emerald-800">
+                Your password has been reset. You can now sign in with your new password.
+              </p>
+            </div>
+            <Link href="/login">
+              <Button className={AUTH_BUTTON}>Sign in</Button>
+            </Link>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="w-full space-y-4">
+            {errorMessage && (
+              <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3">
+                <AlertCircle className="mt-0.5 size-5 shrink-0 text-red-600" />
+                <p className="text-sm text-red-700">{errorMessage}</p>
               </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-4 w-full">
-                {errorMessage && (
-                  <div className="flex items-start gap-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                    <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                    <p className="text-red-400 text-sm">{errorMessage}</p>
-                  </div>
-                )}
+            )}
 
-                <div className="space-y-2 w-full">
-                  <Label htmlFor="email" className="text-slate-300 block">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    disabled={true}
-                    className="w-full bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:ring-cyan-500/20"
-                  />
-                </div>
+            <div className="w-full space-y-2">
+              <Label htmlFor="email" className={`${AUTH_LABEL} block`}>
+                Email
+              </Label>
+              <Input
+                id="email"
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                disabled
+                className={`w-full ${AUTH_INPUT}`}
+              />
+            </div>
 
-                <div className="space-y-2 w-full">
-                  <Label className="text-slate-300 block">Enter 6-digit authentication code</Label>
-                  <InputOTP
-                    maxLength={6}
-                    value={otp}
-                    onChange={(val) => setOtp(val.replace(/\D/g, ""))}
-                    inputMode="numeric"
-                    containerClassName="justify-start gap-2 w-full"
-                  >
-                    <InputOTPGroup className="gap-2 [&>div]:border-slate-600 [&>div]:bg-slate-800/50 [&>div]:text-white [&>div[data-active=true]]:border-cyan-500 [&>div[data-active=true]]:ring-2 [&>div[data-active=true]]:ring-cyan-500/20">
-                      <InputOTPSlot index={0} className="h-9 w-15 rounded-lg border text-lg font-mono tabular-nums" />
-                      <InputOTPSlot index={1} className="h-9 w-15 rounded-lg border text-lg font-mono tabular-nums" />
-                      <InputOTPSlot index={2} className="h-9 w-15 rounded-lg border text-lg font-mono tabular-nums" />
-                      <InputOTPSlot index={3} className="h-9 w-15 rounded-lg border text-lg font-mono tabular-nums" />
-                      <InputOTPSlot index={4} className="h-9 w-15 rounded-lg border text-lg font-mono tabular-nums" />
-                      <InputOTPSlot index={5} className="h-9 w-15 rounded-lg border text-lg font-mono tabular-nums" />
-                    </InputOTPGroup>
-                  </InputOTP>
-                </div>
+            <div className="w-full space-y-2">
+              <Label className={`${AUTH_LABEL} block`}>Enter 6-digit authentication code</Label>
+              <InputOTP
+                maxLength={6}
+                value={otp}
+                onChange={(val) => setOtp(val.replace(/\D/g, ""))}
+                inputMode="numeric"
+                containerClassName="justify-start gap-2 w-full"
+              >
+                <InputOTPGroup className="gap-2 [&>div]:border-slate-200 [&>div]:bg-white [&>div]:text-slate-900 [&>div[data-active=true]]:border-indigo-400 [&>div[data-active=true]]:ring-2 [&>div[data-active=true]]:ring-indigo-300/40">
+                  <InputOTPSlot index={0} className="h-9 w-15 rounded-lg border text-lg font-mono tabular-nums" />
+                  <InputOTPSlot index={1} className="h-9 w-15 rounded-lg border text-lg font-mono tabular-nums" />
+                  <InputOTPSlot index={2} className="h-9 w-15 rounded-lg border text-lg font-mono tabular-nums" />
+                  <InputOTPSlot index={3} className="h-9 w-15 rounded-lg border text-lg font-mono tabular-nums" />
+                  <InputOTPSlot index={4} className="h-9 w-15 rounded-lg border text-lg font-mono tabular-nums" />
+                  <InputOTPSlot index={5} className="h-9 w-15 rounded-lg border text-lg font-mono tabular-nums" />
+                </InputOTPGroup>
+              </InputOTP>
+            </div>
 
-                <div className="space-y-2 w-full">
-                  <Label htmlFor="password" className="text-slate-300 block">New password</Label>
-                  <div className="relative">
-                    <Input
-                      id="password"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      className="w-full bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:ring-cyan-500/20 pr-10"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-0 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center text-slate-400 transition-colors hover:text-white sm:right-3 sm:size-9"
-                    >
-                      {showPassword ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  {password && (
-                    <div className="mt-2 space-y-1">
-                      {passwordRequirements.map((req, i) => (
-                        <div
-                          key={i}
-                          className={`flex items-center gap-2 text-xs ${req.met ? "text-green-400" : "text-slate-500"}`}
-                        >
-                          <Check className={`w-3 h-3 ${req.met ? "opacity-100" : "opacity-30"}`} />
-                          {req.text}
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-2 w-full">
-                  <Label htmlFor="confirmPassword" className="text-slate-300 block">Confirm password</Label>
-                  <Input
-                    id="confirmPassword"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    required
-                    className={`w-full bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:ring-cyan-500/20 ${
-                      confirmPassword && password !== confirmPassword ? "border-red-500" : ""
-                    }`}
-                  />
-                  {confirmPassword && password !== confirmPassword && (
-                    <p className="text-xs text-red-400">Passwords do not match</p>
-                  )}
-                </div>
-
-                <Button
-                  type="submit"
-                  disabled={isLoading || password !== confirmPassword || otp.length !== 6}
-                  className="min-h-11 w-full border-0 bg-gradient-to-r from-purple-600 to-cyan-600 text-white hover:from-purple-500 hover:to-cyan-500 sm:min-h-9"
+            <div className="w-full space-y-2">
+              <Label htmlFor="password" className={`${AUTH_LABEL} block`}>
+                New password
+              </Label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className={`w-full pr-10 ${AUTH_INPUT}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-0 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center text-slate-400 transition-colors hover:text-slate-700 sm:right-3 sm:size-9"
                 >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Resetting...
-                    </>
-                  ) : (
-                    "Reset Password"
-                  )}
-                </Button>
-              </form>
-            )}
-
-            {!success && (
-              <div className="mt-6 text-center">
-                <p className="text-slate-400 text-sm">
-                  Remember your password?{" "}
-                  <Link href="/login" className="text-cyan-400 hover:text-cyan-300 transition-colors">
-                    Sign in
-                  </Link>
-                </p>
+                  {showPassword ? <Eye className="size-4" /> : <EyeOff className="size-4" />}
+                </button>
               </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+              {password && (
+                <div className="mt-2 space-y-1">
+                  {passwordRequirements.map((req, i) => (
+                    <div
+                      key={i}
+                      className={`flex items-center gap-2 text-xs ${req.met ? "text-emerald-600" : "text-slate-500"}`}
+                    >
+                      <Check className={`size-3 ${req.met ? "opacity-100" : "opacity-30"}`} />
+                      {req.text}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="w-full space-y-2">
+              <Label htmlFor="confirmPassword" className={`${AUTH_LABEL} block`}>
+                Confirm password
+              </Label>
+              <Input
+                id="confirmPassword"
+                type={showPassword ? "text" : "password"}
+                placeholder="••••••••"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                required
+                className={`w-full ${AUTH_INPUT} ${
+                  confirmPassword && password !== confirmPassword ? "border-red-500" : ""
+                }`}
+              />
+              {confirmPassword && password !== confirmPassword && (
+                <p className="text-xs text-red-600">Passwords do not match</p>
+              )}
+            </div>
+
+            <Button
+              type="submit"
+              disabled={isLoading || password !== confirmPassword || otp.length !== 6}
+              className={AUTH_BUTTON}
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" />
+                  Resetting...
+                </>
+              ) : (
+                "Reset Password"
+              )}
+            </Button>
+          </form>
+        )}
+
+        {!success && (
+          <div className="mt-6 text-center">
+            <p className={`text-sm ${AUTH_MUTED}`}>
+              Remember your password?{" "}
+              <Link href="/login" className="font-medium text-indigo-600 transition-colors hover:text-indigo-700">
+                Sign in
+              </Link>
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </AuthShell>
   );
 }

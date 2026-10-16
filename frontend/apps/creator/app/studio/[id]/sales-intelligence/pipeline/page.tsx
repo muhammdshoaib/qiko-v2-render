@@ -113,18 +113,18 @@ export default function SalesIntelligencePipelinePage() {
         ]} />
 
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.02] p-0.5">
+          <div className="inline-flex rounded-lg border border-border bg-muted/50 p-0.5">
             {(["pipeline", "list", "archived"] as const).map((v) => (
               <button key={v} onClick={() => setView(v)}
                 aria-pressed={view === v}
-                className={cn("rounded-md px-3.5 py-1.5 text-[13px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                  view === v ? "bg-indigo-500/20 text-white" : "text-slate-400 hover:text-white")}>
+                className={cn("rounded-md px-3.5 py-1.5 text-[13px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+                  view === v ? "bg-indigo-50 text-indigo-800" : "text-slate-500 hover:text-foreground")}>
                 {v}
               </button>
             ))}
           </div>
           <button onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline/new`)}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3.5 py-2 text-[13px] font-semibold text-foreground hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
             <Plus className="size-3.5" /> Add opportunity
           </button>
         </div>
@@ -140,10 +140,10 @@ export default function SalesIntelligencePipelinePage() {
             <div className="flex gap-4 overflow-x-auto pb-2">
               {KANBAN_COLUMNS.map((stage) => (
                 <div key={stage} onDragOver={(e) => e.preventDefault()} onDrop={() => onDrop(stage)}
-                  className="flex w-[260px] shrink-0 flex-col rounded-xl border border-white/[0.06] bg-white/[0.01]">
-                  <div className="flex items-center justify-between border-b border-white/[0.06] px-3.5 py-3">
-                    <span className="text-[13px] font-semibold text-white">{STAGE_LABELS[stage]}</span>
-                    <span className="flex size-5 items-center justify-center rounded-full bg-white/[0.06] text-[11px] font-semibold text-slate-300">
+                  className="flex w-[260px] shrink-0 flex-col rounded-xl border border-border bg-white/[0.01]">
+                  <div className="flex items-center justify-between border-b border-border px-3.5 py-3">
+                    <span className="text-[13px] font-semibold text-foreground">{STAGE_LABELS[stage]}</span>
+                    <span className="flex size-5 items-center justify-center rounded-full bg-muted text-[11px] font-semibold text-slate-600">
                       {byStage.get(stage)?.length ?? 0}
                     </span>
                   </div>
@@ -168,10 +168,10 @@ export default function SalesIntelligencePipelinePage() {
               )} />
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
+          <div className="overflow-x-auto rounded-2xl border border-border">
             <table className="w-full text-left text-[13px]">
               <thead>
-                <tr className="border-b border-white/[0.06] text-[11px] uppercase tracking-wider text-slate-500">
+                <tr className="border-b border-border text-[11px] uppercase tracking-wider text-slate-500">
                   <th className="px-4 py-3">Title</th>
                   <th className="px-4 py-3">Source</th>
                   <th className="px-4 py-3">Buyer</th>
@@ -186,11 +186,11 @@ export default function SalesIntelligencePipelinePage() {
                   <tr key={o.id} tabIndex={0} role="button"
                     onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline/${o.id}`)}
                     onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); router.push(`/studio/${agentId}/sales-intelligence/pipeline/${o.id}`); } }}
-                    className="cursor-pointer border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400/60">
-                    <td className="max-w-[320px] truncate px-4 py-3 text-white">{o.title}</td>
+                    className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-300">
+                    <td className="max-w-[320px] truncate px-4 py-3 text-foreground">{o.title}</td>
                     <td className="px-4 py-3 text-slate-400">{sourceLabel(o.sourceKey)}</td>
                     <td className="px-4 py-3 text-slate-400">{o.buyer ?? "-"}</td>
-                    <td className="px-4 py-3 font-medium text-emerald-400">{formatMoney(o.estimatedValue, o.currency)}</td>
+                    <td className="px-4 py-3 font-medium text-emerald-700">{formatMoney(o.estimatedValue, o.currency)}</td>
                     <td className="px-4 py-3">
                       {o.qualificationScore != null ? (
                         <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${scoreBadgeClass(o.qualificationScore)}`}>
@@ -257,16 +257,16 @@ function RejectedRail({ items, renderCard }: {
   ];
 
   return (
-    <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+    <div className="rounded-2xl border border-border bg-muted/40 p-5">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-[13px] font-semibold text-white">Rejected &amp; Push Failed</h3>
+        <h3 className="text-[13px] font-semibold text-foreground">Rejected &amp; Push Failed</h3>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.02] p-0.5" role="tablist" aria-label="Filter rejected and push failed">
+          <div className="inline-flex rounded-lg border border-border bg-muted/50 p-0.5" role="tablist" aria-label="Filter rejected and push failed">
             {tabs.map((tab) => (
               <button key={tab.id} type="button" role="tab" aria-selected={filter === tab.id}
                 onClick={() => { setFilter(tab.id); setPage(0); }}
-                className={cn("inline-flex min-h-11 items-center rounded-md px-3 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                  filter === tab.id ? "bg-indigo-500/20 text-white" : "text-slate-400 hover:text-white")}>
+                className={cn("inline-flex min-h-11 items-center rounded-md px-3 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+                  filter === tab.id ? "bg-indigo-50 text-indigo-800" : "text-slate-500 hover:text-foreground")}>
                 {tab.label} <span className="text-slate-500">({tab.count})</span>
               </button>
             ))}
@@ -277,7 +277,7 @@ function RejectedRail({ items, renderCard }: {
             <input type="search" value={query}
               onChange={(e) => { setQuery(e.target.value); setPage(0); }}
               placeholder="Search title, buyer or source…"
-              className="min-h-11 w-56 rounded-lg border border-white/[0.08] bg-white/[0.03] py-1.5 pl-8 pr-3 text-[12px] text-slate-200 placeholder:text-slate-600 outline-none focus:border-indigo-500/40" />
+              className="min-h-11 w-56 rounded-lg border border-border bg-muted py-1.5 pl-8 pr-3 text-[12px] text-slate-700 placeholder:text-slate-600 outline-none focus:border-indigo-500/40" />
           </label>
         </div>
       </div>
@@ -297,13 +297,13 @@ function RejectedRail({ items, renderCard }: {
               <div className="flex items-center gap-1.5">
                 <button type="button" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={safePage === 0}
                   aria-label="Previous page"
-                  className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
+                  className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border bg-muted px-3 py-1 text-[12px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-40">
                   <ChevronLeft className="size-3.5" /> Prev
                 </button>
                 <span className="text-[11px] text-slate-500">Page {safePage + 1} of {pageCount}</span>
                 <button type="button" onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} disabled={safePage >= pageCount - 1}
                   aria-label="Next page"
-                  className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
+                  className="inline-flex min-h-11 items-center gap-1 rounded-lg border border-border bg-muted px-3 py-1 text-[12px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-40">
                   Next <ChevronRight className="size-3.5" />
                 </button>
               </div>
@@ -321,15 +321,15 @@ function OpportunityCard({ opp, onDragStart, onClick, onMove, moving }: {
 }) {
   return (
     <div draggable onDragStart={onDragStart}
-      className="flex flex-col gap-2 rounded-lg border border-white/[0.07] bg-white/[0.02] p-3 transition-colors hover:border-indigo-500/30 hover:bg-white/[0.04]">
+      className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-muted/50 p-3 transition-colors hover:border-indigo-500/30 hover:bg-muted">
       <button type="button" onClick={onClick}
-        className="flex flex-col gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
+        className="flex flex-col gap-2 rounded-md text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
         <div className="flex items-start gap-2">
           <GripVertical aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 cursor-grab text-slate-600" />
-          <p className="line-clamp-2 text-[13px] font-medium leading-snug text-white">{opp.title}</p>
+          <p className="line-clamp-2 text-[13px] font-medium leading-snug text-foreground">{opp.title}</p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 pl-5">
-          <span className="rounded-full border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-300">
+          <span className="rounded-full border border-border bg-muted px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-slate-600">
             {sourceLabel(opp.sourceKey)}
           </span>
           <span className={`rounded-full border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${stageBadgeClass(opp.stage)}`}>
@@ -344,7 +344,7 @@ function OpportunityCard({ opp, onDragStart, onClick, onMove, moving }: {
         <p className="truncate pl-5 text-[11px] text-slate-400">{opp.buyer ?? "-"}</p>
         <div className="flex items-center justify-between gap-2 pl-5">
           {opp.estimatedValue != null
-            ? <span className="text-[12px] font-semibold text-emerald-400">{formatMoney(opp.estimatedValue, opp.currency)}</span>
+            ? <span className="text-[12px] font-semibold text-emerald-700">{formatMoney(opp.estimatedValue, opp.currency)}</span>
             : <span className="text-[12px] text-slate-600">{"-"}</span>}
           {opp.deadlineAt && (
             <span className={cn("flex items-center gap-1 text-[11px] font-medium", deadlineUrgencyClass(opp.deadlineAt))}>
@@ -380,17 +380,17 @@ function ArchivedTable({ opps, agentId, loading, error, onRestore, restoringId }
   if (error) return <p className="text-sm text-red-400">Couldn&apos;t load the archive. Try refreshing.</p>;
   if (opps.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-2 rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-12 text-center">
+      <div className="flex flex-col items-center gap-2 rounded-2xl border border-border bg-muted/40 px-4 py-12 text-center">
         <Archive className="size-6 text-slate-600" aria-hidden="true" />
         <p className="text-sm text-slate-400">No archived opportunities.</p>
       </div>
     );
   }
   return (
-    <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
+    <div className="overflow-x-auto rounded-2xl border border-border">
       <table className="w-full text-left text-[13px]">
         <thead>
-          <tr className="border-b border-white/[0.06] text-[11px] uppercase tracking-wider text-slate-500">
+          <tr className="border-b border-border text-[11px] uppercase tracking-wider text-slate-500">
             <th className="px-4 py-3">Title</th>
             <th className="px-4 py-3">Source</th>
             <th className="px-4 py-3">Buyer</th>
@@ -401,10 +401,10 @@ function ArchivedTable({ opps, agentId, loading, error, onRestore, restoringId }
         </thead>
         <tbody>
           {opps.map((o) => (
-            <tr key={o.id} className="border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02]">
+            <tr key={o.id} className="border-b border-slate-100 last:border-0 hover:bg-muted/50">
               <td className="max-w-[320px] truncate px-4 py-3">
                 <button onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline/${o.id}`)}
-                  className="truncate text-left text-white hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
+                  className="truncate text-left text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
                   {o.title}
                 </button>
               </td>
@@ -419,7 +419,7 @@ function ArchivedTable({ opps, agentId, loading, error, onRestore, restoringId }
               <td className="px-4 py-3 text-right">
                 <button onClick={() => onRestore(o.id)} disabled={restoringId === o.id}
                   aria-label={`Restore ${o.title}`}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[12px] font-semibold text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
                   <RotateCcw className={cn("size-3.5", restoringId === o.id && "animate-spin")} /> {restoringId === o.id ? "Restoring…" : "Restore"}
                 </button>
               </td>

@@ -46,16 +46,16 @@ export const WIRE_STROKE: Record<WireColor, string> = {
 };
 
 export const WIRE_TEXT: Record<WireColor, string> = {
-  cyan: "text-cyan-300",
+  cyan: "text-indigo-600",
   emerald: "text-emerald-300",
   amber: "text-amber-300",
   red: "text-red-300",
   violet: "text-violet-300",
-  slate: "text-slate-300",
+  slate: "text-slate-600",
 };
 
 export const WIRE_DOT: Record<WireColor, string> = {
-  cyan: "bg-cyan-400",
+  cyan: "bg-indigo-500",
   emerald: "bg-emerald-400",
   amber: "bg-amber-400",
   red: "bg-red-400",

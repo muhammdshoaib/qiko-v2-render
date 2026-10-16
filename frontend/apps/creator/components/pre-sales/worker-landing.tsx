@@ -3,7 +3,7 @@
 // Worker landing page for the Pre-Sales / RFP Writer worker. Shown when the cockpit is opened
 // without a ?pack= deep-link. A left "USE CASES" rail switches between three live views
 // (AI Response Generation, Knowledge Base, Section Assignment) with three further locked use-cases
-// teased below. Matches the cockpit-shell dark theme (bg-[#05070d], indigo/violet accents).
+// teased below. Matches the cockpit-shell dark theme (bg-background, indigo/violet accents).
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueries, useQuery } from "@tanstack/react-query";
@@ -45,21 +45,21 @@ function tenderStatusLabel(p: RfpPack): string {
 
 function tenderStatusClass(p: RfpPack): string {
   const drafts = p.gen_status?.drafts?.state;
-  if (drafts === "ready") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
-  if (drafts === "partial") return "border-amber-500/30 bg-amber-500/10 text-amber-400";
-  if (drafts === "running" || drafts === "pending") return "border-indigo-500/30 bg-indigo-500/10 text-indigo-300";
+  if (drafts === "ready") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
+  if (drafts === "partial") return "border-amber-500/30 bg-amber-50 text-amber-700";
+  if (drafts === "running" || drafts === "pending") return "border-indigo-500/30 bg-indigo-500/10 text-indigo-600";
   if (p.gen_status?.sections === "error" || p.gen_status?.requirements === "error") return "border-red-500/30 bg-red-500/10 text-red-400";
-  return "border-white/10 bg-white/[0.04] text-slate-400";
+  return "border-border bg-muted text-slate-400";
 }
 
 function OutcomePill({ outcome }: { outcome: RfpPack["outcome"] }) {
   const label = outcome ?? "pending";
   return (
     <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold capitalize",
-      outcome === "won" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+      outcome === "won" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
         : outcome === "lost" ? "border-red-500/30 bg-red-500/10 text-red-400"
-          : outcome === "withdrawn" ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
-            : "border-white/10 bg-white/[0.04] text-slate-400")}>
+          : outcome === "withdrawn" ? "border-amber-500/30 bg-amber-50 text-amber-300"
+            : "border-border bg-muted text-slate-400")}>
       {outcome === "won" ? <Check className="size-3" /> : outcome === "lost" ? <X className="size-3" /> : null}
       {label}
     </span>
@@ -131,17 +131,17 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
   ];
 
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-[#05070d] text-slate-200">
-      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-white/[0.06] px-3 sm:px-4">
-        <button onClick={() => router.push("/studio")} className="flex shrink-0 items-center gap-1.5 rounded-md px-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-background text-slate-700">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-3 sm:px-4">
+        <button onClick={() => router.push("/studio")} className="flex shrink-0 items-center gap-1.5 rounded-md px-1 text-sm text-slate-500 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
           <ArrowLeft className="size-4" /> <span className="hidden sm:inline">Studio</span>
         </button>
-        <span className="hidden h-4 w-px bg-white/10 sm:block" />
+        <span className="hidden h-4 w-px bg-slate-100 sm:block" />
         <span className="hidden size-6 shrink-0 items-center justify-center rounded-md bg-indigo-500/15 text-indigo-400 sm:flex">
           <FileText className="size-3.5" />
         </span>
         <div className="flex min-w-0 flex-col">
-          <h1 className="truncate text-sm font-semibold leading-tight text-white">{workerName}</h1>
+          <h1 className="truncate text-sm font-semibold leading-tight text-foreground">{workerName}</h1>
           <p className="flex items-center gap-1 text-[10px] leading-tight text-slate-500">
             <span className="size-1.5 rounded-full bg-emerald-400" /> IDG Security &middot; Ready
           </p>
@@ -150,7 +150,7 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
 
       <div className="flex min-h-0 flex-1">
         {/* USE CASES rail */}
-        <nav aria-label="Use cases" className="hidden w-[230px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-white/[0.06] px-4 py-5 lg:flex">
+        <nav aria-label="Use cases" className="hidden w-[230px] shrink-0 flex-col gap-4 overflow-y-auto border-r border-border px-4 py-5 lg:flex">
           <div>
             <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">Use cases</p>
             <div className="flex flex-col gap-1">
@@ -162,8 +162,8 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
                     key={item.view}
                     onClick={() => setView(item.view)}
                     aria-current={isActive ? "page" : undefined}
-                    className={cn("flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                      isActive ? "border border-indigo-500/30 bg-indigo-500/10 text-white" : "text-slate-400 hover:bg-white/[0.03] hover:text-white")}
+                    className={cn("flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+                      isActive ? "border border-indigo-200 bg-indigo-50 text-indigo-800" : "text-slate-400 hover:bg-muted hover:text-foreground")}
                   >
                     <Icon className={cn("size-4 shrink-0", isActive ? "text-indigo-400" : "text-slate-500")} />
                     <span className="min-w-0 flex-1">
@@ -200,7 +200,7 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
             {stats.map((s) => (
               <div
                 key={s.label}
-                className="rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5"
+                className="rounded-xl border border-border bg-muted/50 px-3 py-2.5"
               >
                 <p className="flex items-center gap-0.5 text-[9px] font-semibold uppercase tracking-wider text-slate-500">
                   <span>{s.label}</span>
@@ -208,7 +208,7 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
                     <MetricInfoTooltip label={s.label} description={s.description} />
                   )}
                 </p>
-                <p className="mt-1 truncate text-[15px] font-bold text-white">{s.value}</p>
+                <p className="mt-1 truncate text-[15px] font-bold text-foreground">{s.value}</p>
               </div>
             ))}
           </div>
@@ -216,7 +216,7 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
 
         <div className="flex min-w-0 flex-1 flex-col">
           {/* Mobile use-case switcher */}
-          <nav aria-label="Use cases" className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-white/[0.06] px-3 py-2 lg:hidden">
+          <nav aria-label="Use cases" className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-border px-3 py-2 lg:hidden">
             {USE_CASES.map((item) => {
               const isActive = item.view === view;
               const Icon = item.icon;
@@ -225,8 +225,8 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
                   key={item.view}
                   onClick={() => setView(item.view)}
                   aria-current={isActive ? "page" : undefined}
-                  className={cn("flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                    isActive ? "border border-indigo-500/30 bg-indigo-500/10 text-white" : "text-slate-400 hover:bg-white/[0.03] hover:text-white")}
+                  className={cn("flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+                    isActive ? "border border-indigo-200 bg-indigo-50 text-indigo-800" : "text-slate-400 hover:bg-muted hover:text-foreground")}
                 >
                   <Icon className={cn("size-3.5 shrink-0", isActive ? "text-indigo-400" : "text-slate-500")} />
                   <span className="whitespace-nowrap">{item.label}</span>
@@ -242,21 +242,21 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
 
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h2 className="text-lg font-semibold text-white">AI Response Generation</h2>
+                    <h2 className="text-lg font-semibold text-foreground">AI Response Generation</h2>
                     <p className="mt-0.5 text-[13px] text-slate-500">Your RFPs and proposals</p>
                   </div>
                   <button
                     onClick={() => setShowNew(true)}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-500 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-500 px-3.5 py-2 text-[13px] font-semibold text-foreground hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
                   >
                     <Plus className="size-4" /> New RFP
                   </button>
                 </div>
 
                 {packs.length === 0 ? (
-                  <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-14 text-center">
+                  <div className="flex flex-col items-center rounded-2xl border border-border bg-muted/40 px-4 py-14 text-center">
                     <FileText className="mb-3 size-9 text-slate-600" />
-                    <p className="text-sm font-semibold text-white">No RFPs yet</p>
+                    <p className="text-sm font-semibold text-foreground">No RFPs yet</p>
                     <p className="mt-1 max-w-xs text-[13px] text-slate-500">Upload your first RFP to start drafting a grounded response.</p>
                   </div>
                 ) : (
@@ -265,14 +265,14 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
                       const docs = p.source_documents ?? [];
                       return (
                         <li key={p.id}>
-                          <article className="flex h-full flex-col rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4 transition-colors hover:bg-white/[0.03]">
+                          <article className="flex h-full flex-col rounded-2xl border border-border bg-muted/40 p-4 transition-colors hover:bg-muted">
                             <button
                               type="button"
                               onClick={() => onOpenPack(p.id)}
-                              className="text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+                              className="text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
                             >
                               <div className="flex items-start justify-between gap-3">
-                                <p className="min-w-0 flex-1 truncate text-[14px] font-semibold text-white">{p.title}</p>
+                                <p className="min-w-0 flex-1 truncate text-[14px] font-semibold text-foreground">{p.title}</p>
                                 <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium", tenderStatusClass(p))}>
                                   {tenderStatusLabel(p)}
                                 </span>
@@ -290,14 +290,14 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
                               {docs.length > 0 && (
                                 <div className="mt-3 flex flex-wrap gap-1.5">
                                   {docs.map((d, i) => (
-                                    <span key={`${d.name}-${i}`} className="max-w-[180px] truncate rounded-md border border-white/[0.06] bg-white/[0.03] px-2 py-0.5 text-[11px] text-slate-400">
+                                    <span key={`${d.name}-${i}`} className="max-w-[180px] truncate rounded-md border border-border bg-muted px-2 py-0.5 text-[11px] text-slate-400">
                                       {d.name}
                                     </span>
                                   ))}
                                 </div>
                               )}
                             </button>
-                            <div className="mt-auto flex justify-end border-t border-white/[0.06] pt-3">
+                            <div className="mt-auto flex justify-end border-t border-border pt-3">
                               <button
                                 type="button"
                                 onClick={(event) => {
@@ -305,7 +305,7 @@ export function WorkerLanding({ agentId, workerName, packs, onOpenPack }: {
                                   setOutcomePack(p);
                                 }}
                                 aria-label={`Edit outcome for ${p.title}`}
-                                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-cyan-300 hover:bg-cyan-400/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+                                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-indigo-600 hover:bg-indigo-500/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
                               >
                                 <Pencil className="size-3.5" aria-hidden="true" /> Edit outcome
                               </button>

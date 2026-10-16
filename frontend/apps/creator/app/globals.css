@@ -3,6 +3,54 @@
 @source "../";
 @source "../../../packages/ui/src";
 
+/* Creator app — Signal-inspired light theme (overrides shared dark package tokens). */
+:root {
+  --brand-background: #f8fafc;
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: #6366f1;
+  --primary-foreground: #ffffff;
+  --secondary: #eef2ff;
+  --secondary-foreground: #312e81;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #eef2ff;
+  --accent-foreground: #312e81;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --success: #059669;
+  --border: #e2e8f0;
+  --input: #ffffff;
+  --ring: #6366f1;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: #6366f1;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: #6366f1;
+  --status-training-bg: #fff7ed;
+  --status-training-text: #c2410c;
+  --status-ready-bg: #ecfdf5;
+  --status-ready-text: #047857;
+  --status-error-bg: #fef2f2;
+  --status-error-text: #b91c1c;
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  box-shadow: 0 4px 24px -4px rgba(15, 23, 42, 0.08);
+}
+
 /* Geist + Geist Mono, self-hosted -- same font files stage.qiko.ai serves at
    /assets/*.woff2, so the landing page renders identically instead of relying
    on a separately-packaged (and potentially not byte-identical) distribution. */
@@ -63,20 +111,18 @@
   font-family: "Geist", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
 }
 
-/* Chrome/WebKit paints autofilled inputs with an opaque near-white background regardless of the
-   element's CSS background, which makes saved-credential fields (e.g. the Vapi Public/Secret keys,
-   login) render as bright white boxes on the dark theme. Force autofilled inputs to keep the dark
-   surface + light text by masking the UA style with a large inset box-shadow. */
+/* Chrome/WebKit paints autofilled inputs with an opaque UA background. Keep them on the light
+   Signal surface so Public/Secret key fields (and login) match the white theme. */
 input:-webkit-autofill,
 input:-webkit-autofill:hover,
 input:-webkit-autofill:focus,
 input:-webkit-autofill:active,
 textarea:-webkit-autofill,
 select:-webkit-autofill {
-  -webkit-box-shadow: 0 0 0 1000px #111522 inset !important;
-  box-shadow: 0 0 0 1000px #111522 inset !important;
-  -webkit-text-fill-color: #e2e8f0 !important;
-  caret-color: #e2e8f0;
+  -webkit-box-shadow: 0 0 0 1000px #ffffff inset !important;
+  box-shadow: 0 0 0 1000px #ffffff inset !important;
+  -webkit-text-fill-color: #0f172a !important;
+  caret-color: #0f172a;
   transition: background-color 9999s ease-in-out 0s;
 }
 
@@ -214,8 +260,9 @@ select:-webkit-autofill {
 
 .pulse-flowline {
   fill: none;
-  stroke-width: 1.4;
-  stroke-dasharray: 3 7;
+  stroke-width: 1.6;
+  stroke-dasharray: 4 8;
+  stroke-linecap: round;
   animation: qiko-flow 1.4s linear infinite;
 }
 .pulse-flowline-fast {
@@ -232,4 +279,10 @@ select:-webkit-autofill {
   .pulse-dot {
     display: none;
   }
+}
+
+/* Pulse content inherits the global light theme. */
+.pulse-signal {
+  background: transparent;
+  color: var(--foreground);
 }

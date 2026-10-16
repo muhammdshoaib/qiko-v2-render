@@ -30,7 +30,7 @@ export function PulseCrumbs({ items }: { items: Crumb[] }) {
               <button
                 type="button"
                 onClick={item.onClick}
-                className="min-h-11 text-slate-500 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+                className="min-h-11 text-slate-500 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
               >
                 {item.label}
               </button>
@@ -86,7 +86,7 @@ export function PulseCard({
   className?: string;
 }) {
   return (
-    <section id={id} className={cn("rounded-2xl border border-white/10 bg-card", className)}>
+    <section id={id} className={cn("rounded-2xl border border-border bg-card", className)}>
       {(title || hint || badge) && (
         <div className="flex flex-wrap items-center gap-2 px-5 pt-4">
           {title && (
@@ -112,11 +112,11 @@ export function PulseChip({
   tone?: "good" | "warn" | "blue" | "bad" | "";
 }) {
   const color = {
-    good: "bg-emerald-400/10 text-emerald-400",
-    warn: "bg-amber-400/10 text-amber-400",
-    blue: "bg-cyan-400/10 text-cyan-300",
+    good: "bg-emerald-400/10 text-emerald-700",
+    warn: "bg-amber-400/10 text-amber-700",
+    blue: "bg-indigo-500/10 text-indigo-600",
     bad: "bg-red-400/10 text-red-400",
-    "": "bg-white/[0.06] text-slate-400",
+    "": "bg-muted text-slate-400",
   }[tone];
   return (
     <span className={cn("inline-flex items-center rounded-md px-2 py-0.5 font-mono text-[10px] tracking-[0.04em]", color)}>
@@ -137,7 +137,7 @@ export function PulseTabs<T extends string>({
   onChange: (id: T) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-1 rounded-xl bg-white/[0.04] p-1" role="tablist" aria-label={label}>
+    <div className="flex flex-wrap gap-1 rounded-xl bg-muted p-1" role="tablist" aria-label={label}>
       {options.map((pane) => {
         const on = value === pane.id;
         return (
@@ -147,7 +147,7 @@ export function PulseTabs<T extends string>({
             role="tab"
             aria-selected={on}
             onClick={() => onChange(pane.id)}
-            className={`inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-[12px] font-medium ${on ? "bg-white text-[#05070d]" : "text-slate-400 hover:text-white"}`}
+            className={`inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-[12px] font-medium ${on ? "bg-white text-foreground" : "text-slate-500 hover:text-foreground"}`}
           >
             {pane.label}
             {pane.count != null && <span className="font-mono text-[10px] text-slate-500">{pane.count}</span>}
@@ -172,7 +172,7 @@ export function GhostButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex min-h-11 items-center rounded-lg border border-white/15 bg-white/[0.04] px-3.5 text-[13px] font-semibold text-white hover:border-white/25 hover:bg-white/[0.08] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
+        "inline-flex min-h-11 items-center rounded-lg border border-border bg-muted px-3.5 text-[13px] font-semibold text-foreground hover:border-border hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
         className,
       )}
     >

@@ -34,9 +34,9 @@ function cadenceValue(cadence: string | null | undefined): SalesScanCadence {
 function scanStatusClass(status: string | null | undefined): string {
   const s = (status || "").toLowerCase();
   if (s.includes("fail") || s.includes("error")) return "text-red-400";
-  if (s.includes("success") || s.includes("complete") || s.includes("ok")) return "text-emerald-400";
+  if (s.includes("success") || s.includes("complete") || s.includes("ok")) return "text-emerald-700";
   if (!s) return "text-slate-500";
-  return "text-slate-300";
+  return "text-slate-600";
 }
 
 export default function SalesIntelligenceIngestionPage() {
@@ -143,18 +143,18 @@ export default function SalesIntelligenceIngestionPage() {
           { value: String(newFromLastScan), label: "New from Last Scan", caption: "ready to qualify", trend: "up" },
         ]} />
 
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-6">
+        <div className="rounded-2xl border border-border bg-muted/40 p-6">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="text-[15px] font-semibold text-white">Portal ingestion</h2>
+              <h2 className="text-[15px] font-semibold text-foreground">Portal ingestion</h2>
               <p className="mt-1 max-w-2xl text-[13px] text-slate-400">
                 Pull tenders from active portals, apply IDG country and category filters, then stage matches as{" "}
-                <span className="font-semibold text-slate-200">Ingested</span> for qualification.
+                <span className="font-semibold text-slate-700">Ingested</span> for qualification.
               </p>
             </div>
-            <div className="shrink-0 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-2.5 text-center">
+            <div className="shrink-0 rounded-xl border border-border bg-muted/50 px-4 py-2.5 text-center">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Active Sources</p>
-              <p className="mt-0.5 text-[15px] font-bold text-white">{activeSources} / {sources.length}</p>
+              <p className="mt-0.5 text-[15px] font-bold text-foreground">{activeSources} / {sources.length}</p>
             </div>
           </div>
 
@@ -200,7 +200,7 @@ export default function SalesIntelligenceIngestionPage() {
               <Sparkles className="size-3.5" /> INGEST FILTERS
             </p>
             <button type="button" onClick={() => saveFilter.mutate()} disabled={saveFilter.isPending}
-              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-1.5 text-[12px] font-semibold text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-border bg-muted px-3.5 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
               {saveFilter.isPending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Check className="size-3.5" aria-hidden="true" />}
               {saveFilter.isPending ? "Saving\u2026" : saveFilter.isSuccess ? "Saved" : "Save filters"}
             </button>
@@ -239,18 +239,18 @@ function SourceCard({ icon, name, sourceKey, fullName, source, scannable = true,
   const cadence = cadenceValue(source?.scanCadence);
   const nextScanLabel = cadence === "manual" ? "Manual only" : formatDate(source?.nextScanAt, true);
   return (
-    <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
+    <div className="rounded-xl border border-slate-200 bg-muted/50 p-4">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <span className="flex size-9 items-center justify-center rounded-lg bg-amber-400/10 text-amber-400">{icon}</span>
+          <span className="flex size-9 items-center justify-center rounded-lg bg-amber-400/10 text-amber-700">{icon}</span>
           <div>
-            <p className="text-[13px] font-semibold text-white">{name}</p>
+            <p className="text-[13px] font-semibold text-foreground">{name}</p>
             <p className="text-[10px] uppercase tracking-wide text-slate-500">PORTAL &middot; {sourceKey}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
           <span className={cn("flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase",
-            active ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" : "border-slate-500/30 bg-slate-500/10 text-slate-400")}>
+            active ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700" : "border-slate-500/30 bg-slate-500/10 text-slate-400")}>
             <RadioTower className="size-3" /> {active ? "ACTIVE" : "INACTIVE"}
           </span>
           {statusUpdating && <Loader2 aria-hidden="true" className="size-4 animate-spin text-slate-400" />}
@@ -259,7 +259,7 @@ function SourceCard({ icon, name, sourceKey, fullName, source, scannable = true,
             label={`${active ? "Disable" : "Enable"} ${name} ingestion`} />
           {onDelete && (
             <button type="button" onClick={(e) => onDelete?.(e.currentTarget)} disabled={deleting} aria-label={`Remove ${name}`}
-              className="flex size-11 items-center justify-center rounded-lg border border-white/10 text-slate-400 hover:border-red-500/40 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-50">
+              className="flex size-11 items-center justify-center rounded-lg border border-border text-slate-400 hover:border-red-500/40 hover:text-red-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50 disabled:opacity-50">
               {deleting ? <Loader2 className="size-4 animate-spin" aria-hidden="true" /> : <Trash2 className="size-4" aria-hidden="true" />}
             </button>
           )}
@@ -268,21 +268,21 @@ function SourceCard({ icon, name, sourceKey, fullName, source, scannable = true,
       <p className="mt-2 text-[12px] text-slate-400">{fullName}</p>
 
       <div className="mt-4 grid grid-cols-2 gap-2 text-center">
-        <div className="rounded-lg bg-white/[0.02] py-2">
+        <div className="rounded-lg bg-muted/50 py-2">
           <p className="text-[9px] uppercase tracking-wide text-slate-500">Last Scan</p>
-          <p className="mt-1 text-[11px] text-slate-300">{formatDate(source?.lastScanAt, true)}</p>
+          <p className="mt-1 text-[11px] text-slate-600">{formatDate(source?.lastScanAt, true)}</p>
         </div>
-        <div className="rounded-lg bg-white/[0.02] py-2">
+        <div className="rounded-lg bg-muted/50 py-2">
           <p className="text-[9px] uppercase tracking-wide text-slate-500">Next Scan</p>
-          <p className="mt-1 text-[11px] text-slate-300">{nextScanLabel}</p>
+          <p className="mt-1 text-[11px] text-slate-600">{nextScanLabel}</p>
         </div>
-        <div className="rounded-lg bg-white/[0.02] py-2">
+        <div className="rounded-lg bg-muted/50 py-2">
           <p className="text-[9px] uppercase tracking-wide text-slate-500">Status</p>
           <p className={cn("mt-1 text-[11px]", scanStatusClass(source?.lastScanStatus))}>{humanize(source?.lastScanStatus)}</p>
         </div>
-        <div className="rounded-lg bg-white/[0.02] py-2">
+        <div className="rounded-lg bg-muted/50 py-2">
           <p className="text-[9px] uppercase tracking-wide text-slate-500">Found</p>
-          <p className="mt-1 text-[11px] text-slate-300">{source?.opportunitiesFound ?? 0} opps</p>
+          <p className="mt-1 text-[11px] text-slate-600">{source?.opportunitiesFound ?? 0} opps</p>
         </div>
       </div>
 
@@ -293,9 +293,9 @@ function SourceCard({ icon, name, sourceKey, fullName, source, scannable = true,
         <div className="relative">
           <select id={`scan-cadence-${sourceKey}`} value={cadence} disabled={cadenceUpdating || !source?.sourceKey}
             onChange={(e) => onCadenceChange(e.target.value as SalesScanCadence)}
-            className="w-full cursor-pointer appearance-none rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5 pr-9 text-[12px] text-slate-200 outline-none hover:border-white/20 focus-visible:border-indigo-400/50 focus-visible:ring-2 focus-visible:ring-indigo-400/40 disabled:cursor-not-allowed disabled:opacity-50">
+            className="w-full cursor-pointer appearance-none rounded-lg border border-border bg-muted px-3 py-2.5 pr-9 text-[12px] text-slate-700 outline-none hover:border-border focus-visible:border-indigo-400/50 focus-visible:ring-2 focus-visible:ring-indigo-400/40 disabled:cursor-not-allowed disabled:opacity-50">
             {SCAN_CADENCE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value} className="bg-[#0a0f1a] text-slate-200">{o.label}</option>
+              <option key={o.value} value={o.value} className="bg-card text-slate-700">{o.label}</option>
             ))}
           </select>
           {cadenceUpdating
@@ -308,7 +308,7 @@ function SourceCard({ icon, name, sourceKey, fullName, source, scannable = true,
       </div>
 
       <button onClick={onScan} disabled={scanning || !scannable}
-        className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-500 py-2.5 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
+        className="mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-500 py-2.5 text-[13px] font-semibold text-foreground hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
         <RefreshCw className={cn("size-4", scanning && "animate-spin")} /> {scanning ? "Scanning\u2026" : "Run Scan"}
       </button>
       {!scannable && <p className="mt-2 text-[10px] text-slate-500">This source is not yet scannable.</p>}
@@ -334,7 +334,7 @@ function AddSourcePanel({ catalog, onAddCatalog, onAddCustom, pending, error }: 
   const customKey = name.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 63);
   const canAddCustom = name.trim().length > 0 && customKey.length >= 2 && /^[a-z]/.test(customKey) && /^https?:\/\//i.test(url.trim());
   return (
-    <div className="mt-6 rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+    <div className="mt-6 rounded-2xl border border-border bg-muted/40 p-5">
       <p className="mb-3 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-indigo-400">
         <Plus className="size-3.5" aria-hidden="true" /> ADD SOURCE
       </p>
@@ -344,7 +344,7 @@ function AddSourcePanel({ catalog, onAddCatalog, onAddCustom, pending, error }: 
           <div className="flex flex-wrap gap-2">
             {available.map((c) => (
               <button key={c.key} type="button" onClick={() => onAddCatalog(c.key)} disabled={pending}
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
                 <Plus className="size-3.5" aria-hidden="true" /> {c.name}
               </button>
             ))}
@@ -358,7 +358,7 @@ function AddSourcePanel({ catalog, onAddCatalog, onAddCustom, pending, error }: 
           <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://portal.example/search" aria-label="Custom source URL" />
           <button type="button" disabled={!canAddCustom || pending}
             onClick={() => { onAddCustom(customKey, name.trim(), url.trim()); setName(""); setUrl(""); }}
-            className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-indigo-500 px-4 text-[12px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
+            className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-indigo-500 px-4 text-[12px] font-semibold text-foreground hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
             {pending ? <Loader2 className="size-3.5 animate-spin" aria-hidden="true" /> : <Plus className="size-3.5" aria-hidden="true" />} Add
           </button>
         </div>
@@ -373,12 +373,12 @@ function FilterCard({ icon, title, description, enabled, onToggle, helper, child
   icon: React.ReactNode; title: string; description: string; enabled: boolean; onToggle: () => void; helper: string; children?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
+    <div className="rounded-xl border border-slate-200 bg-muted/50 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-2.5">
-          <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-white/[0.05] text-slate-400">{icon}</span>
+          <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-slate-50 text-slate-400">{icon}</span>
           <div>
-            <p className="text-[13px] font-semibold text-white">{title}</p>
+            <p className="text-[13px] font-semibold text-foreground">{title}</p>
             <p className="mt-0.5 text-[12px] leading-relaxed text-slate-500">{description}</p>
           </div>
         </div>

@@ -67,12 +67,12 @@ export function ResearchTab({ agentId }: { agentId: string }) {
   const running = !!runId && (!run.data?.brief || run.data.brief.status === "in_progress");
 
   return (
-    <section className="space-y-6 text-white">
+    <section className="space-y-6 text-foreground">
       <div>
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <Search className="size-4 text-primary" /> Research
         </h2>
-        <p className="text-xs text-white/50">
+        <p className="text-xs text-slate-500">
           Give the worker a subject and facets to research over the ingested evidence.
         </p>
       </div>
@@ -83,10 +83,10 @@ export function ResearchTab({ agentId }: { agentId: string }) {
             e.preventDefault();
             if (subject.trim() && !create.isPending) create.mutate();
           }}
-          className="space-y-4 rounded-xl border border-white/[0.08] bg-white/[0.03] p-4"
+          className="space-y-4 rounded-xl border border-border bg-muted p-4"
         >
           <div className="space-y-2">
-            <label className="text-sm font-medium text-white/70" htmlFor="subject">
+            <label className="text-sm font-medium text-foreground/70" htmlFor="subject">
               Subject
             </label>
             <input
@@ -94,11 +94,11 @@ export function ResearchTab({ agentId }: { agentId: string }) {
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
               placeholder="e.g. Acme Corp"
-              className="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-2 text-sm text-white placeholder:text-white/40 outline-none focus:border-indigo-400/45"
+              className="w-full rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-foreground placeholder:text-slate-400 outline-none focus:border-indigo-400/45"
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium text-white/70" htmlFor="facets">
+            <label className="text-sm font-medium text-foreground/70" htmlFor="facets">
               Facets (comma or newline separated)
             </label>
             <textarea
@@ -107,7 +107,7 @@ export function ResearchTab({ agentId }: { agentId: string }) {
               onChange={(e) => setFacetsText(e.target.value)}
               placeholder="What do they do?, Who are the people?, What is unresolved?, What looks risky?"
               rows={3}
-              className="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-2 text-sm text-white placeholder:text-white/40 outline-none focus:border-indigo-400/45"
+              className="w-full rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-foreground placeholder:text-slate-400 outline-none focus:border-indigo-400/45"
             />
           </div>
           <Button type="submit" disabled={!subject.trim() || create.isPending} className="w-full sm:w-auto">
@@ -123,17 +123,17 @@ export function ResearchTab({ agentId }: { agentId: string }) {
           <button
             type="button"
             onClick={() => setRunId(null)}
-            className="text-sm text-white/50 hover:text-white"
+            className="text-sm text-slate-500 hover:text-foreground"
           >
             Start new research
           </button>
-          {run.isLoading && <p className="text-sm text-white/50">Loading run...</p>}
+          {run.isLoading && <p className="text-sm text-slate-500">Loading run...</p>}
           {run.isError && <p className="text-sm text-rose-400">Could not load research run.</p>}
           {run.data && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <p className="text-sm text-white/70">
-                  Run <span className="font-mono text-white">{run.data.run_id.slice(0, 8)}</span>
+                <p className="text-sm text-slate-600">
+                  Run <span className="font-mono text-foreground">{run.data.run_id.slice(0, 8)}</span>
                 </p>
                 {running ? (
                   <Badge variant="warning" dot>
@@ -152,9 +152,9 @@ export function ResearchTab({ agentId }: { agentId: string }) {
                   return (
                     <div
                       key={stage}
-                      className="rounded-lg border border-white/[0.08] bg-white/[0.03] p-3"
+                      className="rounded-lg border border-border bg-muted p-3"
                     >
-                      <p className="text-xs font-medium text-white/50">{stageLabel(stage)}</p>
+                      <p className="text-xs font-medium text-foreground/50">{stageLabel(stage)}</p>
                       <Badge variant={statusVariant(status)} className="mt-1 capitalize">
                         {status ?? "pending"}
                       </Badge>
@@ -192,10 +192,10 @@ function BriefCard({
   accepting?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+    <div className="rounded-xl border border-border bg-muted p-4">
       <div className="mb-3 flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-semibold text-white">Brief</h3>
+          <h3 className="text-sm font-semibold text-foreground">Brief</h3>
           <Badge variant={brief.status === "accepted" ? "success" : "warning"} className="mt-1 capitalize">
             {brief.status}
           </Badge>
@@ -207,19 +207,19 @@ function BriefCard({
           </Button>
         )}
       </div>
-      <p className="text-sm leading-relaxed text-white/80">{brief.summary}</p>
+      <p className="text-sm leading-relaxed text-slate-700">{brief.summary}</p>
       {brief.findings.length > 0 && (
         <div className="mt-4 space-y-3">
-          <p className="text-xs font-medium uppercase tracking-wide text-white/40">Findings</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">Findings</p>
           {brief.findings.map((f, i) => (
-            <div key={i} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
-              <p className="text-sm text-white/90">{f.text}</p>
+            <div key={i} className="rounded-lg border border-border bg-muted/50 p-3">
+              <p className="text-sm text-slate-800">{f.text}</p>
               {f.evidence_refs.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {f.evidence_refs.map((ref) => (
                     <span
                       key={ref}
-                      className="rounded bg-white/[0.06] px-2 py-0.5 text-xs text-white/60"
+                      className="rounded bg-muted px-2 py-0.5 text-xs text-slate-500"
                     >
                       {ref}
                     </span>
@@ -232,7 +232,7 @@ function BriefCard({
         </div>
       )}
       {brief.gaps && (
-        <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-500/10 p-3">
+        <div className="mt-4 rounded-lg border border-amber-500/20 bg-amber-50 p-3">
           <p className="flex items-center gap-2 text-xs font-medium text-amber-300">
             <AlertTriangle className="size-4" /> Gaps
           </p>
@@ -244,7 +244,7 @@ function BriefCard({
           {brief.citations.map((c) => (
             <span
               key={c}
-              className="rounded bg-white/[0.06] px-2 py-0.5 text-xs text-white/60"
+              className="rounded bg-muted px-2 py-0.5 text-xs text-slate-500"
             >
               {c}
             </span>
@@ -289,23 +289,23 @@ function BacklogPanel({ agentId, runId }: { agentId: string; runId: string }) {
   const created = create.data?.created || [];
 
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+    <div className="rounded-xl border border-border bg-muted p-4">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+        <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <ListChecks className="size-4 text-primary" /> Proposed backlog
         </h3>
-        {proposal.isRefetching && <Loader2 className="size-4 animate-spin text-white/50" />}
+        {proposal.isRefetching && <Loader2 className="size-4 animate-spin text-slate-500" />}
       </div>
 
       {proposal.isLoading && (
-        <div className="flex items-center gap-2 text-sm text-white/50">
+        <div className="flex items-center gap-2 text-sm text-slate-500">
           <Loader2 className="size-4 animate-spin" /> Building backlog...
         </div>
       )}
       {proposal.isError && <p className="text-sm text-rose-400">Could not build backlog. Connect Qiko Track first.</p>}
       {proposal.data && (
         <div className="space-y-3">
-          <p className="text-xs text-white/50">Project {proposal.data.project_key}</p>
+          <p className="text-xs text-slate-500">Project {proposal.data.project_key}</p>
           {proposal.data.items.map((item, idx) => (
             <label
               key={idx}
@@ -313,7 +313,7 @@ function BacklogPanel({ agentId, runId }: { agentId: string; runId: string }) {
                 "flex cursor-pointer items-start gap-3 rounded-lg border p-3",
                 selected.has(idx)
                   ? "border-primary/40 bg-primary/5"
-                  : "border-white/[0.06] bg-white/[0.02] opacity-60",
+                  : "border-border bg-muted/50 opacity-60",
               )}
             >
               <input
@@ -324,15 +324,15 @@ function BacklogPanel({ agentId, runId }: { agentId: string; runId: string }) {
               />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-white">{item.title}</span>
+                  <span className="text-sm font-medium text-foreground">{item.title}</span>
                   <Badge variant="muted" className="text-[10px] uppercase">{item.type}</Badge>
                   {item.priority !== "NONE" && (
                     <Badge variant="warning" className="text-[10px] uppercase">{item.priority}</Badge>
                   )}
                 </div>
-                <p className="mt-1 line-clamp-2 text-xs text-white/60">{item.description_md}</p>
+                <p className="mt-1 line-clamp-2 text-xs text-slate-500">{item.description_md}</p>
                 {item.estimate_points !== null && (
-                  <p className="mt-1 text-xs text-white/40">{item.estimate_points} points</p>
+                  <p className="mt-1 text-xs text-slate-400">{item.estimate_points} points</p>
                 )}
               </div>
             </label>

@@ -7,7 +7,7 @@ import { EXPENSE_COLOR, INCOME_COLOR, PROFIT_COLOR, formatCompact, formatCurrenc
 
 export function MonthlyTrendsChart({ data, height = 240 }: { data: FinanceMonthlyTrend[]; height?: number }) {
   const { currency } = useFinance();
-  if (data.length === 0) return <p className="text-xs text-white/45">No monthly data available.</p>;
+  if (data.length === 0) return <p className="text-xs text-slate-400">No monthly data available.</p>;
 
   const chartData = data.map((d) => ({
     ...d,

@@ -26,9 +26,9 @@ const DECISION_FILTERS: { id: SalesDecisionFilter; label: string }[] = [
 ];
 
 function decisionBadgeClass(decision: string | null): string {
-  if (decision === "approved") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+  if (decision === "approved") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
   if (decision === "rejected") return "border-red-500/30 bg-red-500/10 text-red-400";
-  if (decision === "needs_review") return "border-amber-500/30 bg-amber-500/10 text-amber-400";
+  if (decision === "needs_review") return "border-amber-500/30 bg-amber-50 text-amber-700";
   return "border-slate-500/30 bg-slate-500/10 text-slate-400";
 }
 
@@ -69,17 +69,17 @@ function downloadCsv(filename: string, rows: SalesDecisionHistoryEntry[]): void 
 
 function DecisionHistorySkeleton() {
   return (
-    <div className="overflow-hidden rounded-2xl border border-white/[0.06]" aria-busy="true" aria-label="Loading decision history">
+    <div className="overflow-hidden rounded-2xl border border-border" aria-busy="true" aria-label="Loading decision history">
       {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="flex items-center gap-6 border-b border-white/[0.04] px-4 py-4 last:border-0">
-          <div className="h-3.5 w-20 animate-pulse rounded bg-white/[0.06]" />
+        <div key={i} className="flex items-center gap-6 border-b border-slate-100 px-4 py-4 last:border-0">
+          <div className="h-3.5 w-20 animate-pulse rounded bg-muted" />
           <div className="min-w-0 flex-1 space-y-2">
-            <div className="h-3.5 w-48 max-w-full animate-pulse rounded bg-white/[0.06]" />
-            <div className="h-3 w-24 animate-pulse rounded bg-white/[0.06]" />
+            <div className="h-3.5 w-48 max-w-full animate-pulse rounded bg-muted" />
+            <div className="h-3 w-24 animate-pulse rounded bg-muted" />
           </div>
-          <div className="h-3.5 w-28 animate-pulse rounded bg-white/[0.06]" />
-          <div className="h-3.5 w-28 animate-pulse rounded bg-white/[0.06]" />
-          <div className="h-3.5 w-40 flex-1 animate-pulse rounded bg-white/[0.06]" />
+          <div className="h-3.5 w-28 animate-pulse rounded bg-muted" />
+          <div className="h-3.5 w-28 animate-pulse rounded bg-muted" />
+          <div className="h-3.5 w-40 flex-1 animate-pulse rounded bg-muted" />
         </div>
       ))}
     </div>
@@ -124,14 +124,14 @@ export default function SalesDecisionHistoryPage() {
           { value: String(summary.total), label: "Total Decisions", caption: "shown", trend: "neutral" },
         ]} />
 
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+        <div className="rounded-2xl border border-border bg-muted/40 p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="flex items-start gap-2.5">
               <span className="mt-0.5 flex size-8 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-400">
                 <Gavel className="size-4" />
               </span>
               <div>
-                <p className="text-[15px] font-semibold text-white">Decision History</p>
+                <p className="text-[15px] font-semibold text-foreground">Decision History</p>
                 <p className="mt-1 max-w-xl text-[13px] text-slate-400">
                   Every approval, rejection and override recorded across this agent&apos;s opportunities, for audit.
                 </p>
@@ -139,11 +139,11 @@ export default function SalesDecisionHistoryPage() {
             </div>
             <div className="flex items-center gap-2">
               <button onClick={handleDownload} disabled={q.isLoading || entries.length === 0}
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+                className="flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
                 <Download className="size-3.5" /> Download {reviewerUserId ? "selected" : "all"}
               </button>
               <button onClick={() => q.refetch()} disabled={q.isFetching}
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+                className="flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
                 <RefreshCw className={cn("size-3.5", q.isFetching && "animate-spin")} /> {q.isFetching ? "Refreshing\u2026" : "Refresh"}
               </button>
             </div>
@@ -153,16 +153,16 @@ export default function SalesDecisionHistoryPage() {
             {DECISION_FILTERS.map((f) => (
               <button key={f.id} onClick={() => setDecision(f.id)}
                 aria-pressed={decision === f.id}
-                className={cn("rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
+                className={cn("rounded-lg px-2.5 py-1.5 text-[12px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
                   decision === f.id
                     ? "border border-indigo-500/30 bg-indigo-500/10 text-indigo-200"
-                    : "text-slate-400 hover:bg-white/[0.04] hover:text-slate-200")}>
+                    : "text-slate-400 hover:bg-muted hover:text-slate-700")}>
                 {f.label}
               </button>
             ))}
             <select value={reviewerUserId} onChange={(e) => setReviewerUserId(e.target.value)}
               aria-label="Filter by reviewer"
-              className="ml-1 rounded-lg border border-white/10 bg-[#0a0f1a] px-2.5 py-1.5 text-[12px] text-slate-200 outline-none focus-visible:border-indigo-400/50 focus-visible:ring-2 focus-visible:ring-indigo-400/40">
+              className="ml-1 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[12px] text-slate-700 outline-none focus-visible:border-indigo-400/50 focus-visible:ring-2 focus-visible:ring-indigo-400/40">
               <option value="">All reviewers</option>
               {reviewers.map((r) => (
                 <option key={r.id} value={r.id}>{r.userName || r.email || `User ${r.id}`}</option>
@@ -178,25 +178,25 @@ export default function SalesDecisionHistoryPage() {
             <p className="text-[14px] font-semibold text-red-200">Couldn&apos;t load decision history</p>
             <p className="mt-2 text-[13px] text-red-300/80">Please try refreshing.</p>
             <button onClick={() => q.refetch()}
-              className="mt-4 rounded-lg bg-indigo-500 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
+              className="mt-4 rounded-lg bg-indigo-500 px-4 py-2 text-[13px] font-semibold text-foreground hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
               Retry
             </button>
           </div>
         ) : entries.length === 0 ? (
-          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] px-6 py-12 text-center">
+          <div className="rounded-2xl border border-border bg-muted/40 px-6 py-12 text-center">
             <span className="mx-auto flex size-10 items-center justify-center rounded-xl bg-indigo-500/10 text-indigo-400">
               <Gavel className="size-5" />
             </span>
-            <p className="mt-3 text-[14px] font-semibold text-white">No decisions recorded yet</p>
+            <p className="mt-3 text-[14px] font-semibold text-foreground">No decisions recorded yet</p>
             <p className="mt-1 text-[13px] text-slate-500">
               Approve, reject, or send opportunities back for review to populate this audit trail.
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
+          <div className="overflow-x-auto rounded-2xl border border-border">
             <table className="w-full min-w-[860px] text-left text-[13px]">
               <thead>
-                <tr className="border-b border-white/[0.06] text-[11px] uppercase tracking-wider text-slate-500">
+                <tr className="border-b border-border text-[11px] uppercase tracking-wider text-slate-500">
                   <th className="px-4 py-3">Decision</th>
                   <th className="px-4 py-3">Opportunity</th>
                   <th className="px-4 py-3">Reviewer</th>
@@ -206,14 +206,14 @@ export default function SalesDecisionHistoryPage() {
               </thead>
               <tbody>
                 {entries.map((entry) => (
-                  <tr key={entry.id} className="border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02]">
+                  <tr key={entry.id} className="border-b border-slate-100 last:border-0 hover:bg-muted/50">
                     <td className="px-4 py-3">
                       <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-semibold", decisionBadgeClass(entry.decision))}>
                         <DecisionIcon decision={entry.decision} /> {entry.decisionLabel}
                       </span>
                     </td>
                     <td className="max-w-[260px] px-4 py-3">
-                      <p className="truncate text-slate-200">
+                      <p className="truncate text-slate-700">
                         {entry.opportunityTitle || (entry.opportunityId ? `Opportunity ${entry.opportunityId}` : "-")}
                       </p>
                       {entry.opportunityStage && (
@@ -221,7 +221,7 @@ export default function SalesDecisionHistoryPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      <p className="text-[12px] text-slate-200">{reviewerName(entry)}</p>
+                      <p className="text-[12px] text-slate-700">{reviewerName(entry)}</p>
                       {entry.reviewer?.email && entry.reviewer?.userName && (
                         <p className="text-[10px] text-slate-500">{entry.reviewer.email}</p>
                       )}

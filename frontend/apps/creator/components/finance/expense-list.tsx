@@ -69,7 +69,7 @@ export function ExpenseList({
           <button
             type="button"
             onClick={() => router.push(`/studio/${agentId}/finance/property/${encodeURIComponent(e.propertyRef ?? "")}`)}
-            className="text-left text-indigo-300 hover:underline"
+            className="text-left text-indigo-600 hover:underline"
           >
             {e.propertyName || e.propertyRef}
           </button>
@@ -95,10 +95,10 @@ export function ExpenseList({
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-sm font-semibold text-white/88">{title}</h3>
+        <h3 className="text-sm font-semibold text-foreground/88">{title}</h3>
         {showSearch && (
           <div className="relative w-full sm:w-72">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-white/45" />
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
@@ -108,7 +108,7 @@ export function ExpenseList({
           </div>
         )}
       </div>
-      <p className="text-xs text-white/50">{rows.length} expense rows</p>
+      <p className="text-xs text-slate-500">{rows.length} expense rows</p>
       <DataTable
         caption={title}
         rows={rows}
@@ -122,7 +122,7 @@ export function ExpenseList({
             <button
               type="button"
               onClick={() => router.push(`/studio/${agentId}/finance/property/${encodeURIComponent(e.propertyRef ?? "")}?unit=${encodeURIComponent(e.unitRef ?? "")}`)}
-              className="text-xs text-indigo-300 hover:underline"
+              className="text-xs text-indigo-600 hover:underline"
             >
               View unit
             </button>

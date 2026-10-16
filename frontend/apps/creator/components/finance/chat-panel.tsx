@@ -69,11 +69,11 @@ export function FinanceChatPanel({
   }, [pendingPrompt]);
 
   return (
-    <section className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-white/[0.08]" style={{ background: "oklch(0.15 0.02 250)" }}>
-      <div className="flex h-14 shrink-0 items-center gap-2 border-b border-white/[0.06] px-4">
-        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/20 text-indigo-300"><MessageSquare className="h-4 w-4" /></span>
+    <section className="flex h-full w-full min-w-0 flex-col overflow-hidden rounded-2xl border border-border" style={{ background: "oklch(0.15 0.02 250)" }}>
+      <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/20 text-indigo-600"><MessageSquare className="h-4 w-4" /></span>
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-white/90">Financial Chat</p>
+          <p className="text-sm font-semibold text-foreground/90">Financial Chat</p>
           <p className="text-[11px] text-white/35">Clean workspace for quick analysis</p>
         </div>
       </div>
@@ -82,14 +82,14 @@ export function FinanceChatPanel({
         {messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center text-center">
             <span className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-400"><Sparkles className="h-6 w-6" /></span>
-            <p className="text-sm font-semibold text-white">Ask about your portfolio</p>
-            <p className="mt-1.5 max-w-[280px] text-[12px] leading-relaxed text-white/50">
+            <p className="text-sm font-semibold text-foreground">Ask about your portfolio</p>
+            <p className="mt-1.5 max-w-[280px] text-[12px] leading-relaxed text-slate-500">
               Ask about property performance, vendor costs, profitability, arrears, or risk.
             </p>
             <div className="mt-4 flex max-w-md flex-wrap justify-center gap-2">
               {SUGGESTED.map((s) => (
                 <button key={s} type="button" onClick={() => submit(s)}
-                  className="rounded-lg border border-white/[0.1] bg-white/[0.03] px-2.5 py-1.5 text-[11px] text-white/70 transition-colors hover:bg-white/[0.06] hover:text-white">
+                  className="rounded-lg border border-slate-200 bg-muted px-2.5 py-1.5 text-[11px] text-slate-600 transition-colors hover:bg-muted hover:text-foreground">
                   {s}
                 </button>
               ))}
@@ -105,11 +105,11 @@ export function FinanceChatPanel({
         {send.isPending && <div className="flex justify-start"><TypingIndicator /></div>}
       </div>
 
-      <form onSubmit={(e) => { e.preventDefault(); submit(text); }} className="border-t border-white/[0.06] p-3">
-        <div className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2">
+      <form onSubmit={(e) => { e.preventDefault(); submit(text); }} className="border-t border-border p-3">
+        <div className="flex items-center gap-2 rounded-xl border border-border bg-muted/50 px-3 py-2">
           <input value={text} onChange={(e) => setText(e.target.value)}
             placeholder="Ask about property performance, vendor costs, profitability…" aria-label="Ask the financial analyst"
-            className="flex-1 bg-transparent text-[13px] text-white placeholder:text-white/40 focus:outline-none" />
+            className="flex-1 bg-transparent text-[13px] text-foreground placeholder:text-slate-400 focus:outline-none" />
           <button type="submit" disabled={send.isPending || !text.trim()} aria-label="Send message"
             className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500 text-white transition-colors hover:bg-indigo-400 disabled:opacity-40">
             <SendHorizonal className="h-4 w-4" />

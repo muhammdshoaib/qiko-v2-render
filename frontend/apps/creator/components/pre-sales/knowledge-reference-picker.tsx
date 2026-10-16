@@ -61,9 +61,9 @@ export function KnowledgeReferencePicker({ agentId, value, onChange }: {
         aria-haspopup="listbox"
         aria-expanded={open}
         className={cn(
-          "flex w-full items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] transition-colors",
-          "hover:bg-white/[0.06] focus-visible:border-indigo-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
-          value ? "text-slate-200" : "text-slate-500",
+          "flex w-full items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-[13px] transition-colors",
+          "hover:bg-muted focus-visible:border-indigo-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+          value ? "text-slate-700" : "text-slate-500",
         )}
       >
         <span className="min-w-0 flex-1 truncate text-left">
@@ -78,7 +78,7 @@ export function KnowledgeReferencePicker({ agentId, value, onChange }: {
             aria-label="Clear knowledge base reference"
             onClick={(e) => { e.stopPropagation(); select(null); }}
             onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); select(null); } }}
-            className="shrink-0 rounded p-0.5 text-slate-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+            className="shrink-0 rounded p-0.5 text-slate-500 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
           >
             <X className="size-3.5" />
           </span>
@@ -87,8 +87,8 @@ export function KnowledgeReferencePicker({ agentId, value, onChange }: {
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 z-50 mt-1 rounded-lg border border-white/10 bg-[#05070d] p-1 shadow-xl shadow-black/50">
-          <div className="flex items-center gap-2 border-b border-white/[0.06] px-2.5 py-2">
+        <div className="absolute left-0 right-0 z-50 mt-1 rounded-lg border border-border bg-background p-1 shadow-xl shadow-black/50">
+          <div className="flex items-center gap-2 border-b border-border px-2.5 py-2">
             <Search aria-hidden="true" className="size-3.5 shrink-0 text-slate-500" />
             <input
               ref={searchRef}
@@ -96,7 +96,7 @@ export function KnowledgeReferencePicker({ agentId, value, onChange }: {
               onChange={(e) => setFilter(e.target.value)}
               placeholder="Filter documents…"
               aria-label="Filter knowledge base documents"
-              className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-200 placeholder:text-slate-600 focus:outline-none"
+              className="min-w-0 flex-1 bg-transparent text-[13px] text-slate-700 placeholder:text-slate-600 focus:outline-none"
             />
           </div>
 
@@ -106,8 +106,8 @@ export function KnowledgeReferencePicker({ agentId, value, onChange }: {
                 type="button"
                 onClick={() => select(null)}
                 className={cn(
-                  "flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                  value === null ? "bg-indigo-500/10 text-white" : "text-slate-300 hover:bg-white/[0.06] hover:text-white",
+                  "flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+                  value === null ? "bg-indigo-50 text-indigo-800" : "text-slate-500 hover:bg-slate-100 hover:text-foreground",
                 )}
               >
                 <Check aria-hidden="true" className={cn("mt-0.5 size-4 shrink-0", value === null ? "text-indigo-400" : "text-transparent")} />
@@ -138,8 +138,8 @@ export function KnowledgeReferencePicker({ agentId, value, onChange }: {
                     type="button"
                     onClick={() => select(d.doc_id)}
                     className={cn(
-                      "flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                      isActive ? "bg-indigo-500/10 text-white" : "text-slate-300 hover:bg-white/[0.06] hover:text-white",
+                      "flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+                      isActive ? "bg-indigo-50 text-indigo-800" : "text-slate-500 hover:bg-slate-100 hover:text-foreground",
                     )}
                   >
                     <Check aria-hidden="true" className={cn("mt-0.5 size-4 shrink-0", isActive ? "text-indigo-400" : "text-transparent")} />

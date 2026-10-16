@@ -98,15 +98,15 @@ export default function PlanRecommendation({
         </div>
         <div className="space-y-4">
           {[1, 2, 3].map((i) => (
-            <Card key={i} className="bg-[#0a0f1a]/80 border border-white/10 p-6">
-              <div className="h-10 w-32 rounded bg-white/10 animate-pulse mb-4" />
-              <div className="h-12 w-24 rounded bg-white/10 animate-pulse mb-6" />
+            <Card key={i} className="bg-card border border-border p-6">
+              <div className="h-10 w-32 rounded bg-slate-100 animate-pulse mb-4" />
+              <div className="h-12 w-24 rounded bg-slate-100 animate-pulse mb-6" />
               <div className="flex-1 space-y-3">
                 {[1, 2, 3].map((j) => (
-                  <div key={j} className="h-4 w-full rounded bg-white/10 animate-pulse" />
+                  <div key={j} className="h-4 w-full rounded bg-slate-100 animate-pulse" />
                 ))}
               </div>
-              <div className="h-10 w-full rounded bg-white/10 animate-pulse mt-6" />
+              <div className="h-10 w-full rounded bg-slate-100 animate-pulse mt-6" />
             </Card>
           ))}
         </div>
@@ -135,7 +135,7 @@ export default function PlanRecommendation({
           }}
         />
         {hasPrimaryPlanDetails ? (
-          <Card className="relative bg-[#0a0f1a] border-0 overflow-hidden">
+          <Card className="relative bg-card border-0 overflow-hidden">
             <div className="absolute top-0 right-0 px-4 py-2 text-xs font-semibold rounded-bl-xl" style={{ background: "linear-gradient(135deg, #6366F1, #22D3EE)" }}>
               Recommended for you
             </div>
@@ -145,7 +145,7 @@ export default function PlanRecommendation({
                   <Brain className="h-7 w-7 text-[#22D3EE]" />
                 </div>
                 <div>
-                  <CardTitle className="text-white text-2xl font-bold">{namePrimary}</CardTitle>
+                  <CardTitle className="text-foreground text-2xl font-bold">{namePrimary}</CardTitle>
                   <CardDescription className="text-slate-400">Your own fine-tuned model</CardDescription>
                 </div>
               </div>
@@ -158,7 +158,7 @@ export default function PlanRecommendation({
                 <p className="text-sm text-slate-400 font-medium">Why we recommend this:</p>
                 <ul className="space-y-3">
                   {recommendedFeatureReasons.map((reason, i) => (
-                    <li key={i} className="flex items-start gap-3 text-sm text-slate-300">
+                    <li key={i} className="flex items-start gap-3 text-sm text-slate-600">
                       <div className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: "rgba(34,211,238,0.2)", boxShadow: "0 0 10px rgba(34,211,238,0.3)" }}>
                         <Check className="h-3 w-3 text-[#22D3EE]" />
                       </div>
@@ -172,31 +172,31 @@ export default function PlanRecommendation({
                 {isSubmitting ? "Creating..." : "Subscribe Now"}
               </Button>
               {/* 
-              <Button variant="ghost" onClick={() => handleDemoMode(recommendation.type)} disabled={checkoutLoading !== null || isSubmitting} className="w-full text-slate-500 hover:text-slate-300 text-sm">
+              <Button variant="ghost" onClick={() => handleDemoMode(recommendation.type)} disabled={checkoutLoading !== null || isSubmitting} className="w-full text-slate-500 hover:text-slate-600 text-sm">
                 Skip payment (demo mode)
               </Button> */}
             </CardContent>
           </Card>
         ) : (
-          <Card className="relative bg-[#0a0f1a] border-0 overflow-hidden">
+          <Card className="relative bg-card border-0 overflow-hidden">
             <div className="absolute top-0 right-0 px-4 py-2 text-xs font-semibold rounded-bl-xl" style={{ background: "linear-gradient(135deg, #6366F1, #22D3EE)" }}>
               Recommended for you
             </div>
             <CardHeader className="pt-10">
-              <CardTitle className="text-white text-2xl font-bold">Plan details unavailable</CardTitle>
+              <CardTitle className="text-foreground text-2xl font-bold">Plan details unavailable</CardTitle>
               <CardDescription className="text-slate-400">
                 We are updating plan name and pricing. Please check back shortly.
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <Button disabled className="w-full h-14 text-white font-semibold text-lg rounded-xl">
+              <Button disabled className="w-full h-14 text-foreground font-semibold text-lg rounded-xl">
                 Plan details are updating. Please check back shortly.
               </Button>
             </CardContent>
           </Card>
         )}
       </div>
-      <Button variant="ghost" onClick={handleBack} className="w-full text-slate-500 hover:text-slate-300">
+      <Button variant="ghost" onClick={handleBack} className="w-full text-slate-500 hover:text-slate-600">
         <ArrowLeft className="mr-2 h-4 w-4" />
         Back to assessment
       </Button>

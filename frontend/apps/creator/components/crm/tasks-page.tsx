@@ -30,12 +30,12 @@ export function CrmTasksPage() {
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap gap-2">
           {(["open", "done", "all"] as const).map((item) => (
-            <button key={item} type="button" onClick={() => setStatus(item)} className={`rounded-lg px-3 py-2 text-sm capitalize ${status === item ? "bg-white/[0.08] text-white" : "text-slate-400"}`}>
+            <button key={item} type="button" onClick={() => setStatus(item)} className={`rounded-lg px-3 py-2 text-sm capitalize ${status === item ? "bg-muted text-foreground" : "text-slate-400"}`}>
               {item}
             </button>
           ))}
           {(["all", "agent", "manual"] as const).map((item) => (
-            <button key={item} type="button" onClick={() => setSource(item)} className={`rounded-lg px-3 py-2 text-sm capitalize ${source === item ? "bg-white/[0.08] text-white" : "text-slate-400"}`}>
+            <button key={item} type="button" onClick={() => setSource(item)} className={`rounded-lg px-3 py-2 text-sm capitalize ${source === item ? "bg-muted text-foreground" : "text-slate-400"}`}>
               {item === "all" ? "Any source" : item}
             </button>
           ))}
@@ -44,18 +44,18 @@ export function CrmTasksPage() {
       </div>
 
       {tasks.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/10 px-6 py-16 text-center text-sm text-slate-400">
+        <div className="rounded-2xl border border-dashed border-border px-6 py-16 text-center text-sm text-slate-400">
           No tasks in this view.
         </div>
       ) : (
-        <ul className="divide-y divide-white/[0.05] rounded-2xl border border-white/[0.06]">
+        <ul className="divide-y divide-border rounded-2xl border border-border">
           {tasks.map((task) => {
             const overdue = task.status === "open" && new Date(task.dueDate).getTime() < Date.now();
             return (
               <li key={task.id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm text-white">{task.title}</p>
+                    <p className="text-sm text-foreground">{task.title}</p>
                     {task.source === "agent" && <PrototypeBadge label="Agent created" tone="default" />}
                     <span className="text-xs capitalize text-slate-500">{task.priority}</span>
                   </div>
@@ -113,7 +113,7 @@ function TaskDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-[#0c111c] text-slate-200">
+      <DialogContent className="bg-card text-slate-700">
         <DialogHeader>
           <DialogTitle>New task</DialogTitle>
           <DialogDescription>Manual task. Agent-created tasks come from suggestions.</DialogDescription>

@@ -48,7 +48,7 @@ export function SourcesTab({ agentId }: { agentId: string }) {
       <OutcomesStrip title="SOURCES" tiles={tiles} />
 
       <div>
-        <h2 className="flex items-center gap-2 text-[15px] font-semibold text-white">
+        <h2 className="flex items-center gap-2 text-[15px] font-semibold text-foreground">
           <Library className="size-4 text-indigo-400" /> Sources &amp; Ingestion
         </h2>
         <p className="mt-1 max-w-2xl text-[13px] text-slate-400">
@@ -57,10 +57,10 @@ export function SourcesTab({ agentId }: { agentId: string }) {
         </p>
       </div>
 
-      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
-        <p className="text-[13px] font-semibold text-white">Add documents</p>
+      <div className="rounded-2xl border border-border bg-muted/40 p-5">
+        <p className="text-[13px] font-semibold text-foreground">Add documents</p>
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-within:ring-2 focus-within:ring-indigo-500">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-muted px-3.5 py-2 text-[13px] font-medium text-slate-700 hover:bg-muted focus-within:ring-2 focus-within:ring-indigo-500">
             <Upload className="size-4" /> Choose file
             <input
               type="file"
@@ -74,7 +74,7 @@ export function SourcesTab({ agentId }: { agentId: string }) {
           <button
             onClick={() => file && ingest.mutate(file)}
             disabled={!file || ingest.isPending}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3.5 py-2 text-[13px] font-semibold text-foreground hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
           >
             {ingest.isPending ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
             {ingest.isPending ? "Ingesting\u2026" : "Ingest"}
@@ -89,18 +89,18 @@ export function SourcesTab({ agentId }: { agentId: string }) {
 
       {docsQ.isLoading ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {[0, 1, 2, 3].map((i) => <div key={i} className="h-20 animate-pulse rounded-2xl bg-white/[0.04]" />)}
+          {[0, 1, 2, 3].map((i) => <div key={i} className="h-20 animate-pulse rounded-2xl bg-muted" />)}
         </div>
       ) : docsQ.isError ? (
         <p className="flex items-center gap-2 rounded-2xl border border-red-500/20 bg-red-500/[0.06] px-4 py-8 text-sm text-red-300">
           <AlertTriangle className="size-4" /> Couldn&apos;t load documents. Try refreshing.
         </p>
       ) : docs.length === 0 ? (
-        <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-12 text-center">
-          <span className="mb-3 flex size-11 items-center justify-center rounded-2xl bg-white/[0.04] text-slate-500">
+        <div className="flex flex-col items-center rounded-2xl border border-border bg-muted/40 px-4 py-12 text-center">
+          <span className="mb-3 flex size-11 items-center justify-center rounded-2xl bg-muted text-slate-500">
             <Database className="size-5" />
           </span>
-          <p className="text-sm font-medium text-slate-300">Knowledge base is empty</p>
+          <p className="text-sm font-medium text-slate-600">Knowledge base is empty</p>
           <p className="mt-1 max-w-sm text-[12px] text-slate-500">
             Add IDG capability statements and past responses above so the worker can cite them when drafting.
           </p>
@@ -108,9 +108,9 @@ export function SourcesTab({ agentId }: { agentId: string }) {
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {docs.map((d) => (
-            <div key={d.doc_id} className="flex items-start justify-between gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4">
+            <div key={d.doc_id} className="flex items-start justify-between gap-3 rounded-2xl border border-border bg-muted/40 p-4">
               <div className="min-w-0">
-                <p className="truncate text-[13px] font-semibold text-white">{d.doc_id}</p>
+                <p className="truncate text-[13px] font-semibold text-foreground">{d.doc_id}</p>
                 <p className="mt-0.5 text-[11px] text-slate-500">IDG knowledge base</p>
                 <p className="mt-2 text-[12px] text-slate-400">{d.chunks} passage{d.chunks === 1 ? "" : "s"}</p>
               </div>

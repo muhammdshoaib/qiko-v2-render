@@ -3,14 +3,14 @@ import type { PackSectionStatus, PackStage } from "@/lib/api";
 // Confidence colour bands (grounding %). emerald >= 0.85, amber >= 0.70, red < 0.70 -- these
 // classes clear the 4.5:1 contrast bar against the dark cockpit background.
 export function confidenceClass(confidence: number): string {
-  if (confidence >= 0.85) return "text-emerald-400";
-  if (confidence >= 0.7) return "text-amber-400";
+  if (confidence >= 0.85) return "text-emerald-700";
+  if (confidence >= 0.7) return "text-amber-700";
   return "text-red-400";
 }
 
 export function confidenceBadgeClass(confidence: number): string {
-  if (confidence >= 0.85) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
-  if (confidence >= 0.7) return "border-amber-500/30 bg-amber-500/10 text-amber-400";
+  if (confidence >= 0.85) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
+  if (confidence >= 0.7) return "border-amber-500/30 bg-amber-50 text-amber-700";
   return "border-red-500/30 bg-red-500/10 text-red-400";
 }
 
@@ -26,8 +26,8 @@ export function metricPct(value: number | null | undefined): number | null {
 }
 
 export function metricBandText(pct: number): string {
-  if (pct >= 80) return "text-emerald-400";
-  if (pct >= 60) return "text-amber-400";
+  if (pct >= 80) return "text-emerald-700";
+  if (pct >= 60) return "text-amber-700";
   return "text-red-400";
 }
 
@@ -40,8 +40,8 @@ export function metricBandBar(pct: number): string {
 // Pill styling for the two idg section-detail metric badges (conf / grounding). Same 80/60 bands
 // as the sub-section bars: green >= 80%, amber 60-79%, red < 60%.
 export function metricBandBadge(pct: number): string {
-  if (pct >= 80) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
-  if (pct >= 60) return "border-amber-500/30 bg-amber-500/10 text-amber-400";
+  if (pct >= 80) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
+  if (pct >= 60) return "border-amber-500/30 bg-amber-50 text-amber-700";
   return "border-red-500/30 bg-red-500/10 text-red-400";
 }
 
@@ -70,11 +70,11 @@ export function sectionStatusLabel(status: PackSectionStatus): string {
 
 export function sectionStatusBadgeClass(status: PackSectionStatus): string {
   switch (status) {
-    case "locked": return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+    case "locked": return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
     case "draft_ready": return "border-indigo-500/30 bg-indigo-500/10 text-indigo-400";
     case "reviewing": return "border-violet-500/30 bg-violet-500/10 text-violet-300";
-    case "generating": return "border-indigo-500/30 bg-indigo-500/10 text-indigo-300";
-    case "manual": return "border-amber-500/30 bg-amber-500/10 text-amber-400";
+    case "generating": return "border-indigo-500/30 bg-indigo-500/10 text-indigo-600";
+    case "manual": return "border-amber-500/30 bg-amber-50 text-amber-700";
     case "overdue": return "border-red-500/30 bg-red-500/10 text-red-400";
     default: return "border-slate-500/30 bg-slate-500/10 text-slate-400";
   }

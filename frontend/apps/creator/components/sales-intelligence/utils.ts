@@ -43,10 +43,10 @@ export const KANBAN_STAGES: OpportunityStage[] = ["ingested", "qualifying", "qua
 
 export function stageBadgeClass(stage: OpportunityStage): string {
   switch (stage) {
-    case "awaiting_review": return "border-amber-500/30 bg-amber-500/10 text-amber-400";
+    case "awaiting_review": return "border-amber-500/30 bg-amber-50 text-amber-700";
     case "validated":
     case "pushed":
-    case "ready_salesforce": return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+    case "ready_salesforce": return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
     case "rejected":
     case "push_failed": return "border-red-500/30 bg-red-500/10 text-red-400";
     case "qualified":
@@ -56,9 +56,9 @@ export function stageBadgeClass(stage: OpportunityStage): string {
 }
 
 export function recommendationBadgeClass(rec: Recommendation | null | undefined): string {
-  if (rec === "Bid") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+  if (rec === "Bid") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
   if (rec === "No Bid") return "border-red-500/30 bg-red-500/10 text-red-400";
-  return "border-amber-500/30 bg-amber-500/10 text-amber-400";
+  return "border-amber-500/30 bg-amber-50 text-amber-700";
 }
 
 export function scoreColor(score: number | null | undefined): string {
@@ -72,8 +72,8 @@ export function scoreColor(score: number | null | undefined): string {
 // cards / list so the score reads at a glance, at >= 4.5:1 contrast on the dark cockpit.
 export function scoreBadgeClass(score: number | null | undefined): string {
   if (score === null || score === undefined) return "border-slate-500/30 bg-slate-500/10 text-slate-400";
-  if (score >= 70) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
-  if (score >= 40) return "border-amber-500/30 bg-amber-500/10 text-amber-400";
+  if (score >= 70) return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
+  if (score >= 40) return "border-amber-500/30 bg-amber-50 text-amber-700";
   return "border-red-500/30 bg-red-500/10 text-red-400";
 }
 
@@ -117,6 +117,6 @@ export function deadlineUrgencyClass(value: string | null | undefined): string {
   const days = daysUntil(value);
   if (days === null) return "text-slate-400";
   if (days <= 7) return "text-red-400";
-  if (days <= 14) return "text-amber-400";
+  if (days <= 14) return "text-amber-700";
   return "text-slate-400";
 }

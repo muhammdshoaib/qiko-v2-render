@@ -41,13 +41,13 @@ export function AskBrainTrigger({
       aria-controls="company-brain-chat"
       aria-keyshortcuts={isMac() ? "Meta+K" : "Control+K"}
       className={cn(
-        "flex h-9 min-w-0 flex-1 items-center gap-2 rounded-[10px] bg-white/[0.06] px-3 text-left text-[13px] sm:max-w-[380px]",
-        open ? "text-white ring-1 ring-indigo-400/40" : "text-slate-500",
+        "flex h-9 min-w-0 flex-1 items-center gap-2 rounded-[10px] bg-muted px-3 text-left text-[13px] sm:max-w-[380px]",
+        open ? "text-foreground ring-1 ring-indigo-400/40" : "text-slate-500",
       )}
     >
       <Search className="size-3.5 shrink-0" aria-hidden />
       <span className="min-w-0 flex-1 truncate">Ask your company brain</span>
-      <kbd className="ml-auto hidden rounded-[5px] border border-white/10 bg-card px-1.5 py-0.5 font-mono text-[10px] text-slate-400 sm:inline">
+      <kbd className="ml-auto hidden rounded-[5px] border border-border bg-card px-1.5 py-0.5 font-mono text-[10px] text-slate-400 sm:inline">
         {shortcut}
       </kbd>
     </button>

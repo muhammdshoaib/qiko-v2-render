@@ -36,7 +36,7 @@ function ChannelSurfacesScreen() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>Channel surfaces</h2>
+        <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>Channel surfaces</h2>
         <p className="mt-1 max-w-3xl text-sm text-slate-400">
           The same CRM Agent, the same records. These are labelled walkthroughs — not a signed-in Claude account or a live Slack workspace.
         </p>
@@ -54,8 +54,8 @@ function ChannelSurfacesScreen() {
             aria-selected={surface === item.id}
             onClick={() => setSurface(item.id)}
             className={cn(
-              "min-h-11 rounded-lg px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-              surface === item.id ? "bg-white/[0.08] text-white" : "text-slate-400 hover:text-white",
+              "min-h-11 rounded-lg px-4 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+              surface === item.id ? "bg-muted text-foreground" : "text-slate-500 hover:text-foreground",
             )}
           >
             {item.label}
@@ -77,7 +77,7 @@ function ClaudePanel() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <section className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4">
+      <section className="rounded-2xl border border-border bg-muted/40 p-4">
         <Header
           title="Simulated Claude conversation"
           subtitle="Signed-in operator: Maya Chen. Not an Anthropic session."
@@ -95,12 +95,12 @@ function ClaudePanel() {
         {crm.emailDraft && (
           <article className="mt-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-white">Draft for review</h3>
+              <h3 className="text-sm font-semibold text-foreground">Draft for review</h3>
               <PrototypeBadge label="Not sent" />
             </div>
             <p className="mt-2 text-[12px] text-slate-400">To {crm.emailDraft.toName} · {crm.emailDraft.to}</p>
-            <p className="mt-1 text-sm text-white">{crm.emailDraft.subject}</p>
-            <pre className="mt-3 whitespace-pre-wrap text-[13px] leading-relaxed text-slate-300">{crm.emailDraft.body}</pre>
+            <p className="mt-1 text-sm text-foreground">{crm.emailDraft.subject}</p>
+            <pre className="mt-3 whitespace-pre-wrap text-[13px] leading-relaxed text-slate-600">{crm.emailDraft.body}</pre>
             <p className="mt-3 text-[12px] text-slate-500">
               Approving records the outcome. A draft alone does not close the task.
               {task ? ` Current task: ${task.status === "done" ? "done" : "still open"}.` : ""}
@@ -152,7 +152,7 @@ function SlackPanel() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <section className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4">
+      <section className="rounded-2xl border border-border bg-muted/40 p-4">
         <Header
           title="Simulated Slack channel"
           subtitle="Not a live workspace. Actor and channel both gate the payload."
@@ -168,8 +168,8 @@ function SlackPanel() {
                   aria-pressed={userId === user.id}
                   onClick={() => setUserId(user.id)}
                   className={cn(
-                    "min-h-11 rounded-lg border px-3 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                    userId === user.id ? "border-white/25 bg-white/10 text-white" : "border-white/[0.08] text-slate-400",
+                    "min-h-11 rounded-lg border px-3 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+                    userId === user.id ? "border-border bg-slate-100 text-foreground" : "border-border text-slate-400",
                   )}
                 >
                   <span className="block">{user.name}</span>
@@ -223,7 +223,7 @@ function Header({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div className="flex flex-wrap items-start justify-between gap-2">
       <div>
-        <h3 className="text-sm font-semibold text-white">{title}</h3>
+        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
         <p className="mt-1 text-[12px] text-slate-400">{subtitle}</p>
       </div>
       <PrototypeBadge label="Simulated integration" />
@@ -239,8 +239,8 @@ function ChannelTab({ active, onClick, label }: { active: boolean; onClick: () =
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        "min-h-11 rounded-lg px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-        active ? "bg-white/[0.08] text-white" : "text-slate-400 hover:text-white",
+        "min-h-11 rounded-lg px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+        active ? "bg-muted text-foreground" : "text-slate-500 hover:text-foreground",
       )}
     >
       {label}
@@ -252,14 +252,14 @@ function PolicyGate({ userId, channel }: { userId: DemoUserId; channel: ChannelI
   const access = authorize(userId, channel);
   const user = DEMO_USERS[userId];
   return (
-    <dl className="mt-4 grid gap-2 rounded-xl border border-white/[0.06] bg-[#070a12] px-3 py-3 text-[12px] sm:grid-cols-3">
+    <dl className="mt-4 grid gap-2 rounded-xl border border-border bg-card px-3 py-3 text-[12px] sm:grid-cols-3">
       <div>
         <dt className="text-slate-500">User grant</dt>
-        <dd className="mt-0.5 text-slate-200">{user.name} · finance {user.finance ? "allowed" : "denied"}</dd>
+        <dd className="mt-0.5 text-slate-700">{user.name} · finance {user.finance ? "allowed" : "denied"}</dd>
       </div>
       <div>
         <dt className="text-slate-500">Channel rule</dt>
-        <dd className="mt-0.5 text-slate-200">{channel === "slack-sales" ? "ops only · money blocked" : channel === "slack-revenue" ? "finance if user allowed" : "scoped to signed-in user"}</dd>
+        <dd className="mt-0.5 text-slate-700">{channel === "slack-sales" ? "ops only · money blocked" : channel === "slack-revenue" ? "finance if user allowed" : "scoped to signed-in user"}</dd>
       </div>
       <div>
         <dt className="text-slate-500">Combined</dt>
@@ -274,7 +274,7 @@ function PolicyGate({ userId, channel }: { userId: DemoUserId; channel: ChannelI
 function Thread({ messages, empty }: { messages: ChannelMessage[]; empty: string }) {
   if (messages.length === 0) {
     return (
-      <p className="mt-4 rounded-xl border border-dashed border-white/10 px-4 py-8 text-center text-sm text-slate-500">
+      <p className="mt-4 rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-slate-500">
         {empty}
       </p>
     );
@@ -286,10 +286,10 @@ function Thread({ messages, empty }: { messages: ChannelMessage[]; empty: string
           key={item.id}
           className={cn(
             "rounded-xl border px-3 py-3 text-sm",
-            item.role === "user" && "border-white/[0.06] bg-white/[0.03] text-slate-200",
+            item.role === "user" && "border-border bg-muted text-slate-700",
             item.role === "agent" && item.outcome === "blocked" && "border-red-500/20 bg-red-500/[0.06] text-slate-100",
-            item.role === "agent" && item.outcome !== "blocked" && "border-cyan-500/15 bg-cyan-500/[0.04] text-slate-100",
-            item.role === "system" && "border-white/[0.04] text-slate-400",
+            item.role === "agent" && item.outcome !== "blocked" && "border-cyan-500/15 bg-indigo-600/[0.04] text-slate-100",
+            item.role === "system" && "border-slate-100 text-slate-400",
           )}
         >
           <p className="text-[11px] uppercase tracking-wider text-slate-500">
@@ -320,26 +320,26 @@ function EffectRail({
 
   return (
     <aside className="space-y-3">
-      <section className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4">
-        <h3 className="text-sm font-semibold text-white">Effect in CRM</h3>
+      <section className="rounded-2xl border border-border bg-muted/40 p-4">
+        <h3 className="text-sm font-semibold text-foreground">Effect in CRM</h3>
         <p className="mt-2 text-[13px] text-slate-400">{crmEffect}</p>
-        <Link href={crmHref} className="mt-3 inline-block text-[12px] text-indigo-300 hover:underline">Open related record</Link>
+        <Link href={crmHref} className="mt-3 inline-block text-[12px] text-indigo-600 hover:underline">Open related record</Link>
       </section>
-      <section className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4">
-        <h3 className="text-sm font-semibold text-white">Creator events</h3>
+      <section className="rounded-2xl border border-border bg-muted/40 p-4">
+        <h3 className="text-sm font-semibold text-foreground">Creator events</h3>
         {recent.length === 0 ? (
           <p className="mt-2 text-[13px] text-slate-500">No channel events yet.</p>
         ) : (
           <ul className="mt-2 space-y-2">
             {recent.map((item) => (
               <li key={item.id}>
-                <p className="text-[13px] text-white">{item.title}</p>
+                <p className="text-[13px] text-foreground">{item.title}</p>
                 <p className="text-[12px] text-slate-500">{item.filter} · {item.detail}</p>
               </li>
             ))}
           </ul>
         )}
-        <Link href="/studio/intelligence" className="mt-3 inline-block text-[12px] text-indigo-300 hover:underline">
+        <Link href="/studio/intelligence" className="mt-3 inline-block text-[12px] text-indigo-600 hover:underline">
           View in Creator
         </Link>
       </section>

@@ -82,13 +82,13 @@ function DashboardSkeleton() {
   return (
     <div className="h-full space-y-4 p-4 animate-pulse">
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-28 rounded-xl bg-white/[0.06]" />)}
+        {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-28 rounded-xl bg-muted" />)}
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="h-72 rounded-xl bg-white/[0.06]" />
-        <div className="h-72 rounded-xl bg-white/[0.06]" />
+        <div className="h-72 rounded-xl bg-muted" />
+        <div className="h-72 rounded-xl bg-muted" />
       </div>
-      <div className="h-56 rounded-xl bg-white/[0.06]" />
+      <div className="h-56 rounded-xl bg-muted" />
     </div>
   );
 }
@@ -97,32 +97,32 @@ function EmptyState({ agentId, onUploaded }: { agentId: string; onUploaded?: () 
   const uploadRef = useRef<HTMLDivElement>(null);
   return (
     <div className="flex flex-1 items-center justify-center overflow-y-auto px-4 py-8">
-      <div className="w-full max-w-2xl rounded-2xl border border-white/[0.08] p-6 sm:p-8" style={{ background: BG }} ref={uploadRef}>
-        <h2 className="mb-2 text-xl font-semibold text-white/90 sm:text-2xl">No financial data yet</h2>
-        <p className="mb-6 text-sm text-white/45">
+      <div className="w-full max-w-2xl rounded-2xl border border-border p-6 sm:p-8" style={{ background: BG }} ref={uploadRef}>
+        <h2 className="mb-2 text-xl font-semibold text-foreground/90 sm:text-2xl">No financial data yet</h2>
+        <p className="mb-6 text-sm text-slate-400">
           Upload a property-portfolio Excel workbook (.xlsx). Dashboard insights appear automatically once the workbook is processed.
         </p>
         <div className="mb-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
-            <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-cyan-400/10">
-              <Upload className="h-4 w-4 text-cyan-300" />
+          <div className="rounded-xl border border-slate-200 bg-muted/50 p-4">
+            <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/10">
+              <Upload className="h-4 w-4 text-indigo-600" />
             </div>
-            <p className="mb-1 text-xs font-semibold text-white/80">Step 1</p>
-            <p className="text-xs text-white/45">Choose an .xlsx property portfolio workbook.</p>
+            <p className="mb-1 text-xs font-semibold text-foreground/80">Step 1</p>
+            <p className="text-xs text-slate-400">Choose an .xlsx property portfolio workbook.</p>
           </div>
-          <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
+          <div className="rounded-xl border border-slate-200 bg-muted/50 p-4">
             <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-400/10">
-              <Database className="h-4 w-4 text-indigo-300" />
+              <Database className="h-4 w-4 text-indigo-600" />
             </div>
-            <p className="mb-1 text-xs font-semibold text-white/80">Step 2</p>
-            <p className="text-xs text-white/45">Upload and wait for the workbook to be indexed.</p>
+            <p className="mb-1 text-xs font-semibold text-foreground/80">Step 2</p>
+            <p className="text-xs text-slate-400">Upload and wait for the workbook to be indexed.</p>
           </div>
-          <div className="rounded-xl border border-white/[0.07] bg-white/[0.02] p-4">
+          <div className="rounded-xl border border-slate-200 bg-muted/50 p-4">
             <div className="mb-2 flex h-8 w-8 items-center justify-center rounded-lg bg-green-400/10">
               <BarChart3 className="h-4 w-4 text-green-300" />
             </div>
-            <p className="mb-1 text-xs font-semibold text-white/80">Step 3</p>
-            <p className="text-xs text-white/45">Charts, KPIs, and trends appear on this dashboard.</p>
+            <p className="mb-1 text-xs font-semibold text-foreground/80">Step 3</p>
+            <p className="text-xs text-slate-400">Charts, KPIs, and trends appear on this dashboard.</p>
           </div>
         </div>
         <FinanceFileManager agentId={agentId} onUploaded={onUploaded} />

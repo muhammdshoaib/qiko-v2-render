@@ -18,7 +18,7 @@ export function LeftPanel({
   onShowAll: () => void;
 }) {
   return (
-    <aside className="flex h-full min-h-0 flex-col overflow-y-auto rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4">
+    <aside className="flex h-full min-h-0 flex-col overflow-y-auto rounded-2xl border border-border bg-muted/40 p-4">
       <div className="mb-4">
         <h2 className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Workers</h2>
         <p className="mt-1 text-[12px] text-slate-400">Select a worker to see what it can read, write, and must not do.</p>
@@ -32,11 +32,11 @@ export function LeftPanel({
                 aria-pressed={focus === id}
                 onClick={() => onSelectWorker(id)}
                 className={cn(
-                  "w-full rounded-xl border px-3 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                  focus === id ? "border-cyan-400/40 bg-cyan-400/10" : "border-white/[0.06] bg-white/[0.02] hover:bg-white/[0.04]",
+                  "w-full rounded-xl border px-3 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+                  focus === id ? "border-indigo-400/40 bg-indigo-500/10" : "border-border bg-muted/50 hover:bg-muted",
                 )}
               >
-                <p className="text-sm font-medium text-white">{worker.name}</p>
+                <p className="text-sm font-medium text-foreground">{worker.name}</p>
                 <p className="mt-1 text-[12px] text-slate-400">{worker.role}</p>
                 <p className="mt-1 text-[11px] text-slate-500">{worker.decisions} outcomes · sample</p>
               </button>
@@ -56,7 +56,7 @@ export function LeftPanel({
           </Button>
         </>
       ) : (
-        <div className="rounded-xl border border-dashed border-white/10 px-3 py-4 text-[13px] text-slate-400">
+        <div className="rounded-xl border border-dashed border-border px-3 py-4 text-[13px] text-slate-400">
           <p>Company intelligence sits in the centre.</p>
           <p className="mt-2 text-slate-500">Click a worker to highlight its systems, knowledge, and walls.</p>
         </div>

@@ -38,7 +38,7 @@ export function ClaudeWalkthrough({
                 type="button"
                 onClick={() => referral.setStep(item.id)}
                 className={`min-h-9 rounded-full px-3 text-[11.5px] font-medium ${
-                  current ? "bg-white text-[#05070d]" : item.id < referral.step ? "bg-white/[0.08] text-slate-200" : "bg-transparent text-slate-500 ring-1 ring-white/10"
+                  current ? "bg-white text-foreground" : item.id < referral.step ? "bg-muted text-slate-700" : "bg-transparent text-slate-500 ring-1 ring-white/10"
                 }`}
               >
                 {item.id + 1}. {item.title}
@@ -48,7 +48,7 @@ export function ClaudeWalkthrough({
         })}
       </ol>
 
-      <div className="space-y-3 rounded-2xl border border-white/[0.06] bg-muted p-4">
+      <div className="space-y-3 rounded-2xl border border-border bg-muted p-4">
         {visible.map((item) => (
           <div key={item.id} className="space-y-2">
             <div className="ml-auto max-w-[92%] rounded-2xl rounded-br-md bg-primary px-3.5 py-2.5 text-[13px] leading-relaxed text-white">
@@ -62,7 +62,7 @@ export function ClaudeWalkthrough({
       </div>
 
       {referral.step === 3 && (
-        <aside className="rounded-2xl border border-white/10 bg-card p-4">
+        <aside className="rounded-2xl border border-border bg-card p-4">
           <p className="font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">Defined example output</p>
           <ul className="mt-2 list-disc space-y-1 pl-4 text-[13px] leading-relaxed text-foreground">
             {REFERRAL.expectedOutput.map((line) => (
@@ -85,7 +85,7 @@ export function ClaudeWalkthrough({
       )}
 
       {decided && (
-        <aside className="rounded-2xl border border-white/10 bg-muted p-4">
+        <aside className="rounded-2xl border border-border bg-muted p-4">
           <p className="text-[13.5px] font-medium text-foreground">Decision captured in this prototype</p>
           <p className="mt-1 text-[12.5px] text-slate-400">
             {referral.status === "approved"

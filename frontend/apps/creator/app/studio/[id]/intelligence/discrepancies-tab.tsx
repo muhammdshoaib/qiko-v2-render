@@ -149,13 +149,13 @@ export function DiscrepanciesTab({
         projectCounts={data?.projects ?? []}
       />
 
-      <div className="flex flex-col gap-3 rounded-xl border border-white/[0.08] bg-white/[0.03] p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-3 rounded-xl border border-border bg-muted p-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="flex items-center gap-1.5 text-xs font-medium text-white/70">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-foreground/70">
             <Filter className="size-3.5" /> Active projects
           </span>
           {projectOptions.length === 0 && (
-            <span className="text-xs text-white/40">No projects available</span>
+            <span className="text-xs text-slate-400">No projects available</span>
           )}
           {projectOptions.map((key) => (
             <label
@@ -163,8 +163,8 @@ export function DiscrepanciesTab({
               className={cn(
                 "flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
                 selectedProjects.includes(key)
-                  ? "border-primary/50 bg-primary/10 text-white"
-                  : "border-white/[0.08] bg-white/[0.04] text-white/50 hover:text-white"
+                  ? "border-indigo-300 bg-indigo-50 text-indigo-800"
+                  : "border-border bg-muted text-slate-500 hover:text-foreground"
               )}
             >
               <Checkbox
@@ -187,7 +187,7 @@ export function DiscrepanciesTab({
             onClick={() => setView("list")}
             className={cn(
               "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
-              view === "list" ? "bg-white/10 text-white" : "text-white/50 hover:text-white"
+              view === "list" ? "bg-slate-100 text-foreground" : "text-slate-500 hover:text-foreground"
             )}
           >
             List
@@ -196,7 +196,7 @@ export function DiscrepanciesTab({
             onClick={() => setView("digest")}
             className={cn(
               "rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
-              view === "digest" ? "bg-white/10 text-white" : "text-white/50 hover:text-white"
+              view === "digest" ? "bg-slate-100 text-foreground" : "text-slate-500 hover:text-foreground"
             )}
           >
             Heads-up digest
@@ -205,21 +205,21 @@ export function DiscrepanciesTab({
       </div>
 
       {view === "digest" && (
-        <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+        <div className="rounded-xl border border-border bg-muted p-4">
           <div className="mb-4 flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <Calendar className="size-4 text-primary" /> {digestWindow === "daily" ? "Daily" : "Weekly"} digest
             </h2>
             <div className="flex items-center gap-2">
               <Select
                 value={digestWindow}
                 onChange={(e) => onDigestWindowChange(e.target.value as "daily" | "weekly")}
-                className="rounded-md border border-white/[0.08] bg-white/[0.05] px-2 py-1 text-xs text-white"
+                className="rounded-md border border-border bg-slate-50 px-2 py-1 text-xs text-foreground"
               >
                 <option value="daily">Daily</option>
                 <option value="weekly">Weekly</option>
               </Select>
-              <button onClick={() => digest.refetch()} className="text-white/50 hover:text-white" aria-label="Refresh digest">
+              <button onClick={() => digest.refetch()} className="text-slate-500 hover:text-foreground" aria-label="Refresh digest">
                 <RefreshCw className={cn("size-4", digest.isFetching && "animate-spin")} />
               </button>
             </div>
@@ -231,11 +231,11 @@ export function DiscrepanciesTab({
       {view === "list" && (
         <>
           <div className="flex items-center justify-between">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
-              <ShieldAlert className="size-4 text-amber-400" /> Open discrepancies
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <ShieldAlert className="size-4 text-amber-700" /> Open discrepancies
               {data && <Badge variant="muted">{data.total}</Badge>}
             </h2>
-            <button onClick={() => discrepancies.refetch()} className="text-white/50 hover:text-white" aria-label="Refresh discrepancies">
+            <button onClick={() => discrepancies.refetch()} className="text-slate-500 hover:text-foreground" aria-label="Refresh discrepancies">
               <RefreshCw className={cn("size-4", discrepancies.isFetching && "animate-spin")} />
             </button>
           </div>
@@ -253,14 +253,14 @@ export function DiscrepanciesTab({
                 const counts = { high: 0, medium: 0, low: 0 };
                 for (const d of items) counts[d.severity] += 1;
                 return (
-                  <div key={cls} className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
+                  <div key={cls} className="rounded-xl border border-border bg-muted p-3">
                     <button
                       onClick={() => toggleClass(cls)}
                       className="flex w-full items-center justify-between gap-3"
                     >
                       <div className="flex flex-1 items-center gap-3">
-                        {expanded ? <ChevronDown className="size-4 text-white/50" /> : <ChevronRight className="size-4 text-white/50" />}
-                        <span className="text-sm font-medium text-white">{items[0]?.class_label ?? cls.replace(/_/g, " ")}</span>
+                        {expanded ? <ChevronDown className="size-4 text-slate-500" /> : <ChevronRight className="size-4 text-slate-500" />}
+                        <span className="text-sm font-medium text-foreground">{items[0]?.class_label ?? cls.replace(/_/g, " ")}</span>
                         <Badge variant="muted">{items.length}</Badge>
                         <SeverityBar counts={counts} total={items.length} />
                       </div>
@@ -283,17 +283,17 @@ export function DiscrepanciesTab({
               <button
                 onClick={() => setPage((p) => Math.max(0, p - 1))}
                 disabled={page === 0}
-                className="rounded-lg px-3 py-1.5 text-xs font-medium text-white/70 hover:bg-white/[0.05] disabled:opacity-40"
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-foreground/70 hover:bg-slate-50 disabled:opacity-40"
               >
                 Previous
               </button>
-              <span className="text-xs text-white/50">
+              <span className="text-xs text-slate-500">
                 Page {page + 1} of {Math.max(1, Math.ceil(data.total / LIMIT))}
               </span>
               <button
                 onClick={() => setPage((p) => p + 1)}
                 disabled={(page + 1) * LIMIT >= data.total}
-                className="rounded-lg px-3 py-1.5 text-xs font-medium text-white/70 hover:bg-white/[0.05] disabled:opacity-40"
+                className="rounded-lg px-3 py-1.5 text-xs font-medium text-foreground/70 hover:bg-slate-50 disabled:opacity-40"
               >
                 Next
               </button>
@@ -316,31 +316,31 @@ function SummaryPanel({
 }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2">
-      <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
-        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
+      <div className="rounded-xl border border-border bg-muted p-4">
+        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
           <BarChart3 className="size-4 text-primary" /> Discrepancy overview
         </div>
         <div className="flex items-end gap-4">
-          <div className="text-3xl font-bold text-white">{total}</div>
+          <div className="text-3xl font-bold text-foreground">{total}</div>
           <div className="flex-1 space-y-2 pb-1">
             <SeverityBar counts={severityCounts} total={total} showLegend />
           </div>
         </div>
       </div>
 
-      <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
-        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white">
-          <ShieldAlert className="size-4 text-amber-400" /> By project
+      <div className="rounded-xl border border-border bg-muted p-4">
+        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+          <ShieldAlert className="size-4 text-amber-700" /> By project
         </div>
         <div className="flex flex-wrap gap-2">
-          {projectCounts.length === 0 && <span className="text-xs text-white/40">No project data</span>}
+          {projectCounts.length === 0 && <span className="text-xs text-slate-400">No project data</span>}
           {projectCounts.slice(0, 8).map((p) => (
             <div
               key={p.project_key ?? "other"}
-              className="flex items-center gap-1.5 rounded-md bg-white/[0.05] px-2 py-1 text-xs text-white/80"
+              className="flex items-center gap-1.5 rounded-md bg-slate-50 px-2 py-1 text-xs text-slate-700"
             >
               <span className="font-medium">{p.project_key ?? "Other"}</span>
-              <span className="text-white/50">{p.count}</span>
+              <span className="text-slate-500">{p.count}</span>
             </div>
           ))}
         </div>
@@ -358,19 +358,19 @@ function SeverityBar({
   total: number;
   showLegend?: boolean;
 }) {
-  if (total === 0) return <div className="h-2 w-full rounded-full bg-white/[0.05]" />;
+  if (total === 0) return <div className="h-2 w-full rounded-full bg-slate-50" />;
   const high = (counts.high / total) * 100;
   const medium = (counts.medium / total) * 100;
   const low = 100 - high - medium;
   return (
     <div className="flex flex-1 flex-col gap-1">
-      <div className="flex h-2 w-full overflow-hidden rounded-full bg-white/[0.05]">
+      <div className="flex h-2 w-full overflow-hidden rounded-full bg-slate-50">
         {high > 0 && <div className="h-full bg-rose-500" style={{ width: `${high}%` }} />}
         {medium > 0 && <div className="h-full bg-amber-400" style={{ width: `${medium}%` }} />}
         {low > 0 && <div className="h-full bg-slate-400" style={{ width: `${low}%` }} />}
       </div>
       {showLegend && (
-        <div className="flex gap-3 text-[10px] text-white/40">
+        <div className="flex gap-3 text-[10px] text-slate-400">
           <span className="flex items-center gap-1"><span className="size-1.5 rounded-full bg-rose-500" /> High {counts.high}</span>
           <span className="flex items-center gap-1"><span className="size-1.5 rounded-full bg-amber-400" /> Medium {counts.medium}</span>
           <span className="flex items-center gap-1"><span className="size-1.5 rounded-full bg-slate-400" /> Low {counts.low}</span>
@@ -382,7 +382,7 @@ function SeverityBar({
 
 function DiscrepancyCard({ discrepancy: d }: { discrepancy: Discrepancy }) {
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4 text-sm text-white/80">
+    <div className="rounded-xl border border-border bg-muted p-4 text-sm text-slate-700">
       <div className="mb-2 flex items-start justify-between gap-3">
         <div className="flex items-start gap-2">
           <span
@@ -392,13 +392,13 @@ function DiscrepancyCard({ discrepancy: d }: { discrepancy: Discrepancy }) {
             )}
             aria-hidden="true"
           />
-          <p className="font-medium text-white">{d.title}</p>
+          <p className="font-medium text-foreground">{d.title}</p>
         </div>
         {d.ref && (
-          <span className="shrink-0 rounded bg-white/[0.08] px-2 py-0.5 text-xs text-white/70">{d.ref}</span>
+          <span className="shrink-0 rounded bg-muted px-2 py-0.5 text-xs text-slate-600">{d.ref}</span>
         )}
       </div>
-      <p className="mb-3 leading-relaxed text-white/60">{d.summary}</p>
+      <p className="mb-3 leading-relaxed text-slate-500">{d.summary}</p>
       {d.sources.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {d.sources.map((s, i) => {
@@ -409,12 +409,12 @@ function DiscrepancyCard({ discrepancy: d }: { discrepancy: Discrepancy }) {
                 href={s.url}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 rounded bg-white/[0.06] px-2 py-1 text-xs text-white/70 hover:bg-white/[0.10] hover:text-white"
+                className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-xs text-slate-600 hover:bg-slate-100 hover:text-foreground"
               >
                 {label}
               </a>
             ) : (
-              <span key={i} className="inline-flex items-center gap-1 rounded bg-white/[0.06] px-2 py-1 text-xs text-white/70">
+              <span key={i} className="inline-flex items-center gap-1 rounded bg-muted px-2 py-1 text-xs text-slate-600">
                 {label}
               </span>
             );
@@ -435,19 +435,19 @@ function DigestView({
   error: boolean;
 }) {
   if (loading) return <PageSkeleton />;
-  if (error) return <p className="text-sm text-white/50">The digest could not be generated. Please try again.</p>;
+  if (error) return <p className="text-sm text-slate-500">The digest could not be generated. Please try again.</p>;
   if (!digest) return null;
   return (
     <div className="space-y-4">
       <div>
-        <h3 className="text-lg font-semibold text-white">{digest.headline}</h3>
-        <p className="text-sm text-white/70">{digest.summary}</p>
+        <h3 className="text-lg font-semibold text-foreground">{digest.headline}</h3>
+        <p className="text-sm text-slate-600">{digest.summary}</p>
       </div>
-      {digest.sections.length === 0 && <p className="text-sm text-white/50">No open discrepancies for this window.</p>}
+      {digest.sections.length === 0 && <p className="text-sm text-slate-500">No open discrepancies for this window.</p>}
       {digest.sections.map((section, i) => (
         <div key={i} className="space-y-2">
-          <p className="text-xs font-medium uppercase tracking-wide text-white/40">{section.title}</p>
-          <ul className="list-inside list-disc space-y-1 text-sm text-white/80">
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-400">{section.title}</p>
+          <ul className="list-inside list-disc space-y-1 text-sm text-slate-700">
             {section.items.map((item, j) => (
               <li key={j}>{item}</li>
             ))}
@@ -455,7 +455,7 @@ function DigestView({
         </div>
       ))}
       {digest.tone !== "calm" && (
-        <p className="text-xs text-white/50">Tone: {digest.tone}</p>
+        <p className="text-xs text-slate-500">Tone: {digest.tone}</p>
       )}
     </div>
   );
@@ -463,9 +463,9 @@ function DigestView({
 
 function EmptyState() {
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-6 text-center">
-      <p className="text-sm font-medium text-white">No open discrepancies</p>
-      <p className="mt-1 text-xs text-white/50">Adjust filters or connect Slack, Qiko Track or GitHub to start surfacing claim-vs-evidence gaps.</p>
+    <div className="rounded-xl border border-border bg-muted p-6 text-center">
+      <p className="text-sm font-medium text-foreground">No open discrepancies</p>
+      <p className="mt-1 text-xs text-slate-500">Adjust filters or connect Slack, Qiko Track or GitHub to start surfacing claim-vs-evidence gaps.</p>
     </div>
   );
 }
@@ -474,7 +474,7 @@ function PageSkeleton() {
   return (
     <div className="space-y-3">
       {Array.from({ length: 3 }).map((_, i) => (
-        <div key={i} className="h-24 animate-pulse rounded-xl bg-white/[0.05]" />
+        <div key={i} className="h-24 animate-pulse rounded-xl bg-slate-50" />
       ))}
     </div>
   );

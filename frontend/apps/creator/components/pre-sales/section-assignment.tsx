@@ -105,7 +105,7 @@ export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentI
       {ConfirmActionDialog}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-white">Section Assignment</h2>
+          <h2 className="text-lg font-semibold text-foreground">Section Assignment</h2>
           <p className="mt-0.5 text-[13px] text-slate-500">Assign RFP sections to your team and track progress.</p>
         </div>
         <div className="flex items-center gap-2">
@@ -123,7 +123,7 @@ export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentI
             disabled={!packId || assignmentsQ.isLoading || remind.isPending || !canSendReminder}
             aria-label={canSendReminder ? `Send reminders for ${pendingAssignments.length} pending assignments` : "No pending assignments to remind"}
             title={canSendReminder ? undefined : "No pending assignments to remind"}
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {remind.isPending ? <Loader2 className="size-4 animate-spin" /> : <Bell className="size-4" />}
             {canSendReminder ? `Send reminder (${pendingAssignments.length})` : "No pending reminders"}
@@ -138,9 +138,9 @@ export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentI
       )}
 
       {!packId ? (
-        <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-12 text-center">
+        <div className="flex flex-col items-center rounded-2xl border border-border bg-muted/40 px-4 py-12 text-center">
           <Users className="mb-3 size-8 text-slate-600" />
-          <p className="text-sm font-medium text-slate-300">No RFP selected</p>
+          <p className="text-sm font-medium text-slate-600">No RFP selected</p>
           <p className="mt-1 max-w-sm text-[12px] text-slate-500">Create a tender first, then assign its sections here.</p>
         </div>
       ) : (
@@ -156,13 +156,13 @@ export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentI
           />
 
           {/* Assign a section */}
-          <section aria-label="Assign sections" className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
-            <h3 className="text-[13px] font-semibold text-white">Assign sections</h3>
+          <section aria-label="Assign sections" className="rounded-2xl border border-border bg-muted/40 p-5">
+            <h3 className="text-[13px] font-semibold text-foreground">Assign sections</h3>
             <p className="mt-0.5 text-[12px] text-slate-500">Choose an owner and optional due date, then assign that section&apos;s questions.</p>
 
             {sectionsQ.isLoading ? (
               <div className="mt-4 space-y-2">
-                {[0, 1, 2].map((i) => <div key={i} className="h-12 animate-pulse rounded-lg bg-white/[0.04]" />)}
+                {[0, 1, 2].map((i) => <div key={i} className="h-12 animate-pulse rounded-lg bg-muted" />)}
               </div>
             ) : sections.length === 0 ? (
               <p className="mt-4 text-[13px] text-slate-500">No sections parsed for this RFP yet.</p>
@@ -182,14 +182,14 @@ export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentI
           </section>
 
           {/* Current assignments */}
-          <section aria-label="Current assignments" className="rounded-2xl border border-white/[0.06] bg-white/[0.015]">
-            <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
-              <h3 className="text-[13px] font-semibold text-white">Current assignments</h3>
+          <section aria-label="Current assignments" className="rounded-2xl border border-border bg-muted/40">
+            <div className="flex items-center justify-between border-b border-border px-4 py-3">
+              <h3 className="text-[13px] font-semibold text-foreground">Current assignments</h3>
               <Badge variant="muted">{assignments.length}</Badge>
             </div>
             {assignmentsQ.isLoading ? (
               <div className="space-y-2 p-4">
-                {[0, 1, 2].map((i) => <div key={i} className="h-10 animate-pulse rounded-lg bg-white/[0.04]" />)}
+                {[0, 1, 2].map((i) => <div key={i} className="h-10 animate-pulse rounded-lg bg-muted" />)}
               </div>
             ) : assignments.length === 0 ? (
               <p className="px-4 py-8 text-center text-[13px] text-slate-500">No assignments yet for this RFP.</p>
@@ -197,7 +197,7 @@ export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentI
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[760px] text-left">
                   <thead>
-                    <tr className="border-b border-white/[0.06] text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+                    <tr className="border-b border-border text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                       <th scope="col" className="px-4 py-2.5">Section</th>
                       <th scope="col" className="px-4 py-2.5">Question</th>
                       <th scope="col" className="px-4 py-2.5">Assignee</th>
@@ -210,12 +210,12 @@ export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentI
                     {assignments.map((a) => {
                       const overdue = isAssignmentOverdue(a);
                       return (
-                        <tr key={a.id} className="hover:bg-white/[0.02]">
-                          <td className="px-4 py-2.5 text-[12px] text-slate-200">{a.section_title || "-"}</td>
+                        <tr key={a.id} className="hover:bg-muted/50">
+                          <td className="px-4 py-2.5 text-[12px] text-slate-700">{a.section_title || "-"}</td>
                           <td className="max-w-[280px] px-4 py-2.5 text-[12px] text-slate-400">
                             <span className="line-clamp-2">{a.question}</span>
                           </td>
-                          <td className="px-4 py-2.5 text-[12px] text-slate-300">{assigneeName(a.assignee_user_id)}</td>
+                          <td className="px-4 py-2.5 text-[12px] text-slate-600">{assigneeName(a.assignee_user_id)}</td>
                           <td className={cn("px-4 py-2.5 text-[12px]", overdue ? "text-red-400" : "text-slate-400")}>{formatShortDate(a.due_at)}</td>
                           <td className="px-4 py-2.5">
                             <button
@@ -225,10 +225,10 @@ export function SectionAssignment({ packs, agentId }: { packs: RfpPack[]; agentI
                               aria-label={`Mark ${a.status === "completed" ? "pending" : "completed"}`}
                               className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold capitalize transition-colors disabled:opacity-50",
                                 a.status === "completed"
-                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                                  ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20"
                                   : overdue
                                     ? "border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20"
-                                    : "border-amber-500/30 bg-amber-500/10 text-amber-400 hover:bg-amber-500/20")}
+                                    : "border-amber-500/30 bg-amber-50 text-amber-700 hover:bg-amber-500/20")}
                             >
                               {overdue ? "overdue" : a.status}
                             </button>
@@ -283,9 +283,9 @@ function SectionAssignRow({ section, assignees, onAssign, pending }: {
   const qCount = section.questions.length;
 
   return (
-    <li className="flex flex-wrap items-center gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+    <li className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
       <div className="min-w-0 flex-1">
-        <p className="truncate text-[13px] font-medium text-slate-200">{section.name}</p>
+        <p className="truncate text-[13px] font-medium text-slate-700">{section.name}</p>
         <p className="text-[11px] text-slate-500">{qCount} question{qCount === 1 ? "" : "s"}</p>
       </div>
       <label htmlFor={`assignee-${section.id}`} className="sr-only">Assignee for {section.name}</label>
@@ -305,7 +305,7 @@ function SectionAssignRow({ section, assignees, onAssign, pending }: {
         type="button"
         onClick={() => onAssign(assigneeId, dueAt || null)}
         disabled={!assigneeId || qCount === 0 || pending}
-        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-2 text-[12px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
+        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-2 text-[12px] font-semibold text-foreground hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
       >
         {pending ? <Loader2 className="size-3.5 animate-spin" /> : null} Assign
       </button>
@@ -324,35 +324,35 @@ function MemberDashboard({ rows, loading, assigneeName, assigneeEmail, onRemind,
   const active = rows.filter((r) => r.assigned > 0);
 
   return (
-    <section aria-label="Team progress" className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
-      <h3 className="text-[13px] font-semibold text-white">Team progress</h3>
+    <section aria-label="Team progress" className="rounded-2xl border border-border bg-muted/40 p-5">
+      <h3 className="text-[13px] font-semibold text-foreground">Team progress</h3>
       <p className="mt-0.5 text-[12px] text-slate-500">Assigned, completed and pending sections per member.</p>
 
       {loading ? (
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {[0, 1].map((i) => <div key={i} className="h-20 animate-pulse rounded-xl bg-white/[0.04]" />)}
+          {[0, 1].map((i) => <div key={i} className="h-20 animate-pulse rounded-xl bg-muted" />)}
         </div>
       ) : active.length === 0 ? (
         <p className="mt-4 text-[13px] text-slate-500">No members have assignments yet.</p>
       ) : (
         <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           {active.map((r) => (
-            <div key={r.user_id} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+            <div key={r.user_id} className="rounded-xl border border-border bg-muted/50 p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="truncate text-[13px] font-semibold text-white">{assigneeName(r.user_id)}</p>
+                  <p className="truncate text-[13px] font-semibold text-foreground">{assigneeName(r.user_id)}</p>
                   <p className="mt-0.5 text-[11px] text-slate-500">
                     {r.completed}/{r.assigned} done &middot; {r.pending} pending
                   </p>
                 </div>
                 <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider",
                   r.status === "overdue" ? "border-red-500/30 bg-red-500/10 text-red-400"
-                    : r.status === "completed" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
-                      : "border-amber-500/30 bg-amber-500/10 text-amber-400")}>
+                    : r.status === "completed" ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-700"
+                      : "border-amber-500/30 bg-amber-50 text-amber-700")}>
                   {r.status}
                 </span>
               </div>
-              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
+              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-muted">
                 <div className="h-full rounded-full bg-indigo-400 transition-all" style={{ width: `${Math.min(100, Math.max(0, r.progress))}%` }} />
               </div>
               <div className="mt-3 flex items-center justify-between">
@@ -362,7 +362,7 @@ function MemberDashboard({ rows, loading, assigneeName, assigneeEmail, onRemind,
                     type="button"
                     onClick={() => onRemind(r.user_id, assigneeEmail(r.user_id))}
                     disabled={reminding}
-                    className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-[11px] font-medium text-slate-300 hover:bg-white/[0.04] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50"
+                    className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-[11px] font-medium text-slate-500 hover:bg-slate-100 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
                   >
                     <Bell className="size-3" /> Remind
                   </button>

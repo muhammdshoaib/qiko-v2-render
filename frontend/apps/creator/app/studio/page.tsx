@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 
 export default function StudioPage() {
   return (
-    <Suspense fallback={<div className="min-h-[50vh] bg-[#05070d]" aria-busy="true" />}>
+    <Suspense fallback={<div className="min-h-[50vh] bg-background" aria-busy="true" />}>
       <RedirectToIntelligence />
     </Suspense>
   );
@@ -20,5 +20,5 @@ function RedirectToIntelligence() {
     router.replace(query ? `/studio/intelligence?${query}` : "/studio/intelligence");
   }, [params, router]);
 
-  return <div className="min-h-[50vh] bg-[#05070d]" aria-busy="true" />;
+  return <div className="min-h-[50vh] bg-background" aria-busy="true" />;
 }

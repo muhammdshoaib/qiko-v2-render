@@ -17,8 +17,8 @@ type Filter = (typeof FILTERS)[number];
 
 function toneClass(type: string): string {
   if (type === "sf_sync_failed" || type === "scan_failed") return "border-red-500/30 bg-red-500/10 text-red-400";
-  if (type === "sf_sync_success") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
-  if (type === "deadline_reminder") return "border-amber-500/30 bg-amber-500/10 text-amber-400";
+  if (type === "sf_sync_success") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
+  if (type === "deadline_reminder") return "border-amber-500/30 bg-amber-50 text-amber-700";
   return "border-indigo-500/30 bg-indigo-500/10 text-indigo-400";
 }
 
@@ -41,24 +41,24 @@ export function NotificationHistoryView({ category }: { category?: string }) {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="flex items-center gap-2 text-xl font-semibold text-white">
+          <h1 className="flex items-center gap-2 text-xl font-semibold text-foreground">
             <Bell className="size-5 text-indigo-400" /> Notifications
           </h1>
           <p className="mt-1 text-[13px] text-slate-500">{unread} unread</p>
         </div>
         {unread > 0 && (
           <button onClick={() => readAll.mutate()} disabled={readAll.isPending}
-            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
             <CheckCheck className="size-3.5" /> {readAll.isPending ? "Marking…" : "Mark all read"}
           </button>
         )}
       </div>
 
-      <div role="tablist" aria-label="Notification filter" className="flex gap-1 border-b border-white/[0.06]">
+      <div role="tablist" aria-label="Notification filter" className="flex gap-1 border-b border-border">
         {FILTERS.map((f) => (
           <button key={f} onClick={() => setFilter(f)} role="tab" aria-selected={filter === f}
-            className={cn("rounded-t-md px-3 py-2.5 text-[13px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-              filter === f ? "border-b-2 border-indigo-400 text-white" : "text-slate-400 hover:text-white")}>
+            className={cn("rounded-t-md px-3 py-2.5 text-[13px] font-medium capitalize transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+              filter === f ? "border-b-2 border-indigo-500 text-foreground" : "text-slate-500 hover:text-foreground")}>
             {f}
           </button>
         ))}
@@ -73,13 +73,13 @@ export function NotificationHistoryView({ category }: { category?: string }) {
           {notifications.map((n) => (
             <li key={n.id}>
               <button onClick={() => !n.read && readOne.mutate(n.id)}
-                className={cn("flex w-full items-start gap-3 rounded-2xl border border-white/[0.06] p-4 text-left transition-colors hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                  n.read ? "bg-transparent" : "bg-white/[0.02]")}>
+                className={cn("flex w-full items-start gap-3 rounded-2xl border border-border p-4 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+                  n.read ? "bg-transparent" : "bg-muted/50")}>
                 <span className={`inline-flex shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${toneClass(n.type)}`}>
                   {n.type.replace(/_/g, " ")}
                 </span>
                 <div className="min-w-0 flex-1">
-                  <p className={cn("text-[14px]", n.read ? "text-slate-300" : "font-semibold text-white")}>{n.title}</p>
+                  <p className={cn("text-[14px]", n.read ? "text-slate-600" : "font-semibold text-foreground")}>{n.title}</p>
                   {n.body && <p className="mt-0.5 text-[13px] text-slate-500">{n.body}</p>}
                   <p className="mt-1 text-[11px] text-slate-600">{formatDate(n.createdAt, true)}</p>
                 </div>

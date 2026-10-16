@@ -47,13 +47,13 @@ function TestResultDialog({ state, onClose }: { state: TestDialogState; onClose:
       <div className="space-y-4">
         <div className="flex items-center gap-2">
           {state.success ? (
-            <CheckCircle2 className="size-5 text-emerald-400" aria-hidden="true" />
+            <CheckCircle2 className="size-5 text-emerald-700" aria-hidden="true" />
           ) : (
-            <AlertTriangle className="size-5 text-amber-400" aria-hidden="true" />
+            <AlertTriangle className="size-5 text-amber-700" aria-hidden="true" />
           )}
-          <h2 id={titleId} className="pr-10 text-base font-semibold text-white">{state.title}</h2>
+          <h2 id={titleId} className="pr-10 text-base font-semibold text-foreground">{state.title}</h2>
         </div>
-        <p className="whitespace-pre-wrap text-sm text-white/70">{state.message}</p>
+        <p className="whitespace-pre-wrap text-sm text-slate-600">{state.message}</p>
         <Button onClick={onClose} className="w-full">Close</Button>
       </div>
     </Dialog>
@@ -619,13 +619,13 @@ export function SlackForm({
     <div className="space-y-3">
       <p className="text-xs text-muted-foreground">Team: {c.team_id}</p>
       <div className="space-y-2">
-        <p className="text-xs font-medium text-white/70">Purposes</p>
+        <p className="text-xs font-medium text-foreground/70">Purposes</p>
         <div className="flex flex-wrap gap-3">
           {purposeOptions.map((p) => (
-            <label key={p.key} className="flex items-center gap-2 text-xs text-white/80">
+            <label key={p.key} className="flex items-center gap-2 text-xs text-slate-700">
               <input
                 type="checkbox"
-                className="size-4 rounded border-white/[0.08] bg-white/[0.05]"
+                className="size-4 rounded border-border bg-slate-50"
                 checked={purposes.has(p.key)}
                 onChange={(e) => togglePurpose(p.key, e.target.checked)}
               />
@@ -648,13 +648,13 @@ export function SlackForm({
           <Input type="number" min={1} value={headsUpTimeout} onChange={(e) => setHeadsUpTimeout(Number(e.target.value))} />
         </div>
       </div>
-      <div className="max-h-40 space-y-2 overflow-y-auto rounded border border-white/[0.08] bg-white/[0.03] p-2">
+      <div className="max-h-40 space-y-2 overflow-y-auto rounded border border-border bg-muted p-2">
         {channels.length === 0 && <p className="text-xs text-muted-foreground">No public channels found. Add channel IDs below if they are not listed.</p>}
         {channels.map((ch) => (
-          <label key={ch.id} className="flex items-center gap-2 text-xs text-white/80">
+          <label key={ch.id} className="flex items-center gap-2 text-xs text-slate-700">
             <input
               type="checkbox"
-              className="size-4 rounded border-white/[0.08] bg-white/[0.05]"
+              className="size-4 rounded border-border bg-slate-50"
               checked={selected.has(ch.id)}
               onChange={(e) => {
                 const next = new Set(selected);
@@ -675,7 +675,7 @@ export function SlackForm({
           {disconnect.isPending && <Loader2 className="size-4 animate-spin" />} Disconnect
         </Button>
       </div>
-      {message && <p className="text-xs text-emerald-400">{message}</p>}
+      {message && <p className="text-xs text-emerald-700">{message}</p>}
     </div>
   );
 }

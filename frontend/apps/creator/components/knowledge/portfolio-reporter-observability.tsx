@@ -15,9 +15,9 @@ const FILTERS: { id: Filter; label: string }[] = [
 ];
 
 const KIND_CHIP: Record<Kind, string> = {
-  insight: "bg-cyan-400/10 text-cyan-300",
-  action: "bg-sky-400/10 text-sky-300",
-  blocked: "bg-red-400/10 text-red-300",
+  insight: "bg-indigo-50 text-indigo-700",
+  action: "bg-sky-50 text-sky-700",
+  blocked: "bg-red-50 text-red-700",
 };
 
 export function PortfolioReporterObservability() {
@@ -30,7 +30,7 @@ export function PortfolioReporterObservability() {
   return (
     <div className="mx-auto w-full max-w-3xl space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>
+        <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>
           Portfolio insights &amp; actions
         </h2>
         <p className="mt-1 text-sm text-slate-400">
@@ -46,10 +46,10 @@ export function PortfolioReporterObservability() {
             aria-pressed={filter === item.id}
             onClick={() => setFilter(item.id)}
             className={cn(
-              "rounded-full border px-3 py-1 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
+              "rounded-full border px-3 py-1 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
               filter === item.id
-                ? "border-white/25 bg-white/10 text-white"
-                : "border-white/[0.08] text-slate-400 hover:text-white",
+                ? "border-border bg-slate-100 text-foreground"
+                : "border-border text-slate-500 hover:text-foreground",
             )}
           >
             {item.label}
@@ -58,11 +58,11 @@ export function PortfolioReporterObservability() {
       </div>
 
       {items.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/10 px-6 py-12 text-center text-sm text-slate-400">
+        <div className="rounded-2xl border border-dashed border-border px-6 py-12 text-center text-sm text-slate-400">
           No events in this filter.
         </div>
       ) : (
-        <ul className="divide-y divide-white/[0.05] rounded-2xl border border-white/[0.06] bg-[#0b0f18]">
+        <ul className="divide-y divide-border rounded-2xl border border-border bg-card">
           {items.map((row) => (
             <li key={row.id} className="flex items-start justify-between gap-3 px-4 py-3.5">
               <div className="min-w-0">
@@ -70,7 +70,7 @@ export function PortfolioReporterObservability() {
                   <span className={cn("rounded-md px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.06em]", KIND_CHIP[row.kind])}>
                     {row.kind}
                   </span>
-                  <p className="text-sm font-medium text-white">{row.title}</p>
+                  <p className="text-sm font-medium text-foreground">{row.title}</p>
                 </div>
                 <p className="mt-1 text-[12.5px] text-slate-400">{row.detail}</p>
               </div>

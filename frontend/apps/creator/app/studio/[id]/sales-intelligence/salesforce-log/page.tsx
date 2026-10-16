@@ -22,9 +22,9 @@ function actionLabel(value: string | null | undefined): string {
 }
 
 function ToneIcon({ tone }: { tone: string }) {
-  if (tone === "success") return <span className="flex items-center gap-1.5 text-emerald-400"><CheckCircle2 className="size-3.5" /> Success</span>;
+  if (tone === "success") return <span className="flex items-center gap-1.5 text-emerald-700"><CheckCircle2 className="size-3.5" /> Success</span>;
   if (tone === "error") return <span className="flex items-center gap-1.5 text-red-400"><XCircle className="size-3.5" /> Failed</span>;
-  if (tone === "warning") return <span className="flex items-center gap-1.5 text-amber-400"><Info className="size-3.5" /> Warning</span>;
+  if (tone === "warning") return <span className="flex items-center gap-1.5 text-amber-700"><Info className="size-3.5" /> Warning</span>;
   return <span className="flex items-center gap-1.5 text-slate-400"><Info className="size-3.5" /> Info</span>;
 }
 
@@ -63,24 +63,24 @@ export default function SalesforcePushLogPage() {
           { value: String(failed), label: "Failed Attempts", caption: failed > 0 ? "needs retry" : "none", trend: failed > 0 ? "down" : "neutral" },
         ]} />
 
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-6">
+        <div className="rounded-2xl border border-border bg-muted/40 p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">SALESFORCE CONNECTION</p>
-              <p className="mt-1 text-[15px] font-semibold text-white">{connected ? "Connected" : "Not Connected"}</p>
+              <p className="mt-1 text-[15px] font-semibold text-foreground">{connected ? "Connected" : "Not Connected"}</p>
               {sfQ.data?.salesforce?.instanceUrl && (
-                <a href={sfQ.data.salesforce.instanceUrl} target="_blank" rel="noreferrer" className="mt-1 block rounded text-[13px] text-indigo-400 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
+                <a href={sfQ.data.salesforce.instanceUrl} target="_blank" rel="noreferrer" className="mt-1 block rounded text-[13px] text-indigo-400 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
                   {sfQ.data.salesforce.instanceUrl}
                 </a>
               )}
             </div>
             <div className="flex items-center gap-2">
               <button onClick={() => disconnect.mutate()} disabled={!connected || disconnect.isPending}
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+                className="flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
                 <Unlink className="size-3.5" /> {disconnect.isPending ? "Disconnecting…" : "Disconnect"}
               </button>
               <button onClick={() => { sfQ.refetch(); logsQ.refetch(); }} disabled={sfQ.isFetching || logsQ.isFetching}
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+                className="flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
                 <RefreshCw className={cn("size-3.5", (sfQ.isFetching || logsQ.isFetching) && "animate-spin")} /> {sfQ.isFetching || logsQ.isFetching ? "Refreshing…" : "Refresh"}
               </button>
             </div>
@@ -89,10 +89,10 @@ export default function SalesforcePushLogPage() {
 
         <p className="text-[12px] text-slate-500">Showing {logs.length} events from activity-logs API</p>
 
-        <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
+        <div className="overflow-x-auto rounded-2xl border border-border">
           <table className="w-full text-left text-[13px]">
             <thead>
-              <tr className="border-b border-white/[0.06] text-[11px] uppercase tracking-wider text-slate-500">
+              <tr className="border-b border-border text-[11px] uppercase tracking-wider text-slate-500">
                 <th className="whitespace-nowrap px-4 py-3">Status</th>
                 <th className="whitespace-nowrap px-4 py-3">Action</th>
                 <th className="px-4 py-3">Opportunity</th>
@@ -103,10 +103,10 @@ export default function SalesforcePushLogPage() {
             </thead>
             <tbody>
               {logs.map((log) => (
-                <tr key={log.id} className="border-b border-white/[0.04] last:border-0">
+                <tr key={log.id} className="border-b border-slate-100 last:border-0">
                   <td className="whitespace-nowrap px-4 py-3"><ToneIcon tone={log.tone} /></td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-300">{actionLabel(log.action)}</td>
-                  <td className={cn("max-w-[280px] truncate px-4 py-3", log.tone === "error" ? "text-red-300" : "text-slate-300")}>{log.action}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">{actionLabel(log.action)}</td>
+                  <td className={cn("max-w-[280px] truncate px-4 py-3", log.tone === "error" ? "text-red-300" : "text-slate-600")}>{log.action}</td>
                   <td className="whitespace-nowrap px-4 py-3 font-mono text-[12px] text-slate-400">
                     {(log.metadata?.salesforce_opportunity_id as string) ?? "-"}
                   </td>

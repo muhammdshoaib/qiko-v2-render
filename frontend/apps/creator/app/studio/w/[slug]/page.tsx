@@ -24,7 +24,7 @@ export default function StudioWorkerProfilePage() {
 
   return (
     <AppShell title={worker?.name ?? "Worker"}>
-      <div className="min-h-screen bg-[#050810]">
+      <div className="min-h-screen bg-background">
         {worker ? <WorkerProfile worker={worker} /> : <p className="px-6 py-10 text-sm text-slate-400">Loading worker…</p>}
       </div>
     </AppShell>

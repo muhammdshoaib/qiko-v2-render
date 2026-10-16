@@ -33,20 +33,20 @@ export function CrmInvoicesPage() {
         Invoice amounts are sample records. <PrototypeBadge className="ml-1 align-middle" /> No payments are processed.
       </p>
 
-      <section className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4">
-        <h2 className="text-sm font-semibold text-white">Recurring commercial commitments</h2>
+      <section className="rounded-2xl border border-border bg-muted/40 p-4">
+        <h2 className="text-sm font-semibold text-foreground">Recurring commercial commitments</h2>
         {upcoming.length === 0 ? (
           <p className="mt-4 text-sm text-slate-400">No commitments on file.</p>
         ) : (
-          <ul className="mt-3 divide-y divide-white/[0.05]">
+          <ul className="mt-3 divide-y divide-border">
             {upcoming.map((item) => (
               <li key={item.id} className="flex items-center justify-between py-3 text-sm">
                 <div>
-                  <Link href={`/crm/companies/${item.companyId}`} className="text-white hover:underline">{crm.companyById(item.companyId)?.name}</Link>
+                  <Link href={`/crm/companies/${item.companyId}`} className="text-foreground hover:underline">{crm.companyById(item.companyId)?.name}</Link>
                   <p className="text-xs text-slate-400">{item.title} · {item.cadence}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-white">{formatMoney(item.amount)}</p>
+                  <p className="text-foreground">{formatMoney(item.amount)}</p>
                   <p className="text-xs text-slate-500">Next {formatDate(item.nextDate)}</p>
                 </div>
               </li>
@@ -61,19 +61,19 @@ export function CrmInvoicesPage() {
             key={item.id}
             type="button"
             onClick={() => setFilter(item.id)}
-            className={`rounded-lg px-3 py-2 text-sm ${filter === item.id ? "bg-white/[0.08] text-white" : "text-slate-400 hover:text-white"}`}
+            className={`rounded-lg px-3 py-2 text-sm ${filter === item.id ? "bg-muted text-foreground" : "text-slate-500 hover:text-foreground"}`}
           >
             {item.label}
           </button>
         ))}
       </div>
 
-      <section className="overflow-x-auto rounded-2xl border border-white/[0.06]">
+      <section className="overflow-x-auto rounded-2xl border border-border">
         {invoices.length === 0 ? (
           <p className="px-4 py-10 text-sm text-slate-400">No invoices in this filter.</p>
         ) : (
           <table className="min-w-full text-left text-sm">
-            <thead className="sticky top-0 bg-[#0b0f18] text-xs uppercase tracking-wide text-slate-500">
+            <thead className="sticky top-0 bg-card text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3 font-medium">Invoice</th>
                 <th className="px-4 py-3 font-medium">Customer</th>
@@ -83,17 +83,17 @@ export function CrmInvoicesPage() {
                 <th className="px-4 py-3 font-medium"><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-white/[0.05]">
+            <tbody className="divide-y divide-border">
               {invoices.map((invoice) => (
                 <tr key={invoice.id}>
-                  <td className="px-4 py-3 text-white">{invoice.number}</td>
+                  <td className="px-4 py-3 text-foreground">{invoice.number}</td>
                   <td className="px-4 py-3">
-                    <Link href={`/crm/companies/${invoice.companyId}`} className="text-indigo-300 hover:underline">
+                    <Link href={`/crm/companies/${invoice.companyId}`} className="text-indigo-600 hover:underline">
                       {crm.companyById(invoice.companyId)?.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-slate-300">{formatDate(invoice.dueDate)}</td>
-                  <td className="px-4 py-3 text-slate-200">
+                  <td className="px-4 py-3 text-slate-600">{formatDate(invoice.dueDate)}</td>
+                  <td className="px-4 py-3 text-slate-700">
                     {formatMoney(invoice.amount)}
                     {invoice.status === "partial" && (
                       <span className="block text-xs text-amber-300">Paid {formatMoney(invoice.paidAmount)}</span>

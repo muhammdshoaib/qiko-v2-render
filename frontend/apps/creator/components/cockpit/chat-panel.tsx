@@ -34,7 +34,7 @@ function ChatEmptyState({ title, prompt }: { title: string; prompt: string }) {
       <span className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-indigo-500/10 text-indigo-400">
         <Sparkles className="size-6" />
       </span>
-      <p className="text-sm font-semibold text-white">{title}</p>
+      <p className="text-sm font-semibold text-foreground">{title}</p>
       <p className="mt-1.5 max-w-[220px] text-[12px] leading-relaxed text-slate-500">{prompt}</p>
     </div>
   );
@@ -171,7 +171,7 @@ export function CockpitChatPanel({
         // An inline width would win at every breakpoint and there is no media query in style={}.
         style={{ "--cockpit-chat-width": `${width}px` } as React.CSSProperties}
         className={cn(
-          "z-40 flex min-h-0 w-[300px] flex-col border-l border-white/[0.06] bg-[#05070d]",
+          "z-40 flex min-h-0 w-[300px] flex-col border-l border-border bg-background",
           // Overlay anchored under the header on the right, at every width. It is deliberately NOT
           // an inline flex column at lg+ any more: as a column it took permanent horizontal space
           // and squeezed <main> into a narrow strip, which read as a thin sidebar rather than a
@@ -205,19 +205,19 @@ export function CockpitChatPanel({
             resizing && "after:bg-indigo-400",
           )}
         />
-        <div className="flex shrink-0 items-center justify-between border-b border-white/[0.06] px-4 py-3.5">
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3.5">
           <div className="flex items-center gap-2.5">
             <span className="flex size-8 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-400">
               <MessageSquare className="size-4" />
             </span>
             <div>
-              <p className="text-[13px] font-semibold text-white">Chat with {workerName}</p>
+              <p className="text-[13px] font-semibold text-foreground">Chat with {workerName}</p>
               <p className="flex items-center gap-1 text-[11px] text-slate-500">
                 <span className="size-1.5 rounded-full bg-emerald-400" /> AI assistant &middot; online
               </p>
             </div>
           </div>
-          <button onClick={onClose} aria-label="Close chat" className="rounded-md text-slate-500 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
+          <button onClick={onClose} aria-label="Close chat" className="rounded-md text-slate-500 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
             <X className="size-4" />
           </button>
         </div>
@@ -241,23 +241,23 @@ export function CockpitChatPanel({
 
         <form
           onSubmit={(e) => { e.preventDefault(); const q = text.trim(); if (q && ready && !send.isPending) { send.mutate(q); setText(""); } }}
-          className="shrink-0 border-t border-white/[0.06] p-3"
+          className="shrink-0 border-t border-border p-3"
         >
           {/* Claude-style composer: a rounded input row with a visible send button on the right. */}
-          <div className="flex items-end gap-2 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2 transition-colors focus-within:border-indigo-500/60 focus-within:ring-2 focus-within:ring-indigo-500">
+          <div className="flex items-end gap-2 rounded-2xl border border-border bg-muted px-3 py-2 transition-colors focus-within:border-indigo-500/60 focus-within:ring-2 focus-within:ring-indigo-500">
             <input
               value={text}
               onChange={(e) => setText(e.target.value)}
               placeholder={ready ? placeholder : (notReadyPlaceholder ?? placeholder)}
               aria-label="Chat message"
               disabled={!ready || send.isPending}
-              className="min-w-0 flex-1 bg-transparent py-1 text-sm text-slate-200 placeholder:text-slate-500 focus:outline-none disabled:opacity-50"
+              className="min-w-0 flex-1 bg-transparent py-1 text-sm text-slate-700 placeholder:text-slate-500 focus:outline-none disabled:opacity-50"
             />
             <button
               type="submit"
               disabled={!canSend}
               aria-label="Send message"
-              className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-indigo-500 text-white transition-colors hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:cursor-not-allowed disabled:bg-white/10 disabled:text-slate-500"
+              className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-indigo-500 text-white transition-colors hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
             >
               <SendHorizonal className="size-4" />
             </button>

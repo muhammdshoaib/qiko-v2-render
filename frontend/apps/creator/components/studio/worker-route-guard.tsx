@@ -40,7 +40,7 @@ export function StudioWorkerRouteGuard({ children }: { children: ReactNode }) {
   // rejects the API calls from it either way, so that window is cosmetic.
   if (access.isPending) {
     return (
-      <div role="status" aria-live="polite" aria-busy="true" className="flex min-h-screen items-center justify-center bg-[#050810] text-slate-400">
+      <div role="status" aria-live="polite" aria-busy="true" className="flex min-h-screen items-center justify-center bg-background text-slate-400">
         <Loader2 className="size-5 animate-spin" aria-hidden="true" />
         <span className="ml-2 text-sm">Checking worker availability...</span>
       </div>
@@ -91,12 +91,12 @@ function UnavailableState({ message, actionLabel, onAction, retry = false }: {
   retry?: boolean;
 }) {
   return (
-    <div role="alert" aria-live="assertive" className="flex min-h-screen items-center justify-center bg-[#050810] px-4 text-slate-200">
-      <div className="w-full max-w-sm rounded-2xl border border-white/[0.08] bg-white/[0.02] p-6 text-center shadow-2xl">
-        <span className="mx-auto mb-4 grid size-11 place-items-center rounded-xl bg-amber-500/10 text-amber-300">
+    <div role="alert" aria-live="assertive" className="flex min-h-screen items-center justify-center bg-background px-4 text-slate-700">
+      <div className="w-full max-w-sm rounded-2xl border border-border bg-muted/50 p-6 text-center shadow-2xl">
+        <span className="mx-auto mb-4 grid size-11 place-items-center rounded-xl bg-amber-50 text-amber-300">
           <AlertTriangle className="size-5" aria-hidden="true" />
         </span>
-        <h1 className="text-lg font-semibold text-white">{message}</h1>
+        <h1 className="text-lg font-semibold text-foreground">{message}</h1>
         <p className="mt-2 text-sm leading-6 text-slate-400">
           This worker cannot be opened from this link. Return to Studio and choose an available worker.
         </p>

@@ -9,9 +9,9 @@ import { getSalesOpportunityDecisions, type SalesDecision } from "@/lib/api";
 import { formatDate } from "@/components/sales-intelligence/utils";
 
 function decisionBadgeClass(decision: string | null): string {
-  if (decision === "approved") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-400";
+  if (decision === "approved") return "border-emerald-500/30 bg-emerald-500/10 text-emerald-700";
   if (decision === "rejected") return "border-red-500/30 bg-red-500/10 text-red-400";
-  return "border-amber-500/30 bg-amber-500/10 text-amber-400";
+  return "border-amber-500/30 bg-amber-50 text-amber-700";
 }
 
 function DecisionIcon({ decision }: { decision: string | null }) {
@@ -29,12 +29,12 @@ export function DecisionHistoryView({ agentId, opportunityId }: { agentId: strin
   const decisions: SalesDecision[] = q.data?.decisions ?? [];
 
   return (
-    <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+    <div className="rounded-2xl border border-border bg-muted/40 p-5">
       <div className="flex items-center gap-2">
         <span className="flex size-7 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-400">
           <History className="size-4" />
         </span>
-        <p className="text-[13px] font-semibold text-white">Decision History</p>
+        <p className="text-[13px] font-semibold text-foreground">Decision History</p>
       </div>
 
       {q.isLoading ? (
@@ -44,7 +44,7 @@ export function DecisionHistoryView({ agentId, opportunityId }: { agentId: strin
       ) : (
         <ol className="mt-4 space-y-3">
           {decisions.map((d) => (
-            <li key={d.id} className="flex items-start gap-3 border-l-2 border-white/[0.08] pl-3">
+            <li key={d.id} className="flex items-start gap-3 border-l-2 border-border pl-3">
               <span className={`mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full border ${decisionBadgeClass(d.decision)}`}>
                 <DecisionIcon decision={d.decision} />
               </span>
@@ -55,7 +55,7 @@ export function DecisionHistoryView({ agentId, opportunityId }: { agentId: strin
                   </span>
                   <span className="text-[11px] text-slate-500">{formatDate(d.createdAt, true)}</span>
                 </div>
-                {d.detail && <p className="mt-1 text-[13px] text-slate-300">{d.detail}</p>}
+                {d.detail && <p className="mt-1 text-[13px] text-slate-600">{d.detail}</p>}
                 {d.reviewerUserId && <p className="mt-0.5 text-[11px] text-slate-500">Reviewer: {d.reviewerUserId}</p>}
               </div>
             </li>

@@ -1,4 +1,6 @@
-/** Labelled sample for the Investors knowledge block (five-day sprint brief). */
+/** Labelled sample for the Investors knowledge block — honesty labels per Pulse feedback 16 Oct 2026. */
+
+import type { HonestyKind } from "@/components/intelligence-layer/model";
 
 export const INVESTORS_BLOCK = {
   id: "investors",
@@ -6,21 +8,51 @@ export const INVESTORS_BLOCK = {
   kind: "Knowledge block",
   role: "Intent Signal Agent",
   agents: 1,
-  valueThisMonth: "£42.6k",
-  valueHint: "Value from knowledge used this month.",
+  valueThisMonth: "£18.4k",
+  valueHint: "Illustrative value for the demo walkthrough.",
   conversations: 186,
   patternsToDate: 24,
   handedToCrm: 11,
 };
 
+/** Business stages — customer base → app-aware → intent → enquiries/meetings. */
 export const FUNNEL_STEPS = [
-  { id: "crm", label: "In CRM", count: 4180, system: "Client CRM", connected: false },
-  { id: "aware", label: "Aware", count: 912, system: "Investor app", connected: true },
-  { id: "intent", label: "Intent", count: 28, system: "Investor Concierge", connected: true, actOn: true },
-  { id: "meeting", label: "Meeting", count: 9, system: "Advisor calendar", connected: true },
+  {
+    id: "base",
+    label: "Customer base",
+    count: 4180,
+    system: "Client CRM",
+    honesty: "illustrative" as HonestyKind,
+    connected: false,
+  },
+  {
+    id: "aware",
+    label: "App-aware",
+    count: 912,
+    system: "Investor app",
+    honesty: "pending" as HonestyKind,
+    connected: true,
+  },
+  {
+    id: "intent",
+    label: "Intent signals",
+    count: 28,
+    system: "Investor Concierge",
+    honesty: "illustrative" as HonestyKind,
+    connected: true,
+    actOn: true,
+  },
+  {
+    id: "meeting",
+    label: "Enquiries / meetings",
+    count: 9,
+    system: "Advisor calendar",
+    honesty: "pending" as HonestyKind,
+    connected: true,
+  },
 ];
 
-/** One knowledge block = one worker (Investor Concierge / Intent Signal Agent). */
+/** One knowledge block = one worker. Systems / destinations are labelled demo paths (Illustrative). */
 export const BLOCK_AGENTS = [
   {
     id: "concierge",
@@ -32,12 +64,26 @@ export const BLOCK_AGENTS = [
     thisMonth: 214,
     toCrm: 23,
     learned: 11,
-    systems: ["HubSpot", "Calendly", "Stock sheet", "Rightmove"],
-    workflow: "Qualify enquiry → match to stock → book call → hand over to CRM",
+    knowledgeValue: "£42.6k",
+    hoursSaved: "11 HRS SAVED",
+    landsIn: { name: "HubSpot", detail: "29 deals · £4.1m" },
+    systems: [
+      "HubSpot",
+      "Calendly",
+      "Stock sheet",
+      "Rightmove",
+      "Xero",
+      "Arthur Online",
+      "Google Drive",
+      "Deal pipeline",
+      "Land Registry",
+    ],
+    workflow: "Observe intent → surface insight → human follow-up",
     spark: [6, 8, 7, 11, 9, 12, 14, 13, 16, 15, 18, 21],
   },
 ];
 
+/** Labelled demo systems for the overview flow — not live connectors. */
 export const BLOCK_SYSTEMS = [
   "HubSpot",
   "Calendly",
@@ -50,48 +96,78 @@ export const BLOCK_SYSTEMS = [
   "Land Registry",
 ];
 
-export const CAPTURED_KNOWLEDGE = [
+export type OverviewInsight = {
+  id: string;
+  initials: string;
+  title: string;
+  evidence: string;
+  when: string;
+  chip: string;
+  tone: "blue" | "warn" | "good";
+  detail: string;
+  evidenceLines: string[];
+  recommendation: string;
+  honesty: HonestyKind;
+};
+
+export const CAPTURED_KNOWLEDGE: OverviewInsight[] = [
+  {
+    id: "lombe-intent",
+    initials: "IC",
+    title: "High intent · Lombe House",
+    evidence: "Repeat views + calculator — investor app activity",
+    when: "Today",
+    chip: "Insight",
+    tone: "blue",
+    detail:
+      "Aisha opened Lombe House / Derby three times today and stepped into the calculator. Investor Concierge labelled this as high intent. Nothing was sent automatically.",
+    evidenceLines: [
+      "Property viewed · Lombe House / Derby — Today, 09:38",
+      "Calculator step opened",
+      "Investor app activity (JM CMS)",
+    ],
+    recommendation: "Review and decide whether a person should follow up.",
+    honesty: "illustrative",
+  },
   {
     id: "gulf",
     initials: "IC",
-    title: "Gulf investors reply 3x faster on WhatsApp after 6pm GST than on email",
-    evidence: "Seen in 47 of 61 Gulf conversations",
+    title: "Gulf investors reply faster on WhatsApp after 6pm GST",
+    evidence: "Seen across sample Gulf conversations",
     when: "2H",
-    chip: "Pattern",
-    tone: "blue" as const,
-    primaryAction: "simulate" as const,
-  },
-  {
-    id: "yield-rule",
-    initials: "RS",
-    title: "Investors whose first unit passes 6.5% net yield are 4x more likely to buy again within a year",
-    evidence: "Back-tested on 112 past investors",
-    when: "1D",
-    chip: "Proposed rule",
-    tone: "warn" as const,
-    primaryAction: "rule" as const,
+    chip: "Insight",
+    tone: "blue",
+    detail:
+      "Evening WhatsApp replies land more often than daytime email in the sample set. Useful context when a person chooses how to follow up — not an automated campaign.",
+    evidenceLines: ["Conversation timing pattern", "Investor Concierge sample set"],
+    recommendation: "Prefer evening WhatsApp for Gulf follow-ups when a person reaches out.",
+    honesty: "illustrative",
   },
   {
     id: "yield-first",
     initials: "IC",
-    title: "A yield question in the first message means a decision within 30 days",
-    evidence: "31 of 38 cases, 8 months of data",
+    title: "A yield question early often means a decision within 30 days",
+    evidence: "31 of 38 sample cases over 8 months",
     when: "3D",
-    chip: "Company rule",
-    tone: "good" as const,
-    primaryAction: "in_use" as const,
+    chip: "Insight",
+    tone: "good",
+    detail:
+      "When the first message asks about yield, close timing improves in the sample. A person still decides whether to ask about cash early.",
+    evidenceLines: ["31 of 38 cases · 8 months", "Conversation history sample"],
+    recommendation: "Ask about cash/yield early on new enquiries — human decision only.",
+    honesty: "illustrative",
   },
 ];
 
 export const BLOCK_SUMMARY = {
   updated: "Updated today",
   paragraphs: [
-    "Your investors behave like two groups. Gulf investors buy fast, in cash, on WhatsApp, and care about yield. UK investors compare cities and worry about running costs.",
-    "Biggest gain this month: referrals from existing investors now convert at twice the rate of portal leads.",
+    "Investor Concierge surfaces intent from the investor app and conversation samples.",
+    "Follow-ups stay with people. Nothing is sent automatically in this demo.",
   ],
-  risk: "64% of Gulf relationships sit with one adviser (Sarah K.)",
-  gap: "No agent covers investors who are selling up",
-  next: 'Approve the "ask about cash early" rule',
+  risk: "Illustrative: relationship concentration patterns need verified live data.",
+  gap: "Selling-up coverage is not in this block yet.",
+  next: "Add a follow-up from the Lombe House insight on Pulse.",
 };
 
 export type AnalyticsBubble = {
@@ -107,135 +183,95 @@ export type AnalyticsBubble = {
   summary: string;
   stats: { value: string; label: string }[];
   source: string;
+  recommendation: string;
+  honesty: HonestyKind;
 };
 
-/** Investors Analytics tab — sample patterns for the knowledge map (design mock). */
+/** Lean evidence-backed patterns — no invented lift percentages or speculative fee totals. */
 export const ANALYTICS_BUBBLES: AnalyticsBubble[] = [
   {
-    id: "referrals",
-    label: "Referrals",
-    sublabel: "+41% use",
-    size: 88,
+    id: "intent",
+    label: "High intent",
+    sublabel: "Repeat views",
+    size: 72,
     tone: "growing",
-    used: 41,
-    strength: "Pattern · strong",
+    used: 28,
+    strength: "Insight",
     agent: "Investor Concierge",
-    summary: "Referred investors buy in 38 days instead of 71, and are twice as likely to reach the CRM.",
+    summary:
+      "Repeat property views plus calculator use are labelled as high intent. Supporting activity is listed so a person can decide next steps.",
     stats: [
-      { value: "14", label: "referrals behind it" },
-      { value: "38 vs 71", label: "days to buy" },
-      { value: "64%", label: "reach CRM" },
-      { value: "£54k", label: "fees so far" },
+      { value: "28", label: "intent signals" },
+      { value: "3", label: "awaiting review" },
+      { value: "0", label: "auto-sent" },
+      { value: "App", label: "primary source" },
     ],
-    source: "From HubSpot deals, Xero completions and 47 conversations",
+    source: "Investor app activity samples",
+    recommendation: "Open the insight, view evidence, then add a human follow-up if needed.",
+    honesty: "illustrative",
   },
   {
     id: "gulf",
-    label: "Gulf investors",
-    sublabel: "WhatsApp, evenings",
-    size: 64,
+    label: "Gulf timing",
+    sublabel: "Evening replies",
+    size: 56,
     tone: "established",
     used: 22,
-    strength: "Pattern · steady",
+    strength: "Insight",
     agent: "Investor Concierge",
-    summary: "Gulf investors prefer WhatsApp in the evening. Replies outside that window get ignored more often.",
+    summary:
+      "Sample conversations show stronger reply rates on WhatsApp after 6pm GST. Evidence only — not a campaign rule.",
     stats: [
-      { value: "59", label: "active relationships" },
-      { value: "8–11pm", label: "best reply window" },
-      { value: "2.1×", label: "reply rate lift" },
-      { value: "12", label: "at risk if Sarah leaves" },
+      { value: "Sample", label: "conversation set" },
+      { value: "6pm+", label: "GST window" },
+      { value: "Human", label: "sends only" },
+      { value: "—", label: "auto outreach" },
     ],
-    source: "From adviser WhatsApp samples and calendar replies",
-  },
-  {
-    id: "offplan",
-    label: "Off-plan",
-    sublabel: "5% deposit",
-    size: 42,
-    tone: "established",
-    used: 11,
-    strength: "Pattern · emerging",
-    agent: "Portfolio Reporter",
-    summary: "Investors asking about 5% deposit off-plan units convert faster when the payment schedule is shown early.",
-    stats: [
-      { value: "31", label: "enquiries" },
-      { value: "5%", label: "deposit asked" },
-      { value: "9", label: "moved to meeting" },
-      { value: "£2.4m", label: "pipeline" },
-    ],
-    source: "From investor app calculators and HubSpot stages",
-  },
-  {
-    id: "service",
-    label: "Service charges",
-    sublabel: "rising concern",
-    size: 56,
-    tone: "attention",
-    used: 17,
-    strength: "Needs attention",
-    agent: "Portfolio Reporter",
-    summary: "Service-charge questions are rising. Investors want a clear yearly total before they commit.",
-    stats: [
-      { value: "44", label: "mentions this month" },
-      { value: "+28%", label: "vs last month" },
-      { value: "6", label: "deals slowed" },
-      { value: "3", label: "docs missing" },
-    ],
-    source: "From chat transcripts and document requests",
+    source: "Conversation history samples",
+    recommendation: "When contacting Gulf investors, prefer the evening window if a person reaches out.",
+    honesty: "illustrative",
   },
   {
     id: "yield",
     label: "Yield first",
-    sublabel: "company rule",
-    size: 40,
+    sublabel: "Early question",
+    size: 48,
     tone: "established",
-    used: 29,
-    strength: "Company rule",
+    used: 18,
+    strength: "Insight",
     agent: "Investor Concierge",
-    summary: "Ask net yield early. Investors whose first unit passes 6.5% net yield are more likely to buy again.",
+    summary:
+      "An early yield question correlates with faster decisions in the sample set. Use as guidance for advisers, not an automated workflow.",
     stats: [
-      { value: "6.5%", label: "net yield bar" },
-      { value: "4×", label: "repeat buy lift" },
-      { value: "112", label: "past investors" },
-      { value: "Rule", label: "approved" },
+      { value: "31/38", label: "sample cases" },
+      { value: "~30d", label: "decision window" },
+      { value: "Human", label: "follow-up" },
+      { value: "—", label: "auto rule" },
     ],
-    source: "Back-tested on 112 past investors",
+    source: "Conversation samples · 8 months",
+    recommendation: "Ask about yield/cash early when a person opens a new enquiry.",
+    honesty: "illustrative",
   },
   {
-    id: "ready",
-    label: "Ready to buy again",
-    size: 38,
-    tone: "established",
-    used: 8,
-    strength: "Pattern · emerging",
-    agent: "Reinvestment Scout",
-    summary: "Existing owners are signalling readiness for a second unit when occupancy and yield stay above plan.",
+    id: "meetings",
+    label: "Meetings",
+    sublabel: "Enquiries",
+    size: 40,
+    tone: "attention",
+    used: 9,
+    strength: "Needs decision",
+    agent: "Investor Concierge",
+    summary:
+      "Nine labelled enquiries/meetings sit in the funnel. Calendar integration is pending — counts are illustrative until live.",
     stats: [
-      { value: "18", label: "candidates" },
-      { value: "7", label: "warm this week" },
-      { value: "2", label: "meetings booked" },
-      { value: "£1.1m", label: "potential" },
+      { value: "9", label: "labelled" },
+      { value: "Pending", label: "calendar feed" },
+      { value: "0", label: "auto-booked" },
+      { value: "Human", label: "confirms" },
     ],
-    source: "From portfolio insights and CRM stages",
-  },
-  {
-    id: "selling",
-    label: "Selling up",
-    sublabel: "not covered",
-    size: 36,
-    tone: "gap",
-    used: 0,
-    gap: true,
-    strength: "Gap",
-    agent: "—",
-    summary: "Nothing in this block covers selling-up yet. Dashed bubble = missing knowledge.",
-    stats: [
-      { value: "0", label: "patterns" },
-      { value: "—", label: "evidence" },
-      { value: "—", label: "actions" },
-      { value: "Gap", label: "status" },
-    ],
-    source: "No source connected for this topic yet",
+    source: "Advisor calendar · pending integration",
+    recommendation: "Confirm which enquiries still need a person before the next meeting slot.",
+    honesty: "pending",
   },
 ];
 
@@ -243,3 +279,11 @@ export const ANALYTICS_BUBBLES: AnalyticsBubble[] = [
 export const BUBBLE_DETAIL: Record<string, { from: string; evidence: string }> = Object.fromEntries(
   ANALYTICS_BUBBLES.map((b) => [b.id, { from: b.agent ?? "", evidence: b.summary }]),
 );
+
+/** CRM-oriented Analytics KPI row — each value carries an honesty label. */
+export const ANALYTICS_BUSINESS_KPIS = [
+  { label: "Total investors", value: "4,180", hint: "Customer base", honesty: "illustrative" as HonestyKind },
+  { label: "App-aware", value: "912", hint: "Investor app users", honesty: "pending" as HonestyKind },
+  { label: "High-intent", value: "28", hint: "Intent signals this period", honesty: "illustrative" as HonestyKind },
+  { label: "Enquiries / meetings", value: "9", hint: "Advisor calendar", honesty: "pending" as HonestyKind },
+];

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   ArrowLeft,
@@ -24,13 +24,13 @@ import { PortfolioReporterObservability } from "@/components/knowledge/portfolio
 import { PortfolioReporterOverview } from "@/components/knowledge/portfolio-reporter-overview";
 import { PORTFOLIO_AGENTS, PORTFOLIO_BLOCK } from "@/components/knowledge/portfolio-reporter-data";
 import { SourcesTab } from "@/components/sources-tab";
-import { createAgent, listAgents, listDocuments, me, type Agent, type Doc } from "@/lib/api";
+import { listAgents, listDocuments, me, type Agent, type Doc } from "@/lib/api";
 import {
   WorkerConnectionsTab,
   WorkerCrmTab,
   WorkerSettingsTab,
   WorkerTrainTab,
-} from "@/components/worker-cockpit-tabs";
+} from "@/app/workers/[id]/page";
 
 type Tab = "Overview" | "Observability" | "Analytics" | "Chat" | "Train" | "Sources" | "CRM" | "Connections" | "Settings";
 
@@ -54,31 +54,14 @@ export default function PortfolioReporterKnowledgePage() {
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const account = useQuery({ queryKey: ["me"], queryFn: me });
   const isViewer = account.data?.role === "viewer";
-  const ensureAttempted = useRef(false);
 
   const linkedAgent = useMemo(() => {
     const list = agents.data ?? [];
-    const target = PORTFOLIO_BLOCK.name.toLowerCase();
-    return (
-      list.find((agent) => agent.name.toLowerCase() === target) ??
-      list.find((agent) => /portfolio|property.?insight|reporter/i.test(`${agent.name} ${agent.atype}`))
+    const match = list.find((agent) =>
+      /portfolio|property.?insight|reporter/i.test(`${agent.name} ${agent.atype}`),
     );
+    return match ?? list.find((a) => a.atype === "finance") ?? list[0];
   }, [agents.data]);
-
-  const ensureAgent = useMutation({
-    mutationFn: () => createAgent(PORTFOLIO_BLOCK.name, "intelligence"),
-    onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["agents"] });
-      await qc.invalidateQueries({ queryKey: ["agent-usage"] });
-    },
-  });
-
-  useEffect(() => {
-    if (agents.isLoading || agents.isError || linkedAgent || isViewer) return;
-    if (ensureAttempted.current || ensureAgent.isPending) return;
-    ensureAttempted.current = true;
-    ensureAgent.mutate();
-  }, [agents.isLoading, agents.isError, linkedAgent, isViewer, ensureAgent]);
 
   const linkedAgentId = linkedAgent?.id;
   const docs = useQuery({
@@ -92,21 +75,21 @@ export default function PortfolioReporterKnowledgePage() {
   return (
     <AppShell title="Portfolio Reporter">
       <div className="flex min-w-0 flex-col overflow-x-hidden">
-        <div className="relative min-w-0 border-b border-white/[0.06] bg-[#070a12]/80 backdrop-blur-xl">
+        <div className="relative min-w-0 border-b border-border bg-card/95 backdrop-blur-xl">
           <div className="flex items-center gap-4 px-4 py-4 sm:px-6">
             <Link
               href="/workers"
-              className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm text-slate-400 transition-colors hover:bg-white/[0.04] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-500"
+              className="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm text-slate-400 transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
             >
               <ArrowLeft className="size-4" /> All knowledge blocks
             </Link>
           </div>
-          <div className="flex flex-wrap items-center gap-4 bg-gradient-to-r from-cyan-500/10 to-violet-500/[0.06] px-4 py-4 sm:px-6">
-            <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-cyan-400 to-indigo-400 text-lg font-bold text-slate-950 shadow-lg shadow-cyan-500/20">
+          <div className="flex flex-wrap items-center gap-4 bg-gradient-to-r from-indigo-50 to-violet-50 px-4 py-4 sm:px-6">
+            <span className="grid size-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-lg font-bold text-white shadow-lg shadow-indigo-200">
               {PORTFOLIO_BLOCK.initials}
             </span>
             <div className="min-w-0">
-              <h1 className="truncate text-xl font-bold text-white sm:text-2xl" style={{ fontFamily: "var(--font-display)" }}>
+              <h1 className="truncate text-xl font-bold text-foreground sm:text-2xl" style={{ fontFamily: "var(--font-display)" }}>
                 {PORTFOLIO_BLOCK.name}
               </h1>
               <p className="text-sm text-slate-400">
@@ -131,9 +114,9 @@ export default function PortfolioReporterKnowledgePage() {
                   aria-current={active ? "page" : undefined}
                   title={locked ? "View-only role" : undefined}
                   className={cn(
-                    "flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
+                    "flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-[13px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
                     locked && "cursor-not-allowed opacity-50",
-                    active ? "border-cyan-400 text-white" : "border-transparent text-slate-400 hover:text-white",
+                    active ? "border-indigo-500 text-foreground" : "border-transparent text-slate-500 hover:text-foreground",
                   )}
                 >
                   <Icon className="size-3.5" />
@@ -158,13 +141,9 @@ export default function PortfolioReporterKnowledgePage() {
               worker={linkedAgent}
               docs={docs.data}
               docsLoading={docs.isLoading}
-              agentsLoading={agents.isLoading || ensureAgent.isPending}
+              agentsLoading={agents.isLoading}
               agentsError={agents.isError}
-              onRetryAgents={() => {
-                ensureAttempted.current = false;
-                void agents.refetch();
-                if (!linkedAgent) ensureAgent.mutate();
-              }}
+              onRetryAgents={() => agents.refetch()}
               onKnowledgeChange={() => qc.invalidateQueries({ queryKey: ["documents", linkedAgentId] })}
               onWorkerChange={() => qc.invalidateQueries({ queryKey: ["agents"] })}
             />
@@ -204,9 +183,9 @@ function ExistingWorkerTabBridge({
 
   if (agentsError) {
     return (
-      <div className="rounded-2xl border border-white/[0.08] bg-[#0b0f18] p-6 text-sm text-slate-300">
+      <div className="rounded-2xl border border-border bg-card p-6 text-sm text-slate-600">
         Couldn&apos;t load linked workers.{" "}
-        <button type="button" className="text-cyan-300 underline" onClick={onRetryAgents}>
+        <button type="button" className="text-indigo-600 underline" onClick={onRetryAgents}>
           Retry
         </button>
       </div>
@@ -215,22 +194,22 @@ function ExistingWorkerTabBridge({
 
   if (!agentId || !worker) {
     return (
-      <div className="mx-auto max-w-2xl rounded-2xl border border-white/[0.08] bg-[#0b0f18] p-6">
-        <h2 className="text-lg font-semibold text-white">{tab}</h2>
+      <div className="mx-auto max-w-2xl rounded-2xl border border-border bg-card p-6">
+        <h2 className="text-lg font-semibold text-foreground">{tab}</h2>
         <p className="mt-2 text-sm text-slate-400">
           Link or create a worker for this knowledge block to use the same {tab} screen as Qiko Workers.
         </p>
         <ul className="mt-4 space-y-2">
           {PORTFOLIO_AGENTS.map((agent) => (
-            <li key={agent.id} className="rounded-xl border border-white/[0.06] px-3 py-2.5 text-sm text-slate-300">
-              <span className="font-medium text-white">{agent.name}</span>
+            <li key={agent.id} className="rounded-xl border border-border px-3 py-2.5 text-sm text-slate-600">
+              <span className="font-medium text-foreground">{agent.name}</span>
               <span className="text-slate-500"> · {agent.role}</span>
             </li>
           ))}
         </ul>
         <Link
           href="/workers"
-          className="mt-5 inline-flex min-h-11 items-center rounded-xl bg-cyan-500 px-4 text-sm font-semibold text-slate-950 hover:bg-cyan-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300"
+          className="mt-5 inline-flex min-h-11 items-center rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
         >
           Open Knowledge / workers
         </Link>
@@ -240,14 +219,14 @@ function ExistingWorkerTabBridge({
 
   return (
     <div className="min-w-0 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-muted/50 px-3 py-2.5">
         <p className="text-[12.5px] text-slate-400">
-          Showing the existing worker <span className="font-medium text-slate-200">{tab}</span> UI for{" "}
-          <span className="font-medium text-white">{worker.name}</span>
+          Showing the existing worker <span className="font-medium text-slate-700">{tab}</span> UI for{" "}
+          <span className="font-medium text-foreground">{worker.name}</span>
         </p>
         <Link
           href={`/workers/${agentId}?tab=${tab}`}
-          className="text-[12px] font-medium text-cyan-300 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+          className="text-[12px] font-medium text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
         >
           Open full worker screen
         </Link>

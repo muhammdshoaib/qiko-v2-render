@@ -83,7 +83,7 @@ export function OutcomeRecord({
       <Field label="How will the result be measured?">{REFERRAL.measurement}</Field>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <aside className="rounded-2xl border border-white/10 bg-muted p-4">
+        <aside className="rounded-2xl border border-border bg-muted p-4">
           <p className="font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">Estimated benefit</p>
           <p className="mt-2 text-[13px] leading-relaxed text-foreground">
             {REFERRAL.uses} uses × {REFERRAL.minutes} min × £{referral.rate}/hr ≈ {hours.toFixed(2)} hours · £{value}
@@ -105,7 +105,7 @@ export function OutcomeRecord({
             </button>
           )}
         </aside>
-        <aside className="rounded-2xl border border-white/10 bg-card p-4">
+        <aside className="rounded-2xl border border-border bg-card p-4">
           <p className="font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">Recorded result</p>
           <p className="mt-2 text-[13px] leading-relaxed text-foreground">{recorded}</p>
         </aside>
@@ -116,18 +116,17 @@ export function OutcomeRecord({
           {!decided && (
             <>
               <GhostButton
-                onClick={() => {
-                  referral.explore();
+                onClick={() =>
                   onNav({
                     block: "investors",
                     worker: "intent-intelligence",
-                    pane: "outcomes",
-                    detail: REFERRAL.id,
-                    sheet: "claude",
-                  });
-                }}
+                    pane: "conversations",
+                    detail: "c-referral",
+                    sheet: null,
+                  })
+                }
               >
-                Explore in Claude
+                View evidence
               </GhostButton>
               {onApprove && onReject && (
                 <>
@@ -151,20 +150,6 @@ export function OutcomeRecord({
                 })}
               >
                 View company record
-              </GhostButton>
-              <GhostButton
-                onClick={() => {
-                  referral.explore();
-                  onNav({
-                    block: "investors",
-                    worker: "intent-intelligence",
-                    pane: "outcomes",
-                    detail: REFERRAL.id,
-                    sheet: "claude",
-                  });
-                }}
-              >
-                Review in Claude
               </GhostButton>
               <GhostButton onClick={() => referral.reset()}>Replay this example</GhostButton>
             </>

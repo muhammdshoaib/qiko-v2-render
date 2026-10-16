@@ -1,5 +1,6 @@
 /** Portfolio Reporter knowledge block — Portfolio Insights worker. */
 
+import type { HonestyKind } from "@/components/intelligence-layer/model";
 import type { AnalyticsBubble } from "./investors-data";
 
 export const PORTFOLIO_BLOCK = {
@@ -10,7 +11,7 @@ export const PORTFOLIO_BLOCK = {
   agents: 1,
   initials: "PR",
   valueThisMonth: "£12.1k",
-  valueHint: "Value from portfolio insight cards used this month.",
+  valueHint: "Illustrative value for the demo walkthrough.",
   portfoliosWithInsights: 3104,
   holdingsRead: 2140,
   concentrationCards: 412,
@@ -18,10 +19,39 @@ export const PORTFOLIO_BLOCK = {
 };
 
 export const PORTFOLIO_FUNNEL = [
-  { id: "advised", label: "Advised investors", count: 4180, system: "Client register · illustrative", connected: false },
-  { id: "readable", label: "Insights generated", count: 2140, system: "Investor portfolios", connected: true },
-  { id: "insights", label: "With insights", count: 3104, system: "Portfolio Reporter", connected: true, actOn: true },
-  { id: "concentration", label: "Concentration cards", count: 412, system: "Investor app", connected: true },
+  {
+    id: "advised",
+    label: "Advised investors",
+    count: 4180,
+    system: "Client register",
+    honesty: "illustrative" as HonestyKind,
+    connected: false,
+  },
+  {
+    id: "readable",
+    label: "Holdings read",
+    count: 2140,
+    system: "Investor portfolios",
+    honesty: "illustrative" as HonestyKind,
+    connected: true,
+  },
+  {
+    id: "insights",
+    label: "With insights",
+    count: 3104,
+    system: "Portfolio Reporter",
+    honesty: "illustrative" as HonestyKind,
+    connected: true,
+    actOn: true,
+  },
+  {
+    id: "concentration",
+    label: "Concentration cards",
+    count: 412,
+    system: "Investor app",
+    honesty: "illustrative" as HonestyKind,
+    connected: true,
+  },
 ];
 
 export const PORTFOLIO_AGENTS = [
@@ -50,7 +80,21 @@ export const PORTFOLIO_SYSTEMS = [
   "Knowledge library",
 ];
 
-export const PORTFOLIO_CAPTURED = [
+export type PortfolioOverviewInsight = {
+  id: string;
+  initials: string;
+  title: string;
+  evidence: string;
+  when: string;
+  chip: string;
+  tone: "blue" | "warn" | "good";
+  detail: string;
+  evidenceLines: string[];
+  recommendation: string;
+  honesty: HonestyKind;
+};
+
+export const PORTFOLIO_CAPTURED: PortfolioOverviewInsight[] = [
   {
     id: "concentration",
     initials: "PR",
@@ -58,16 +102,30 @@ export const PORTFOLIO_CAPTURED = [
     evidence: "3+ holdings in one city · grounded in client portfolios",
     when: "Today",
     chip: "Insight",
-    tone: "blue" as const,
+    tone: "blue",
+    detail:
+      "Advised investors with three or more holdings in one city received a concentration card in their app. Portfolio Reporter wrote the card — it did not contact anyone or advise a trade.",
+    evidenceLines: [
+      "412 concentration cards · investor app",
+      "Largest cluster · London",
+      "0 outreach sent automatically",
+    ],
+    recommendation: "Review concentration evidence, then add a human follow-up if a person should act.",
+    honesty: "illustrative",
   },
   {
     id: "empty",
     initials: "PR",
     title: "Empty portfolios stay empty — no invented cards",
     evidence: "Hard wall on fabricating holdings",
-    when: "Rule",
-    chip: "Company rule",
-    tone: "good" as const,
+    when: "Today",
+    chip: "Guardrail",
+    tone: "good",
+    detail:
+      "Investors with no readable holdings get no card. This is intentional product behaviour — not a gap to fill with invented data.",
+    evidenceLines: ["0 invented cards", "Hard wall · fabricate holdings", "Empty portfolios stay empty"],
+    recommendation: "Keep empty portfolios empty — do not invent cards.",
+    honesty: "illustrative",
   },
   {
     id: "holdings",
@@ -75,8 +133,13 @@ export const PORTFOLIO_CAPTURED = [
     title: "2,140 client holdings read as input to insight generation",
     evidence: "Not Joseph Mews stock — advised clients’ properties",
     when: "Yesterday",
-    chip: "Pattern",
-    tone: "blue" as const,
+    chip: "Insight",
+    tone: "blue",
+    detail:
+      "Client holdings are input only. Portfolio Reporter reads them to write grounded cards; it does not edit holdings or move money.",
+    evidenceLines: ["2,140 holdings read", "Input only — not JM stock", "0 vendor payments"],
+    recommendation: "Use holdings evidence when preparing an adviser conversation — no automated outreach.",
+    honesty: "illustrative",
   },
 ];
 
@@ -109,6 +172,8 @@ export const PORTFOLIO_ANALYTICS_BUBBLES: AnalyticsBubble[] = [
       { value: "0", label: "outreach sent" },
     ],
     source: "From advised investor holdings and investor-app cards",
+    recommendation: "Review concentration evidence, then add a human follow-up if a person should act.",
+    honesty: "illustrative" as const,
   },
   {
     id: "regional",
@@ -127,6 +192,8 @@ export const PORTFOLIO_ANALYTICS_BUBBLES: AnalyticsBubble[] = [
       { value: "0", label: "trades advised" },
     ],
     source: "From portfolio holdings geography",
+    recommendation: "Use regional evidence when preparing an adviser conversation — no automated outreach.",
+    honesty: "illustrative" as const,
   },
   {
     id: "income",
@@ -145,6 +212,8 @@ export const PORTFOLIO_ANALYTICS_BUBBLES: AnalyticsBubble[] = [
       { value: "Blocked", label: "advice" },
     ],
     source: "From supported financial inputs on holdings",
+    recommendation: "Only discuss income when supported inputs exist; never invent forecasts.",
+    honesty: "illustrative" as const,
   },
   {
     id: "pipeline",
@@ -163,6 +232,8 @@ export const PORTFOLIO_ANALYTICS_BUBBLES: AnalyticsBubble[] = [
       { value: "App", label: "delivery" },
     ],
     source: "From holdings + app delivery path",
+    recommendation: "Confirm which pipeline cards still need a person before any follow-up.",
+    honesty: "illustrative" as const,
   },
   {
     id: "empty-gap",
@@ -182,6 +253,8 @@ export const PORTFOLIO_ANALYTICS_BUBBLES: AnalyticsBubble[] = [
       { value: "Keep", label: "rule" },
     ],
     source: "Product hard wall",
+    recommendation: "Keep empty portfolios empty — do not invent cards.",
+    honesty: "illustrative" as const,
   },
 ];
 

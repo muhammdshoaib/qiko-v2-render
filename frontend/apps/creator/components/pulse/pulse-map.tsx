@@ -103,7 +103,8 @@ export function PulseMap({
         a,
         x: cx + Math.cos(a.ang) * rx * (a.dark ? 0.62 : 1),
         y: cy + Math.sin(a.ang) * ry * (a.dark ? 0.62 : 1),
-        r: a.dark ? base * 0.042 : base * 0.082,
+        // Large enough that two-line titles fit inside the circle on typical Pulse widths.
+        r: a.dark ? Math.max(36, base * 0.05) : Math.max(64, Math.min(92, base * 0.12)),
         c: a.col,
         phase: Math.random() * 6,
         flash: 0,
@@ -222,11 +223,11 @@ export function PulseMap({
         }
       }
       const tint = ctx.createRadialGradient(core.x, core.y, 10, core.x, core.y, Math.max(W, H) * 0.55);
-      tint.addColorStop(0, "rgba(99,102,241,.10)");
-      tint.addColorStop(1, "rgba(99,102,241,0)");
+      tint.addColorStop(0, "rgba(99,102,241,.06)");
+      tint.addColorStop(1, "rgba(248,250,252,0)");
       ctx.fillStyle = tint;
       ctx.fillRect(0, 0, W, H);
-      ctx.fillStyle = "rgba(255,255,255,.08)";
+      ctx.fillStyle = "rgba(148,163,184,.22)";
       for (let x = 12; x < W; x += 22) {
         for (let y = 12; y < H; y += 22) ctx.fillRect(x, y, 1.2, 1.2);
       }
@@ -237,7 +238,7 @@ export function PulseMap({
           if (!n) continue;
           const c = ctrl(s, n, 0.18);
           const hl = hoverNode?.a.id === id;
-          ctx.strokeStyle = hl ? hexA(n.c, 0.5) : "rgba(148,163,184,.18)";
+          ctx.strokeStyle = hl ? hexA(n.c, 0.55) : "rgba(148,163,184,.35)";
           ctx.beginPath();
           ctx.moveTo(s.x, s.y);
           ctx.quadraticCurveTo(c.x, c.y, n.x, n.y);
@@ -247,7 +248,7 @@ export function PulseMap({
       for (const n of nodes) {
         if (n.a.dark) continue;
         const c = ctrl(n, core, -0.12);
-        ctx.strokeStyle = hexA(n.c, 0.28);
+        ctx.strokeStyle = hexA(n.c, 0.35);
         ctx.setLineDash([2, 5]);
         ctx.beginPath();
         ctx.moveTo(n.x, n.y);
@@ -258,23 +259,23 @@ export function PulseMap({
       const beat = ((ts / 1000) % 2.4) / 2.4;
       for (let k = 0; k < 2; k++) {
         const p = (beat + k * 0.5) % 1;
-        ctx.strokeStyle = `rgba(34,211,238,${(1 - p) * 0.28})`;
-        ctx.lineWidth = 1.3;
+        ctx.strokeStyle = `rgba(99,102,241,${(1 - p) * 0.18})`;
+        ctx.lineWidth = 1.2;
         ctx.beginPath();
         ctx.arc(core.x, core.y, 20 + p * 64, 0, Math.PI * 2);
         ctx.stroke();
       }
       const cg = ctx.createLinearGradient(core.x - 22, core.y - 22, core.x + 22, core.y + 22);
       cg.addColorStop(0, "#6366F1");
-      cg.addColorStop(1, "#22D3EE");
-      ctx.shadowColor = "rgba(99,102,241,.45)";
-      ctx.shadowBlur = 22;
+      cg.addColorStop(1, "#818CF8");
+      ctx.shadowColor = "rgba(99,102,241,.18)";
+      ctx.shadowBlur = 12;
       ctx.fillStyle = cg;
       ctx.beginPath();
       ctx.arc(core.x, core.y, 20, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
-      ctx.strokeStyle = "#fff";
+      ctx.strokeStyle = "#FFFFFF";
       ctx.lineWidth = 2.2;
       ctx.beginPath();
       ctx.moveTo(core.x - 9, core.y);
@@ -286,7 +287,7 @@ export function PulseMap({
       ctx.stroke();
       ctx.textAlign = "center";
       ctx.font = '500 9.5px ui-monospace, "Roboto Mono", monospace';
-      ctx.fillStyle = "rgba(148,163,184,.9)";
+      ctx.fillStyle = "#64748B";
       ctx.fillText("COMPANY INTELLIGENCE", core.x, core.y + 36);
 
       if (!reduced) {
@@ -305,7 +306,7 @@ export function PulseMap({
           }
           for (let k = 0; k < 6; k++) {
             const q = qp(p.from, curve, dest, Math.max(0, p.t - k * 0.012));
-            ctx.fillStyle = hexA(p.kind === "in" ? p.col : "#22D3EE", 0.55 * (1 - k / 6));
+            ctx.fillStyle = hexA(p.kind === "in" ? p.col : "#6366F1", 0.45 * (1 - k / 6));
             ctx.beginPath();
             ctx.arc(q.x, q.y, (p.kind === "in" ? 2.2 : 1.7) * (1 - k / 8), 0, Math.PI * 2);
             ctx.fill();
@@ -317,12 +318,12 @@ export function PulseMap({
       for (const s of sysNodes) {
         const tw = ctx.measureText(s.s.name).width + 18;
         roundRect(ctx, s.x - tw / 2, s.y - 11, tw, 22, 11);
-        ctx.fillStyle = "rgba(15,23,42,.92)";
+        ctx.fillStyle = "#FFFFFF";
         ctx.fill();
-        ctx.strokeStyle = "rgba(255,255,255,.12)";
+        ctx.strokeStyle = "#E2E8F0";
         ctx.lineWidth = 1;
         ctx.stroke();
-        ctx.fillStyle = "#94A3B8";
+        ctx.fillStyle = "#475569";
         ctx.fillText(s.s.name, s.x, s.y + 4);
       }
 
@@ -333,31 +334,31 @@ export function PulseMap({
         n.flash = Math.max(0, n.flash - 0.04);
         if (n.a.dark) {
           ctx.setLineDash([4, 5]);
-          ctx.strokeStyle = hexA(n.c, 0.8);
+          ctx.strokeStyle = "#F87171";
           ctx.lineWidth = 1.4;
-          ctx.fillStyle = hexA(n.c, 0.08);
+          ctx.fillStyle = "#FEF2F2";
           ctx.beginPath();
           ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
           ctx.fill();
           ctx.stroke();
           ctx.setLineDash([]);
         } else {
-          const gl = ctx.createRadialGradient(n.x, n.y, r * 0.6, n.x, n.y, r * 1.9);
-          gl.addColorStop(0, hexA(n.c, 0.18 + n.flash * 0.2));
+          const gl = ctx.createRadialGradient(n.x, n.y, r * 0.6, n.x, n.y, r * 1.7);
+          gl.addColorStop(0, hexA(n.c, 0.1 + n.flash * 0.12));
           gl.addColorStop(1, hexA(n.c, 0));
           ctx.fillStyle = gl;
           ctx.beginPath();
-          ctx.arc(n.x, n.y, r * 1.9, 0, Math.PI * 2);
+          ctx.arc(n.x, n.y, r * 1.7, 0, Math.PI * 2);
           ctx.fill();
-          ctx.fillStyle = "rgba(15,23,42,.92)";
-          ctx.shadowColor = hexA(n.c, 0.35);
-          ctx.shadowBlur = 18;
+          ctx.fillStyle = "#FFFFFF";
+          ctx.shadowColor = "rgba(15,23,42,.08)";
+          ctx.shadowBlur = 10;
           ctx.beginPath();
           ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
           ctx.fill();
           ctx.shadowBlur = 0;
-          ctx.strokeStyle = hexA(n.c, isH ? 0.95 : 0.45);
-          ctx.lineWidth = isH ? 2 : 1.3;
+          ctx.strokeStyle = hexA(n.c, isH ? 0.95 : 0.55);
+          ctx.lineWidth = isH ? 2.4 : 1.6;
           ctx.beginPath();
           ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
           ctx.stroke();
@@ -365,7 +366,7 @@ export function PulseMap({
             const ang = t * 0.5 + k * (Math.PI * 2 / Math.max(n.a.agents, 1)) + n.phase;
             const ax = n.x + Math.cos(ang) * (r + 16);
             const ay = n.y + Math.sin(ang) * (r + 16);
-            ctx.fillStyle = "#0F172A";
+            ctx.fillStyle = "#FFFFFF";
             ctx.strokeStyle = n.c;
             ctx.lineWidth = 1.6;
             ctx.beginPath();
@@ -375,17 +376,25 @@ export function PulseMap({
           }
         }
         ctx.textAlign = "center";
-        ctx.fillStyle = "#F8FAFC";
-        ctx.font = `700 ${n.a.id === "investor-app" ? 14.5 : 12.5}px var(--font-display), Inter, sans-serif`;
-        ctx.fillText(n.a.name, n.x, n.y + (n.a.dark ? 2 : -2));
-        ctx.font = '500 10.5px ui-monospace, "Roboto Mono", monospace';
-        if (n.a.dark) {
-          ctx.fillStyle = "#E5484D";
-          ctx.fillText("NOT CONNECTED", n.x, n.y + 16);
-        } else {
-          ctx.fillStyle = "#94A3B8";
-          ctx.fillText(n.a.id === "investor-app" ? "28 high-intent" : "3,104 insights", n.x, n.y + 14);
-        }
+        const maxLabelW = r * 1.55;
+        const titleSize = Math.max(11, Math.min(14, r * 0.18));
+        ctx.font = `700 ${titleSize}px var(--font-display), Inter, sans-serif`;
+        ctx.fillStyle = "#0F172A";
+        const titleLines = wrapCanvasLines(ctx, n.a.name, maxLabelW);
+        const sub = n.a.dark
+          ? "NOT CONNECTED"
+          : n.a.id === "investor-app"
+            ? "28 high-intent"
+            : "3,104 insights";
+        const lineH = titleSize + 3;
+        const titleBlockH = titleLines.length * lineH;
+        const titleTop = n.y - titleBlockH / 2 - (n.a.dark ? 0 : 6);
+        titleLines.forEach((line, i) => {
+          ctx.fillText(line, n.x, titleTop + i * lineH + titleSize * 0.85);
+        });
+        ctx.font = `500 ${Math.max(9, Math.min(11, r * 0.14))}px ui-monospace, "Roboto Mono", monospace`;
+        ctx.fillStyle = n.a.dark ? "#DC2626" : "#64748B";
+        ctx.fillText(sub, n.x, titleTop + titleBlockH + 12);
       }
 
       if (!zoom && !reduced && ts - lastSpawn > 170) {
@@ -428,21 +437,8 @@ export function PulseMap({
   }, []);
 
   return (
-    <section aria-label="Company intelligence map" className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-white/10 bg-muted">
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-[1] flex items-start justify-between gap-3 p-4 sm:px-5 sm:pt-5">
-        <div>
-          <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
-            Knowledge map
-          </h2>
-          <p className="mt-0.5 text-[12.5px] text-slate-300">Two knowledge blocks — click to open.</p>
-        </div>
-        <span className="inline-flex items-center gap-1.5 rounded-md bg-white/[0.06] px-2 py-1 font-mono text-[10px] tracking-[0.08em] text-slate-300 uppercase">
-          <i className="size-1.5 rounded-full bg-emerald-400 motion-safe:animate-pulse" />
-          Capturing
-        </span>
-      </div>
-
-      <div className="space-y-2 px-4 pb-4 pt-16 md:hidden">
+    <section aria-label="Company intelligence map" className="relative flex h-full min-h-0 flex-col overflow-hidden bg-white">
+      <div className="space-y-2 px-4 pb-4 pt-4 md:hidden">
         {MAP_NODES.map((id) => {
           const node = pulseNode(id, workerNames);
           return (
@@ -451,40 +447,40 @@ export function PulseMap({
               type="button"
               onClick={() => onSelect(id)}
               className={cn(
-                "flex min-h-11 w-full flex-col rounded-xl border bg-card px-3 py-3 text-left",
-                mapFocus === id ? "border-primary" : "border-white/10",
+                "flex min-h-11 w-full flex-col rounded-xl border bg-white px-3 py-3 text-left shadow-sm",
+                mapFocus === id ? "border-indigo-300 ring-1 ring-indigo-200" : "border-slate-200",
               )}
             >
-              <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-slate-400">{node.kicker}</span>
-              <span className="mt-0.5 text-[15px] font-semibold text-foreground">{node.name}</span>
-              <span className="mt-1 text-[13px] leading-relaxed text-slate-300">{node.summary}</span>
+              <span className="font-mono text-[10px] uppercase tracking-[0.1em] text-slate-500">{node.kicker}</span>
+              <span className="mt-0.5 text-[15px] font-semibold text-slate-900">{node.name}</span>
+              <span className="mt-1 text-[13px] leading-relaxed text-slate-600">{node.summary}</span>
             </button>
           );
         })}
       </div>
 
-      <div ref={wrapRef} className="relative hidden min-h-[500px] flex-1 md:block">
+      <div ref={wrapRef} className="relative hidden min-h-[420px] flex-1 bg-slate-50/40 md:block">
         <canvas ref={canvasRef} className="block h-full w-full" aria-label="Live knowledge map. Click a block to open it." />
         {hover && (
           <div
             role="tooltip"
             className={cn(
-              "pointer-events-none absolute z-20 min-w-[210px] max-w-[280px] -translate-x-1/2 rounded-xl border border-white/15 bg-popover px-3.5 py-3 shadow-lg",
+              "pointer-events-none absolute z-20 min-w-[210px] max-w-[280px] -translate-x-1/2 rounded-xl border border-slate-200 bg-white px-3.5 py-3 shadow-lg",
               hover.placement === "above" ? "-translate-y-full" : "translate-y-0",
             )}
             style={{ left: hover.x, top: hover.y }}
           >
-            <p className="text-[14px] font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{hover.name}</p>
+            <p className="text-[14px] font-semibold text-slate-900" style={{ fontFamily: "var(--font-display)" }}>{hover.name}</p>
             {hover.lines.map(([label, value]) => (
-              <p key={label} className="mt-1 flex justify-between gap-3 text-[12.5px] text-slate-400">
+              <p key={label} className="mt-1 flex justify-between gap-3 text-[12.5px] text-slate-500">
                 <span>{label}</span>
-                <span className="font-semibold text-foreground">{value}</span>
+                <span className="font-semibold text-slate-900">{value}</span>
               </p>
             ))}
-            <p className="mt-2 text-[12px] font-semibold text-primary">{hover.cta}</p>
+            <p className="mt-2 text-[12px] font-semibold text-indigo-600">{hover.cta}</p>
           </div>
         )}
-        <div className="pointer-events-none absolute bottom-4 left-5 flex flex-wrap gap-3.5 text-[12px] text-slate-400">
+        <div className="pointer-events-none absolute bottom-4 left-5 flex flex-wrap gap-3.5 text-[12px] text-slate-500">
           {AREAS.map((a) => (
             <span key={a.id} className="inline-flex items-center gap-1.5">
               <i className="size-2 rounded-full" style={{ background: a.col }} />
@@ -500,6 +496,23 @@ export function PulseMap({
 function hexA(hex: string, alpha: number) {
   const n = Number.parseInt(hex.slice(1), 16);
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
+function wrapCanvasLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (ctx.measureText(next).width > maxWidth && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+  }
+  if (current) lines.push(current);
+  return lines.length ? lines : [text];
 }
 
 function ctrl(a: Pt, b: Pt, bend: number): Pt {

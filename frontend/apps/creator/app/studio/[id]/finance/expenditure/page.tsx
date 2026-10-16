@@ -30,7 +30,7 @@ export default function ExpenditurePage() {
     <DrilldownFrame
       onBack={() => router.push(`/studio/${agentId}/finance`)}
       title={title}
-      subtitle={<p className="text-sm text-white/55">{subtitle}</p>}
+      subtitle={<p className="text-sm text-slate-500">{subtitle}</p>}
     >
       <ExpenseList filter={filter} title="All expenses" />
     </DrilldownFrame>

@@ -307,7 +307,7 @@ export type TrendSection = { title: string; insights: TrendInsight[] } & TrendSt
 
 const TREND_STYLES: TrendStyle[] = [
   { accent: "bg-emerald-400", border: "border-emerald-400/25", badge: "text-emerald-300 border-emerald-400/30 bg-emerald-500/10", iconKey: "building" },
-  { accent: "bg-amber-400", border: "border-amber-400/25", badge: "text-amber-300 border-amber-400/30 bg-amber-500/10", iconKey: "alert" },
+  { accent: "bg-amber-400", border: "border-amber-400/25", badge: "text-amber-300 border-amber-400/30 bg-amber-50", iconKey: "alert" },
   { accent: "bg-violet-400", border: "border-violet-400/25", badge: "text-violet-300 border-violet-400/30 bg-violet-500/10", iconKey: "tag" },
 ];
 

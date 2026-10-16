@@ -18,17 +18,17 @@ function Card({ label, value, icon: Icon, color, onClick, children }: {
       type="button"
       onClick={onClick}
       className={cn(
-        "flex h-full min-h-0 flex-col rounded-xl border border-white/[0.06] p-4 text-left transition-all duration-200 hover:border-indigo-400/35 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/45",
+        "flex h-full min-h-0 flex-col rounded-xl border border-border p-4 text-left transition-all duration-200 hover:border-indigo-400/35 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/45",
         !onClick && "cursor-default",
       )}
       style={CARD_STYLE}
       disabled={!onClick}
     >
       <div className="flex min-h-[1.25rem] shrink-0 items-center justify-between gap-2">
-        <span className="text-[11px] font-medium uppercase tracking-wider text-white/55">{label}</span>
+        <span className="text-[11px] font-medium uppercase tracking-wider text-slate-500">{label}</span>
         <Icon className="h-4 w-4 shrink-0" style={{ color }} />
       </div>
-      <div className="mt-2 min-h-[1.75rem] shrink-0 break-words text-lg font-bold leading-tight text-white/90 sm:text-xl">{value}</div>
+      <div className="mt-2 min-h-[1.75rem] shrink-0 break-words text-lg font-bold leading-tight text-slate-800 sm:text-xl">{value}</div>
       {children}
     </button>
   );
@@ -44,7 +44,7 @@ export function KpiCards({ summary, propertyCount, onOpenPortfolio, onKpiClick }
       <Card label="Total Expenses" value={formatCurrency(summary.totalExpenses, currency)} icon={TrendingDown} color={EXPENSE_COLOR} onClick={() => onKpiClick?.("expenses")} />
       <Card label="Net Profit" value={formatCurrency(summary.netProfit, currency)} icon={DollarSign} color={PROFIT_COLOR} onClick={() => onKpiClick?.("profit")} />
       <Card label="Total Properties" value={propertyCount} icon={Building2} color="#22d3ee" onClick={onOpenPortfolio}>
-        <div className="mt-1 min-h-[2.75rem] text-[10px] leading-snug text-white/48">Open portfolio table</div>
+        <div className="mt-1 min-h-[2.75rem] text-[10px] leading-snug text-foreground/48">Open portfolio table</div>
       </Card>
     </div>
   );

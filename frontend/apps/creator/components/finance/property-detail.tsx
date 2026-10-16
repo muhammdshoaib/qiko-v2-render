@@ -12,10 +12,10 @@ import { formatCurrency } from "./utils";
 
 function Field({ label, value, sub }: { label: string; value?: React.ReactNode; sub?: string }) {
   return (
-    <div className="rounded-lg border border-white/[0.06] p-3" style={{ background: "oklch(0.16 0.02 250)" }}>
-      <p className="text-[10px] font-medium uppercase tracking-wider text-white/45">{label}</p>
-      <p className="mt-1 text-sm font-semibold text-white/90">{value ?? "-"}</p>
-      {sub && <p className="mt-0.5 text-[10px] text-white/50">{sub}</p>}
+    <div className="rounded-lg border border-border p-3" style={{ background: "oklch(0.16 0.02 250)" }}>
+      <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-foreground/90">{value ?? "-"}</p>
+      {sub && <p className="mt-0.5 text-[10px] text-slate-500">{sub}</p>}
     </div>
   );
 }
@@ -34,7 +34,7 @@ export function PropertyDetail({ propertyRef, unitRef, from }: { propertyRef: st
   }, [analytics, propertyRef]);
 
   if (!property) {
-    return <div className="p-4 text-sm text-white/60">Property not found.</div>;
+    return <div className="p-4 text-sm text-slate-500">Property not found.</div>;
   }
 
   const unit = unitRef
@@ -94,7 +94,7 @@ function PropertyOverview({ property, propertyRef, from }: { property: FinancePr
         backLabel={fromPortfolio ? "Back to properties" : "Back to dashboard"}
         onBack={() => router.push(fromPortfolio ? `/studio/${agentId}/finance/breakdown?view=properties` : `/studio/${agentId}/finance`)}
         title={property.name || property.propertyRef || "Property"}
-        subtitle={<p className="text-sm text-white/55">{`Property ${property.propertyRef ?? ""} - income, expenses, risk, and vendor mix for the selected period.`}</p>}
+        subtitle={<p className="text-sm text-slate-500">{`Property ${property.propertyRef ?? ""} - income, expenses, risk, and vendor mix for the selected period.`}</p>}
       >
         <div className="space-y-6">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -110,13 +110,13 @@ function PropertyOverview({ property, propertyRef, from }: { property: FinancePr
         <Field label="Vendors" value={property.vendorCount} />
       </div>
 
-      <div className="rounded-xl border border-white/[0.06] p-4" style={{ background: "oklch(0.16 0.02 250)" }}>
-        <h3 className="mb-3 text-sm font-semibold text-white/88">Monthly trends</h3>
+      <div className="rounded-xl border border-border p-4" style={{ background: "oklch(0.16 0.02 250)" }}>
+        <h3 className="mb-3 text-sm font-semibold text-foreground/88">Monthly trends</h3>
         <MonthlyTrendsChart data={property.monthlyTrends ?? []} />
       </div>
 
-      <div className="rounded-xl border border-white/[0.06] p-4" style={{ background: "oklch(0.16 0.02 250)" }}>
-        <h3 className="mb-3 text-sm font-semibold text-white/88">Unit ledger</h3>
+      <div className="rounded-xl border border-border p-4" style={{ background: "oklch(0.16 0.02 250)" }}>
+        <h3 className="mb-3 text-sm font-semibold text-foreground/88">Unit ledger</h3>
         <DataTable
           caption={`Units for ${property.name}`}
           rows={units}
@@ -138,46 +138,46 @@ function PropertyOverview({ property, propertyRef, from }: { property: FinancePr
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="rounded-xl border border-white/[0.06] p-4" style={{ background: "oklch(0.16 0.02 250)" }}>
-          <h3 className="mb-3 text-sm font-semibold text-white/88">Top vendors</h3>
+        <div className="rounded-xl border border-border p-4" style={{ background: "oklch(0.16 0.02 250)" }}>
+          <h3 className="mb-3 text-sm font-semibold text-foreground/88">Top vendors</h3>
           <ul className="space-y-2">
-            {totalVendors.length === 0 && <p className="text-xs text-white/45">No vendor data.</p>}
+            {totalVendors.length === 0 && <p className="text-xs text-slate-400">No vendor data.</p>}
             {totalVendors.slice(0, 10).map((v, i) => (
               <li key={i} className="flex items-center justify-between">
                 <button
                   type="button"
                   onClick={() => router.push(`/studio/${agentId}/finance/vendor/${encodeURIComponent(v.vendorName)}`)}
-                  className="text-left text-xs text-indigo-300 hover:underline"
+                  className="text-left text-xs text-indigo-600 hover:underline"
                 >
                   {v.vendorName}
                 </button>
-                <span className="text-xs text-white/62">{formatCurrency(v.amount, currency)}</span>
+                <span className="text-xs text-slate-500">{formatCurrency(v.amount, currency)}</span>
               </li>
             ))}
           </ul>
         </div>
 
-        <div className="rounded-xl border border-white/[0.06] p-4" style={{ background: "oklch(0.16 0.02 250)" }}>
-          <h3 className="mb-3 text-sm font-semibold text-white/88">Expense categories</h3>
+        <div className="rounded-xl border border-border p-4" style={{ background: "oklch(0.16 0.02 250)" }}>
+          <h3 className="mb-3 text-sm font-semibold text-foreground/88">Expense categories</h3>
           <ul className="space-y-2">
-            {totalCategories.length === 0 && <p className="text-xs text-white/45">No category data.</p>}
+            {totalCategories.length === 0 && <p className="text-xs text-slate-400">No category data.</p>}
             {totalCategories.slice(0, 10).map((c, i) => (
               <li key={i} className="flex items-center justify-between">
                 <button
                   type="button"
                   onClick={() => router.push(`/studio/${agentId}/finance/expenditure?category=${encodeURIComponent(c.category)}`)}
-                  className="text-left text-xs text-indigo-300 hover:underline"
+                  className="text-left text-xs text-indigo-600 hover:underline"
                 >
                   {c.category}
                 </button>
-                <span className="text-xs text-white/62">{formatCurrency(c.amount, currency)}</span>
+                <span className="text-xs text-slate-500">{formatCurrency(c.amount, currency)}</span>
               </li>
             ))}
           </ul>
         </div>
       </div>
 
-      <div className="rounded-xl border border-white/[0.06] p-4" style={{ background: "oklch(0.16 0.02 250)" }}>
+      <div className="rounded-xl border border-border p-4" style={{ background: "oklch(0.16 0.02 250)" }}>
         <ExpenseList filter={{ propertyRef: property.propertyRef ?? property.propertyId ?? "" }} title="Property expenses" />
       </div>
         </div>
@@ -204,7 +204,7 @@ function UnitDetail({ property, unit, onBack }: { property: FinanceProperty; uni
         <Field label="Invoices" value={unit.invoiceCount} />
       </div>
 
-      <div className="rounded-xl border border-white/[0.06] p-4" style={{ background: "oklch(0.16 0.02 250)" }}>
+      <div className="rounded-xl border border-border p-4" style={{ background: "oklch(0.16 0.02 250)" }}>
         <ExpenseList
           filter={{ propertyRef: property.propertyRef ?? property.propertyId ?? "", unitRef: unit.unitRef ?? "" }}
           showSearch={false}

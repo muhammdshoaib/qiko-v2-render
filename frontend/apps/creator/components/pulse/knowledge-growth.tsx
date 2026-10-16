@@ -19,7 +19,7 @@ export function KnowledgeGrowth({
   const current = points.find((point) => point.month === selected) ?? null;
 
   return (
-    <section className={compact ? "rounded-2xl border border-white/10 bg-card px-4 py-4 sm:px-5" : undefined}>
+    <section className={compact ? "rounded-2xl border border-border bg-card px-4 py-4 sm:px-5" : undefined}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <h2
@@ -36,7 +36,7 @@ export function KnowledgeGrowth({
       </div>
 
       <ol className="relative mt-5 flex items-end justify-between gap-1">
-        <span className="pointer-events-none absolute top-[22px] right-8 left-8 h-px bg-white/10" aria-hidden />
+        <span className="pointer-events-none absolute top-[22px] right-8 left-8 h-px bg-slate-100" aria-hidden />
         {points.map((point) => {
           const on = selected === point.month;
           const size = 12 + (point.notes / max) * 20;
@@ -47,14 +47,14 @@ export function KnowledgeGrowth({
                 aria-pressed={on}
                 aria-label={`${point.month}: ${point.notes} ${point.notes === 1 ? "note" : "notes"} on record. ${point.captures[0]?.title ?? ""}`}
                 onClick={() => onSelect(point.month)}
-                className="flex min-h-11 flex-col items-center gap-1.5 rounded-xl px-1 text-slate-400 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+                className="flex min-h-11 flex-col items-center gap-1.5 rounded-xl px-1 text-slate-500 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
               >
                 <span
                   className={cn(
                     "rounded-full border transition duration-200 motion-reduce:transition-none",
                     on
-                      ? "border-cyan-300 bg-cyan-400/35 shadow-[0_0_16px_-4px_rgba(34,211,238,.75)]"
-                      : "border-indigo-400/40 bg-indigo-500/25 hover:border-cyan-400/50",
+                      ? "border-cyan-300 bg-indigo-500/35 shadow-[0_0_16px_-4px_rgba(34,211,238,.75)]"
+                      : "border-indigo-400/40 bg-indigo-500/25 hover:border-indigo-400/50",
                     point.awaiting && !on && "motion-safe:animate-[qiko-breathe_2.8s_ease-in-out_infinite]",
                   )}
                   style={{ width: size, height: size }}
@@ -72,7 +72,7 @@ export function KnowledgeGrowth({
       </ol>
 
       {current && (
-        <div className="mt-4 rounded-xl border border-white/10 bg-muted px-3.5 py-3">
+        <div className="mt-4 rounded-xl border border-border bg-muted px-3.5 py-3">
           <p className="font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">
             {current.month} · what was captured
           </p>

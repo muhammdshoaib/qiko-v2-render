@@ -102,21 +102,21 @@ export default function SalesIntelligenceOverviewPage() {
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           {/* Pipeline value: total + qualified + validated bands. */}
           <Card className="lg:col-span-1">
-            <CardHeader icon={<Wallet className="size-3.5" />} title="Pipeline value" tint="text-emerald-400 bg-emerald-500/10" />
+            <CardHeader icon={<Wallet className="size-3.5" />} title="Pipeline value" tint="text-emerald-700 bg-emerald-500/10" />
             {loading ? (
-              <div className="mt-4 h-9 w-32 animate-pulse rounded bg-white/10" />
+              <div className="mt-4 h-9 w-32 animate-pulse rounded bg-slate-100" />
             ) : (
               <>
-                <p className="mt-3 text-3xl font-bold tracking-tight text-white">{formatCompact(metrics.totalValue)}</p>
+                <p className="mt-3 text-3xl font-bold tracking-tight text-foreground">{formatCompact(metrics.totalValue)}</p>
                 <p className="text-[12px] text-slate-400">active opportunities</p>
-                <dl className="mt-4 space-y-2 border-t border-white/[0.06] pt-4">
+                <dl className="mt-4 space-y-2 border-t border-border pt-4">
                   <div className="flex items-center justify-between text-[13px]">
                     <dt className="text-slate-400">Qualified</dt>
-                    <dd className="font-semibold text-white">{formatCompact(metrics.qualifiedValue)}</dd>
+                    <dd className="font-semibold text-foreground">{formatCompact(metrics.qualifiedValue)}</dd>
                   </div>
                   <div className="flex items-center justify-between text-[13px]">
                     <dt className="text-slate-400">Validated</dt>
-                    <dd className="font-semibold text-white">{formatCompact(metrics.validatedValue)}</dd>
+                    <dd className="font-semibold text-foreground">{formatCompact(metrics.validatedValue)}</dd>
                   </div>
                 </dl>
               </>
@@ -125,19 +125,19 @@ export default function SalesIntelligenceOverviewPage() {
 
           {/* Upcoming deadlines -- prominent, spanning two columns. */}
           <Card className="lg:col-span-2">
-            <CardHeader icon={<CalendarClock className="size-3.5" />} title="Upcoming deadlines" tint="text-amber-400 bg-amber-500/10" />
+            <CardHeader icon={<CalendarClock className="size-3.5" />} title="Upcoming deadlines" tint="text-amber-700 bg-amber-50" />
             {loading ? (
-              <div className="mt-4 space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-10 animate-pulse rounded-lg bg-white/[0.04]" />)}</div>
+              <div className="mt-4 space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-10 animate-pulse rounded-lg bg-muted" />)}</div>
             ) : upcoming.length === 0 ? (
               <EmptyRow icon={<CalendarClock className="size-5" />} text="No dated opportunities in the pipeline yet." />
             ) : (
-              <ul className="mt-3 divide-y divide-white/[0.05]">
+              <ul className="mt-3 divide-y divide-border">
                 {upcoming.map((o) => (
                   <li key={o.id}>
                     <button onClick={() => openDetail(o.id)}
-                      className="flex w-full items-center gap-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 hover:bg-white/[0.02]">
+                      className="flex w-full items-center gap-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 hover:bg-muted/50">
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium text-white">{o.title}</span>
+                        <span className="block truncate text-[13px] font-medium text-foreground">{o.title}</span>
                         <span className="block truncate text-[12px] text-slate-400">{o.buyer || sourceLabel(o.sourceKey)}</span>
                       </span>
                       <span className={cn("shrink-0 text-right text-[12px] font-semibold", deadlineUrgencyClass(o.deadlineAt))}>
@@ -158,22 +158,22 @@ export default function SalesIntelligenceOverviewPage() {
           <Card>
             <div className="flex items-center justify-between">
               <CardHeader icon={<ClipboardCheck className="size-3.5" />} title="Needs review" tint="text-indigo-400 bg-indigo-500/10" />
-              <span className="flex size-6 items-center justify-center rounded-full bg-white/[0.05] text-[11px] font-semibold text-slate-300">
+              <span className="flex size-6 items-center justify-center rounded-full bg-slate-50 text-[11px] font-semibold text-slate-600">
                 {metrics.needsReview}
               </span>
             </div>
             {loading ? (
-              <div className="mt-4 space-y-2">{[0, 1].map((i) => <div key={i} className="h-10 animate-pulse rounded-lg bg-white/[0.04]" />)}</div>
+              <div className="mt-4 space-y-2">{[0, 1].map((i) => <div key={i} className="h-10 animate-pulse rounded-lg bg-muted" />)}</div>
             ) : metrics.needsReviewList.length === 0 ? (
               <EmptyRow icon={<ClipboardCheck className="size-5" />} text="Nothing waiting for human validation." />
             ) : (
-              <ul className="mt-3 divide-y divide-white/[0.05]">
+              <ul className="mt-3 divide-y divide-border">
                 {metrics.needsReviewList.slice(0, 6).map((o) => (
                   <li key={o.id}>
                     <button onClick={() => openDetail(o.id)}
-                      className="flex w-full items-center gap-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 hover:bg-white/[0.02]">
+                      className="flex w-full items-center gap-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 hover:bg-muted/50">
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium text-white">{o.title}</span>
+                        <span className="block truncate text-[13px] font-medium text-foreground">{o.title}</span>
                         <span className="block truncate text-[12px] text-slate-400">{o.buyer || sourceLabel(o.sourceKey)}</span>
                       </span>
                       {o.qualificationScore != null && (
@@ -197,17 +197,17 @@ export default function SalesIntelligenceOverviewPage() {
               Last scan: {formatDate(lastScan, true)} &middot; {metrics.newFound} new to qualify
             </p>
             {loading ? (
-              <div className="mt-4 space-y-2">{[0, 1].map((i) => <div key={i} className="h-10 animate-pulse rounded-lg bg-white/[0.04]" />)}</div>
+              <div className="mt-4 space-y-2">{[0, 1].map((i) => <div key={i} className="h-10 animate-pulse rounded-lg bg-muted" />)}</div>
             ) : recent.length === 0 ? (
               <EmptyRow icon={<Radar className="size-5" />} text="No opportunities ingested yet. Run a scan from Ingestion." />
             ) : (
-              <ul className="mt-3 divide-y divide-white/[0.05]">
+              <ul className="mt-3 divide-y divide-border">
                 {recent.map((o) => (
                   <li key={o.id}>
                     <button onClick={() => openDetail(o.id)}
-                      className="flex w-full items-center gap-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 hover:bg-white/[0.02]">
+                      className="flex w-full items-center gap-3 py-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 hover:bg-muted/50">
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium text-white">{o.title}</span>
+                        <span className="block truncate text-[13px] font-medium text-foreground">{o.title}</span>
                         <span className="block truncate text-[12px] text-slate-400">{o.buyer || sourceLabel(o.sourceKey)}</span>
                       </span>
                       <span className={cn("shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide", stageBadgeClass(o.stage))}>
@@ -226,14 +226,14 @@ export default function SalesIntelligenceOverviewPage() {
 }
 
 function Card({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <div className={cn("rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5", className)}>{children}</div>;
+  return <div className={cn("rounded-2xl border border-border bg-muted/40 p-5", className)}>{children}</div>;
 }
 
 function CardHeader({ icon, title, tint }: { icon: React.ReactNode; title: string; tint: string }) {
   return (
     <div className="flex items-center gap-2">
       <span className={cn("flex size-7 items-center justify-center rounded-lg", tint)}>{icon}</span>
-      <h2 className="text-[14px] font-semibold text-white">{title}</h2>
+      <h2 className="text-[14px] font-semibold text-foreground">{title}</h2>
     </div>
   );
 }
@@ -241,7 +241,7 @@ function CardHeader({ icon, title, tint }: { icon: React.ReactNode; title: strin
 function EmptyRow({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (
     <div className="mt-3 flex flex-col items-center px-4 py-8 text-center">
-      <span className="mb-2 flex size-10 items-center justify-center rounded-2xl bg-white/[0.04] text-slate-500">{icon}</span>
+      <span className="mb-2 flex size-10 items-center justify-center rounded-2xl bg-muted text-slate-500">{icon}</span>
       <p className="max-w-xs text-[12px] text-slate-400">{text}</p>
     </div>
   );

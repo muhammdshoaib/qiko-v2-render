@@ -23,12 +23,12 @@ export function CrmShell({ children }: { children: ReactNode }) {
 
   return (
     <AppShell title="CRM">
-      <div className="border-b border-white/[0.06] px-4 py-4 sm:px-6">
+      <div className="border-b border-border px-4 py-4 sm:px-6">
         <div className="mx-auto flex max-w-7xl flex-col gap-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>
+                <h1 className="text-xl font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>
                   Qiko CRM
                 </h1>
                 <PrototypeBadge />
@@ -50,8 +50,8 @@ export function CrmShell({ children }: { children: ReactNode }) {
                   href={link.href}
                   aria-current={active ? "page" : undefined}
                   className={cn(
-                    "rounded-lg px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                    active ? "bg-white/[0.06] text-white" : "text-slate-400 hover:bg-white/[0.03] hover:text-white",
+                    "rounded-lg px-3 py-2 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+                    active ? "bg-muted text-foreground" : "text-slate-400 hover:bg-muted hover:text-foreground",
                   )}
                 >
                   {link.label}

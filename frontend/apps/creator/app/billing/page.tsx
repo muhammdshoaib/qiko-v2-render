@@ -38,7 +38,7 @@ export default function BillingPage() {
               </h1>
               <p className="text-slate-400">Choose the right plan for your needs</p>
             </div>
-            <Button variant="outline" className="border-white/20 text-white hover:bg-white/5"
+            <Button variant="outline" className="border-border text-foreground hover:bg-muted"
               disabled={portal.isPending} onClick={() => portal.mutate()}>
               {portal.isPending ? <Loader2 className="size-4 animate-spin" /> : <ExternalLink className="size-4" />} View My Plan Details
             </Button>
@@ -63,7 +63,7 @@ export default function BillingPage() {
           {plans.isLoading ? (
             <div className="mx-auto mb-12 grid max-w-3xl gap-6 md:grid-cols-2">
               {[0, 1].map((i) => (
-                <div key={i} className="h-80 w-full max-w-sm animate-pulse rounded-xl border border-white/[0.06] bg-white/[0.02]" />
+                <div key={i} className="h-80 w-full max-w-sm animate-pulse rounded-xl border border-border bg-muted/50" />
               ))}
             </div>
           ) : plans.isError ? (
@@ -82,7 +82,7 @@ export default function BillingPage() {
                 const isCurrent = !!currentPlanName && p.key === currentPlanName;
                 const checkingOut = checkout.isPending && checkout.variables?.id === p.id;
                 return (
-                  <Card key={p.id} className="relative flex h-full w-full max-w-sm flex-col border-white/[0.06] bg-white/[0.015] p-6">
+                  <Card key={p.id} className="relative flex h-full w-full max-w-sm flex-col border-border bg-muted/40 p-6">
                     {isEnterprise && (
                       <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground">
                         Most Popular
@@ -106,7 +106,7 @@ export default function BillingPage() {
                       <ul className="mb-6 flex-1 space-y-3">
                         {p.features.map((f) => (
                           <li key={f} className="flex items-center gap-3 text-sm">
-                            <Check className="size-5 shrink-0 text-emerald-400" />
+                            <Check className="size-5 shrink-0 text-emerald-700" />
                             <span className="text-muted-foreground">{f}</span>
                           </li>
                         ))}
@@ -158,7 +158,7 @@ const FEATURE_ROWS: { label: string; premium: string | boolean; enterprise: stri
 function FeatureCell({ value }: { value: string | boolean }) {
   if (typeof value === "string") return <span className="text-sm text-foreground">{value}</span>;
   return value
-    ? <Check className="inline-block size-5 text-emerald-400" />
+    ? <Check className="inline-block size-5 text-emerald-700" />
     : <X className="inline-block size-5 text-muted-foreground/50" />;
 }
 
@@ -177,7 +177,7 @@ function FeatureComparison() {
           </thead>
           <tbody>
             {FEATURE_ROWS.map((row, i) => (
-              <tr key={row.label} className={i % 2 === 0 ? "bg-white/[0.02]" : ""}>
+              <tr key={row.label} className={i % 2 === 0 ? "bg-muted/50" : ""}>
                 <td className="py-3 px-4"><span className="text-sm text-foreground">{row.label}</span></td>
                 <td className="py-3 px-4 text-center"><FeatureCell value={row.premium} /></td>
                 <td className="py-3 px-4 text-center"><FeatureCell value={row.enterprise} /></td>

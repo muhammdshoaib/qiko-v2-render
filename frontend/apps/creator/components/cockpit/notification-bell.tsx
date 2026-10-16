@@ -25,11 +25,11 @@ function toneClass(type: string): string {
 function NotificationItem({ n, onRead }: { n: Notification; onRead: (id: string) => void }) {
   return (
     <button onClick={() => !n.read && onRead(n.id)}
-      className={cn("flex w-full items-start gap-2.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-        !n.read && "bg-white/[0.02]")}>
+      className={cn("flex w-full items-start gap-2.5 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+        !n.read && "bg-muted/50")}>
       <span className={cn("mt-1.5 size-1.5 shrink-0 rounded-full", n.read ? "bg-transparent" : toneClass(n.type))} />
       <div className="min-w-0 flex-1">
-        <p className={cn("truncate text-[13px]", n.read ? "text-slate-400" : "font-semibold text-white")}>{n.title}</p>
+        <p className={cn("truncate text-[13px]", n.read ? "text-slate-400" : "font-semibold text-foreground")}>{n.title}</p>
         {n.body && <p className="mt-0.5 line-clamp-2 text-[12px] text-slate-500">{n.body}</p>}
         <p className="mt-1 text-[10px] uppercase tracking-wider text-slate-600">{formatDateTime(n.createdAt)}</p>
       </div>
@@ -66,22 +66,22 @@ export function NotificationBell({ category }: { category?: string }) {
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen((v) => !v)} aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"} aria-expanded={open}
-        className="relative flex size-8 items-center justify-center rounded-lg text-slate-400 hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
+        className="relative flex size-8 items-center justify-center rounded-lg text-slate-400 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
         <Bell className="size-4" />
         {unread > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-indigo-500 px-1 text-[9px] font-bold text-white">
+          <span className="absolute -right-0.5 -top-0.5 flex min-w-4 items-center justify-center rounded-full bg-indigo-500 px-1 text-[9px] font-bold text-foreground">
             {unread > 99 ? "99+" : unread}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 top-10 z-50 w-[340px] max-w-[90vw] rounded-2xl border border-white/[0.08] bg-[#0a0f1a] shadow-2xl">
-          <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
-            <p className="text-[13px] font-semibold text-white">Notifications</p>
+        <div className="absolute right-0 top-10 z-50 w-[340px] max-w-[90vw] rounded-2xl border border-border bg-card shadow-2xl">
+          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+            <p className="text-[13px] font-semibold text-foreground">Notifications</p>
             {unread > 0 && (
               <button onClick={() => readAll.mutate()} disabled={readAll.isPending}
-                className="flex items-center gap-1 rounded text-[11px] font-medium text-indigo-400 hover:text-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+                className="flex items-center gap-1 rounded text-[11px] font-medium text-indigo-400 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
                 <CheckCheck className="size-3.5" /> Mark all read
               </button>
             )}

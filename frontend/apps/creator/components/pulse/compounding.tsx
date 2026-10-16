@@ -20,7 +20,7 @@ export function CompoundingPanel({ compact = false }: { compact?: boolean }) {
 
   if (compact) {
     return (
-      <aside className="rounded-2xl border border-white/10 bg-muted p-4">
+      <aside className="rounded-2xl border border-border bg-muted p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">What this captured</p>
           <PulseChip tone={statusTone(referral.status)}>{statusLabel(referral.status)}</PulseChip>
@@ -43,7 +43,7 @@ export function CompoundingPanel({ compact = false }: { compact?: boolean }) {
 
   return (
     <div className="grid gap-3 lg:grid-cols-2">
-      <article className="rounded-2xl border border-white/10 bg-muted p-4">
+      <article className="rounded-2xl border border-border bg-muted p-4">
         <p className="font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">What the company knew</p>
         <ul className="mt-2 list-disc space-y-1.5 pl-4 text-[13px] leading-relaxed text-foreground">
           <li>Joseph Mews advises ~4,000 investors. Property Insights reads each client’s portfolio and writes their cards.</li>
@@ -52,7 +52,7 @@ export function CompoundingPanel({ compact = false }: { compact?: boolean }) {
           <li>8 reachouts already sit on the record. This Lombe House reachout did not.</li>
         </ul>
       </article>
-      <article className="rounded-2xl border border-white/10 bg-card p-4">
+      <article className="rounded-2xl border border-border bg-card p-4">
         <div className="flex items-center justify-between gap-2">
           <p className="font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">What changed</p>
           <PulseChip tone={statusTone(referral.status)}>{statusLabel(referral.status)}</PulseChip>

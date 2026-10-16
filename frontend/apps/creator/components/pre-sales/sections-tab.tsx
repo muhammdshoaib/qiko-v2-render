@@ -192,7 +192,7 @@ export function SectionsTab({ packId }: { packId: string }) {
 
   // First load: nothing to derive the stepper from yet.
   if (statusQ.isLoading && sectionsQ.isLoading) {
-    return <div className="space-y-3">{[0, 1, 2, 3].map((i) => <div key={i} className="h-12 animate-pulse rounded-xl bg-white/[0.04]" />)}</div>;
+    return <div className="space-y-3">{[0, 1, 2, 3].map((i) => <div key={i} className="h-12 animate-pulse rounded-xl bg-muted" />)}</div>;
   }
 
   // Section detail (Open) -- the full review/editor experience, unchanged.
@@ -264,10 +264,10 @@ export function SectionsTab({ packId }: { packId: string }) {
             </div>
           )}
 
-          <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
+          <div className="overflow-x-auto rounded-2xl border border-border">
             <table className="w-full text-left text-[13px]">
               <thead>
-                <tr className="border-b border-white/[0.06] text-[11px] uppercase tracking-wider text-slate-500">
+                <tr className="border-b border-border text-[11px] uppercase tracking-wider text-slate-500">
                   <th className="w-16 px-4 py-3">#</th>
                   <th className="px-4 py-3">Section</th>
                   <th className="px-4 py-3">Gaps</th>
@@ -300,7 +300,7 @@ export function SectionsTab({ packId }: { packId: string }) {
               <button
                 onClick={() => confirm.mutate()}
                 disabled={confirm.isPending}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-4 py-2 text-[13px] font-semibold text-foreground hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
               >
                 {confirm.isPending ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />} Confirm Assignments
               </button>
@@ -319,10 +319,10 @@ export function SectionsTab({ packId }: { packId: string }) {
 
 // ── Stepper ──────────────────────────────────────────────────────────────────
 const STEP_PILL: Record<StepState, string> = {
-  done: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
-  active: "border-indigo-500/50 bg-indigo-500/15 text-white",
-  inprogress: "border-amber-500/40 bg-amber-500/10 text-amber-400",
-  pending: "border-white/10 bg-white/[0.02] text-slate-500",
+  done: "border-emerald-500/40 bg-emerald-500/10 text-emerald-700",
+  active: "border-indigo-500/50 bg-indigo-50 text-indigo-800",
+  inprogress: "border-amber-500/40 bg-amber-50 text-amber-700",
+  pending: "border-border bg-muted/50 text-slate-500",
   error: "border-red-500/40 bg-red-500/10 text-red-400",
 };
 
@@ -349,7 +349,7 @@ function Stepper({ steps }: { steps: Step[] }) {
             <StepIcon step={step} />
             <span className="truncate">{step.label}</span>
           </div>
-          {i < steps.length - 1 && <span aria-hidden className="hidden h-px w-3 shrink-0 bg-white/10 sm:block" />}
+          {i < steps.length - 1 && <span aria-hidden className="hidden h-px w-3 shrink-0 bg-slate-100 sm:block" />}
         </li>
       ))}
     </ol>
@@ -362,15 +362,15 @@ function ParsingState({ error }: { error: boolean }) {
     return (
       <div className="flex flex-col items-center rounded-2xl border border-red-500/20 bg-red-500/[0.06] px-4 py-14 text-center">
         <AlertTriangle className="mb-3 size-6 text-red-300" />
-        <p className="text-sm font-semibold text-white">Parsing failed</p>
+        <p className="text-sm font-semibold text-foreground">Parsing failed</p>
         <p className="mt-1 max-w-sm text-[12px] text-red-300">We couldn&apos;t parse this tender into sections. Try re-uploading it in Sources.</p>
       </div>
     );
   }
   return (
-    <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-14 text-center">
-      <Loader2 className="mb-3 size-6 animate-spin text-amber-400" />
-      <p className="text-sm font-semibold text-white">Parsing the tender into sections{"\u2026"}</p>
+    <div className="flex flex-col items-center rounded-2xl border border-border bg-muted/40 px-4 py-14 text-center">
+      <Loader2 className="mb-3 size-6 animate-spin text-amber-700" />
+      <p className="text-sm font-semibold text-foreground">Parsing the tender into sections{"\u2026"}</p>
       <p className="mt-1 max-w-sm text-[12px] text-slate-500">This runs in the background - the sections list will appear here as soon as it&apos;s ready.</p>
     </div>
   );
@@ -378,9 +378,9 @@ function ParsingState({ error }: { error: boolean }) {
 
 function DraftingState({ done, total }: { done: number; total: number }) {
   return (
-    <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-14 text-center">
-      <Loader2 className="mb-3 size-6 animate-spin text-amber-400" />
-      <p className="text-sm font-semibold text-white">Answers are being generated in the background - you can come back later.</p>
+    <div className="flex flex-col items-center rounded-2xl border border-border bg-muted/40 px-4 py-14 text-center">
+      <Loader2 className="mb-3 size-6 animate-spin text-amber-700" />
+      <p className="text-sm font-semibold text-foreground">Answers are being generated in the background - you can come back later.</p>
       {total > 0 && <p className="mt-1 text-[12px] text-slate-500">{done}/{total} answers drafted</p>}
     </div>
   );
@@ -396,12 +396,12 @@ function DraftsErrorBanner({ partial, failed, onRetry, retrying, error }: {
   return (
     <div
       role="alert"
-      className="flex flex-col gap-3 rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between"
+      className="flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-500/[0.06] px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between"
     >
       <div className="flex items-start gap-2.5">
         <AlertTriangle aria-hidden className="mt-0.5 size-4 shrink-0 text-amber-300" />
         <div className="min-w-0">
-          <p className="text-[13px] font-semibold text-white">
+          <p className="text-[13px] font-semibold text-foreground">
             {partial ? "Some answers couldn\u2019t be drafted" : "Drafting failed"}
           </p>
           <p className="mt-0.5 text-[12px] text-amber-200/90">
@@ -419,7 +419,7 @@ function DraftsErrorBanner({ partial, failed, onRetry, retrying, error }: {
         onClick={onRetry}
         disabled={retrying}
         aria-label="Retry drafting the failed sections"
-        className="inline-flex shrink-0 items-center justify-center gap-1.5 self-start rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-[12px] font-semibold text-amber-300 hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50 disabled:opacity-50 sm:self-auto"
+        className="inline-flex shrink-0 items-center justify-center gap-1.5 self-start rounded-lg border border-amber-500/40 bg-amber-50 px-3 py-2 text-[12px] font-semibold text-amber-300 hover:bg-amber-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/50 disabled:opacity-50 sm:self-auto"
       >
         {retrying ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} Retry drafting
       </button>
@@ -429,11 +429,11 @@ function DraftsErrorBanner({ partial, failed, onRetry, retrying, error }: {
 
 function NoSections() {
   return (
-    <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-14 text-center">
-      <span className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-white/[0.04] text-slate-500">
+    <div className="flex flex-col items-center rounded-2xl border border-border bg-muted/40 px-4 py-14 text-center">
+      <span className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-muted text-slate-500">
         <ListChecks className="size-6" />
       </span>
-      <p className="text-sm font-semibold text-white">No sections yet</p>
+      <p className="text-sm font-semibold text-foreground">No sections yet</p>
       <p className="mt-1 max-w-sm text-[12px] text-slate-500">Upload the RFP in Sources to parse it into sections and questions.</p>
     </div>
   );
@@ -453,7 +453,7 @@ function SectionRows({ packId, section, kids, expanded, onToggle, onOpen, review
       <SectionRow packId={packId} section={section} hasKids={hasKids} expanded={expanded}
         onToggle={onToggle} onOpen={onOpen} reviewerEditable={reviewerEditable} assignees={assignees} />
       {hasKids && expanded && (
-        <tr className="border-b border-white/[0.04] last:border-0 bg-white/[0.015]">
+        <tr className="border-b border-slate-100 last:border-0 bg-muted/40">
           <td colSpan={6} className="px-4 pb-3 pt-0.5">
             <div className="ml-6 space-y-2">
               {kids.map((k) => <SubSectionCard key={k.id} section={k} onOpen={onOpen} />)}
@@ -482,7 +482,7 @@ function SectionRow({ packId, section, hasKids, expanded, onToggle, onOpen, revi
         : `Open ${section.name}`}
       onClick={activate}
       onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); activate(); } }}
-      className="cursor-pointer border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-400/60"
+      className="cursor-pointer border-b border-slate-100 last:border-0 hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-300"
     >
       <td className="px-4 py-3 font-mono text-[12px] text-slate-400">
         <span className="flex items-center gap-1">
@@ -495,7 +495,7 @@ function SectionRow({ packId, section, hasKids, expanded, onToggle, onOpen, revi
         </span>
       </td>
       <td className="px-4 py-3">
-        <p className="font-medium text-white">
+        <p className="font-medium text-foreground">
           {section.name}
           {section.subsection_count > 0 && (
             <span className="ml-2 text-[11px] font-normal text-slate-500">
@@ -511,7 +511,7 @@ function SectionRow({ packId, section, hasKids, expanded, onToggle, onOpen, revi
       </td>
       <td className="px-4 py-3">
         {section.kb_gap ? (
-          <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
+          <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
             <AlertTriangle className="size-3" /> KB gap
           </span>
         ) : <span className="text-slate-600">{"-"}</span>}
@@ -529,7 +529,7 @@ function SectionRow({ packId, section, hasKids, expanded, onToggle, onOpen, revi
         {/* Visual affordance only -- the whole row is the actual button (avoids a duplicate tab stop). */}
         <span
           aria-hidden
-          className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[12px] font-medium text-slate-200"
+          className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted px-2.5 py-1 text-[12px] font-medium text-slate-700"
         >
           {hasKids
             ? (<>{expanded ? "Collapse" : "Expand"} {expanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}</>)
@@ -547,17 +547,17 @@ function SubSectionCard({ section, onOpen }: { section: PackSectionNode; onOpen:
   const conf = metricPct(section.confidence);
   const grounding = metricPct(section.grounding);
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2.5">
-      <span className="shrink-0 rounded-md border border-indigo-500/30 bg-indigo-500/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-indigo-300">
+    <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/50 px-3 py-2.5">
+      <span className="shrink-0 rounded-md border border-indigo-500/30 bg-indigo-500/15 px-2 py-0.5 font-mono text-[11px] font-semibold text-indigo-600">
         {section.code || "-"}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="truncate font-medium text-white">{section.name}</p>
+        <p className="truncate font-medium text-foreground">{section.name}</p>
         <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px]">
           <MetricBar label="conf" pct={conf} />
           <MetricBar label="grounding" pct={grounding} />
           {section.kb_gap && (
-            <span className="inline-flex items-center gap-1 font-semibold text-amber-400">
+            <span className="inline-flex items-center gap-1 font-semibold text-amber-700">
               <AlertTriangle className="size-3" /> gaps
             </span>
           )}
@@ -570,7 +570,7 @@ function SubSectionCard({ section, onOpen }: { section: PackSectionNode; onOpen:
         type="button"
         onClick={() => onOpen(section.id)}
         aria-label={`Open ${section.name}`}
-        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-border bg-muted px-2.5 py-1 text-[12px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
       >
         Open <ArrowRight className="size-3" />
       </button>
@@ -588,7 +588,7 @@ function MetricBar({ label, pct }: { label: string; pct: number | null }) {
         <span className="text-slate-600">{"-"}</span>
       ) : (
         <>
-          <span className="h-1.5 w-14 overflow-hidden rounded-full bg-white/10">
+          <span className="h-1.5 w-14 overflow-hidden rounded-full bg-slate-100">
             <span className={cn("block h-full rounded-full", metricBandBar(pct))} style={{ width: `${pct}%` }} />
           </span>
           <span className={cn("font-semibold tabular-nums", metricBandText(pct))}>{pct}%</span>
@@ -620,7 +620,7 @@ function ReviewerCell({ packId, section, editable, assignees }: {
   if (!editable) {
     return hasReviewer
       ? (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-0.5 text-[11px] font-medium text-slate-200">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 py-0.5 text-[11px] font-medium text-slate-700">
           <Users className="size-3 text-slate-400" /> {displayName}
         </span>
       )
@@ -631,14 +631,14 @@ function ReviewerCell({ packId, section, editable, assignees }: {
   return (
     <div className="relative inline-block">
       {hasReviewer ? (
-        <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/40 bg-indigo-500/15 px-2.5 py-0.5 text-[11px] font-medium text-white">
-          <Users className="size-3 text-indigo-300" /> {displayName}
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-indigo-500/40 bg-indigo-500/15 px-2.5 py-0.5 text-[11px] font-medium text-foreground">
+          <Users className="size-3 text-indigo-600" /> {displayName}
           <button
             type="button"
             aria-label={`Clear reviewer for ${section.name}`}
             disabled={set.isPending}
             onClick={() => set.mutate({ reviewer: null, name: "" })}
-            className="rounded-full text-indigo-200 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50"
+            className="rounded-full text-indigo-200 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
           >
             {set.isPending ? <Loader2 className="size-3 animate-spin" /> : <X className="size-3" />}
           </button>
@@ -651,7 +651,7 @@ function ReviewerCell({ packId, section, editable, assignees }: {
           aria-label={`Assign reviewer for ${section.name}`}
           disabled={set.isPending}
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-white/25 bg-transparent px-2.5 py-0.5 text-[11px] font-medium text-slate-400 hover:border-indigo-500/40 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-border bg-transparent px-2.5 py-0.5 text-[11px] font-medium text-slate-400 hover:border-indigo-500/40 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50"
         >
           {set.isPending ? <Loader2 className="size-3 animate-spin" /> : <Users className="size-3" />} Assign <ChevronDown className="size-3" />
         </button>
@@ -664,7 +664,7 @@ function ReviewerCell({ packId, section, editable, assignees }: {
           <ul
             role="listbox"
             aria-label={`Reviewers for ${section.name}`}
-            className="absolute left-0 z-20 mt-1 max-h-56 w-52 overflow-y-auto rounded-lg border border-white/10 bg-[#0b0e16] p-1 shadow-xl"
+            className="absolute left-0 z-20 mt-1 max-h-56 w-52 overflow-y-auto rounded-lg border border-border bg-white p-1 shadow-xl"
           >
             {assignees.length === 0 ? (
               <li className="px-2.5 py-2 text-[11px] text-slate-500">No teammates to assign.</li>
@@ -675,7 +675,7 @@ function ReviewerCell({ packId, section, editable, assignees }: {
                   role="option"
                   aria-selected={false}
                   onClick={() => { set.mutate({ reviewer: a.id, name: a.name }); setOpen(false); }}
-                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:bg-white/[0.06]"
+                  className="flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-[12px] text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:bg-muted"
                 >
                   <Users className="size-3.5 shrink-0 text-slate-400" />
                   <span className="min-w-0 flex-1 truncate">
@@ -718,22 +718,22 @@ function SectionEditor({ packId, section, canPrev, canNext, onPrev, onNext, onBa
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <button onClick={onBack}
-          className="inline-flex items-center gap-1.5 rounded-lg px-1 text-[13px] text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
+          className="inline-flex items-center gap-1.5 rounded-lg px-1 text-[13px] text-slate-500 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
           <ArrowLeft className="size-4" /> All sections
         </button>
         <div className="flex items-center gap-2">
           <button onClick={onPrev} disabled={!canPrev} aria-label="Previous section"
-            className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
+            className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted px-2.5 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-40">
             <ArrowLeft className="size-3.5" /> Prev
           </button>
           <button onClick={onNext} disabled={!canNext} aria-label="Next section"
-            className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
+            className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted px-2.5 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-40">
             Next <ArrowRight className="size-3.5" />
           </button>
         </div>
       </div>
 
-      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+      <div className="rounded-2xl border border-border bg-muted/40 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -742,16 +742,16 @@ function SectionEditor({ packId, section, canPrev, canNext, onPrev, onNext, onBa
                 {sectionStatusLabel(section.status)}
               </span>
               {section.kb_gap && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
                   <AlertTriangle className="size-3" /> KB gap
                 </span>
               )}
             </div>
-            <h2 className="mt-1.5 text-lg font-semibold text-white">{section.name}</h2>
+            <h2 className="mt-1.5 text-lg font-semibold text-foreground">{section.name}</h2>
           </div>
           {canLockAll && (
             <button onClick={() => lockAll.mutate()} disabled={lockAll.isPending}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[12px] font-semibold text-emerald-400 hover:bg-emerald-500/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 disabled:opacity-50">
+              className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-[12px] font-semibold text-emerald-700 hover:bg-emerald-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/50 disabled:opacity-50">
               {lockAll.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Lock className="size-3.5" />} Lock all
             </button>
           )}
@@ -761,7 +761,7 @@ function SectionEditor({ packId, section, canPrev, canNext, onPrev, onNext, onBa
           <div className="mb-1 flex items-center justify-between text-[11px] text-slate-500">
             <span>{lockedCount}/{questions.length} locked</span><span>{pct}%</span>
           </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
             <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
           </div>
         </div>
@@ -775,7 +775,7 @@ function SectionEditor({ packId, section, canPrev, canNext, onPrev, onNext, onBa
 
       <div className="space-y-3">
         {questions.length === 0 ? (
-          <p className="rounded-xl border border-white/[0.06] bg-white/[0.015] px-4 py-8 text-center text-sm text-slate-500">No questions in this section.</p>
+          <p className="rounded-xl border border-border bg-muted/40 px-4 py-8 text-center text-sm text-slate-500">No questions in this section.</p>
         ) : (
           questions.map((q, i) => (
             <QuestionCard
@@ -843,21 +843,21 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
   const hasGap = question.kb_gap || gaps.length > 0;
 
   return (
-    <div className={cn("rounded-2xl border bg-white/[0.015]", expanded ? "border-indigo-500/25" : "border-white/[0.06]")}>
+    <div className={cn("rounded-2xl border bg-muted/40", expanded ? "border-indigo-500/25" : "border-border")}>
       <button onClick={onToggle} aria-expanded={expanded}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 focus-visible:ring-inset rounded-2xl">
-        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-white/[0.05] text-[11px] font-bold text-slate-300">Q{index}</span>
+        className="flex w-full items-center gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 focus-visible:ring-inset rounded-2xl">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-slate-50 text-[11px] font-bold text-slate-600">Q{index}</span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13px] font-medium text-white">{truncate(question.text, 110)}</span>
+          <span className="block truncate text-[13px] font-medium text-foreground">{truncate(question.text, 110)}</span>
           <span className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
             {question.word_limit != null && <span>{question.word_limit} words max</span>}
             {confPct != null && <span className={metricBandText(confPct)}>conf {confPct}%</span>}
             {groundingPct != null && <span className={metricBandText(groundingPct)}>grounding {groundingPct}%</span>}
-            {hasGap && <span className="inline-flex items-center gap-0.5 text-amber-400"><AlertTriangle className="size-3" /> KB gap</span>}
+            {hasGap && <span className="inline-flex items-center gap-0.5 text-amber-700"><AlertTriangle className="size-3" /> KB gap</span>}
           </span>
         </span>
         {question.locked && (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
             <Lock className="size-3" /> Locked
           </span>
         )}
@@ -865,10 +865,10 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
       </button>
 
       {expanded && (
-        <div className="border-t border-white/[0.06] p-4">
+        <div className="border-t border-border p-4">
           {/* Question + the two DISTINCT metric badges (conf = self-report, grounding = critic). */}
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-            <p className="min-w-0 flex-1 text-[13px] leading-relaxed text-slate-300">{question.text}</p>
+            <p className="min-w-0 flex-1 text-[13px] leading-relaxed text-slate-600">{question.text}</p>
             <div className="flex shrink-0 items-center gap-1.5">
               {confPct != null && (
                 <span aria-label={`Confidence ${confPct} percent`}
@@ -883,7 +883,7 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
                 </span>
               )}
               {question.locked && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
                   <Lock className="size-3" /> Locked
                 </span>
               )}
@@ -894,7 +894,7 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
               KB-gap flag), so it stays consistent with the section-listing KB-gap pill. */}
           {hasGap && (
             <div className="mb-4 rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-3.5">
-              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-amber-400">
+              <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-amber-700">
                 <AlertTriangle className="size-3.5 shrink-0" /> Gaps for human input
               </div>
               {gaps.length > 0 ? (
@@ -921,7 +921,7 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
           ) : (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
               {/* LEFT: grounded AI suggestion */}
-              <div className="flex flex-col rounded-xl border border-white/[0.06] bg-white/[0.01] p-3.5">
+              <div className="flex flex-col rounded-xl border border-border bg-white/[0.01] p-3.5">
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-violet-300">
                     AI suggestion
@@ -931,7 +931,7 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
                   </span>
                 </div>
                 {/* Fixed-height scrolling window; markdown so no raw ## / ** leak through. */}
-                <div className="mt-2 max-h-[360px] overflow-y-auto text-[13px] leading-relaxed text-slate-300">
+                <div className="mt-2 max-h-[360px] overflow-y-auto text-[13px] leading-relaxed text-slate-600">
                   {question.ai_answer ? <AnswerMarkdown text={question.ai_answer} /> : <p className="text-slate-500">Not generated yet.</p>}
                 </div>
                 {question.ai_sources.length > 0 && (
@@ -950,19 +950,19 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button onClick={() => setDraft(question.ai_answer)} disabled={!question.ai_answer || question.locked}
                     aria-label="Copy the AI suggestion into your answer"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted px-2.5 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-40">
                     <Copy className="size-3.5" /> Copy to editor
                   </button>
                   <button onClick={() => regenerate.mutate()} disabled={busy || question.locked}
                     aria-label="Regenerate the AI suggestion"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted px-2.5 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-40">
                     {regenerate.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} Regenerate
                   </button>
                 </div>
               </div>
 
               {/* RIGHT: human editor -- textarea matches the left answer window height, responsively. */}
-              <div className="flex flex-col rounded-xl border border-white/[0.06] bg-white/[0.01] p-3.5">
+              <div className="flex flex-col rounded-xl border border-border bg-white/[0.01] p-3.5">
                 <div className="flex items-center justify-between">
                   <label htmlFor={`draft-${question.id}`} className="text-[11px] font-semibold uppercase tracking-wider text-indigo-400">Your answer</label>
                   <span className={cn("text-[11px]", overLimit ? "text-red-400" : "text-slate-500")}>
@@ -980,14 +980,14 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button onClick={() => save.mutate()} disabled={busy || question.locked}
                     aria-label="Save your answer draft"
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted px-2.5 py-1.5 text-[12px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-40">
                     {save.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Save className="size-3.5" />} Save draft
                   </button>
                   {!question.locked && (
                     <>
                       <button onClick={() => approve.mutate()} disabled={busy || !question.ai_answer}
                         aria-label="Approve the AI suggestion and lock the answer"
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:opacity-40">
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-2.5 py-1.5 text-[12px] font-semibold text-foreground hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:opacity-40">
                         {approve.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <ThumbsUp className="size-3.5" />} Approve
                       </button>
                       <button onClick={() => regenerate.mutate()} disabled={busy}
@@ -1000,13 +1000,13 @@ function QuestionCard({ packId, question, index, manual, expanded, onToggle, onC
                   {question.locked ? (
                     <button onClick={() => lock.mutate()} disabled={busy}
                       aria-label="Unlock the answer for editing"
-                      className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] font-semibold text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-40">
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted px-2.5 py-1.5 text-[12px] font-semibold text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-40">
                       {lock.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Unlock className="size-3.5" />} Unlock
                     </button>
                   ) : (
                     <button onClick={() => lock.mutate()} disabled={busy || !draft.trim()}
                       aria-label="Lock the answer"
-                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-2.5 py-1.5 text-[12px] font-semibold text-white hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:opacity-40">
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-2.5 py-1.5 text-[12px] font-semibold text-foreground hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:opacity-40">
                       {lock.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <Lock className="size-3.5" />} Lock answer
                     </button>
                   )}

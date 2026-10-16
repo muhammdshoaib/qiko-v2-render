@@ -107,7 +107,7 @@ export function PresentationMode({
         <button
           type="button"
           onClick={() => onGo({ ...PRESENTATION_STEPS[0].patch, present: true, step: 1 })}
-          className="inline-flex min-h-11 items-center gap-2 rounded-xl px-3 text-[13px] text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+          className="inline-flex min-h-11 items-center gap-2 rounded-xl px-3 text-[13px] text-slate-500 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
         >
           <Presentation className="size-4" /> Present
         </button>
@@ -116,13 +116,13 @@ export function PresentationMode({
   }
 
   return (
-    <nav aria-label="Presentation" className="mx-3 mt-3 rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-3 sm:mx-4">
+    <nav aria-label="Presentation" className="mx-3 mt-3 rounded-2xl border border-border bg-muted/40 px-4 py-3 sm:mx-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
             Presentation · {current.n} of {PRESENTATION_STEPS.length}
           </p>
-          <p className="mt-1 text-sm text-white">{current.title}</p>
+          <p className="mt-1 text-sm text-foreground">{current.title}</p>
           <p className="mt-1 text-[12px] text-slate-400">{current.hint}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -146,7 +146,7 @@ export function PresentationMode({
           <button
             type="button"
             onClick={() => onGo({ present: false, step: null, replay: false })}
-            className={cn("inline-flex min-h-11 items-center px-3 text-[13px] text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60")}
+            className={cn("inline-flex min-h-11 items-center px-3 text-[13px] text-slate-500 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300")}
           >
             Exit
           </button>

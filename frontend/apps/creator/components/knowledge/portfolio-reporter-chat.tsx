@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { cn } from "@qiko/ui";
-import { WorkerChatTab } from "@/components/worker-cockpit-tabs";
+import { WorkerChatTab } from "@/app/workers/[id]/page";
 import { PORTFOLIO_AGENTS } from "@/components/knowledge/portfolio-reporter-data";
 import { createAgent, type Agent } from "@/lib/api";
 
@@ -51,10 +51,10 @@ export function PortfolioReporterChat({ agents, agentsLoading }: { agents: Agent
               type="button"
               onClick={() => setSelectedBlockId(agent.id)}
               className={cn(
-                "rounded-xl border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60",
+                "rounded-xl border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
                 active
-                  ? "border-cyan-400/40 bg-cyan-500/10 text-white"
-                  : "border-white/[0.08] bg-white/[0.02] text-slate-300 hover:border-white/20 hover:text-white",
+                  ? "border-indigo-200 bg-indigo-50 text-indigo-800"
+                  : "border-border bg-muted/50 text-slate-600 hover:border-border hover:text-foreground",
               )}
             >
               <div className="text-[13px] font-semibold">{agent.name}</div>
@@ -67,9 +67,9 @@ export function PortfolioReporterChat({ agents, agentsLoading }: { agents: Agent
       {worker ? (
         <WorkerChatTab key={worker.id} id={worker.id} worker={worker} />
       ) : (
-        <div className="rounded-2xl border border-white/[0.08] bg-[#0b0f18] p-6">
-          <div className="mb-4 flex min-h-48 flex-col items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.02] text-center">
-            <p className="text-sm font-medium text-slate-200">
+        <div className="rounded-2xl border border-border bg-card p-6">
+          <div className="mb-4 flex min-h-48 flex-col items-center justify-center rounded-lg border border-border bg-muted/50 text-center">
+            <p className="text-sm font-medium text-slate-700">
               {agentsLoading || ensure.isPending ? `Starting ${selectedBlock.name}…` : "Preparing chat"}
             </p>
             <p className="mt-1 max-w-sm text-xs text-slate-500">
@@ -78,7 +78,7 @@ export function PortfolioReporterChat({ agents, agentsLoading }: { agents: Agent
             {ensure.isError && (
               <button
                 type="button"
-                className="mt-4 rounded-xl bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-cyan-400"
+                className="mt-4 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
                 onClick={() => {
                   attempted.current.delete(selectedBlock.name);
                   ensure.mutate(selectedBlock.name);
@@ -89,8 +89,8 @@ export function PortfolioReporterChat({ agents, agentsLoading }: { agents: Agent
             )}
           </div>
           <div className="flex gap-2 opacity-40">
-            <div className="h-10 flex-1 rounded-md border border-white/[0.08] bg-white/[0.03]" />
-            <div className="h-10 w-11 rounded-md bg-cyan-500/40" />
+            <div className="h-10 flex-1 rounded-md border border-border bg-muted" />
+            <div className="h-10 w-11 rounded-md bg-indigo-600/40" />
           </div>
         </div>
       )}

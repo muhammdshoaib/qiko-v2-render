@@ -48,7 +48,7 @@ export default function PreSalesCockpitPage() {
   // ---- Loading ---------------------------------------------------------------
   if (agentsQ.isLoading || packsQ.isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-[#05070d] text-slate-400">
+      <div className="flex h-screen items-center justify-center bg-background text-slate-400">
         <Loader2 className="size-5 animate-spin" /> <span className="ml-2 text-sm">Loading{"\u2026"}</span>
       </div>
     );
@@ -57,9 +57,9 @@ export default function PreSalesCockpitPage() {
   // ---- Error -----------------------------------------------------------------
   if (packsQ.isError) {
     return (
-      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-[#05070d] text-slate-300">
+      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-background text-slate-600">
         <p className="text-sm">Couldn&apos;t load tenders for this worker.</p>
-        <button onClick={() => packsQ.refetch()} className="rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-[13px] font-semibold hover:bg-white/[0.06]">
+        <button onClick={() => packsQ.refetch()} className="rounded-lg border border-border bg-muted px-3.5 py-2 text-[13px] font-semibold hover:bg-muted">
           Try again
         </button>
       </div>

@@ -30,8 +30,9 @@ function PulseDashboardScreen() {
   const [nav, setNav] = useState<PulseNav>(INITIAL);
 
   useEffect(() => {
-    if (params.get("view") !== "outcomes") return;
-    const el = document.getElementById("outcomes");
+    const view = params.get("view");
+    if (view !== "insights" && view !== "outcomes") return;
+    const el = document.getElementById("insights") ?? document.getElementById("outcomes");
     el?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, [params]);
 

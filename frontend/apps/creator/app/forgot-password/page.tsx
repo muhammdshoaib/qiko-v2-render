@@ -5,8 +5,8 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, ArrowLeft, AlertCircle } from "lucide-react";
+import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Loader2, AlertCircle } from "lucide-react";
 import { Link } from "@/lib/wouter";
 import { toast } from "sonner";
 import { forgotPasswordAvatar } from "@/lib/avatarApi";
@@ -15,6 +15,14 @@ import {
   normalisePasswordResetEmail,
   storePasswordResetEmail,
 } from "@/lib/password-reset-session";
+import {
+  AUTH_BUTTON,
+  AUTH_INPUT,
+  AUTH_LABEL,
+  AUTH_MUTED,
+  AuthLogo,
+  AuthShell,
+} from "@/components/auth/auth-shell";
 
 export default function ForgotPassword() {
   const [, setLocation] = useLocation();
@@ -22,10 +30,6 @@ export default function ForgotPassword() {
   const [email, setEmail] = useState("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-
-  // useEffect(() => {
-  //   if (!loading && isAuthenticated) setLocation("/dashboard");
-  // }, [loading, isAuthenticated, setLocation]);
 
   useEffect(() => {
     if (!loading && user?.email && !email) {
@@ -35,8 +39,8 @@ export default function ForgotPassword() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#050810] flex items-center justify-center">
-        <div className="text-slate-400">Loading...</div>
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="text-slate-500">Loading...</div>
       </div>
     );
   }
@@ -53,9 +57,10 @@ export default function ForgotPassword() {
       storePasswordResetEmail(storage, normalisedEmail);
       toast.success("One-time code sent. Check your email and enter the code below.");
       setLocation(`/reset-password?email=${encodeURIComponent(normalisedEmail)}`);
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Forgot password error:", error);
-      const errorMsg = error.message || "Failed to send reset email. Please try again.";
+      const errorMsg =
+        error instanceof Error ? error.message : "Failed to send reset email. Please try again.";
       setErrorMessage(errorMsg);
       toast.error(errorMsg);
     } finally {
@@ -64,88 +69,66 @@ export default function ForgotPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050810] flex items-center justify-center p-4">
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
-      </div>
+    <AuthShell backHref="/login" backLabel="Back">
+      <CardHeader className="space-y-1 text-center">
+        <AuthLogo />
+        <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">
+          {isAuthenticated ? "Change password?" : "Forgot password?"}
+        </CardTitle>
+        <CardDescription className={AUTH_MUTED}>
+          {isAuthenticated
+            ? `We'll send a one-time code to ${user?.email}.`
+            : "Enter your email and we'll send you a one-time code."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {errorMessage && (
+            <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3">
+              <AlertCircle className="mt-0.5 size-5 shrink-0 text-red-600" />
+              <p className="text-sm text-red-700">{errorMessage}</p>
+            </div>
+          )}
 
-      <div className="relative z-10 w-full max-w-md">
-        <Link href="/login" className="inline-flex items-center gap-2 text-slate-400 hover:text-white mb-8 transition-colors">
-          <ArrowLeft className="w-4 h-4" />
-          Back
-        </Link>
-
-        <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
-          <CardHeader className="text-center">
-            <img
-              src="/qiko-logo-email.png"
-              alt="Qiko"
-              width={120}
-              height={48}
-              className="mx-auto mb-4 h-12 w-[120px] object-contain"
+          <div className="space-y-2">
+            <Label htmlFor="email" className={AUTH_LABEL}>
+              Email
+            </Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder="you@example.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              disabled={isAuthenticated}
+              className={AUTH_INPUT}
             />
-            <CardTitle className="text-2xl text-white">
-              {isAuthenticated ? "Change password?" : "Forgot password?"}
-            </CardTitle>
-            <CardDescription className="text-slate-400">
-              {isAuthenticated
-                ? `We'll send a one-time code to ${user?.email}.`
-                : "Enter your email and we'll send you a one-time code."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-                {errorMessage && (
-                  <div className="flex items-start gap-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                    <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                    <p className="text-red-400 text-sm">{errorMessage}</p>
-                  </div>
-                )}
+          </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="text-slate-300">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    disabled={isAuthenticated}
-                    className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:ring-cyan-500/20"
-                  />
-                </div>
-
-                <Button
-                  type="submit"
-                  disabled={isLoading}
-                  className="min-h-11 w-full border-0 bg-gradient-to-r from-purple-600 to-cyan-600 text-white hover:from-purple-500 hover:to-cyan-500 sm:min-h-9"
-                >
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Sending...
-                    </>
-                  ) : (
-                    "Send one-time code"
-                  )}
-                </Button>
-              </form>
-
-            {!isAuthenticated && (
-              <div className="mt-6 text-center">
-                <p className="text-slate-400 text-sm">
-                  Remember your password?{" "}
-                  <Link href="/login" className="text-cyan-400 hover:text-cyan-300 transition-colors">
-                    Sign in
-                  </Link>
-                </p>
-              </div>
+          <Button type="submit" disabled={isLoading} className={AUTH_BUTTON}>
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 size-4 animate-spin" />
+                Sending...
+              </>
+            ) : (
+              "Send one-time code"
             )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+          </Button>
+        </form>
+
+        {!isAuthenticated && (
+          <div className="mt-6 text-center">
+            <p className={`text-sm ${AUTH_MUTED}`}>
+              Remember your password?{" "}
+              <Link href="/login" className="font-medium text-indigo-600 transition-colors hover:text-indigo-700">
+                Sign in
+              </Link>
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </AuthShell>
   );
 }

@@ -42,15 +42,15 @@ export default function IntelligenceWorkerPage() {
 
   return (
     <div className="flex min-h-screen flex-col" style={{ background: BG }}>
-      <header className="border-b border-white/[0.06] px-4 py-4 sm:px-6">
+      <header className="border-b border-border px-4 py-4 sm:px-6">
         <div className="mx-auto flex max-w-6xl items-center gap-3">
-          <button onClick={() => router.push("/studio")} className="text-white/50 hover:text-white">
+          <button onClick={() => router.push("/studio")} className="text-slate-500 hover:text-foreground">
             <ArrowLeft className="size-5" />
           </button>
           <WorkerAvatar name={worker.name} ready={worker.status === "ready"} size="md" />
           <div className="flex-1">
-            <h1 className="text-base font-semibold text-white">{worker.name}</h1>
-            <p className="text-xs text-white/50">{workerTypeLabel(worker.atype)}</p>
+            <h1 className="text-base font-semibold text-foreground">{worker.name}</h1>
+            <p className="text-xs text-slate-500">{workerTypeLabel(worker.atype)}</p>
           </div>
           <Badge variant={worker.status === "ready" ? "success" : "muted"}>
             {worker.status === "ready" ? "Ready" : "Training"}
@@ -59,7 +59,7 @@ export default function IntelligenceWorkerPage() {
       </header>
 
       <main className="mx-auto w-full max-w-6xl flex-1 p-4 sm:p-6">
-        <div className="mb-4 border-b border-white/[0.08]">
+        <div className="mb-4 border-b border-border">
           <nav className="flex gap-6" aria-label="Intelligence tabs">
             {([
               { key: "overview", label: "Overview", icon: Users },
@@ -76,8 +76,8 @@ export default function IntelligenceWorkerPage() {
                 className={cn(
                   "flex items-center gap-2 border-b-2 px-1 pb-3 text-sm font-medium transition-colors",
                   tab === key
-                    ? "border-primary text-white"
-                    : "border-transparent text-white/50 hover:text-white"
+                    ? "border-indigo-500 text-foreground"
+                    : "border-transparent text-slate-500 hover:text-foreground"
                 )}
               >
                 <Icon className="size-4" /> {label}
@@ -87,13 +87,13 @@ export default function IntelligenceWorkerPage() {
         </div>
 
         {tab === "overview" && (
-          <section className="text-white">
+          <section className="text-foreground">
             <OverviewTab agentId={agentId} />
           </section>
         )}
 
         {tab === "engagement" && (
-          <section className="text-white">
+          <section className="text-foreground">
             <EngagementTab agentId={agentId} />
           </section>
         )}
@@ -107,7 +107,7 @@ export default function IntelligenceWorkerPage() {
 
         {tab === "chat" && (
           <section className="flex flex-col gap-4 lg:max-w-2xl">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
               <MessageSquare className="size-4 text-primary" /> Ask the worker
             </h2>
             <IntelligenceChat agentId={agentId} />
@@ -115,19 +115,19 @@ export default function IntelligenceWorkerPage() {
         )}
 
         {tab === "sources" && (
-          <section className="text-white">
+          <section className="text-foreground">
             <SourcesTab agentId={agentId} />
           </section>
         )}
 
         {tab === "documents" && (
-          <section className="text-white">
+          <section className="text-foreground">
             <DocumentsTab agentId={agentId} />
           </section>
         )}
 
         {tab === "research" && (
-          <section className="text-white">
+          <section className="text-foreground">
             <ResearchTab agentId={agentId} />
           </section>
         )}
@@ -149,10 +149,10 @@ function IntelligenceChat({ agentId }: { agentId: string }) {
   });
 
   return (
-    <div className="flex flex-1 flex-col rounded-xl border border-white/[0.08] bg-white/[0.03]">
+    <div className="flex flex-1 flex-col rounded-xl border border-border bg-muted">
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
         {messages.length === 0 && (
-          <p className="text-sm text-white/50">Ask about open items, blocked tickets, or claims without evidence.</p>
+          <p className="text-sm text-slate-500">Ask about open items, blocked tickets, or claims without evidence.</p>
         )}
         {messages.map((m, i) => (
           <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
@@ -162,7 +162,7 @@ function IntelligenceChat({ agentId }: { agentId: string }) {
                 <div className="mt-1 flex flex-wrap gap-2">
                   {m.sources.map((url, j) => (
                     <a key={j} href={url} target="_blank" rel="noreferrer"
-                      className="text-xs text-white/40 underline hover:text-white">
+                      className="text-xs text-slate-400 underline hover:text-foreground">
                       source {j + 1}
                     </a>
                   ))}
@@ -174,10 +174,10 @@ function IntelligenceChat({ agentId }: { agentId: string }) {
         {send.isPending && <div className="flex justify-start"><TypingIndicator /></div>}
       </div>
       <form onSubmit={(e) => { e.preventDefault(); if (text.trim()) { send.mutate(text); setText(""); } }}
-        className="flex gap-2 border-t border-white/[0.08] p-3">
+        className="flex gap-2 border-t border-border p-3">
         <input value={text} onChange={(e) => setText(e.target.value)} placeholder="Ask a question..."
           aria-label="Ask a question"
-          className="flex-1 rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-2 text-sm text-white placeholder:text-white/40 outline-none focus:border-indigo-400/45" />
+          className="flex-1 rounded-lg border border-border bg-slate-50 px-3 py-2 text-sm text-foreground placeholder:text-slate-400 outline-none focus:border-indigo-400/45" />
         <Button type="submit" size="icon" disabled={send.isPending} aria-label="Send message">
           <SendHorizonal className="size-4" />
         </Button>
@@ -189,18 +189,18 @@ function IntelligenceChat({ agentId }: { agentId: string }) {
 function MetricsPanel({ metrics, loading, onRefetch }: { metrics: IntelligenceMetrics | undefined; loading: boolean; onRefetch: () => void }) {
   const keys = metrics ? Object.keys(metrics.projects) : [];
   return (
-    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4 text-white">
+    <div className="rounded-xl border border-border bg-muted p-4 text-foreground">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-white">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
           <BarChart3 className="size-4 text-primary" /> Delivery metrics
         </h2>
-        <button onClick={onRefetch} className="text-white/50 hover:text-white" aria-label="Refresh metrics">
+        <button onClick={onRefetch} className="text-slate-500 hover:text-foreground" aria-label="Refresh metrics">
           <RefreshCw className={cn("size-4", loading && "animate-spin")} />
         </button>
       </div>
       {loading && !metrics && <PageSkeleton />}
       {!loading && keys.length === 0 && (
-        <p className="text-sm text-white/50">Connect Qiko Track to see delivery metrics.</p>
+        <p className="text-sm text-slate-500">Connect Qiko Track to see delivery metrics.</p>
       )}
       {metrics && keys.length > 0 && (
         <div className="space-y-4">
@@ -208,8 +208,8 @@ function MetricsPanel({ metrics, loading, onRefetch }: { metrics: IntelligenceMe
             const project = metrics.projects[key];
             if (!project || project.available === false) {
               return (
-                <div key={key} className="text-sm text-white/70">
-                  <span className="font-medium text-white">{key}</span>: {project?.error ?? "metrics unavailable"}
+                <div key={key} className="text-sm text-slate-600">
+                  <span className="font-medium text-foreground">{key}</span>: {project?.error ?? "metrics unavailable"}
                 </div>
               );
             }
@@ -219,8 +219,8 @@ function MetricsPanel({ metrics, loading, onRefetch }: { metrics: IntelligenceMe
             return (
               <div key={key} className="space-y-2 text-sm">
                 <div className="flex items-center justify-between">
-                  <span className="font-medium text-white">{key}</span>
-                  <span className="text-xs text-white/40">window {project.window.key}</span>
+                  <span className="font-medium text-foreground">{key}</span>
+                  <span className="text-xs text-slate-400">window {project.window.key}</span>
                 </div>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   <Metric label="Throughput" value={`${project.throughput.tickets} tickets (${project.throughput.points} pts)`} />
@@ -248,9 +248,9 @@ function MetricsPanel({ metrics, loading, onRefetch }: { metrics: IntelligenceMe
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg bg-white/[0.04] p-2">
-      <p className="text-xs text-white/40">{label}</p>
-      <p className="text-sm font-medium text-white">{value}</p>
+    <div className="rounded-lg bg-muted p-2">
+      <p className="text-xs text-slate-400">{label}</p>
+      <p className="text-sm font-medium text-foreground">{value}</p>
     </div>
   );
 }
@@ -259,7 +259,7 @@ function PageSkeleton() {
   return (
     <div className="space-y-3">
       {Array.from({ length: 3 }).map((_, i) => (
-        <div key={i} className="h-24 animate-pulse rounded-xl bg-white/[0.05]" />
+        <div key={i} className="h-24 animate-pulse rounded-xl bg-slate-50" />
       ))}
     </div>
   );
@@ -268,8 +268,8 @@ function PageSkeleton() {
 function UnavailableState({ onBack }: { onBack: () => void }) {
   return (
     <div className="flex min-h-screen items-center justify-center" style={{ background: BG }}>
-      <div className="w-full max-w-sm rounded-2xl border border-white/[0.08] p-6 text-center">
-        <p className="text-white">Worker unavailable</p>
+      <div className="w-full max-w-sm rounded-2xl border border-border p-6 text-center">
+        <p className="text-foreground">Worker unavailable</p>
         <Button className="mt-4 w-full" onClick={onBack}>Back to Studio</Button>
       </div>
     </div>

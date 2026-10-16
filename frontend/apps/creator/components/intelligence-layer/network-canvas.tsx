@@ -276,14 +276,14 @@ export function NetworkCanvas({
   void tick;
 
   if (!board.ready) {
-    return <div className="min-h-[420px] flex-1 animate-pulse rounded-2xl bg-[#070a12] sm:min-h-[540px]" aria-busy="true" aria-label="Loading workflow board" />;
+    return <div className="min-h-[420px] flex-1 animate-pulse rounded-2xl bg-card sm:min-h-[540px]" aria-busy="true" aria-label="Loading workflow board" />;
   }
 
   return (
     <div
       ref={canvasRef}
       className={cn(
-        "relative min-h-[420px] flex-1 overflow-hidden rounded-2xl border border-white/[0.06] bg-[#070a12] sm:min-h-[540px]",
+        "relative min-h-[420px] flex-1 overflow-hidden rounded-2xl border border-border bg-card sm:min-h-[540px]",
         gesture?.type === "pan" ? "cursor-grabbing" : "cursor-grab",
       )}
       onClick={() => {
@@ -429,17 +429,17 @@ export function NetworkCanvas({
       })}
       </div>
 
-      <div className="absolute right-3 top-3 z-30 flex flex-col overflow-hidden rounded-xl border border-white/10 bg-[#0c111c]/95" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
-        <button type="button" aria-label="Zoom in" disabled={camera.zoom >= MAX_ZOOM} onClick={(event) => { event.stopPropagation(); zoomAt(camera.zoom * ZOOM_STEP); }} className="flex size-10 items-center justify-center text-slate-200 hover:bg-white/5 disabled:text-slate-600">
+      <div className="absolute right-3 top-3 z-30 flex flex-col overflow-hidden rounded-xl border border-border bg-card" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()}>
+        <button type="button" aria-label="Zoom in" disabled={camera.zoom >= MAX_ZOOM} onClick={(event) => { event.stopPropagation(); zoomAt(camera.zoom * ZOOM_STEP); }} className="flex size-10 items-center justify-center text-slate-700 hover:bg-muted disabled:text-slate-600">
           <Plus className="size-4" />
         </button>
-        <button type="button" aria-label="Reset zoom to 100 percent" onClick={(event) => { event.stopPropagation(); commitCamera({ ...DEFAULT_VIEWPORT }, true); }} className="flex h-9 items-center justify-center border-y border-white/10 px-2 text-[11px] text-slate-300 hover:bg-white/5">
+        <button type="button" aria-label="Reset zoom to 100 percent" onClick={(event) => { event.stopPropagation(); commitCamera({ ...DEFAULT_VIEWPORT }, true); }} className="flex h-9 items-center justify-center border-y border-border px-2 text-[11px] text-slate-600 hover:bg-muted">
           {Math.round(camera.zoom * 100)}%
         </button>
-        <button type="button" aria-label="Zoom out" disabled={camera.zoom <= MIN_ZOOM} onClick={(event) => { event.stopPropagation(); zoomAt(camera.zoom / ZOOM_STEP); }} className="flex size-10 items-center justify-center text-slate-200 hover:bg-white/5 disabled:text-slate-600">
+        <button type="button" aria-label="Zoom out" disabled={camera.zoom <= MIN_ZOOM} onClick={(event) => { event.stopPropagation(); zoomAt(camera.zoom / ZOOM_STEP); }} className="flex size-10 items-center justify-center text-slate-700 hover:bg-muted disabled:text-slate-600">
           <Minus className="size-4" />
         </button>
-        <button type="button" aria-label="Fit all nodes" onClick={(event) => { event.stopPropagation(); fitView(); }} className="flex size-10 items-center justify-center border-t border-white/10 text-slate-200 hover:bg-white/5">
+        <button type="button" aria-label="Fit all nodes" onClick={(event) => { event.stopPropagation(); fitView(); }} className="flex size-10 items-center justify-center border-t border-border text-slate-700 hover:bg-muted">
           <Maximize2 className="size-3.5" />
         </button>
       </div>
@@ -463,7 +463,7 @@ export function NetworkCanvas({
         </p>
       )}
 
-      <div className="absolute bottom-0 left-0 right-0 z-20 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-white/[0.06] bg-[#070a12]/95 px-3 py-2 text-[10px] text-slate-500">
+      <div className="absolute bottom-0 left-0 right-0 z-20 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border bg-card/95 px-3 py-2 text-[10px] text-slate-500">
         {KINDS.map((kind) => (
           <span key={kind} className={WIRE_TEXT[board.wireColor({ kind, id: kind, from: "property-insights", to: "properties", label: "", rule: "", example: "" })]}>
             {EDGE_KIND_LABEL[kind]}
@@ -500,15 +500,15 @@ function Handle({
       onPointerDown={onPointerDown}
       onClick={(event) => event.stopPropagation()}
       className={cn(
-        "absolute top-1/2 z-20 flex size-11 -translate-y-1/2 items-center justify-center rounded-full touch-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70",
+        "absolute top-1/2 z-20 flex size-11 -translate-y-1/2 items-center justify-center rounded-full touch-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70",
         side === "in" ? "left-0 -translate-x-1/2" : "right-0 translate-x-1/2",
       )}
     >
       <span
         className={cn(
-          "size-3 rounded-full border-2 bg-[#0c111c] transition-transform",
+          "size-3 rounded-full border-2 bg-card transition-transform",
           hot ? "border-cyan-300" : "border-slate-500",
-          snapped && "scale-150 border-cyan-200 bg-cyan-400",
+          snapped && "scale-150 border-cyan-200 bg-indigo-500",
         )}
       />
     </button>
@@ -536,15 +536,15 @@ function AgentNode({
       onClick={(event) => event.stopPropagation()}
       style={{ width: size, height: size }}
       className={cn(
-        "rounded-full border bg-[#0c111c] text-left shadow-[0_0_60px_-18px_rgba(34,211,238,0.55)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70",
-        selected ? "border-cyan-300/70 ring-2 ring-cyan-400/20" : "border-white/10",
+        "rounded-full border bg-card text-left shadow-[0_0_60px_-18px_rgba(34,211,238,0.55)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70",
+        selected ? "border-cyan-300/70 ring-2 ring-cyan-400/20" : "border-border",
         dimmed && "opacity-40",
       )}
     >
       <span className="flex h-full flex-col items-center justify-center px-3 text-center">
-        <span className="text-[10px] uppercase tracking-wider text-cyan-300">Worker</span>
-        <span className="mt-1 text-[13px] font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>{worker.name}</span>
-        <span className="mt-2 text-xl font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>{worker.decisions}</span>
+        <span className="text-[10px] uppercase tracking-wider text-indigo-600">Worker</span>
+        <span className="mt-1 text-[13px] font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{worker.name}</span>
+        <span className="mt-2 text-xl font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{worker.decisions}</span>
         <span className="text-[10px] text-slate-500">outcomes</span>
       </span>
     </button>
@@ -569,7 +569,7 @@ function RecordNode({
       onPointerDown={onPointerDown}
       onClick={(event) => event.stopPropagation()}
       className={cn(
-        "relative flex size-[168px] items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/70",
+        "relative flex size-[168px] items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/70",
         dimmed && "opacity-40",
       )}
     >
@@ -577,16 +577,16 @@ function RecordNode({
         <span
           key={month.month}
           className={cn(
-            "absolute rounded-full border border-cyan-400/25 motion-reduce:animate-none",
+            "absolute rounded-full border border-indigo-400/25 motion-reduce:animate-none",
             selected ? "animate-[pulse_3s_ease-in-out_infinite]" : "[animation:qiko-breathe_4.8s_ease-in-out_infinite]",
           )}
           style={{ width: 92 + index * 22, height: 92 + index * 22, opacity: 0.22 + index * 0.12, animationDelay: `${index * 180}ms` }}
           title={`${month.month}: ${month.value} captured decisions`}
         />
       ))}
-      <span className={cn("relative flex size-[88px] flex-col items-center justify-center rounded-full border bg-[#0c111c]", selected ? "border-indigo-300/70" : "border-white/10")}>
-        <span className="text-[10px] uppercase tracking-wider text-indigo-300">Company</span>
-        <span className="text-sm font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>Qiko</span>
+      <span className={cn("relative flex size-[88px] flex-col items-center justify-center rounded-full border bg-card", selected ? "border-indigo-300/70" : "border-border")}>
+        <span className="text-[10px] uppercase tracking-wider text-indigo-600">Company</span>
+        <span className="text-sm font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>Qiko</span>
         <span className="text-[10px] text-slate-500">{capturedCount}</span>
       </span>
       <span className="sr-only">Qiko company record. Rings are monthly captured decisions. Prototype data.</span>
@@ -614,14 +614,14 @@ function SystemNode({
       onPointerDown={onPointerDown}
       onClick={(event) => event.stopPropagation()}
       className={cn(
-        "flex min-w-[132px] max-w-[168px] items-center gap-2 rounded-xl border bg-[#0c111c] px-2.5 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 sm:min-w-[150px]",
-        selected ? "border-white/30" : "border-white/[0.08]",
+        "flex min-w-[132px] max-w-[168px] items-center gap-2 rounded-xl border bg-card px-2.5 py-2 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 sm:min-w-[150px]",
+        selected ? "border-border" : "border-border",
         dimmed && "opacity-35",
       )}
     >
-      <Icon className="size-4 shrink-0 text-slate-300" />
+      <Icon className="size-4 shrink-0 text-slate-600" />
       <span>
-        <span className="block text-[13px] font-medium text-white">{system.name}</span>
+        <span className="block text-[13px] font-medium text-foreground">{system.name}</span>
         <span className="block text-[11px] text-slate-500">{system.subtitle}</span>
       </span>
     </button>
@@ -641,7 +641,7 @@ function WireEditor({
 }) {
   return (
     <div
-      className="absolute left-1/2 top-3 z-30 w-[min(94%,420px)] -translate-x-1/2 rounded-xl border border-white/10 bg-[#0c111c]/95 p-3 shadow-lg"
+      className="absolute left-1/2 top-3 z-30 w-[min(94%,420px)] -translate-x-1/2 rounded-xl border border-border bg-card p-3 shadow-lg"
       onClick={(event) => event.stopPropagation()}
     >
       <p className={cn("text-[10px] uppercase tracking-wider", WIRE_TEXT[color])}>{EDGE_KIND_LABEL[edge.kind]}</p>
@@ -649,7 +649,7 @@ function WireEditor({
         aria-label="Connection label"
         value={edge.label}
         onChange={(event) => onChange({ label: event.target.value })}
-        className="mt-2 h-9 bg-[#070a12] text-sm"
+        className="mt-2 h-9 bg-card text-sm"
       />
       <div className="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="Connection type">
         {KINDS.map((kind) => (
@@ -659,8 +659,8 @@ function WireEditor({
             aria-pressed={edge.kind === kind}
             onClick={() => onChange({ kind })}
             className={cn(
-              "min-h-9 rounded-lg px-2.5 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-              edge.kind === kind ? "bg-white/10 text-white" : "text-slate-400 hover:text-white",
+              "min-h-9 rounded-lg px-2.5 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+              edge.kind === kind ? "bg-slate-100 text-foreground" : "text-slate-500 hover:text-foreground",
             )}
           >
             {EDGE_KIND_LABEL[kind]}

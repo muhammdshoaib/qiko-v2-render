@@ -81,24 +81,24 @@ export function useConfirmActionDialog() {
         if (!open && !dialog.pending) closeConfirmationDialog();
       }}
     >
-      <AlertDialogContent className="border-white/10 bg-[#0a0f1a] text-white">
+      <AlertDialogContent className="border-border bg-card text-foreground">
         <AlertDialogHeader>
           <AlertDialogTitle>{dialog.title}</AlertDialogTitle>
-          <AlertDialogDescription className="text-slate-300">
+          <AlertDialogDescription className="text-slate-600">
             {dialog.description}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel
             disabled={dialog.pending}
-            className="border-white/20 bg-transparent text-slate-200 hover:bg-white/10 hover:text-white"
+            className="border-border bg-transparent text-slate-700 hover:bg-muted hover:text-foreground"
           >
             Cancel
           </AlertDialogCancel>
           <AlertDialogAction
             disabled={dialog.pending}
             className={cn(
-              "inline-flex items-center justify-center gap-2 text-white disabled:pointer-events-none disabled:opacity-60",
+              "inline-flex items-center justify-center gap-2 text-foreground disabled:pointer-events-none disabled:opacity-60",
               dialog.isDestructive !== false
                 ? "bg-red-600 hover:bg-red-500"
                 : "bg-emerald-600 hover:bg-emerald-500",

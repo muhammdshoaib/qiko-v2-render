@@ -170,7 +170,7 @@ function AIOrb({ stage, isComplete }: { stage: number; isComplete: boolean }) {
               exit={{ scale: 0 }}
               transition={{ type: "spring", stiffness: 200 }}
             >
-              <Check className="w-12 h-12 text-white" strokeWidth={3} />
+              <Check className="w-12 h-12 text-foreground" strokeWidth={3} />
             </motion.div>
           ) : (
             <motion.div
@@ -183,10 +183,10 @@ function AIOrb({ stage, isComplete }: { stage: number; isComplete: boolean }) {
               {stage < STAGES.length ? (
                 (() => {
                   const StageIcon = STAGES[stage].icon;
-                  return <StageIcon className="w-10 h-10 text-white" />;
+                  return <StageIcon className="w-10 h-10 text-foreground" />;
                 })()
               ) : (
-                <Zap className="w-10 h-10 text-white" />
+                <Zap className="w-10 h-10 text-foreground" />
               )}
             </motion.div>
           )}
@@ -231,7 +231,7 @@ function AIOrb({ stage, isComplete }: { stage: number; isComplete: boolean }) {
 // Progress bar with glow
 function ProgressBar({ progress, color }: { progress: number; color: string }) {
   return (
-    <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
+    <div className="w-full h-1 bg-slate-100 rounded-full overflow-hidden">
       <motion.div
         className="h-full rounded-full"
         style={{
@@ -318,7 +318,7 @@ export default function CreatingWorker() {
   const currentColor = currentStage < STAGES.length ? STAGES[currentStage].color : "#22D3EE";
 
   return (
-    <div className="min-h-screen bg-[#050810] flex flex-col items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center p-4 relative overflow-hidden">
       {/* Animated background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         {/* Large gradient orbs */}
@@ -428,7 +428,7 @@ export default function CreatingWorker() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
-          className="text-white/60 mb-8 text-lg"
+          className="text-slate-500 mb-8 text-lg"
         >
           {isComplete
             ? "Neural networks activated. Your digital expert is ready to serve."
@@ -437,7 +437,7 @@ export default function CreatingWorker() {
 
         {/* Overall progress */}
         <div className="mb-8">
-          <div className="flex justify-between text-sm text-white/40 mb-2">
+          <div className="flex justify-between text-sm text-slate-400 mb-2">
             <span>System initialization</span>
             <span>{Math.round(totalProgress)}%</span>
           </div>
@@ -459,10 +459,10 @@ export default function CreatingWorker() {
                 transition={{ delay: 0.4 + index * 0.1 }}
                 className={`flex items-center gap-4 p-4 rounded-xl border backdrop-blur-sm transition-all duration-300 ${
                   isCompleted
-                    ? "bg-white/5 border-white/10"
+                    ? "bg-muted border-border"
                     : isActive
-                    ? "bg-white/10 border-white/20"
-                    : "bg-white/[0.02] border-white/5"
+                    ? "bg-slate-100 border-border"
+                    : "bg-muted/50 border-border"
                 }`}
                 style={{
                   boxShadow: isActive ? `0 0 30px ${stage.color}20` : 'none',
@@ -478,16 +478,16 @@ export default function CreatingWorker() {
                   }}
                 >
                   {isCompleted ? (
-                    <Check className="w-5 h-5 text-white" />
+                    <Check className="w-5 h-5 text-foreground" />
                   ) : (
-                    <StageIcon className={`w-5 h-5 ${isCompleted || isActive ? 'text-white' : 'text-white/40'}`} />
+                    <StageIcon className={`w-5 h-5 ${isCompleted || isActive ? 'text-foreground' : 'text-slate-400'}`} />
                   )}
                 </div>
                 <div className="flex-1 text-left">
-                  <p className={`font-medium ${isCompleted || isActive ? "text-white" : "text-white/40"}`}>
+                  <p className={`font-medium ${isCompleted || isActive ? "text-foreground" : "text-slate-400"}`}>
                     {stage.title}
                   </p>
-                  <p className="text-sm text-white/40">{stage.description}</p>
+                  <p className="text-sm text-slate-400">{stage.description}</p>
                   {isActive && (
                     <div className="mt-2">
                       <ProgressBar progress={stageProgress} color={stage.color} />

@@ -65,7 +65,7 @@ export function FinanceFileManager({ agentId, onUploaded, onConfirmOpenChange }:
         onChange={(e) => { const f = e.target.files?.[0]; if (f) upload.mutate(f); e.target.value = ""; }} />
 
       <button type="button" disabled={upload.isPending} onClick={() => inputRef.current?.click()}
-        className="flex w-full items-center justify-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-500/10 px-4 py-3 text-sm font-semibold text-cyan-200 transition-colors hover:bg-cyan-500/20 disabled:opacity-50">
+        className="flex w-full items-center justify-center gap-2 rounded-xl border border-indigo-400/30 bg-indigo-600/10 px-4 py-3 text-sm font-semibold text-indigo-700 transition-colors hover:bg-indigo-600/20 disabled:opacity-50">
         {upload.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
         {upload.isPending ? "Uploading…" : "Upload .xlsx workbook"}
       </button>
@@ -73,16 +73,16 @@ export function FinanceFileManager({ agentId, onUploaded, onConfirmOpenChange }:
       {error && <p className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200/90">{error}</p>}
 
       <div className="space-y-2">
-        {filesQ.isLoading && <p className="text-xs text-white/45">Loading files…</p>}
+        {filesQ.isLoading && <p className="text-xs text-slate-400">Loading files…</p>}
         {!filesQ.isLoading && files.length === 0 && (
-          <p className="text-xs text-white/45">No workbooks uploaded yet.</p>
+          <p className="text-xs text-slate-400">No workbooks uploaded yet.</p>
         )}
         {files.map((f) => (
-          <div key={f.id} className="flex items-center gap-3 rounded-lg border border-white/[0.08] bg-white/[0.02] px-3 py-2.5">
-            <FileSpreadsheet className="h-4 w-4 shrink-0 text-emerald-400" />
+          <div key={f.id} className="flex items-center gap-3 rounded-lg border border-border bg-muted/50 px-3 py-2.5">
+            <FileSpreadsheet className="h-4 w-4 shrink-0 text-emerald-700" />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-medium text-white/85">{f.label}</p>
-              <p className="text-[10px] text-white/45">{f.rowCount.toLocaleString()} rows</p>
+              <p className="truncate text-xs font-medium text-foreground/85">{f.label}</p>
+              <p className="text-[10px] text-slate-400">{f.rowCount.toLocaleString()} rows</p>
             </div>
             <button type="button"
               onClick={(e) => openConfirmationDialog({
@@ -99,7 +99,7 @@ export function FinanceFileManager({ agentId, onUploaded, onConfirmOpenChange }:
                 },
               }, e.currentTarget)}
               disabled={remove.isPending}
-              className="shrink-0 rounded-md p-1.5 text-white/40 transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"
+              className="shrink-0 rounded-md p-1.5 text-slate-400 transition-colors hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"
               aria-label={`Delete ${f.label}`}>
               <Trash2 className="h-3.5 w-3.5" />
             </button>
@@ -122,13 +122,13 @@ export function FinanceFileManagerDialog({ agentId, open, onOpenChange, classNam
   return (
     <FileListDialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className={cn("border-white/[0.08] text-white", className)}
+        className={cn("border-border text-foreground", className)}
         style={{ background: "oklch(0.16 0.02 250)" }}
         onEscapeKeyDown={(e) => { if (confirmOpen) e.preventDefault(); }}
       >
         <DialogHeader>
-          <DialogTitle className="text-white/90">Portfolio workbooks</DialogTitle>
-          <DialogDescription className="text-white/50">
+          <DialogTitle className="text-slate-800">Portfolio workbooks</DialogTitle>
+          <DialogDescription className="text-slate-500">
             Upload Excel workbooks (.xlsx) to power the dashboard. Delete a file to remove its data.
           </DialogDescription>
         </DialogHeader>

@@ -24,7 +24,7 @@ type SourceFilter = (typeof SOURCE_FILTERS)[number]["id"];
 type StatusFilter = (typeof STATUS_FILTERS)[number]["id"];
 
 function StatusCell({ status }: { status: string }) {
-  if (status === "success") return <span className="flex items-center gap-1.5 text-emerald-400"><CheckCircle2 className="size-3.5" /> Success</span>;
+  if (status === "success") return <span className="flex items-center gap-1.5 text-emerald-700"><CheckCircle2 className="size-3.5" /> Success</span>;
   if (status === "failed") return <span className="flex items-center gap-1.5 text-red-400"><XCircle className="size-3.5" /> Failed</span>;
   return <span className="text-slate-400">{status || "-"}</span>;
 }
@@ -33,11 +33,11 @@ function FilterTabs<T extends string>({ label, options, value, onChange }: {
   label: string; options: readonly { id: T; label: string }[]; value: T; onChange: (v: T) => void;
 }) {
   return (
-    <div className="inline-flex rounded-lg border border-white/10 bg-white/[0.02] p-0.5" role="group" aria-label={label}>
+    <div className="inline-flex rounded-lg border border-border bg-muted/50 p-0.5" role="group" aria-label={label}>
       {options.map((o) => (
         <button key={o.id} type="button" aria-pressed={value === o.id} onClick={() => onChange(o.id)}
-          className={cn("inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-3 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-            value === o.id ? "bg-indigo-500/20 text-white" : "text-slate-400 hover:text-white")}>
+          className={cn("inline-flex min-h-11 min-w-11 items-center justify-center rounded-md px-3 py-1 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+            value === o.id ? "bg-indigo-50 text-indigo-800" : "text-slate-500 hover:text-foreground")}>
           {o.label}
         </button>
       ))}
@@ -84,10 +84,10 @@ export default function SalesScanHistoryPage() {
         {historyQ.isError && <p className="text-sm text-red-400">Couldn&apos;t load scan history. Try refreshing.</p>}
 
         {!historyQ.isLoading && !historyQ.isError && (
-          <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
+          <div className="overflow-x-auto rounded-2xl border border-border">
             <table className="w-full text-left text-[13px]">
               <thead>
-                <tr className="border-b border-white/[0.06] text-[11px] uppercase tracking-wider text-slate-500">
+                <tr className="border-b border-border text-[11px] uppercase tracking-wider text-slate-500">
                   <th scope="col" className="px-4 py-3">Source</th>
                   <th scope="col" className="px-4 py-3">Status</th>
                   <th scope="col" className="px-4 py-3">Found</th>
@@ -98,10 +98,10 @@ export default function SalesScanHistoryPage() {
               </thead>
               <tbody>
                 {entries.map((e) => (
-                  <tr key={e.id} className="border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02]">
-                    <td className="px-4 py-3 text-slate-300">{sourceLabel(e.sourceKey)}</td>
+                  <tr key={e.id} className="border-b border-slate-100 last:border-0 hover:bg-muted/50">
+                    <td className="px-4 py-3 text-slate-600">{sourceLabel(e.sourceKey)}</td>
                     <td className="px-4 py-3"><StatusCell status={e.status} /></td>
-                    <td className="px-4 py-3 text-slate-300">{e.opportunitiesFound}</td>
+                    <td className="px-4 py-3 text-slate-600">{e.opportunitiesFound}</td>
                     <td className="px-4 py-3 text-slate-400">{formatDate(e.startedAt, true)}</td>
                     <td className="px-4 py-3 text-slate-400">{formatDate(e.finishedAt, true)}</td>
                     <td className="max-w-[280px] truncate px-4 py-3 text-red-300/80" title={e.error ?? undefined}>{e.error ?? "-"}</td>

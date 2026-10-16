@@ -49,18 +49,18 @@ function AgentDetail({
         <Metric label="Availability" value="Sample" tone="text-amber-300" />
       </dl>
 
-      <InspectorBlock icon={BookOpen} title="Responsibilities" accent="text-slate-300">
-        <ul className="space-y-1.5 text-[13px] text-slate-300">
+      <InspectorBlock icon={BookOpen} title="Responsibilities" accent="text-slate-600">
+        <ul className="space-y-1.5 text-[13px] text-slate-600">
           {worker.responsibilities.map((item) => (
             <li key={item}>{item}</li>
           ))}
         </ul>
       </InspectorBlock>
 
-      <InspectorBlock icon={Eye} title="Can read" accent="text-cyan-300">
+      <InspectorBlock icon={Eye} title="Can read" accent="text-indigo-600">
         {worker.reads.map((item) => (
           <p key={item.title} className="rounded-lg px-1 py-1.5">
-            <span className="block text-[13px] font-medium text-white">{item.title}</span>
+            <span className="block text-[13px] font-medium text-foreground">{item.title}</span>
             <span className="block text-[12px] text-slate-400">{item.detail}</span>
           </p>
         ))}
@@ -68,7 +68,7 @@ function AgentDetail({
       <InspectorBlock icon={BookOpen} title="Can write" accent="text-emerald-300">
         {worker.writes.map((item) => (
           <p key={item.title} className="rounded-lg px-1 py-1.5">
-            <span className="block text-[13px] font-medium text-white">{item.title}</span>
+            <span className="block text-[13px] font-medium text-foreground">{item.title}</span>
             <span className="block text-[12px] text-slate-400">{item.detail}</span>
           </p>
         ))}
@@ -81,7 +81,7 @@ function AgentDetail({
         <ToolList id={id} mode="requires review" />
       </InspectorBlock>
       <InspectorBlock icon={Ban} title="Hard walls" accent="text-red-300">
-        <ul className="space-y-1.5 text-[13px] text-slate-200">
+        <ul className="space-y-1.5 text-[13px] text-slate-700">
           {worker.hardWalls.map((item) => (
             <li key={item}>{item}</li>
           ))}
@@ -91,9 +91,9 @@ function AgentDetail({
       <InspectorBlock icon={BookOpen} title="Recent actions" accent="text-violet-300">
         <ul className="space-y-2">
           {worker.runs.map((row) => (
-            <li key={row.id} className="rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+            <li key={row.id} className="rounded-lg border border-border bg-muted/50 px-3 py-2">
               <p className="text-[12px] text-slate-500">{row.time}</p>
-              <p className="mt-1 text-[13px] text-white">{row.result}</p>
+              <p className="mt-1 text-[13px] text-foreground">{row.result}</p>
             </li>
           ))}
         </ul>
@@ -108,7 +108,7 @@ function AgentDetail({
         )}
         <Link
           href={`/studio/w/${id}`}
-          className="mt-3 inline-flex min-h-11 items-center text-[13px] text-cyan-200 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+          className="mt-3 inline-flex min-h-11 items-center text-[13px] text-indigo-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
         >
           Open worker in Studio
         </Link>
@@ -124,7 +124,7 @@ function SystemDetail({ id, onSelectEvidence }: { id: SystemId; onSelectEvidence
   return (
     <InspectorFrame title={system.name} kicker="Connected system" summary={detail.purpose}>
       {detail.allowed.length > 0 && (
-        <InspectorBlock icon={Eye} title="Allowed" accent="text-cyan-300">
+        <InspectorBlock icon={Eye} title="Allowed" accent="text-indigo-600">
           <List items={detail.allowed} />
         </InspectorBlock>
       )}
@@ -138,14 +138,14 @@ function SystemDetail({ id, onSelectEvidence }: { id: SystemId; onSelectEvidence
           <List items={detail.blocked} />
         </InspectorBlock>
       )}
-      <InspectorBlock icon={BookOpen} title="Links" accent="text-slate-300">
+      <InspectorBlock icon={BookOpen} title="Links" accent="text-slate-600">
         <ul className="space-y-1">
           {edges.map((edge) => (
             <li key={edge.id}>
               <button
                 type="button"
                 onClick={() => onSelectEvidence(edge.id)}
-                className="w-full rounded-lg px-1 py-1.5 text-left text-[13px] text-slate-200 hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+                className="w-full rounded-lg px-1 py-1.5 text-left text-[13px] text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
               >
                 {edge.label}
               </button>
@@ -162,7 +162,7 @@ function RecordDetail({ onSelectEvidence }: { onSelectEvidence: (edgeId: EdgeId)
     <InspectorFrame title={RECORD.name} kicker="Shared memory" summary={RECORD.purpose}>
       <p className="mb-4 text-[12px] text-slate-400">{RECORD.rings}</p>
       <InspectorBlock icon={BookOpen} title="What gets written" accent="text-violet-300">
-        <p className="text-[13px] leading-relaxed text-slate-300">
+        <p className="text-[13px] leading-relaxed text-slate-600">
           Property notes and intent clusters from the two Studio workers accumulate here.
         </p>
         <button
@@ -193,7 +193,7 @@ function InspectorFrame({
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">{kicker}</p>
-          <h2 id="worker-inspector-title" className="mt-1 text-base font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 id="worker-inspector-title" className="mt-1 text-base font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>
             {title}
           </h2>
           <p className="mt-1 text-[13px] leading-relaxed text-slate-400">{summary}</p>
@@ -217,7 +217,7 @@ function InspectorBlock({
   children: ReactNode;
 }) {
   return (
-    <div className="mb-4 border-t border-white/[0.05] pt-3">
+    <div className="mb-4 border-t border-border pt-3">
       <p className={cn("mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider", accent)}>
         <Icon className="size-3.5" /> {title}
       </p>
@@ -226,9 +226,9 @@ function InspectorBlock({
   );
 }
 
-function Metric({ label, value, tone = "text-white" }: { label: string; value: string; tone?: string }) {
+function Metric({ label, value, tone = "text-foreground" }: { label: string; value: string; tone?: string }) {
   return (
-    <div className="rounded-lg border border-white/[0.05] bg-white/[0.02] px-3 py-2">
+    <div className="rounded-lg border border-border bg-muted/50 px-3 py-2">
       <dt className="text-slate-500">{label}</dt>
       <dd className={cn("mt-0.5 font-medium", tone)}>{value}</dd>
     </div>
@@ -237,7 +237,7 @@ function Metric({ label, value, tone = "text-white" }: { label: string; value: s
 
 function List({ items }: { items: string[] }) {
   return (
-    <ul className="space-y-1.5 text-[13px] text-slate-300">
+    <ul className="space-y-1.5 text-[13px] text-slate-600">
       {items.map((item) => (
         <li key={item}>{item}</li>
       ))}
@@ -248,12 +248,12 @@ function List({ items }: { items: string[] }) {
 function ToolList({ id, mode }: { id: WorkerId; mode: (typeof WORKERS)[WorkerId]["tools"][number]["mode"] }) {
   const tools = WORKERS[id].tools.filter((tool) => tool.mode === mode);
   if (tools.length === 0) return <p className="text-[13px] text-slate-500">None on this worker.</p>;
-  const tone = mode === "allowed" ? "border-emerald-500/25 text-emerald-300" : mode === "requires review" ? "border-amber-500/25 text-amber-300" : "border-red-500/25 text-red-300";
+  const tone = mode === "allowed" ? "border-emerald-200 text-emerald-300" : mode === "requires review" ? "border-amber-200 text-amber-300" : "border-red-500/25 text-red-300";
   return (
     <ul className="space-y-1.5">
       {tools.map((tool) => (
         <li key={tool.name} className="flex items-center justify-between gap-2 text-[12px]">
-          <span className="text-slate-200">{tool.name}</span>
+          <span className="text-slate-700">{tool.name}</span>
           <span className={cn("rounded-full border px-2 py-0.5", tone)}>{tool.mode}</span>
         </li>
       ))}

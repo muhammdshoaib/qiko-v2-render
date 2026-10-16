@@ -41,13 +41,13 @@ export function AssignReviewerControl({ agentId, opp, onSaved }: {
   const hasReviewer = Boolean(opp.assignedReviewerName || opp.assignedReviewerUserId);
 
   return (
-    <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+    <div className="rounded-2xl border border-border bg-muted/40 p-5">
       <div className="flex items-center gap-2">
         <span className="flex size-7 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-400">
           <UserCheck className="size-4" />
         </span>
         <div>
-          <p className="text-[13px] font-semibold text-white">Reviewer</p>
+          <p className="text-[13px] font-semibold text-foreground">Reviewer</p>
           <p className="text-[11px] text-slate-500">
             {hasReviewer
               ? `${opp.assignedReviewerName || opp.assignedReviewerUserId}${opp.assignedAt ? ` \u00b7 assigned ${formatDate(opp.assignedAt)}` : ""}`
@@ -72,14 +72,14 @@ export function AssignReviewerControl({ agentId, opp, onSaved }: {
       <div className="mt-4 flex items-center justify-end gap-2">
         {hasReviewer && (
           <button onClick={() => assign.mutate({ user_id: null, name: null })} disabled={assign.isPending}
-            className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-300 hover:bg-white/[0.06] disabled:opacity-50">
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-[13px] font-medium text-slate-600 hover:bg-muted disabled:opacity-50">
             <X className="size-3.5" /> Clear
           </button>
         )}
         <button
           onClick={() => assign.mutate({ user_id: trimmedId || null, name: trimmedName || null })}
           disabled={assign.isPending || !dirty || (!trimmedName && !trimmedId)}
-          className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 disabled:opacity-50">
+          className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-4 py-2 text-[13px] font-semibold text-foreground hover:bg-indigo-400 disabled:opacity-50">
           {assign.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <UserCheck className="size-3.5" />}
           {assign.isPending ? "Saving\u2026" : "Assign reviewer"}
         </button>

@@ -109,7 +109,7 @@ export default function OpportunityDetailPage() {
           <div className="space-y-3">
             <p className="text-sm text-slate-400">This opportunity couldn&apos;t be found. It may have been archived or removed.</p>
             <button onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline`)}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-semibold text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-[13px] font-semibold text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
               <ArrowLeft className="size-3.5" /> Back to pipeline
             </button>
           </div>
@@ -123,41 +123,41 @@ export default function OpportunityDetailPage() {
       {ConfirmActionDialog}
       <div className="space-y-5">
         <button onClick={() => router.push(`/studio/${agentId}/sales-intelligence/pipeline`)}
-          className="flex items-center gap-1.5 rounded-md px-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
+          className="flex items-center gap-1.5 rounded-md px-1 text-sm text-slate-500 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
           <ArrowLeft className="size-4" /> Back to pipeline
         </button>
 
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <div className="mb-2 flex items-center gap-2">
-              <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
+              <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
                 {sourceLabel(opp.sourceKey)}
               </span>
               <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${stageBadgeClass(opp.stage)}`}>
                 {STAGE_LABELS[opp.stage] ?? humanize(opp.stage)}
               </span>
             </div>
-            <h1 className="text-xl font-semibold leading-snug text-white">{opp.title}</h1>
+            <h1 className="text-xl font-semibold leading-snug text-foreground">{opp.title}</h1>
             <p className="mt-1 text-[13px] text-slate-400">{[opp.buyer, opp.externalId].filter(Boolean).join(" \u00b7 ") || "-"}</p>
           </div>
 
           <div className="flex shrink-0 items-center gap-2">
             {opp.sourceUrl && (
               <a href={opp.sourceUrl} target="_blank" rel="noreferrer"
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
+                className="flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
                 <ExternalLink className="size-3.5" /> Source
               </a>
             )}
             {(opp.stage === "ingested" || opp.stage === "qualifying") && (
               <button onClick={() => runQualification.mutate()} disabled={runQualification.isPending}
-                className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
+                className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-2 text-[13px] font-semibold text-foreground hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
                 <Sparkles className={cn("size-3.5", runQualification.isPending && "animate-spin")} /> {runQualification.isPending ? "Running…" : "Run Qualification"}
               </button>
             )}
             {opp.stage === "awaiting_review" && (
               <>
                 <button onClick={() => review.mutate("approved")} disabled={review.isPending}
-                  className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-2 text-[13px] font-semibold text-white hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:opacity-50">
+                  className="flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-2 text-[13px] font-semibold text-foreground hover:bg-emerald-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 disabled:opacity-50">
                   <Check className="size-3.5" /> {review.isPending && review.variables === "approved" ? "Approving…" : "Approve"}
                 </button>
                 <button onClick={() => review.mutate("rejected")} disabled={review.isPending}
@@ -168,27 +168,27 @@ export default function OpportunityDetailPage() {
             )}
             {(opp.stage === "validated" || opp.stage === "push_failed") && (
               <button onClick={() => push.mutate()} disabled={push.isPending}
-                className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
+                className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-2 text-[13px] font-semibold text-foreground hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
                 <Rocket className="size-3.5" /> {push.isPending ? "Pushing…" : "Push to Salesforce"}
               </button>
             )}
             {canEdit && !editing && (
               <button onClick={() => { setEditError(null); setEditing(true); }}
                 aria-label="Edit opportunity"
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
+                className="flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
                 <Pencil className="size-3.5" /> Edit
               </button>
             )}
             {isArchived ? (
               <button onClick={() => restore.mutate()} disabled={restore.isPending}
                 aria-label="Restore opportunity"
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+                className="flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
                 <RotateCcw className={cn("size-3.5", restore.isPending && "animate-spin")} /> {restore.isPending ? "Restoring…" : "Restore"}
               </button>
             ) : (
               <button onClick={() => archive.mutate()} disabled={archive.isPending}
                 aria-label="Archive opportunity"
-                className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-[13px] font-medium text-slate-200 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+                className="flex items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-[13px] font-medium text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
                 <Archive className={cn("size-3.5", archive.isPending && "animate-spin")} /> {archive.isPending ? "Archiving…" : "Archive"}
               </button>
             )}
@@ -221,8 +221,8 @@ export default function OpportunityDetailPage() {
         )}
 
         {editing ? (
-          <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
-            <h2 className="mb-4 text-[15px] font-semibold text-white">Edit opportunity</h2>
+          <div className="rounded-2xl border border-border bg-muted/40 p-5">
+            <h2 className="mb-4 text-[15px] font-semibold text-foreground">Edit opportunity</h2>
             <OpportunityForm
               mode="edit"
               initialValues={opportunityToForm(opp)}
@@ -234,11 +234,11 @@ export default function OpportunityDetailPage() {
           </div>
         ) : (
           <>
-            <div role="tablist" aria-label="Opportunity detail sections" className="flex gap-1 overflow-x-auto border-b border-white/[0.06]">
+            <div role="tablist" aria-label="Opportunity detail sections" className="flex gap-1 overflow-x-auto border-b border-border">
               {TABS.map((t) => (
                 <button key={t} onClick={() => setTab(t)} role="tab" aria-selected={tab === t}
-                  className={cn("shrink-0 rounded-t-md px-3 py-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                    tab === t ? "border-b-2 border-indigo-400 text-white" : "text-slate-400 hover:text-white")}>
+                  className={cn("shrink-0 rounded-t-md px-3 py-2.5 text-[13px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+                    tab === t ? "border-b-2 border-indigo-500 text-foreground" : "text-slate-500 hover:text-foreground")}>
                   {t}
                 </button>
               ))}
@@ -270,7 +270,7 @@ function Field({ label, value, tooltip }: { label: string; value: React.ReactNod
         {label}
         {tooltip && <HelpCircle className="size-3" aria-label={tooltip} />}
       </p>
-      <p className="mt-1.5 text-[14px] text-white">{value ?? "-"}</p>
+      <p className="mt-1.5 text-[14px] text-foreground">{value ?? "-"}</p>
     </div>
   );
 }
@@ -298,7 +298,7 @@ function ActivityTab({ agentId, oppId }: { agentId: string; oppId: string }) {
           <span aria-hidden="true" className={cn("mt-1.5 size-2.5 shrink-0 rounded-full", toneClass(e.tone))} />
           <div className="min-w-0">
             <div className="flex flex-wrap items-baseline gap-x-2">
-              <p className="text-[13px] font-medium text-white">{actionLabel(e.action)}</p>
+              <p className="text-[13px] font-medium text-foreground">{actionLabel(e.action)}</p>
               <time dateTime={e.createdAt} className="text-[11px] text-slate-500">{formatDate(e.createdAt, true)}</time>
               {e.actor?.userName && <span className="text-[11px] text-slate-500">{"\u00b7"} {e.actor.userName}</span>}
             </div>
@@ -329,12 +329,12 @@ function OverviewTab({ opp, detail }: { opp: import("@/lib/api").SalesOpportunit
         <Field label="Technology" value={ov?.technology} />
       </div>
 
-      <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+      <div className="rounded-2xl border border-border bg-muted/40 p-5">
         <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Contact</p>
         {ov?.contacts && ov.contacts.length > 0 ? (
           <div className="mt-2 space-y-1.5">
             {ov.contacts.map((c, i) => (
-              <p key={i} className="text-[13px] text-slate-300">{[c.name, c.email, c.phone].filter(Boolean).join(" \u00b7 ") || "-"}</p>
+              <p key={i} className="text-[13px] text-slate-600">{[c.name, c.email, c.phone].filter(Boolean).join(" \u00b7 ") || "-"}</p>
             ))}
           </div>
         ) : (
@@ -347,9 +347,9 @@ function OverviewTab({ opp, detail }: { opp: import("@/lib/api").SalesOpportunit
 
 function SummaryCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+    <div className="rounded-2xl border border-border bg-muted/40 p-5">
       <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{title}</p>
-      <div className="mt-2 text-[13px] leading-relaxed text-slate-300">{children}</div>
+      <div className="mt-2 text-[13px] leading-relaxed text-slate-600">{children}</div>
     </div>
   );
 }
@@ -401,7 +401,7 @@ function QualificationTab({ opp, detail }: { opp: import("@/lib/api").SalesOppor
   return (
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <div className="space-y-4">
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+        <div className="rounded-2xl border border-border bg-muted/40 p-5">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
             AI Reasoning {q?.confidence != null && `\u00b7 ${Math.round(q.confidence)}% confidence`}
           </p>
@@ -409,25 +409,25 @@ function QualificationTab({ opp, detail }: { opp: import("@/lib/api").SalesOppor
             <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-indigo-500/15 text-indigo-400">
               <Sparkles className="size-4" />
             </span>
-            <p className="text-[13px] leading-relaxed text-slate-300">{q?.aiReasoning ?? "No AI reasoning captured yet."}</p>
+            <p className="text-[13px] leading-relaxed text-slate-600">{q?.aiReasoning ?? "No AI reasoning captured yet."}</p>
           </div>
         </div>
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+        <div className="rounded-2xl border border-border bg-muted/40 p-5">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Recommendations</p>
           {q?.recommendations && q.recommendations.length > 0 ? (
-            <ul className="mt-2 list-disc space-y-1 pl-4 text-[13px] text-slate-300">
+            <ul className="mt-2 list-disc space-y-1 pl-4 text-[13px] text-slate-600">
               {q.recommendations.map((r, i) => <li key={i}>{r}</li>)}
             </ul>
           ) : <p className="mt-2 text-[13px] text-slate-500">No recommendations yet.</p>}
         </div>
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
-          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-400">
+        <div className="rounded-2xl border border-border bg-muted/40 p-5">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-700">
             <AlertTriangle className="size-3.5" /> Risks &amp; missing info
           </p>
           {risks.length === 0 && missing.length === 0 && blockers.length === 0 ? (
             <p className="mt-2 text-[13px] text-slate-500">No risks or gaps flagged.</p>
           ) : (
-            <div className="mt-3 space-y-3 text-[13px] text-slate-300">
+            <div className="mt-3 space-y-3 text-[13px] text-slate-600">
               {risks.length > 0 && (
                 <div>
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Risks</p>
@@ -445,7 +445,7 @@ function QualificationTab({ opp, detail }: { opp: import("@/lib/api").SalesOppor
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Missing information</p>
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     {missing.map((m, i) => (
-                      <span key={i} className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-400">
+                      <span key={i} className="inline-flex rounded-full border border-amber-500/30 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
                         {humanize(m)}
                       </span>
                     ))}
@@ -458,7 +458,7 @@ function QualificationTab({ opp, detail }: { opp: import("@/lib/api").SalesOppor
       </div>
 
       <div className="space-y-4">
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+        <div className="rounded-2xl border border-border bg-muted/40 p-5">
           <p className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
             Overall Score <HelpCircle className="size-3" />
           </p>
@@ -466,7 +466,7 @@ function QualificationTab({ opp, detail }: { opp: import("@/lib/api").SalesOppor
             <ScoreGauge score={q?.overallScore} />
             <div>
               <p className="text-[13px] text-slate-400">Qualification Score</p>
-              <p className="mt-0.5 text-[13px] leading-relaxed text-slate-300">
+              <p className="mt-0.5 text-[13px] leading-relaxed text-slate-600">
                 {q?.overallScore != null
                   ? q.overallScore >= 70 ? "Strong fit - recommended to bid."
                     : q.overallScore >= 40 ? "Moderate fit - review flagged dimensions before approval."
@@ -481,7 +481,7 @@ function QualificationTab({ opp, detail }: { opp: import("@/lib/api").SalesOppor
             </div>
           </div>
         </div>
-        <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+        <div className="rounded-2xl border border-border bg-muted/40 p-5">
           <p className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
             Qualification by criteria <HelpCircle className="size-3" aria-label="Service fit, geography, value and clearance dimensions scored by the AI" />
           </p>
@@ -491,9 +491,9 @@ function QualificationTab({ opp, detail }: { opp: import("@/lib/api").SalesOppor
                 <div key={dim}>
                   <div className="flex items-center justify-between text-[13px]">
                     <span className="text-slate-400">{humanize(dim)}</span>
-                    <span className="font-semibold text-white">{val}</span>
+                    <span className="font-semibold text-foreground">{val}</span>
                   </div>
-                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted">
                     <div className="h-full rounded-full bg-indigo-400" style={{ width: `${Math.max(0, Math.min(100, Number(val) || 0))}%` }} />
                   </div>
                 </div>
@@ -512,15 +512,15 @@ function NotesTab({ agentId, oppId, detail, onSaved }: { agentId: string; oppId:
 
   const dirty = notes !== (detail?.notes.humanReviewNotes ?? "");
   return (
-    <div className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
+    <div className="rounded-2xl border border-border bg-muted/40 p-5">
       <label htmlFor="human-review-notes" className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Human Review Notes</label>
       <Textarea id="human-review-notes" value={notes} onChange={(e) => setNotes(e.target.value)}
         placeholder="Add context for reviewers -- e.g. why this was approved, rejected, or needs follow-up."
         className="mt-3 min-h-32" />
       <div className="mt-3 flex items-center justify-end gap-3">
-        {save.isSuccess && !dirty && <span className="text-[12px] text-emerald-400">Saved</span>}
+        {save.isSuccess && !dirty && <span className="text-[12px] text-emerald-700">Saved</span>}
         <button onClick={() => save.mutate()} disabled={save.isPending || !dirty}
-          className="rounded-lg bg-indigo-500 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
+          className="rounded-lg bg-indigo-500 px-4 py-2 text-[13px] font-semibold text-foreground hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
           {save.isPending ? "Saving…" : "Save Notes"}
         </button>
       </div>
@@ -531,7 +531,7 @@ function NotesTab({ agentId, oppId, detail, onSaved }: { agentId: string; oppId:
 
 function Pill({ value }: { value: string | null | undefined }) {
   return (
-    <span className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[12px] font-medium text-slate-200">
+    <span className="inline-flex rounded-full border border-border bg-muted px-2.5 py-1 text-[12px] font-medium text-slate-700">
       {value ?? "-"}
     </span>
   );

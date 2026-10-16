@@ -3,16 +3,18 @@ import type { HonestyKind } from "./model";
 
 const LABEL: Record<HonestyKind, string> = {
   live: "Live",
-  connected: "Connected",
+  connected: "Live",
   illustrative: "Illustrative",
-  planned: "Planned",
+  planned: "Pending integration",
+  pending: "Pending integration",
 };
 
 const VARIANT: Record<HonestyKind, "success" | "default" | "warning" | "muted"> = {
   live: "success",
-  connected: "default",
+  connected: "success",
   illustrative: "warning",
   planned: "muted",
+  pending: "muted",
 };
 
 export function HonestyBadge({ kind, className }: { kind: HonestyKind; className?: string }) {

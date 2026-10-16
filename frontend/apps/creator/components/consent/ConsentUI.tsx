@@ -17,7 +17,9 @@ import { Switch } from "@/components/ui/switch";
 import { useConsent } from "./ConsentProvider";
 
 const CHOICE_BUTTON =
-  "min-h-11 flex-1 border border-cyan-400/50 bg-slate-900 px-4 text-white hover:bg-slate-800 focus-visible:ring-cyan-300";
+  "min-h-10 shrink-0 border border-slate-200 bg-white px-3 text-sm text-slate-800 shadow-sm hover:bg-slate-50 focus-visible:ring-indigo-300 sm:min-h-9";
+const PRIMARY_CHOICE_BUTTON =
+  "min-h-10 shrink-0 border-0 bg-indigo-600 px-3 text-sm text-white shadow-sm hover:bg-indigo-700 focus-visible:ring-indigo-300 sm:min-h-9";
 
 export function ConsentBanner() {
   const { acceptAll, rejectNonEssential, openPreferences, consent } = useConsent();
@@ -40,7 +42,10 @@ export function ConsentBanner() {
     if (!node || typeof ResizeObserver === "undefined") return;
     const apply = () => {
       // 0.75rem matches the `bottom-3` offset, so content clears the banner's shadow too.
-      document.body.style.setProperty("padding-bottom", `calc(${node.offsetHeight}px + 0.75rem)`);
+      const offset = `calc(${node.offsetHeight}px + 0.75rem)`;
+      document.body.style.setProperty("padding-bottom", offset);
+      // Auth screens use min-h-screen + flex centering; body padding alone does not lift them.
+      document.documentElement.style.setProperty("--consent-banner-offset", offset);
     };
     apply();
     const observer = new ResizeObserver(apply);
@@ -48,6 +53,7 @@ export function ConsentBanner() {
     return () => {
       observer.disconnect();
       document.body.style.removeProperty("padding-bottom");
+      document.documentElement.style.removeProperty("--consent-banner-offset");
     };
   }, []);
 
@@ -55,31 +61,34 @@ export function ConsentBanner() {
     <section
       ref={ref}
       aria-label="Cookie consent"
-      className="fixed inset-x-3 bottom-3 z-[100] mx-auto max-w-5xl rounded-2xl border border-slate-700 bg-[#0b101b]/[0.98] p-5 text-slate-200 shadow-2xl shadow-black/60 backdrop-blur sm:inset-x-6 sm:p-6"
+      className="fixed inset-x-3 bottom-3 z-[100] mx-auto max-w-4xl rounded-2xl border border-slate-200 bg-white p-4 text-slate-800 shadow-lg shadow-slate-900/10 sm:inset-x-6 sm:p-4"
     >
-      <div className="flex items-start gap-3">
-        <ShieldCheck aria-hidden className="mt-0.5 size-6 shrink-0 text-cyan-400" />
-        <div>
-          <h2 className="text-base font-semibold text-white">Your privacy choices</h2>
-          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-300">
-            Qiko uses necessary technologies to operate and secure the service. Analytics and marketing
-            technologies are off unless you choose them. None are currently loaded.
-          </p>
-          {consent.signals.gpc ? (
-            <p className="mt-2 text-xs text-cyan-300">Global Privacy Control is active, so marketing remains off.</p>
-          ) : consent.signals.dnt ? (
-            <p className="mt-2 text-xs text-cyan-300">Do Not Track was detected, so non-essential choices default to off.</p>
-          ) : null}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-indigo-50 text-indigo-600">
+            <ShieldCheck aria-hidden className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-slate-900">Your privacy choices</h2>
+            <p className="mt-0.5 text-[13px] leading-5 text-slate-600">
+              Necessary cookies stay on. Analytics and marketing stay off until you choose them.{" "}
+              <a href="/cookies" className="font-medium text-indigo-600 underline-offset-2 hover:underline">
+                Cookie Policy
+              </a>
+            </p>
+            {consent.signals.gpc ? (
+              <p className="mt-1 text-xs text-indigo-600">Global Privacy Control is active, so marketing remains off.</p>
+            ) : consent.signals.dnt ? (
+              <p className="mt-1 text-xs text-indigo-600">Do Not Track was detected, so non-essential choices default to off.</p>
+            ) : null}
+          </div>
+        </div>
+        <div className="flex shrink-0 flex-col gap-2 sm:flex-row sm:items-center">
+          <Button type="button" onClick={acceptAll} className={PRIMARY_CHOICE_BUTTON}>Accept all</Button>
+          <Button type="button" onClick={rejectNonEssential} className={CHOICE_BUTTON}>Reject non-essential</Button>
+          <Button type="button" onClick={openPreferences} className={CHOICE_BUTTON}>Manage preferences</Button>
         </div>
       </div>
-      <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-        <Button type="button" onClick={acceptAll} className={CHOICE_BUTTON}>Accept all</Button>
-        <Button type="button" onClick={rejectNonEssential} className={CHOICE_BUTTON}>Reject non-essential</Button>
-        <Button type="button" onClick={openPreferences} className={CHOICE_BUTTON}>Manage preferences</Button>
-      </div>
-      <p className="mt-3 text-xs text-slate-400">
-        Read our <a href="/cookies" className="text-cyan-300 underline-offset-2 hover:underline">Cookie Policy</a>.
-      </p>
     </section>
   );
 }
@@ -105,10 +114,10 @@ export function ConsentPreferencesDialog() {
 
   return (
     <Dialog open={preferencesOpen} onOpenChange={(open) => { if (!open) closePreferences(); }}>
-      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto border-slate-700 bg-[#0b101b] text-white sm:max-w-xl">
+      <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto border-slate-200 bg-white text-slate-900 sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Cookie preferences</DialogTitle>
-          <DialogDescription className="leading-6 text-slate-300">
+          <DialogTitle className="text-slate-900">Cookie preferences</DialogTitle>
+          <DialogDescription className="leading-6 text-slate-600">
             Choose whether Qiko may use optional technologies. You can return here at any time.
           </DialogDescription>
         </DialogHeader>
@@ -142,7 +151,7 @@ export function ConsentPreferencesDialog() {
         </div>
 
         {consent.signals.dnt ? (
-          <p className="text-xs leading-5 text-slate-400">
+          <p className="text-xs leading-5 text-slate-500">
             Your browser sends Do Not Track. Optional technologies started off, but you may change that preference.
           </p>
         ) : null}
@@ -154,7 +163,7 @@ export function ConsentPreferencesDialog() {
           <Button
             type="button"
             onClick={() => savePreferences({ preferences, analytics, marketing })}
-            className={CHOICE_BUTTON}
+            className={PRIMARY_CHOICE_BUTTON}
           >
             Save preferences
           </Button>
@@ -180,10 +189,10 @@ function PreferenceRow({
   onCheckedChange?: (checked: boolean) => void;
 }) {
   return (
-    <div className="flex items-start justify-between gap-5 rounded-xl border border-slate-700/80 bg-slate-900/70 p-4">
+    <div className="flex items-start justify-between gap-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
       <label htmlFor={id} className="cursor-pointer">
-        <span className="block text-sm font-semibold text-white">{title}</span>
-        <span className="mt-1 block text-xs leading-5 text-slate-400">{description}</span>
+        <span className="block text-sm font-semibold text-slate-900">{title}</span>
+        <span className="mt-1 block text-xs leading-5 text-slate-500">{description}</span>
       </label>
       <Switch
         id={id}
@@ -191,7 +200,7 @@ function PreferenceRow({
         checked={checked}
         disabled={disabled}
         onCheckedChange={onCheckedChange}
-        className="mt-1 data-[state=checked]:bg-cyan-500"
+        className="mt-1 data-[state=checked]:bg-indigo-600"
       />
     </div>
   );
@@ -201,20 +210,20 @@ export function ConsentSettingsButton({ variant = "inline", className = "" }: {
   variant?: "inline" | "floating";
   className?: string;
 }) {
-  const { openPreferences } = useConsent();
+  const { openPreferences, hasDecision } = useConsent();
   const pathname = usePathname();
 
   if (variant === "floating") {
     // AppShell'd routes already surface cookie settings inline (Settings > Privacy choices), and
     // the floating button has twice collided with in-app chrome anchored to the same corner
     // (Logout, then the chat send button - see app-shell-routes.ts). Only show it where there's
-    // no other entry point.
-    if (isAppShellRoute(pathname)) return null;
+    // no other entry point. Hide while the consent banner is up — it already offers Manage preferences.
+    if (isAppShellRoute(pathname) || !hasDecision) return null;
     return (
       <button
         type="button"
         onClick={openPreferences}
-        className="fixed bottom-4 right-4 z-[90] inline-flex min-h-11 items-center gap-2 rounded-full border border-slate-600 bg-[#0b101b] px-3 text-xs font-medium text-slate-200 shadow-lg transition-colors hover:border-cyan-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 sm:px-4"
+        className="fixed bottom-4 right-4 z-[90] inline-flex min-h-11 items-center gap-2 rounded-full border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 shadow-lg transition-colors hover:border-indigo-300 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 sm:px-4"
         aria-label="Open cookie settings"
       >
         <Settings2 aria-hidden className="size-4" />
@@ -227,7 +236,7 @@ export function ConsentSettingsButton({ variant = "inline", className = "" }: {
     <button
       type="button"
       onClick={openPreferences}
-      className={`text-inherit transition-colors hover:text-white focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 ${className}`}
+      className={`text-inherit transition-colors hover:text-foreground focus-visible:rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 ${className}`}
     >
       Cookie settings
     </button>

@@ -50,7 +50,7 @@ export function WorkerAvatar({
   const s = SIZE_STYLES[size];
   return (
     <div className={cn("relative shrink-0", className)}>
-      <div className={cn("grid place-items-center bg-gradient-to-br from-cyan-400 to-blue-500 font-bold text-white shadow-lg shadow-cyan-500/20", s.box)}>
+      <div className={cn("grid place-items-center bg-gradient-to-br from-indigo-500 to-violet-600 font-bold text-foreground shadow-lg shadow-indigo-200", s.box)}>
         <span aria-hidden="true">{initialOf(name)}</span>
       </div>
       {ready && (

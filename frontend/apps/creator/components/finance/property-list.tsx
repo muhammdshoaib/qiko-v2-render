@@ -44,7 +44,7 @@ export function PropertyList({
         <button
           type="button"
           onClick={() => onSelect?.(p.propertyRef ?? p.propertyId ?? "")}
-          className="text-left text-indigo-300 hover:underline"
+          className="text-left text-indigo-600 hover:underline"
         >
           {p.name || p.propertyRef || p.propertyId}
         </button>
@@ -60,7 +60,7 @@ export function PropertyList({
 
   return (
     <div className="space-y-3">
-      <h3 className="text-sm font-semibold text-white/88">{title}</h3>
+      <h3 className="text-sm font-semibold text-foreground/88">{title}</h3>
       <DataTable
         caption={title}
         rows={rows}
@@ -74,7 +74,7 @@ export function PropertyList({
             <button
               type="button"
               onClick={() => router.push(`/studio/${agentId}/finance/property/${encodeURIComponent(p.propertyRef ?? p.propertyId ?? "")}`)}
-              className="text-xs text-indigo-300 hover:underline"
+              className="text-xs text-indigo-600 hover:underline"
             >
               View
             </button>

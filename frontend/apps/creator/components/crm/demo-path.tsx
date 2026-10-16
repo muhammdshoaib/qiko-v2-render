@@ -40,23 +40,23 @@ function DemoPathInner({ compact }: { compact: boolean }) {
   const next = DEMO_STEPS.find((step) => step.n === current.n + 1);
 
   return (
-    <nav aria-label="Guided demo" className={cn("rounded-2xl border border-white/[0.06] bg-white/[0.015]", compact ? "p-3" : "p-4")}>
+    <nav aria-label="Guided demo" className={cn("rounded-2xl border border-border bg-muted/40", compact ? "p-3" : "p-4")}>
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Leadership demo</p>
-          <p className={cn("text-slate-300", compact ? "mt-1 text-[12px]" : "mt-1 text-sm")}>
+          <p className={cn("text-slate-600", compact ? "mt-1 text-[12px]" : "mt-1 text-sm")}>
             Step {current.n} of {DEMO_STEPS.length} · {current.title}
           </p>
           {!compact && <p className="mt-1 text-[12px] text-slate-500">{current.hint}</p>}
         </div>
         <div className="flex flex-wrap gap-2">
           {prev && (
-            <Link href={prev.href} className="inline-flex min-h-11 items-center rounded-lg border border-white/10 px-3 text-sm text-slate-300 hover:text-white">
+            <Link href={prev.href} className="inline-flex min-h-11 items-center rounded-lg border border-border px-3 text-sm text-slate-600 hover:text-foreground">
               Previous
             </Link>
           )}
           {next && (
-            <Link href={next.href} className="inline-flex min-h-11 items-center rounded-lg bg-white/10 px-3 text-sm text-white hover:bg-white/15">
+            <Link href={next.href} className="inline-flex min-h-11 items-center rounded-lg bg-slate-100 px-3 text-sm text-foreground hover:bg-white/15">
               Next
             </Link>
           )}
@@ -73,8 +73,8 @@ function DemoPathInner({ compact }: { compact: boolean }) {
               aria-current={step.n === current.n ? "step" : undefined}
               title={`${step.n}. ${step.title}`}
               className={cn(
-                "flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                step.n === current.n ? "bg-white/10 text-white" : "text-slate-500 hover:text-white",
+                "flex min-h-11 min-w-11 items-center justify-center rounded-lg text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+                step.n === current.n ? "bg-slate-100 text-foreground" : "text-slate-500 hover:text-foreground",
               )}
             >
               <span className="sr-only">{step.title}</span>

@@ -33,12 +33,12 @@ export default function NewOpportunityPage() {
     <CockpitShell agentId={agentId} workerName={worker?.name ?? "IDG - Sales Intelligence"} active="pipeline">
       <div className="mx-auto max-w-3xl space-y-5">
         <button onClick={backToPipeline}
-          className="flex items-center gap-1.5 rounded-md px-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60">
+          className="flex items-center gap-1.5 rounded-md px-1 text-sm text-slate-500 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
           <ArrowLeft className="size-4" /> Back to pipeline
         </button>
 
         <div>
-          <h1 className="text-xl font-semibold text-white">Add an opportunity</h1>
+          <h1 className="text-xl font-semibold text-foreground">Add an opportunity</h1>
           <p className="mt-1 text-[13px] text-slate-400">
             Manually capture a tender that wasn&apos;t scanned from a portal. Only the title is required.
           </p>

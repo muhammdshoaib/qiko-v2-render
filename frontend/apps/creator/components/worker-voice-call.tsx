@@ -60,13 +60,13 @@ export function WorkerVoiceCall({ id }: { id: string }) {
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-white/[0.02] p-3">
+    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-muted/50 p-3">
       <div className="flex items-center gap-2 text-sm">
         <span className={cn("flex size-8 items-center justify-center rounded-full",
-          status === "active" ? "bg-emerald-500/15 text-emerald-400" : "bg-white/[0.06] text-slate-400")}>
+          status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-muted text-slate-400")}>
           <Mic className="size-4" />
         </span>
-        <span className="text-slate-300">
+        <span className="text-slate-600">
           {status === "active" ? (speaking ? "Worker is speaking..." : "Listening...")
             : status === "connecting" ? "Connecting..."
               : "Talk to this worker by voice"}

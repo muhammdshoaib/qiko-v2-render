@@ -48,7 +48,7 @@ export function OpportunityDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-[#0c111c] text-slate-200">
+      <DialogContent className="bg-card text-slate-700">
         <DialogHeader>
           <DialogTitle>{initial ? "Edit opportunity" : "New opportunity"}</DialogTitle>
           <DialogDescription>Stored only in this browser. No CRM backend is called.</DialogDescription>

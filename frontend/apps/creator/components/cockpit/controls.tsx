@@ -3,7 +3,7 @@
 // Canonical dark-theme form controls shared across the IDG worker cockpits (Sales Intelligence,
 // Pre-Sales). Every text input / textarea / native <select> / on-off switch in the cockpits should
 // use these primitives so they all share one identical look and focus / disabled behaviour on the
-// #05070d cockpit surface (bg-white/[0.03] · border-white/10 · rounded-lg · indigo focus ring),
+// #05070d cockpit surface (bg-muted · border-border · rounded-lg · indigo focus ring),
 // instead of the previous ad-hoc / native-unstyled controls. Styling only -- these forward every
 // native prop (value, onChange, disabled, aria-*, id, placeholder, …) unchanged.
 import * as React from "react";
@@ -13,7 +13,7 @@ import { cn } from "@qiko/ui";
 // One shared base so height/padding/radius/border/bg + focus + disabled states can never drift
 // between the different control types.
 const CONTROL_BASE =
-  "w-full rounded-lg border border-white/10 bg-white/[0.03] text-sm text-slate-200 " +
+  "w-full rounded-lg border border-border bg-muted text-sm text-slate-700 " +
   "placeholder:text-slate-500 transition-colors " +
   "focus-visible:border-indigo-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 " +
   "disabled:cursor-not-allowed disabled:opacity-50";
@@ -39,7 +39,7 @@ export function Select({
       <select
         className={cn(
           CONTROL_BASE,
-          "appearance-none px-3 py-2 pr-9 [&>option]:bg-[#0b0e16] [&>option]:text-slate-200",
+          "appearance-none px-3 py-2 pr-9 [&>option]:bg-white [&>option]:text-slate-700",
           className,
         )}
         {...props}
@@ -76,7 +76,7 @@ export function Switch({
         "relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border p-0 transition-colors " +
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 focus-visible:ring-offset-[#05070d] " +
         "disabled:cursor-not-allowed disabled:opacity-50",
-        checked ? "border-indigo-500 bg-indigo-500" : "border-white/15 bg-white/20",
+        checked ? "border-indigo-500 bg-indigo-500" : "border-border bg-white/20",
         className,
       )}
       {...props}

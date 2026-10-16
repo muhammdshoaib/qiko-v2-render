@@ -37,7 +37,7 @@ export function ChatBubble({ role, text, variant = "default" }: {
               </a>
             ),
             code: ({ children }) => (
-              <code className="rounded bg-black/10 px-1 py-0.5 font-mono text-[0.85em] dark:bg-white/10">{children}</code>
+              <code className="rounded bg-black/10 px-1 py-0.5 font-mono text-[0.85em] dark:bg-slate-100">{children}</code>
             ),
             hr: () => <hr className="my-2 border-current/10" />,
             table: ({ children }) => (
@@ -83,7 +83,7 @@ export function AnswerMarkdown({ text }: { text: string }) {
           </a>
         ),
         code: ({ children }) => (
-          <code className="rounded bg-black/10 px-1 py-0.5 font-mono text-[0.85em] dark:bg-white/10">{children}</code>
+          <code className="rounded bg-black/10 px-1 py-0.5 font-mono text-[0.85em] dark:bg-slate-100">{children}</code>
         ),
         hr: () => <hr className="my-3 border-current/10" />,
         table: ({ children }) => (
@@ -110,7 +110,7 @@ export function AnswerMarkdown({ text }: { text: string }) {
 export function TypingIndicator({ variant = "default" }: { variant?: "default" | "gradient" }) {
   return (
     <div className={cn("inline-flex items-center gap-1 rounded-2xl rounded-bl-sm px-4 py-3",
-      variant === "gradient" ? "bg-white/[0.06]" : "bg-muted")}>
+      variant === "gradient" ? "bg-muted" : "bg-muted")}>
       {[0, 1, 2].map((i) => (
         <span key={i} className="size-1.5 animate-bounce rounded-full bg-current opacity-60"
           style={{ animationDelay: `${i * 0.15}s`, animationDuration: "0.9s" }} />

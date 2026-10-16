@@ -48,8 +48,8 @@ export function TenderSwitcher({
         aria-expanded={open}
         aria-label="Switch active tender"
         className={cn(
-          "flex w-full items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-sm text-slate-200 transition-colors",
-          "hover:bg-white/[0.06] focus-visible:border-indigo-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
+          "flex w-full items-center gap-1.5 rounded-lg border border-border bg-muted px-3 py-2 text-sm text-slate-700 transition-colors",
+          "hover:bg-muted focus-visible:border-indigo-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500",
         )}
       >
         <span className="min-w-0 flex-1 truncate text-left">{active?.title ?? "Select tender"}</span>
@@ -60,7 +60,7 @@ export function TenderSwitcher({
         <ul
           role="listbox"
           aria-label="Tenders"
-          className="absolute right-0 z-50 mt-1 max-h-[60vh] w-[260px] overflow-y-auto rounded-lg border border-white/10 bg-[#05070d] p-1 shadow-xl shadow-black/50"
+          className="absolute right-0 z-50 mt-1 max-h-[60vh] w-[260px] overflow-y-auto rounded-lg border border-border bg-background p-1 shadow-xl shadow-black/50"
         >
           {packs.map((p) => {
             const isActive = p.id === activePackId;
@@ -70,8 +70,8 @@ export function TenderSwitcher({
                   type="button"
                   onClick={() => { onSelectPack(p.id); setOpen(false); }}
                   className={cn(
-                    "flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                    isActive ? "bg-indigo-500/10 text-white" : "text-slate-300 hover:bg-white/[0.06] hover:text-white",
+                    "flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+                    isActive ? "bg-indigo-50 text-indigo-800" : "text-slate-500 hover:bg-slate-100 hover:text-foreground",
                   )}
                 >
                   <Check aria-hidden="true" className={cn("mt-0.5 size-4 shrink-0", isActive ? "text-indigo-400" : "text-transparent")} />

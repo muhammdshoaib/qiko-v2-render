@@ -67,26 +67,26 @@ function FeedCard({
 }) {
   const vacant = items.length === 0 && !lead;
   return (
-    <section className="rounded-2xl border border-white/10 bg-card p-5" aria-label={title}>
+    <section className="rounded-2xl border border-border bg-card p-5" aria-label={title}>
       <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>{title}</h2>
       {vacant ? (
         <p className="mt-4 text-sm text-slate-400">{empty}</p>
       ) : (
-        <ul className="mt-3 divide-y divide-white/[0.06]">
+        <ul className="mt-3 divide-y divide-border">
           {lead && (
             <li className="py-3 first:pt-1">
               <button
                 type="button"
                 onClick={lead.onOpen}
-                className="w-full rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+                className="w-full rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
               >
                 <div className="flex items-start justify-between gap-3">
                   <p className="text-[13.5px] font-medium text-foreground">{lead.title}</p>
-                  <span className={cn("shrink-0 font-mono text-[10.5px] uppercase tracking-wider", lead.status === "attention" ? "text-amber-400" : "text-slate-400")}>
+                  <span className={cn("shrink-0 font-mono text-[10.5px] uppercase tracking-wider", lead.status === "attention" ? "text-amber-700" : "text-slate-400")}>
                     {lead.status === "attention" ? "Review" : "Done"}
                   </span>
                 </div>
-                <p className="mt-1 text-[12.5px] leading-relaxed text-slate-300">{lead.detail}</p>
+                <p className="mt-1 text-[12.5px] leading-relaxed text-slate-600">{lead.detail}</p>
                 <p className="mt-2 font-mono text-[11px] text-slate-400">{lead.originLabel} · {lead.at}</p>
               </button>
               {lead.actions}
@@ -97,15 +97,15 @@ function FeedCard({
               <button
                 type="button"
                 onClick={() => onOpen(item.origin)}
-                className="w-full rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+                className="w-full rounded-lg text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
               >
                 <div className="flex items-start justify-between gap-3">
                   <p className="text-[13.5px] font-medium text-foreground">{item.title}</p>
-                  <span className={cn("shrink-0 font-mono text-[10.5px] uppercase tracking-wider", item.status === "attention" ? "text-amber-400" : "text-slate-400")}>
+                  <span className={cn("shrink-0 font-mono text-[10.5px] uppercase tracking-wider", item.status === "attention" ? "text-amber-700" : "text-slate-400")}>
                     {item.status === "attention" ? "Review" : "Done"}
                   </span>
                 </div>
-                <p className="mt-1 text-[12.5px] leading-relaxed text-slate-300">{item.detail}</p>
+                <p className="mt-1 text-[12.5px] leading-relaxed text-slate-600">{item.detail}</p>
                 <p className="mt-2 font-mono text-[11px] text-slate-400">
                   {item.originLabel} · {item.at}
                 </p>

@@ -14,7 +14,7 @@ const TABS: { id: BlockPane; label: string }[] = [
   { id: "overview", label: "Overview" },
   { id: "activity", label: "Activity" },
   { id: "learning", label: "Learning" },
-  { id: "outcomes", label: "Outcomes" },
+  { id: "outcomes", label: "Insights" },
 ];
 
 export function BlockView({
@@ -129,7 +129,7 @@ function Overview({
   return (
     <>
       {block.id === "investors" ? (
-        <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-card px-4 py-3.5">
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3.5">
           <div>
             <p className="font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">
               {isDecided(referral.status) ? "Latest decision" : referral.status === "deferred" ? "Deferred" : "Awaiting a person"}
@@ -139,7 +139,7 @@ function Overview({
           <div className="flex flex-wrap items-center gap-2">
             <PulseChip tone={statusTone(referral.status)}>{statusLabel(referral.status)}</PulseChip>
             <GhostButton onClick={() => onNav({ pane: "activity", detail: REFERRAL_EVIDENCE_ID })}>See evidence</GhostButton>
-            <GhostButton onClick={() => onNav({ pane: "outcomes", detail: REFERRAL_ID })}>Open Outcomes</GhostButton>
+            <GhostButton onClick={() => onNav({ pane: "outcomes", detail: REFERRAL_ID })}>Open Insights</GhostButton>
           </div>
         </section>
       ) : (
@@ -163,7 +163,7 @@ function Overview({
             key={item.id}
             type="button"
             onClick={() => onSnapshot(item)}
-            className="rounded-2xl border border-white/10 bg-card px-4 py-4 text-left hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+            className="rounded-2xl border border-border bg-card px-4 py-4 text-left hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
           >
             <span className="block font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">{item.label}</span>
             <span className="mt-1 block text-[20px] font-extrabold tracking-[-0.02em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
@@ -189,7 +189,7 @@ function Overview({
                   key={id}
                   type="button"
                   onClick={() => onNav({ block: block.id, worker: id, detail: null })}
-                  className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-white/10 px-3 py-3 text-left hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+                  className="flex min-h-11 w-full items-center justify-between gap-3 rounded-xl border border-border px-3 py-3 text-left hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
                 >
                   <span>
                     <span className="block text-[9.5px] font-medium uppercase tracking-[0.1em] text-primary">Worker</span>
@@ -204,7 +204,7 @@ function Overview({
                 </button>
               );
             })}
-            <ul className="divide-y divide-white/[0.06] pt-1">
+            <ul className="divide-y divide-border pt-1">
               {block.sources.map((source) => (
                 <li key={source.id}>
                   <button
@@ -231,7 +231,7 @@ function Overview({
                 key={item.id}
                 type="button"
                 onClick={() => onNav({ detail: item.id })}
-                className="flex w-full flex-col rounded-xl border border-white/10 px-3 py-3 text-left hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+                className="flex w-full flex-col rounded-xl border border-border px-3 py-3 text-left hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
               >
                 <span className="flex items-center justify-between gap-2">
                   <span className="text-[14px] font-semibold text-foreground">{item.name}</span>
@@ -264,13 +264,13 @@ function Activity({
         {block.conversations.length === 0 ? (
           <p className="text-sm text-slate-500">No conversations on this block yet.</p>
         ) : (
-          <ul className="divide-y divide-white/[0.06]">
+          <ul className="divide-y divide-border">
             {block.conversations.map((row) => (
               <li key={row.id}>
                 <button
                   type="button"
                   onClick={() => onNav({ detail: row.id })}
-                  className="flex w-full flex-col py-3 text-left first:pt-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+                  className="flex w-full flex-col py-3 text-left first:pt-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
                 >
                   <span className="flex items-start justify-between gap-3">
                     <span>
@@ -337,7 +337,7 @@ function Learning({
   if (block.id !== "investors") {
     return (
       <PulseCard title="Patterns and knowledge" hint="Click a row for evidence.">
-        <ul className="divide-y divide-white/[0.06]">
+        <ul className="divide-y divide-border">
           {block.learnings.map((item) => {
             const state = LEARNING_LABEL[item.state];
             return (
@@ -362,7 +362,7 @@ function Learning({
   return (
     <>
       <PulseCard title="Observed" hint="What the Intelligence Worker noticed, and the evidence behind it.">
-        <ul className="divide-y divide-white/[0.06]">
+        <ul className="divide-y divide-border">
           {observations.map((item) => (
             <li key={item.id} className="flex flex-col gap-2 py-3 first:pt-0 sm:flex-row sm:items-start sm:justify-between">
               <button type="button" onClick={() => onNav({ detail: item.id })} className="text-left">
@@ -385,7 +385,7 @@ function Learning({
           <button
             type="button"
             onClick={() => onNav({ pane: "outcomes", detail: REFERRAL_ID })}
-            className="flex w-full flex-col rounded-xl border border-white/10 px-3 py-3 text-left hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60 sm:flex-row sm:items-start sm:justify-between"
+            className="flex w-full flex-col rounded-xl border border-border px-3 py-3 text-left hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 sm:flex-row sm:items-start sm:justify-between"
           >
             <span>
               <span className="block text-[13.5px] font-medium text-foreground">{REFERRAL.title}</span>
@@ -393,10 +393,10 @@ function Learning({
             </span>
             <PulseChip tone={KNOWLEDGE_LAYER.recommendation.tone}>{KNOWLEDGE_LAYER.recommendation.label}</PulseChip>
           </button>
-          <div className="rounded-xl border border-white/10 bg-muted px-3 py-3">
+          <div className="rounded-xl border border-border bg-muted px-3 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="text-[13.5px] font-medium text-foreground">
-                {decided ? decisionLabel(referral.status) : "Nothing captured yet. Approve or decline on Outcomes to write this to the company record."}
+                {decided ? decisionLabel(referral.status) : "Nothing captured yet. Approve or decline on Insights to write this to the company record."}
               </p>
               <PulseChip tone={decisionTone}>{KNOWLEDGE_LAYER.decision.label}</PulseChip>
             </div>
@@ -412,7 +412,7 @@ function Learning({
             )}
             {!decided && (
               <div className="mt-3">
-                <GhostButton onClick={() => onNav({ pane: "outcomes", detail: REFERRAL_ID })}>Open Outcomes</GhostButton>
+                <GhostButton onClick={() => onNav({ pane: "outcomes", detail: REFERRAL_ID })}>Open Insights</GhostButton>
               </div>
             )}
           </div>
@@ -442,9 +442,9 @@ function Outcomes({
   return (
     <PulseCard title="Recommendations and results" hint="Open a row for the full history.">
       {block.outcomes.length === 0 ? (
-        <p className="text-sm text-slate-500">No outcomes on this block yet.</p>
+        <p className="text-sm text-slate-500">No insights on this block yet.</p>
       ) : (
-        <ul className="divide-y divide-white/[0.06]">
+        <ul className="divide-y divide-border">
           {block.outcomes.map((item) => {
             const live = item.id === REFERRAL_ID;
             const tone = live ? statusTone(referral.status) : item.status === "awaiting" ? "warn" : "good";

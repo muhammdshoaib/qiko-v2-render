@@ -1,4 +1,5 @@
-export type HonestyKind = "live" | "connected" | "illustrative" | "planned";
+/** Live | Illustrative | Pending integration — no ambiguous “live if linked”. */
+export type HonestyKind = "live" | "connected" | "illustrative" | "planned" | "pending";
 export type WorkerId = "property-insights" | "intent-intelligence";
 export type SystemId = "properties" | "investor-app" | "knowledge" | "chat";
 export type FocusId = WorkerId | SystemId | "record";

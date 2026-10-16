@@ -22,7 +22,7 @@ export function FlowDiagram({
             key={source.id}
             type="button"
             onClick={() => onSource(source.id)}
-            className="flex min-h-11 w-full flex-col rounded-xl border border-white/10 bg-card px-3 py-2.5 text-left hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+            className="flex min-h-11 w-full flex-col rounded-xl border border-border bg-card px-3 py-2.5 text-left hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
           >
             <span className="text-[13px] font-semibold text-foreground">{source.name}</span>
             <span className="text-[11px] text-slate-500">{source.role}</span>
@@ -38,7 +38,7 @@ export function FlowDiagram({
               key={id}
               type="button"
               onClick={() => onWorker(id)}
-              className="flex min-h-[72px] w-full flex-col rounded-2xl border border-white/10 bg-card px-3 py-3 text-left hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+              className="flex min-h-[72px] w-full flex-col rounded-2xl border border-border bg-card px-3 py-3 text-left hover:border-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
             >
               <span className="text-[9.5px] font-medium uppercase tracking-[0.1em] text-primary">Worker</span>
               <span className="mt-0.5 text-[14px] font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>

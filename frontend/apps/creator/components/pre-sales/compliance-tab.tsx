@@ -60,19 +60,19 @@ export function ComplianceTab({ packId, onOpenSources }: { packId: string; onOpe
   }), [items]);
 
   if (packQ.isLoading) {
-    return <div className="space-y-3">{[0, 1, 2].map((i) => <div key={i} className="h-16 animate-pulse rounded-2xl bg-white/[0.04]" />)}</div>;
+    return <div className="space-y-3">{[0, 1, 2].map((i) => <div key={i} className="h-16 animate-pulse rounded-2xl bg-muted" />)}</div>;
   }
 
   if (!docText.trim()) {
     return (
-      <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-14 text-center">
-        <span className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-white/[0.04] text-slate-500">
+      <div className="flex flex-col items-center rounded-2xl border border-border bg-muted/40 px-4 py-14 text-center">
+        <span className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-muted text-slate-500">
           <ShieldCheck className="size-6" />
         </span>
-        <p className="text-sm font-semibold text-white">No tender document yet</p>
+        <p className="text-sm font-semibold text-foreground">No tender document yet</p>
         <p className="mt-1 max-w-sm text-[12px] text-slate-500">Upload the RFP to extract its mandatory compliance requirements.</p>
         <button onClick={onOpenSources}
-          className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
+          className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3.5 py-2 text-[13px] font-semibold text-foreground hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">
           <Upload className="size-4" /> Go to Sources
         </button>
       </div>
@@ -80,7 +80,7 @@ export function ComplianceTab({ packId, onOpenSources }: { packId: string; onOpe
   }
 
   if (checkQ.isLoading) {
-    return <div className="space-y-3">{[0, 1, 2].map((i) => <div key={i} className="h-16 animate-pulse rounded-2xl bg-white/[0.04]" />)}</div>;
+    return <div className="space-y-3">{[0, 1, 2].map((i) => <div key={i} className="h-16 animate-pulse rounded-2xl bg-muted" />)}</div>;
   }
 
   // No persisted compliance yet: either it's still being generated in the background (small
@@ -88,21 +88,21 @@ export function ComplianceTab({ packId, onOpenSources }: { packId: string; onOpe
   if (checkQ.data == null) {
     if (generating || regenerate.isPending) {
       return (
-        <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-14 text-center">
+        <div className="flex flex-col items-center rounded-2xl border border-border bg-muted/40 px-4 py-14 text-center">
           <Loader2 className="mb-3 size-6 animate-spin text-indigo-400" />
-          <p className="text-sm font-medium text-slate-200">Checking compliance{"\u2026"}</p>
+          <p className="text-sm font-medium text-slate-700">Checking compliance{"\u2026"}</p>
           <p className="mt-1 text-[12px] text-slate-500">Extracting mandatory pass/fail requirements from the tender.</p>
         </div>
       );
     }
     return (
-      <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-12 text-center">
-        {regenerate.isError ? <AlertTriangle className="mb-3 size-6 text-amber-400" /> : <ShieldCheck className="mb-3 size-6 text-slate-500" />}
-        <p className="text-sm font-medium text-slate-200">
+      <div className="flex flex-col items-center rounded-2xl border border-border bg-muted/40 px-4 py-12 text-center">
+        {regenerate.isError ? <AlertTriangle className="mb-3 size-6 text-amber-700" /> : <ShieldCheck className="mb-3 size-6 text-slate-500" />}
+        <p className="text-sm font-medium text-slate-700">
           {regenerate.isError ? "Couldn't run the compliance check" : "No compliance check yet"}
         </p>
         <button onClick={() => regenerate.mutate()} disabled={regenerate.isPending}
-          className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3.5 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
+          className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-3.5 py-2 text-[13px] font-semibold text-foreground hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
           <RefreshCw className="size-4" /> Run compliance check
         </button>
       </div>
@@ -122,7 +122,7 @@ export function ComplianceTab({ packId, onOpenSources }: { packId: string; onOpe
 
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="flex items-center gap-2 text-[15px] font-semibold text-white">
+          <h2 className="flex items-center gap-2 text-[15px] font-semibold text-foreground">
             <ShieldCheck className="size-4 text-indigo-400" /> Compliance Checker
           </h2>
           <p className="mt-1 max-w-2xl text-[13px] text-slate-400">
@@ -132,22 +132,22 @@ export function ComplianceTab({ packId, onOpenSources }: { packId: string; onOpe
         </div>
         <button onClick={() => regenerate.mutate()} disabled={regenerate.isPending}
           aria-label="Regenerate the compliance check"
-          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-2.5 py-1.5 text-[12px] font-medium text-slate-300 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-border bg-muted px-2.5 py-1.5 text-[12px] font-medium text-slate-600 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
           {regenerate.isPending ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />} Regenerate
         </button>
       </div>
 
       {items.length === 0 ? (
-        <div className="flex flex-col items-center rounded-2xl border border-white/[0.06] bg-white/[0.015] px-4 py-12 text-center">
+        <div className="flex flex-col items-center rounded-2xl border border-border bg-muted/40 px-4 py-12 text-center">
           <FileText className="mb-3 size-6 text-slate-500" />
-          <p className="text-sm font-medium text-slate-300">No compliance requirements found</p>
+          <p className="text-sm font-medium text-slate-600">No compliance requirements found</p>
           <p className="mt-1 text-[12px] text-slate-500">The tender didn&apos;t list explicit mandatory pass/fail items.</p>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-2xl border border-white/[0.06]">
+        <div className="overflow-x-auto rounded-2xl border border-border">
           <table className="w-full text-left text-[13px]">
             <thead>
-              <tr className="border-b border-white/[0.06] text-[11px] uppercase tracking-wider text-slate-500">
+              <tr className="border-b border-border text-[11px] uppercase tracking-wider text-slate-500">
                 <th className="px-4 py-3">Requirement</th>
                 <th className="px-4 py-3">Category</th>
                 <th className="px-4 py-3">Owner</th>
@@ -155,18 +155,18 @@ export function ComplianceTab({ packId, onOpenSources }: { packId: string; onOpe
             </thead>
             <tbody>
               {items.map((it, i) => (
-                <tr key={i} className="border-b border-white/[0.04] align-top last:border-0">
-                  <td className="max-w-[520px] px-4 py-3 text-slate-200">
+                <tr key={i} className="border-b border-slate-100 align-top last:border-0">
+                  <td className="max-w-[520px] px-4 py-3 text-slate-700">
                     <p>{it.requirement}</p>
                     {it.note && <p className="mt-1 text-[11px] text-slate-500">{it.note}</p>}
                   </td>
                   <td className="px-4 py-3">
-                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
+                    <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-600">
                       {it.category || "-"}
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${it.owner === "AI" ? "border-indigo-500/30 bg-indigo-500/10 text-indigo-300" : "border-amber-500/30 bg-amber-500/10 text-amber-400"}`}>
+                    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${it.owner === "AI" ? "border-indigo-500/30 bg-indigo-500/10 text-indigo-600" : "border-amber-500/30 bg-amber-50 text-amber-700"}`}>
                       {it.owner === "AI" ? <Bot className="size-3" /> : <User className="size-3" />}
                       {it.owner === "AI" ? "AI draft" : "IDG input"}
                     </span>

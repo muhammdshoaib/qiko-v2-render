@@ -594,4 +594,4 @@ export const KNOWLEDGE_LAYER = {
 };
 
 export const SHEET_CLASS =
-  "fixed inset-y-0 right-0 top-0 left-auto flex h-full max-h-none w-full max-w-[min(540px,100%)] translate-x-0 translate-y-0 flex-col gap-0 overflow-y-auto rounded-none border-y-0 border-l border-white/10 bg-popover text-popover-foreground p-0 shadow-[-20px_0_50px_-20px_rgba(0,0,0,.65)] sm:max-w-[min(540px,100%)] data-[state=open]:zoom-in-100";
+  "fixed inset-y-0 right-0 top-0 left-auto flex h-full max-h-none w-full max-w-[min(540px,100%)] translate-x-0 translate-y-0 flex-col gap-0 overflow-y-auto rounded-none border-y-0 border-l border-border bg-popover text-popover-foreground p-0 shadow-[-20px_0_50px_-20px_rgba(0,0,0,.65)] sm:max-w-[min(540px,100%)] data-[state=open]:zoom-in-100";

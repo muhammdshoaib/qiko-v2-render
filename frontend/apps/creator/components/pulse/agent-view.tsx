@@ -6,14 +6,14 @@ import { useReferral } from "@/lib/brain/referral-store";
 import { BLOCKS, LEARNING_LABEL } from "./drilldown-data";
 import { EvidenceDrawer } from "./evidence-drawer";
 import { GhostButton, IllustrativeMark, PulseCard, PulseChip, PulseHeader, PulsePage, PulseTabs } from "./pulse-chrome";
-import { REFERRAL, REFERRAL_ID, conversationStage, isDecided, statusLabel, statusTone } from "./referral";
+import { REFERRAL, REFERRAL_ID, conversationStage, statusLabel, statusTone } from "./referral";
 import type { AgentPane, PulseNav } from "./route";
 import { agentPane, blockForWorker } from "./route";
 
 const PANES: { id: AgentPane; label: string }[] = [
   { id: "conversations", label: "Conversations" },
   { id: "learning", label: "Learning" },
-  { id: "outcomes", label: "Outcomes" },
+  { id: "outcomes", label: "Insights" },
 ];
 
 export function AgentView({
@@ -44,7 +44,6 @@ export function AgentView({
   const learnings = block.learnings.filter((item) => item.worker === workerId);
   const outcomes = block.outcomes.filter((item) => item.worker === workerId);
   const referral = useReferral();
-  const decided = isDecided(referral.status);
   const pane = agentPane(nav.pane);
 
   return (
@@ -82,22 +81,16 @@ export function AgentView({
         <section className="rounded-2xl border border-primary/25 bg-card p-5">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              <p className="font-mono text-[10.5px] tracking-[0.1em] text-primary uppercase">Primary outcome</p>
+              <p className="font-mono text-[10.5px] tracking-[0.1em] text-primary uppercase">Primary insight</p>
               <p className="mt-1 text-[14px] font-semibold text-foreground">{REFERRAL.title}</p>
             </div>
             <PulseChip tone={statusTone(referral.status)}>{statusLabel(referral.status)}</PulseChip>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <GhostButton onClick={() => onNav({ pane: "conversations", detail: "c-referral" })}>See evidence</GhostButton>
-            <GhostButton
-              onClick={() => {
-                referral.explore();
-                onNav({ pane: "outcomes", detail: REFERRAL_ID, sheet: "claude" });
-              }}
-            >
-              {decided ? "Review in Claude" : "Explore in Claude"}
+            <GhostButton onClick={() => onNav({ pane: "conversations", detail: "c-referral" })}>View evidence</GhostButton>
+            <GhostButton onClick={() => onNav({ pane: "outcomes", detail: REFERRAL_ID, sheet: null })}>
+              Open insight
             </GhostButton>
-            <GhostButton onClick={() => onNav({ pane: "outcomes", detail: REFERRAL_ID })}>Open outcome</GhostButton>
           </div>
         </section>
       )}
@@ -117,7 +110,7 @@ export function AgentView({
           {conversations.length === 0 ? (
             <p className="text-sm text-slate-500">No conversations on this worker yet.</p>
           ) : (
-            <ul className="divide-y divide-white/[0.06]">
+            <ul className="divide-y divide-border">
               {conversations.map((row) => (
                 <li key={row.id}>
                   <button type="button" onClick={() => onNav({ detail: row.id })} className="flex w-full flex-col py-3 text-left first:pt-0">
@@ -139,7 +132,7 @@ export function AgentView({
 
       {pane === "learning" && (
         <PulseCard title="What it has learned or recorded" hint="Rules already in force sit beside proposed ones.">
-          <ul className="divide-y divide-white/[0.06]">
+          <ul className="divide-y divide-border">
             {learnings.map((item) => {
               const state = LEARNING_LABEL[item.state];
               return (
@@ -161,7 +154,7 @@ export function AgentView({
           {outcomes.length === 0 ? (
             <p className="text-sm text-slate-500">No outcomes recorded yet.</p>
           ) : (
-            <ul className="divide-y divide-white/[0.06]">
+            <ul className="divide-y divide-border">
               {outcomes.map((item) => {
                 const live = item.id === REFERRAL_ID;
                 const tone = live ? statusTone(referral.status) : item.status === "awaiting" ? "warn" : "good";

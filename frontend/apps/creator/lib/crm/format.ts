@@ -27,7 +27,7 @@ export function invoiceTone(status: InvoiceStatus): string {
   if (status === "paid") return "text-emerald-300";
   if (status === "overdue") return "text-red-300";
   if (status === "partial") return "text-amber-300";
-  return "text-slate-300";
+  return "text-slate-600";
 }
 
 export function stageLabel(stage: PipelineStage): string {

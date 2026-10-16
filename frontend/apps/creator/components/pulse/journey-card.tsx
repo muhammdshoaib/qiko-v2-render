@@ -26,7 +26,7 @@ export function JourneyCard({ onNav }: { onNav: (next: Partial<PulseNav>) => voi
               <ArrowRight className="ml-1.5 size-3.5" />
             </GhostButton>
             <GhostButton onClick={() => onNav({ block: "investors", pane: "outcomes", detail: REFERRAL.id })}>
-              Outcome
+              Open insight
             </GhostButton>
           </>
         ) : (
@@ -36,18 +36,17 @@ export function JourneyCard({ onNav }: { onNav: (next: Partial<PulseNav>) => voi
               <ArrowRight className="ml-1.5 size-3.5" />
             </GhostButton>
             <GhostButton
-              onClick={() => {
-                referral.explore();
+              onClick={() =>
                 onNav({
                   block: "investors",
                   worker: "intent-intelligence",
                   pane: "outcomes",
                   detail: REFERRAL.id,
-                  sheet: "claude",
-                });
-              }}
+                  sheet: null,
+                })
+              }
             >
-              Explore in Claude
+              View evidence
             </GhostButton>
           </>
         )}

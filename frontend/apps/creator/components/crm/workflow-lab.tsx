@@ -56,10 +56,10 @@ export function WorkflowLab() {
   const crm = useCrm();
 
   return (
-    <section aria-labelledby="workflow-lab-title" className="rounded-2xl border border-cyan-500/20 bg-cyan-500/[0.04] p-4">
+    <section aria-labelledby="workflow-lab-title" className="rounded-2xl border border-cyan-500/20 bg-indigo-600/[0.04] p-4">
       <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 id="workflow-lab-title" className="text-sm font-semibold text-white">CRM Agent playbooks</h2>
+          <h2 id="workflow-lab-title" className="text-sm font-semibold text-foreground">CRM Agent playbooks</h2>
           <p className="mt-1 text-[13px] text-slate-400">
             Clickable prototype of three worker outcomes. Each step writes the same events Creator reads.
           </p>
@@ -71,15 +71,15 @@ export function WorkflowLab() {
           const run = crm.workflowRuns.find((item) => item.id === playbook.id);
           const status = run?.status ?? "idle";
           return (
-            <article key={playbook.id} className="flex flex-col rounded-xl border border-white/[0.06] bg-[#070a12] p-4">
+            <article key={playbook.id} className="flex flex-col rounded-xl border border-border bg-card p-4">
               <p className="text-[11px] uppercase tracking-wider text-slate-500">{runLabel(playbook.id)}</p>
-              <h3 className="mt-1 text-sm font-semibold text-white">{playbook.title}</h3>
-              <Link href={playbook.href} className="mt-1 text-[12px] text-indigo-300 hover:underline">{playbook.company}</Link>
+              <h3 className="mt-1 text-sm font-semibold text-foreground">{playbook.title}</h3>
+              <Link href={playbook.href} className="mt-1 text-[12px] text-indigo-600 hover:underline">{playbook.company}</Link>
               <ol className="mt-3 space-y-1.5 text-[12px] text-slate-400">
                 {playbook.steps.map((step) => {
                   const done = run?.completedSteps.includes(step.key) ?? false;
                   return (
-                    <li key={step.key} className={cn("flex gap-2", done && "text-slate-200")}>
+                    <li key={step.key} className={cn("flex gap-2", done && "text-slate-700")}>
                       <span className={cn("mt-0.5 size-1.5 shrink-0 rounded-full", done ? "bg-cyan-300" : "bg-white/20")} />
                       {step.label}
                     </li>
@@ -106,7 +106,7 @@ export function WorkflowLab() {
                 {status === "complete" && (
                   <span className="text-[12px] text-emerald-300">Playbook complete</span>
                 )}
-                <Link href="/studio/intelligence" className="text-[12px] text-slate-400 underline-offset-2 hover:text-white hover:underline">
+                <Link href="/studio/intelligence" className="text-[12px] text-slate-400 underline-offset-2 hover:text-foreground hover:underline">
                   View in Creator
                 </Link>
               </div>

@@ -49,8 +49,8 @@ export function PreSalesCockpitShell({
   const [chatOpen, setChatOpen] = useState(false);
 
   return (
-    <div className="flex h-[100dvh] flex-col overflow-hidden bg-[#05070d] text-slate-200">
-      <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-white/[0.06] px-3 sm:px-4">
+    <div className="flex h-[100dvh] flex-col overflow-hidden bg-background text-slate-700">
+      <header className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-3 sm:px-4">
         {/* Breadcrumb trail so entering an RFP reads as drilling into the same tool (not a new area):
             Studio (routes to /studio) / worker (returns to the worker landing via onBack) / active
             tender. Every segment stays visible so Back always has an obvious destination. */}
@@ -60,7 +60,7 @@ export function PreSalesCockpitShell({
           </span>
           <button
             onClick={() => router.push("/studio")}
-            className="shrink-0 rounded-md px-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+            className="shrink-0 rounded-md px-1 text-sm text-slate-500 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
           >
             Studio
           </button>
@@ -69,13 +69,13 @@ export function PreSalesCockpitShell({
             <button
               onClick={onBack}
               aria-label="All RFPs"
-              className="max-w-[9rem] shrink-0 truncate rounded-md px-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+              className="max-w-[9rem] shrink-0 truncate rounded-md px-1 text-sm text-slate-500 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
               title={workerName}
             >
               {workerName}
             </button>
           ) : (
-            <span className="max-w-[9rem] shrink-0 truncate px-1 text-sm text-slate-300" title={workerName}>
+            <span className="max-w-[9rem] shrink-0 truncate px-1 text-sm text-slate-600" title={workerName}>
               {workerName}
             </span>
           )}
@@ -84,7 +84,7 @@ export function PreSalesCockpitShell({
               <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-slate-600" />
               <span
                 aria-current="page"
-                className="min-w-0 flex-1 truncate px-1 text-sm font-semibold text-white"
+                className="min-w-0 flex-1 truncate px-1 text-sm font-semibold text-foreground"
                 title={activePack.title}
               >
                 {activePack.title}
@@ -105,7 +105,7 @@ export function PreSalesCockpitShell({
           <button
             onClick={onNewTender}
             aria-label="Add tender"
-            className="flex shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/[0.03] p-1.5 text-slate-300 hover:bg-white/[0.06] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+            className="flex shrink-0 items-center justify-center rounded-lg border border-border bg-muted p-1.5 text-slate-500 hover:bg-slate-100 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
           >
             <Plus className="size-4" />
           </button>
@@ -114,7 +114,7 @@ export function PreSalesCockpitShell({
             onClick={() => setChatOpen((v) => !v)}
             aria-expanded={chatOpen}
             aria-label="Toggle chat panel"
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-500 px-3 py-1.5 text-xs font-semibold text-foreground hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
           >
             <MessageSquare className="size-3.5" /> <span className="hidden sm:inline">Chat</span>
           </button>
@@ -122,7 +122,7 @@ export function PreSalesCockpitShell({
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <nav aria-label="Cockpit sections" className="hidden w-[210px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-white/[0.06] px-4 py-5 lg:flex">
+        <nav aria-label="Cockpit sections" className="hidden w-[210px] shrink-0 flex-col gap-5 overflow-y-auto border-r border-border px-4 py-5 lg:flex">
           {(["OVERVIEW", "TENDER"] as const).map((group) => (
             <div key={group}>
               <p className="mb-2 px-1 text-[10px] font-semibold uppercase tracking-wider text-slate-500">{group}</p>
@@ -135,8 +135,8 @@ export function PreSalesCockpitShell({
                       key={item.tab}
                       onClick={() => onSelect(item.tab)}
                       aria-current={isActive ? "page" : undefined}
-                      className={cn("flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                        isActive ? "border border-indigo-500/30 bg-indigo-500/10 text-white" : "text-slate-400 hover:bg-white/[0.03] hover:text-white")}
+                      className={cn("flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+                        isActive ? "border border-indigo-200 bg-indigo-50 text-indigo-800" : "text-slate-400 hover:bg-muted hover:text-foreground")}
                     >
                       <Icon className={cn("size-4 shrink-0", isActive ? "text-indigo-400" : "text-slate-500")} />
                       <span className="min-w-0 flex-1">
@@ -152,7 +152,7 @@ export function PreSalesCockpitShell({
         </nav>
 
         <div className="flex min-w-0 flex-1 flex-col">
-          <nav aria-label="Sections" className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-white/[0.06] px-3 py-2 lg:hidden">
+          <nav aria-label="Sections" className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-border px-3 py-2 lg:hidden">
             {NAV_ITEMS.map((item) => {
               const isActive = item.tab === active;
               const Icon = item.icon;
@@ -161,8 +161,8 @@ export function PreSalesCockpitShell({
                   key={item.tab}
                   onClick={() => onSelect(item.tab)}
                   aria-current={isActive ? "page" : undefined}
-                  className={cn("flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60",
-                    isActive ? "border border-indigo-500/30 bg-indigo-500/10 text-white" : "text-slate-400 hover:bg-white/[0.03] hover:text-white")}
+                  className={cn("flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-[12px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+                    isActive ? "border border-indigo-200 bg-indigo-50 text-indigo-800" : "text-slate-400 hover:bg-muted hover:text-foreground")}
                 >
                   <Icon className={cn("size-3.5 shrink-0", isActive ? "text-indigo-400" : "text-slate-500")} />
                   <span className="whitespace-nowrap">{item.label}</span>

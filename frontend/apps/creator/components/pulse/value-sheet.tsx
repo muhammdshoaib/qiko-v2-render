@@ -40,7 +40,7 @@ export function ValueSheet({ onClose }: { onClose: () => void }) {
         />
       </label>
 
-      <aside className="rounded-2xl border border-white/10 bg-muted p-4">
+      <aside className="rounded-2xl border border-border bg-muted p-4">
         <p className="font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">Calculation</p>
         <p className="mt-2 text-[14px] leading-relaxed text-foreground">
           {REFERRAL.uses} × {REFERRAL.minutes} ÷ 60 × £{referral.rate} = {hours.toFixed(2)} hours × £{referral.rate} ≈ <strong>£{value}</strong>
@@ -61,7 +61,7 @@ export function ValueSheet({ onClose }: { onClose: () => void }) {
 
 function Stat({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-card px-4 py-3">
+    <div className="rounded-2xl border border-border bg-card px-4 py-3">
       <dt className="font-mono text-[10.5px] tracking-[0.08em] text-slate-500 uppercase">{label}</dt>
       <dd className="mt-1 text-[22px] font-extrabold tracking-[-0.02em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
         {value}

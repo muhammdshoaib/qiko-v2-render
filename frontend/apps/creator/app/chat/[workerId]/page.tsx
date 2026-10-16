@@ -60,7 +60,7 @@ export default function PublicChatByIdPage() {
   if (notAvailable || !worker) {
     return (
       <div className="flex h-dvh flex-col items-center justify-center gap-3 bg-background px-6 text-center">
-        <ShieldAlert className="size-8 text-amber-400" />
+        <ShieldAlert className="size-8 text-amber-700" />
         <h1 className="text-lg font-semibold text-foreground">This chat isn&apos;t available</h1>
         <p className="max-w-sm text-sm text-muted-foreground">
           The link may be invalid, or this worker isn&apos;t published for public chat yet.

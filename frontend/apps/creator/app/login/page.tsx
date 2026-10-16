@@ -1,22 +1,28 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useLocation } from "@/lib/wouter";
 import { useAppDispatch } from "@/store/hooks";
 import { setAuth } from "@/store/slices/authSlice";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Eye, EyeOff, ArrowLeft, AlertCircle } from "lucide-react";
+import { CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Loader2, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { Link } from "@/lib/wouter";
 import { toast } from "sonner";
 import { loginAvatar } from "@/lib/avatarApi";
 import { waitForApi } from "@/lib/wait-for-api";
 import { ConsentSettingsButton } from "@/components/consent/ConsentUI";
+import {
+  AUTH_BUTTON,
+  AUTH_INPUT,
+  AUTH_LABEL,
+  AUTH_MUTED,
+  AuthLogo,
+  AuthShell,
+} from "@/components/auth/auth-shell";
 
 export default function Login() {
   const dispatch = useAppDispatch();
-  const [, setLocation] = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -82,138 +88,124 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050810] flex items-center justify-center p-4">
-      {/* Background gradient effects */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl" />
-      </div>
-
-      <div className="relative z-10 w-full max-w-md">
-        {/* Back to home */}
-        <Link href="/" className="inline-flex items-center gap-2 text-slate-400 hover:text-white mb-8 transition-colors">
-          <ArrowLeft className="w-4 h-4" />
-          Back to home
-        </Link>
-
-        <Card className="bg-slate-900/50 border-slate-800 backdrop-blur-sm">
-          <CardHeader className="text-center">
-            <img
-              src="/qiko-logo-email.png"
-              alt="Qiko"
-              width={120}
-              height={48}
-              className="mx-auto mb-4 h-12 w-[120px] object-contain"
-            />
-            <CardTitle className="text-2xl text-white">Welcome back</CardTitle>
-            <CardDescription className="text-slate-400">
-              {apiReady ? "Server is ready. Sign in to continue." : "Starting the server. You can enter your details now."}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Error message display */}
-              {errorMessage && (
-                <div className="flex items-start gap-3 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
-                  <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                  <p className="text-red-400 text-sm">{errorMessage}</p>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-slate-300">Email</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder={"you" + "@" + "example.com"}
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:ring-cyan-500/20"
-                />
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label htmlFor="password" className="text-slate-300">Password</Label>
-                  <Link href="/forgot-password" className="text-xs text-cyan-400 hover:text-cyan-300 transition-colors">
-                    Forgot password?
-                  </Link>
-                </div>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? "text" : "password"}
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:ring-cyan-500/20 pr-10"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    aria-label={showPassword ? "Hide password" : "Show password"}
-                    className="absolute right-0 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center text-slate-400 transition-colors hover:text-white sm:size-9"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              {twoFactorRequired && (
-                <div className="space-y-2">
-                  <Label htmlFor="totp" className="text-slate-300">Authenticator or backup code</Label>
-                  <Input
-                    id="totp"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    maxLength={64}
-                    autoFocus
-                    placeholder="6-digit code"
-                    value={totp}
-                    onChange={(e) => setTotp(e.target.value)}
-                    className="bg-slate-800/50 border-slate-700 text-white placeholder:text-slate-500 focus:border-cyan-500 focus:ring-cyan-500/20"
-                  />
-                  <p className="text-xs text-slate-500">
-                    Lost your device? Use one of your saved backup codes.
-                  </p>
-                </div>
-              )}
-
-              <Button
-                type="submit"
-                disabled={isLoading}
-                className="min-h-11 w-full border-0 bg-gradient-to-r from-purple-600 to-cyan-600 text-white sm:min-h-9"
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    {apiReady ? "Signing in..." : "Starting server, then signing in..."}
-                  </>
-                ) : (
-                  "Sign in"
-                )}
-              </Button>
-            </form>
-
-            <div className="mt-6 text-center">
-              <p className="text-slate-400 text-sm">
-                Don't have an account?{" "}
-                <Link href="/onboarding" className="text-cyan-400 hover:text-cyan-300 transition-colors">
-                  Sign up
-                </Link>
-              </p>
+    <AuthShell>
+      <CardHeader className="space-y-1 text-center">
+        <AuthLogo />
+        <CardTitle className="text-2xl font-bold tracking-tight text-slate-900">Welcome back</CardTitle>
+        <CardDescription className={AUTH_MUTED}>
+          {apiReady ? "Server is ready. Sign in to continue." : "Starting the server. You can enter your details now."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {errorMessage && (
+            <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-3">
+              <AlertCircle className="mt-0.5 size-5 shrink-0 text-red-600" />
+              <p className="text-sm text-red-700">{errorMessage}</p>
             </div>
+          )}
 
-            <nav aria-label="Legal" className="mt-4 flex flex-wrap justify-center gap-x-3 gap-y-2 text-xs text-slate-500">
-              <a href="/terms" className="hover:text-slate-300">Terms</a>
-              <a href="/privacy" className="hover:text-slate-300">Privacy</a>
-              <a href="/cookies" className="hover:text-slate-300">Cookies</a>
-              <ConsentSettingsButton className="hover:text-slate-300" />
-            </nav>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+          <div className="space-y-2">
+            <Label htmlFor="email" className={AUTH_LABEL}>
+              Email
+            </Label>
+            <Input
+              id="email"
+              type="email"
+              placeholder={"you" + "@" + "example.com"}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className={AUTH_INPUT}
+            />
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password" className={AUTH_LABEL}>
+                Password
+              </Label>
+              <Link
+                href="/forgot-password"
+                className="text-xs font-medium text-indigo-600 transition-colors hover:text-indigo-700"
+              >
+                Forgot password?
+              </Link>
+            </div>
+            <div className="relative">
+              <Input
+                id="password"
+                type={showPassword ? "text" : "password"}
+                placeholder="••••••••"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                className={`${AUTH_INPUT} pr-10`}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className="absolute right-0 top-1/2 flex size-11 -translate-y-1/2 items-center justify-center text-slate-400 transition-colors hover:text-slate-700 sm:size-9"
+              >
+                {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+              </button>
+            </div>
+          </div>
+
+          {twoFactorRequired && (
+            <div className="space-y-2">
+              <Label htmlFor="totp" className={AUTH_LABEL}>
+                Authenticator or backup code
+              </Label>
+              <Input
+                id="totp"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={64}
+                autoFocus
+                placeholder="6-digit code"
+                value={totp}
+                onChange={(e) => setTotp(e.target.value)}
+                className={AUTH_INPUT}
+              />
+              <p className={`text-xs ${AUTH_MUTED}`}>Lost your device? Use one of your saved backup codes.</p>
+            </div>
+          )}
+
+          <Button type="submit" disabled={isLoading} className={AUTH_BUTTON}>
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 size-4 animate-spin" />
+                {apiReady ? "Signing in..." : "Starting server, then signing in..."}
+              </>
+            ) : (
+              "Sign in"
+            )}
+          </Button>
+        </form>
+
+        <div className="mt-6 text-center">
+          <p className={`text-sm ${AUTH_MUTED}`}>
+            Don&apos;t have an account?{" "}
+            <Link href="/onboarding" className="font-medium text-indigo-600 transition-colors hover:text-indigo-700">
+              Sign up
+            </Link>
+          </p>
+        </div>
+
+        <nav aria-label="Legal" className={`mt-4 flex flex-wrap justify-center gap-x-3 gap-y-2 text-xs ${AUTH_MUTED}`}>
+          <a href="/terms" className="hover:text-slate-800">
+            Terms
+          </a>
+          <a href="/privacy" className="hover:text-slate-800">
+            Privacy
+          </a>
+          <a href="/cookies" className="hover:text-slate-800">
+            Cookies
+          </a>
+          <ConsentSettingsButton className="hover:text-slate-800" />
+        </nav>
+      </CardContent>
+    </AuthShell>
   );
 }

@@ -37,7 +37,7 @@ export function WorkerProfile({ worker }: { worker: ShowcaseWorker }) {
       <button
         type="button"
         onClick={() => router.push("/studio/intelligence")}
-        className="inline-flex min-h-11 items-center gap-1 text-sm text-slate-400 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+        className="inline-flex min-h-11 items-center gap-1 text-sm text-slate-500 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
       >
         <ArrowLeft className="size-4" /> Back to Pulse
       </button>
@@ -45,10 +45,10 @@ export function WorkerProfile({ worker }: { worker: ShowcaseWorker }) {
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{worker.role}</p>
-          <h1 className="mt-1 text-2xl font-bold text-white" style={{ fontFamily: "var(--font-display)" }}>{worker.name}</h1>
+          <h1 className="mt-1 text-2xl font-bold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{worker.name}</h1>
           <p className="mt-2 max-w-2xl text-[14px] leading-relaxed text-slate-400">{worker.purpose}</p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-emerald-400/[0.08] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-400/80">Active</span>
+            <span className="rounded-full bg-emerald-400/[0.08] px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-emerald-700/80">Active</span>
             <HonestyBadge kind="illustrative" />
           </div>
         </div>
@@ -74,10 +74,10 @@ export function WorkerProfile({ worker }: { worker: ShowcaseWorker }) {
 
       {pending && (
         <article className="rounded-2xl border border-amber-500/20 bg-amber-500/[0.06] p-5">
-          <h2 className="text-[15px] font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>
+          <h2 className="text-[15px] font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>
             Recommended follow-up
           </h2>
-          <p className="mt-2 text-[13px] text-slate-300">
+          <p className="mt-2 text-[13px] text-slate-600">
             Flag Lombe House / Derby for a leadership review. This writes to company intelligence. No investor email will be sent.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -92,18 +92,18 @@ export function WorkerProfile({ worker }: { worker: ShowcaseWorker }) {
         <OutcomeBlock title="Completed actions" items={actions} />
       </div>
 
-      <section className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
-        <h2 className="flex items-center gap-2 text-[15px] font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>
+      <section className="rounded-2xl border border-border bg-muted/40 p-5">
+        <h2 className="flex items-center gap-2 text-[15px] font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>
           <Shield className="size-4 text-amber-300" /> Permissions and approvals
         </h2>
         <ul className="mt-4 space-y-2">
           {worker.permissions.map((item) => (
-            <li key={item.name} className="flex items-center justify-between gap-3 rounded-xl border border-white/[0.04] px-3 py-2 text-sm">
-              <span className="text-slate-200">{item.name}</span>
+            <li key={item.name} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3 py-2 text-sm">
+              <span className="text-slate-700">{item.name}</span>
               <span className={cn(
                 "rounded-full border px-2 py-0.5 text-[11px]",
-                item.mode === "allowed" && "border-emerald-500/25 text-emerald-300",
-                item.mode === "requires review" && "border-amber-500/25 text-amber-300",
+                item.mode === "allowed" && "border-emerald-200 text-emerald-300",
+                item.mode === "requires review" && "border-amber-200 text-amber-300",
                 item.mode === "blocked" && "border-red-500/25 text-red-300",
               )}>
                 {item.mode === "blocked" ? (
@@ -115,14 +115,14 @@ export function WorkerProfile({ worker }: { worker: ShowcaseWorker }) {
         </ul>
       </section>
 
-      <section className="rounded-2xl border border-cyan-400/15 bg-cyan-400/[0.04] p-5">
-        <h2 className="text-[15px] font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>
+      <section className="rounded-2xl border border-indigo-400/15 bg-indigo-500/[0.04] p-5">
+        <h2 className="text-[15px] font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>
           Contribution to company intelligence
         </h2>
-        <p className="mt-2 text-[14px] leading-relaxed text-slate-300">{worker.intelligence}</p>
+        <p className="mt-2 text-[14px] leading-relaxed text-slate-600">{worker.intelligence}</p>
         <Link
           href={`/studio/intelligence?focus=${worker.slug}`}
-          className="mt-4 inline-flex min-h-11 items-center gap-1 text-sm text-cyan-200 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400/60"
+          className="mt-4 inline-flex min-h-11 items-center gap-1 text-sm text-indigo-700 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
         >
           Explore the intelligence layer <ArrowLeft className="size-3.5 rotate-180" />
         </Link>
@@ -133,11 +133,11 @@ export function WorkerProfile({ worker }: { worker: ShowcaseWorker }) {
 
 function Block({ icon: Icon, title, items }: { icon: typeof BookOpen; title: string; items: string[] }) {
   return (
-    <section className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
-      <h2 className="flex items-center gap-2 text-[15px] font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>
+    <section className="rounded-2xl border border-border bg-muted/40 p-5">
+      <h2 className="flex items-center gap-2 text-[15px] font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>
         <Icon className="size-4 text-slate-400" /> {title}
       </h2>
-      <ul className="mt-3 space-y-2 text-[13px] text-slate-300">
+      <ul className="mt-3 space-y-2 text-[13px] text-slate-600">
         {items.map((item) => <li key={item}>{item}</li>)}
       </ul>
     </section>
@@ -146,14 +146,14 @@ function Block({ icon: Icon, title, items }: { icon: typeof BookOpen; title: str
 
 function PairBlock({ icon: Icon, title, rows }: { icon: typeof Eye; title: string; rows: { name: string; detail: string }[] }) {
   return (
-    <section className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
-      <h2 className="flex items-center gap-2 text-[15px] font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>
+    <section className="rounded-2xl border border-border bg-muted/40 p-5">
+      <h2 className="flex items-center gap-2 text-[15px] font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>
         <Icon className="size-4 text-slate-400" /> {title}
       </h2>
       <ul className="mt-3 space-y-3">
         {rows.map((row) => (
           <li key={row.name}>
-            <p className="text-sm text-white">{row.name}</p>
+            <p className="text-sm text-foreground">{row.name}</p>
             <p className="mt-0.5 text-[12px] text-slate-400">{row.detail}</p>
           </li>
         ))}
@@ -164,12 +164,12 @@ function PairBlock({ icon: Icon, title, rows }: { icon: typeof Eye; title: strin
 
 function OutcomeBlock({ title, items }: { title: string; items: ShowcaseWorker["insights"] }) {
   return (
-    <section className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-5">
-      <h2 className="text-[15px] font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>{title}</h2>
+    <section className="rounded-2xl border border-border bg-muted/40 p-5">
+      <h2 className="text-[15px] font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{title}</h2>
       <ul className="mt-3 space-y-3">
         {items.map((item) => (
-          <li key={item.title} className="rounded-xl border border-white/[0.04] bg-white/[0.02] px-3 py-3">
-            <p className="text-sm text-white">{item.title}</p>
+          <li key={item.title} className="rounded-xl border border-slate-100 bg-muted/50 px-3 py-3">
+            <p className="text-sm text-foreground">{item.title}</p>
             <p className="mt-1 text-[12px] text-slate-400">{item.detail}</p>
             <p className="mt-2 text-[11px] text-slate-500">{item.at}</p>
           </li>

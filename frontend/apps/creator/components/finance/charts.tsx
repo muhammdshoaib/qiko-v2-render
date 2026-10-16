@@ -26,8 +26,8 @@ export function ChartCard({ title, icon, iconColor, action, children }: {
   title: string; icon: React.ReactNode; iconColor?: string; action?: React.ReactNode; children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-xl border border-white/[0.06] p-5" style={{ background: "oklch(0.16 0.02 250)" }}>
-      <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-white/88">
+    <div className="rounded-xl border border-border p-5" style={{ background: "oklch(0.16 0.02 250)" }}>
+      <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground/88">
         <span className={cn("shrink-0", iconColor)}>{icon}</span>
         {title}
         {action}
@@ -98,13 +98,13 @@ export function VendorSpendList({ data, onVendorClick }: { data: VendorRow[]; on
   return (
     <ChartCard title="Top Vendors by Spend" icon={<Tag className="h-4 w-4" />} iconColor="text-purple-400">
       <div className="space-y-2.5">
-        {data.length === 0 && <p className="text-xs text-white/45">No vendor spend in this period.</p>}
+        {data.length === 0 && <p className="text-xs text-slate-400">No vendor spend in this period.</p>}
         {data.map((v, i) => (
           <button key={i} type="button" onClick={() => onVendorClick?.(v.name)}
             className="w-full text-left disabled:cursor-default" disabled={!onVendorClick}>
             <div className="mb-1 flex items-center justify-between gap-2">
               <span className="min-w-0 flex-1 break-words text-xs text-white/72">{v.name}</span>
-              <span className="shrink-0 text-xs text-white/58">{formatCurrency(v.spend, currency)} ({v.percent}%)</span>
+              <span className="shrink-0 text-xs text-slate-500">{formatCurrency(v.spend, currency)} ({v.percent}%)</span>
             </div>
             <div className="h-2 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,0.08)" }}>
               <div className="h-full rounded-full" style={{ width: `${Math.min(100, v.percent)}%`, background: v.color, minWidth: 4 }} />
@@ -120,7 +120,7 @@ export function VendorSpendList({ data, onVendorClick }: { data: VendorRow[]; on
 export function ExpenseCategoriesDonut({ data, onCategoryClick }: { data: DonutSlice[]; onCategoryClick?: (cat: string) => void }) {
   const { currency } = useFinance();
   return (
-    <ChartCard title="Expense Categories" icon={<DollarSign className="h-4 w-4" />} iconColor="text-amber-400">
+    <ChartCard title="Expense Categories" icon={<DollarSign className="h-4 w-4" />} iconColor="text-amber-700">
       <div className="flex h-[220px] items-center justify-center">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
@@ -140,7 +140,7 @@ export function ExpenseCategoriesDonut({ data, onCategoryClick }: { data: DonutS
           <button key={i} type="button" disabled={!onCategoryClick} onClick={() => onCategoryClick?.(d.key)}
             className="flex items-center gap-1.5 disabled:cursor-default">
             <span className="h-2 w-2 rounded-full" style={{ background: d.color }} />
-            <span className="text-[10px] text-white/62">{d.name}</span>
+            <span className="text-[10px] text-slate-500">{d.name}</span>
           </button>
         ))}
       </div>
@@ -155,10 +155,10 @@ export function RiskScoreList({ data, onPropertyClick }: { data: RiskRow[]; onPr
       title="Risk Score by Property"
       icon={<AlertTriangle className="h-4 w-4" />}
       iconColor="text-red-400"
-      action={<span title={RISK_ASSESSMENT_TOOLTIP} className="inline-flex cursor-help text-white/45 hover:text-indigo-300"><Info className="h-3.5 w-3.5" /></span>}
+      action={<span title={RISK_ASSESSMENT_TOOLTIP} className="inline-flex cursor-help text-slate-400 hover:text-indigo-600"><Info className="h-3.5 w-3.5" /></span>}
     >
       <div className="space-y-2">
-        {data.length === 0 && <p className="text-xs text-white/45">No risk data available.</p>}
+        {data.length === 0 && <p className="text-xs text-slate-400">No risk data available.</p>}
         {data.map((r, i) => (
           <button key={i} type="button" disabled={!onPropertyClick} onClick={() => onPropertyClick?.(r.propertyRef, r.propertyName)}
             className="w-full text-left disabled:cursor-default">
@@ -166,7 +166,7 @@ export function RiskScoreList({ data, onPropertyClick }: { data: RiskRow[]; onPr
               <span className="text-xs text-white/72">{r.name}</span>
               <div className="flex items-center gap-2">
                 <span className="rounded px-1 py-0 text-[9px] font-medium capitalize" style={{ color: r.color, background: `${r.color}22` }}>{r.riskLevel}</span>
-                <span className="font-mono text-xs text-white/58">{r.riskScore}/100</span>
+                <span className="font-mono text-xs text-slate-500">{r.riskScore}/100</span>
               </div>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full" style={{ background: "rgba(255,255,255,0.08)" }}>

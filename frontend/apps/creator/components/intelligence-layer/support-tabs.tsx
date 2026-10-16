@@ -36,8 +36,8 @@ export function ObservabilityTab({
             type="button"
             aria-pressed={filter === item.id}
             onClick={() => setFilter(item.id)}
-            className={`rounded-full border px-3 py-1 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 ${
-              filter === item.id ? "border-white/25 bg-white/10 text-white" : "border-white/[0.08] text-slate-400"
+            className={`rounded-full border px-3 py-1 text-[12px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 ${
+              filter === item.id ? "border-border bg-slate-100 text-foreground" : "border-border text-slate-500"
             }`}
           >
             {item.label}
@@ -47,17 +47,17 @@ export function ObservabilityTab({
       {items.length === 0 ? (
         <Empty message="No sample events in this filter." />
       ) : (
-        <ul className="divide-y divide-white/[0.05] rounded-2xl border border-white/[0.06]">
+        <ul className="divide-y divide-border rounded-2xl border border-border">
           {items.map((card) => (
             <li key={card.id}>
               <button
                 type="button"
                 onClick={() => onInspect(card.focus)}
-                className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-white/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+                className="flex w-full items-start justify-between gap-3 px-4 py-3 text-left hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
               >
                 <div>
-                  <p className="text-sm text-white">{card.title}</p>
-                  <p className="text-[12px] text-slate-400">{card.detail}</p>
+                  <p className="text-sm text-foreground">{card.title}</p>
+                  <p className="text-[12px] text-slate-500">{card.detail}</p>
                 </div>
                 <HonestyBadge kind="illustrative" />
               </button>
@@ -76,14 +76,14 @@ export function TrainTab() {
       title="Approved learning"
       description="Suggested rule changes stay disabled until there are real, versioned training events."
     >
-      <div className="rounded-2xl border border-dashed border-white/10 p-6">
-        <p className="text-sm text-white">No reviewed training events yet.</p>
-        <p className="mt-2 text-[13px] text-slate-400">This is a labelled preview, not automatic learning from the workers.</p>
+      <div className="rounded-2xl border border-dashed border-border p-6">
+        <p className="text-sm text-foreground">No reviewed training events yet.</p>
+        <p className="mt-2 text-[13px] text-slate-500">This is a labelled preview, not automatic learning from the workers.</p>
         <div className="mt-3"><HonestyBadge kind="planned" /></div>
         <button
           type="button"
           disabled
-          className="mt-4 rounded-lg border border-white/10 px-3 py-2 text-[13px] text-slate-500"
+          className="mt-4 rounded-lg border border-border px-3 py-2 text-[13px] text-slate-500"
         >
           Suggest rule change
         </button>
@@ -100,13 +100,13 @@ export function SourcesTab() {
       ) : (
         <ul className="space-y-2">
           {SOURCES.map((row) => (
-            <li key={row.name} className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4">
+            <li key={row.name} className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-medium text-white">{row.name}</p>
-                  <p className="mt-1 text-[12px] text-slate-400">Owner {row.owner} · Connected {row.connected}</p>
+                  <p className="text-sm font-medium text-foreground">{row.name}</p>
+                  <p className="mt-1 text-[12px] text-slate-500">Owner {row.owner} · Connected {row.connected}</p>
                   <p className="text-[12px] text-slate-500">{row.sensitivity}</p>
-                  <p className="mt-1 text-[12px] text-slate-400">External assistant: {row.assistant}</p>
+                  <p className="mt-1 text-[12px] text-slate-500">External assistant: {row.assistant}</p>
                 </div>
                 <HonestyBadge kind={row.honesty} />
               </div>
@@ -139,17 +139,17 @@ export function ConnectionsTab({
     <Panel title="Where the worker operates" description="Each connection has a readable boundary. Claude and Slack walkthroughs are simulated until live connectors exist.">
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (
-          <article key={card.id} className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4">
+          <article key={card.id} className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-white">{card.name}</h3>
+              <h3 className="text-sm font-semibold text-foreground">{card.name}</h3>
               <HonestyBadge kind="illustrative" />
             </div>
-            <p className="mt-3 text-[12px] text-slate-300">Permitted: {card.actions}</p>
+            <p className="mt-3 text-[12px] text-slate-500">Permitted: {card.actions}</p>
             <div className="mt-4 flex flex-wrap gap-3">
               <button
                 type="button"
                 onClick={() => onViewBoundary(card.id)}
-                className="min-h-11 text-[12px] font-medium text-indigo-300 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+                className="min-h-11 text-[12px] font-medium text-indigo-600 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
               >
                 View boundary
               </button>
@@ -157,17 +157,17 @@ export function ConnectionsTab({
           </article>
         ))}
         {surfaces.map((card) => (
-          <article key={card.id} className="rounded-2xl border border-white/[0.06] bg-white/[0.015] p-4">
+          <article key={card.id} className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
             <div className="flex items-center justify-between gap-2">
-              <h3 className="text-sm font-semibold text-white">{card.name}</h3>
+              <h3 className="text-sm font-semibold text-foreground">{card.name}</h3>
               <HonestyBadge kind="illustrative" />
             </div>
-            <p className="mt-3 text-[12px] text-slate-300">{card.actions}</p>
+            <p className="mt-3 text-[12px] text-slate-600">{card.actions}</p>
             <div className="mt-4 flex flex-wrap gap-3">
               <button
                 type="button"
                 onClick={() => onOpenChannels?.(card.id)}
-                className="min-h-11 text-[12px] font-medium text-indigo-300 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60"
+                className="min-h-11 text-[12px] font-medium text-indigo-600 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
               >
                 Open walkthrough
               </button>
@@ -190,11 +190,11 @@ export function SettingsTab() {
   ];
   return (
     <Panel title="Governance overview" description="Understand the controls. Advanced administration stays out of this first-path room.">
-      <dl className="divide-y divide-white/[0.05] rounded-2xl border border-white/[0.06]">
+      <dl className="divide-y divide-border rounded-2xl border border-border">
         {rows.map(([label, value]) => (
           <div key={label} className="grid grid-cols-[160px_1fr] gap-3 px-4 py-3 text-sm">
             <dt className="text-slate-500">{label}</dt>
-            <dd className="text-white">{value}</dd>
+            <dd className="text-foreground">{value}</dd>
           </div>
         ))}
       </dl>
@@ -209,8 +209,8 @@ function Panel({ title, description, children }: { title: string; description: s
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-white" style={{ fontFamily: "var(--font-display)" }}>{title}</h2>
-        <p className="mt-1 text-sm text-slate-400">{description}</p>
+        <h2 className="text-lg font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>{title}</h2>
+        <p className="mt-1 text-sm text-slate-500">{description}</p>
       </div>
       {children}
     </div>
@@ -219,7 +219,7 @@ function Panel({ title, description, children }: { title: string; description: s
 
 function Empty({ message }: { message: string }) {
   return (
-    <div className="rounded-2xl border border-dashed border-white/10 px-6 py-12 text-center text-sm text-slate-400">
+    <div className="rounded-2xl border border-dashed border-border px-6 py-12 text-center text-sm text-slate-500">
       {message}
     </div>
   );

@@ -51,8 +51,8 @@ export function CrmPipelinePage() {
       </div>
 
       {items.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-white/10 px-6 py-16 text-center">
-          <p className="text-sm text-white">No opportunities match these filters.</p>
+        <div className="rounded-2xl border border-dashed border-border px-6 py-16 text-center">
+          <p className="text-sm text-foreground">No opportunities match these filters.</p>
           <p className="mt-1 text-sm text-slate-400">Clear filters or create a new record.</p>
         </div>
       ) : (
@@ -67,10 +67,10 @@ export function CrmPipelinePage() {
                   if (dragging) crm.moveOpportunity(dragging, stage);
                   setDragging(null);
                 }}
-                className="flex w-72 shrink-0 flex-col rounded-2xl border border-white/[0.06] bg-white/[0.015]"
+                className="flex w-72 shrink-0 flex-col rounded-2xl border border-border bg-muted/40"
               >
                 <header className="flex items-center justify-between px-3 py-3">
-                  <h2 className="text-sm font-semibold text-white">{STAGE_LABEL[stage]}</h2>
+                  <h2 className="text-sm font-semibold text-foreground">{STAGE_LABEL[stage]}</h2>
                   <span className="text-xs tabular-nums text-slate-500">{column.length}</span>
                 </header>
                 <div className="flex min-h-24 flex-col gap-2 px-2 pb-3">
@@ -85,18 +85,18 @@ export function CrmPipelinePage() {
                         onDragStart={() => setDragging(opp.id)}
                         onDragEnd={() => setDragging(null)}
                         className={cn(
-                          "cursor-grab rounded-xl border bg-[#0c111c] p-3 active:cursor-grabbing",
-                          stalled ? "border-amber-500/30" : "border-white/[0.06]",
+                          "cursor-grab rounded-xl border bg-card p-3 active:cursor-grabbing",
+                          stalled ? "border-amber-500/30" : "border-border",
                           dragging === opp.id && "opacity-60",
                         )}
                       >
                         <button type="button" className="w-full text-left" onClick={() => router.push(`/crm/companies/${opp.companyId}`)}>
-                          <p className="text-sm font-medium text-white">{company?.name}</p>
+                          <p className="text-sm font-medium text-foreground">{company?.name}</p>
                           <p className="text-xs text-slate-400">{opp.title}</p>
                         </button>
-                        <p className="mt-2 text-sm text-slate-200">{formatMoney(opp.value)}</p>
+                        <p className="mt-2 text-sm text-slate-700">{formatMoney(opp.value)}</p>
                         <p className="mt-1 text-xs text-slate-500">{opp.owner} · {timeSince(opp.lastActivityAt)}</p>
-                        <p className="mt-2 text-xs text-slate-300">Next: {opp.nextStep}</p>
+                        <p className="mt-2 text-xs text-slate-600">Next: {opp.nextStep}</p>
                         {stalled && <p className="mt-2 text-xs text-amber-300">Stalled · no activity for 7+ days</p>}
                         {suggestion && (
                           <p className="mt-2 flex items-start gap-2 text-xs text-indigo-200">
@@ -105,8 +105,8 @@ export function CrmPipelinePage() {
                           </p>
                         )}
                         <div className="mt-3 flex gap-2">
-                          <Link href={`/crm/companies/${opp.companyId}`} className="text-xs text-indigo-300 hover:underline">Open</Link>
-                          <button type="button" className="text-xs text-slate-400 hover:text-white" onClick={() => setEditing(opp)}>Edit</button>
+                          <Link href={`/crm/companies/${opp.companyId}`} className="text-xs text-indigo-600 hover:underline">Open</Link>
+                          <button type="button" className="text-xs text-slate-500 hover:text-foreground" onClick={() => setEditing(opp)}>Edit</button>
                         </div>
                       </article>
                     );

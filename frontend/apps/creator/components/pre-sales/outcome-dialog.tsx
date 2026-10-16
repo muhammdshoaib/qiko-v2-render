@@ -80,7 +80,7 @@ export function OutcomeDialog({ pack, agentId, open, onOpenChange }: {
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!save.isPending) onOpenChange(next); }}>
-      <DialogContent className="max-h-[90dvh] overflow-y-auto border-white/10 bg-[#0a0d15] text-slate-100 sm:max-w-lg">
+      <DialogContent className="max-h-[90dvh] overflow-y-auto border-border bg-white text-slate-100 sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Update outcome for {pack.title}</DialogTitle>
           <DialogDescription>
@@ -89,10 +89,10 @@ export function OutcomeDialog({ pack, agentId, open, onOpenChange }: {
         </DialogHeader>
 
         <fieldset className="space-y-2">
-          <legend className="mb-2 text-sm font-medium text-slate-200">Outcome</legend>
+          <legend className="mb-2 text-sm font-medium text-slate-700">Outcome</legend>
           <div className="grid gap-2 sm:grid-cols-2">
             {OUTCOMES.map((option) => (
-              <label key={option.value} className={`flex min-h-14 cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors ${outcome === option.value ? "border-cyan-400/60 bg-cyan-400/10" : "border-white/10 bg-white/[0.02] hover:bg-white/[0.04]"}`}>
+              <label key={option.value} className={`flex min-h-14 cursor-pointer items-start gap-3 rounded-xl border p-3 transition-colors ${outcome === option.value ? "border-indigo-400/60 bg-indigo-500/10" : "border-border bg-muted/50 hover:bg-muted"}`}>
                 <input
                   type="radio"
                   name="tender-outcome"
@@ -102,7 +102,7 @@ export function OutcomeDialog({ pack, agentId, open, onOpenChange }: {
                   className="mt-1 size-4 accent-cyan-400"
                 />
                 <span>
-                  <span className="block text-sm font-semibold text-white">{option.label}</span>
+                  <span className="block text-sm font-semibold text-foreground">{option.label}</span>
                   <span className="block text-xs leading-5 text-slate-400">{option.description}</span>
                 </span>
               </label>
@@ -117,7 +117,7 @@ export function OutcomeDialog({ pack, agentId, open, onOpenChange }: {
               id="loss-reason"
               value={reason}
               onChange={(event) => setReason(event.target.value)}
-              className="min-h-11 w-full rounded-md border border-white/10 bg-[#0f131d] px-3 text-sm text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+              className="min-h-11 w-full rounded-md border border-border bg-white px-3 text-sm text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
               required
             >
               <option value="">Select a reason</option>

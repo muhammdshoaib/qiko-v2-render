@@ -27,7 +27,7 @@ function isTab(value: string | null): value is CockpitTab {
 
 export default function IntelligenceLayerPage() {
   return (
-    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-[#05070d] text-sm text-slate-400">Loading intelligence…</div>}>
+    <Suspense fallback={<div className="flex min-h-screen items-center justify-center bg-background text-sm text-slate-400">Loading intelligence…</div>}>
       <IntelligenceLayerScreen />
     </Suspense>
   );

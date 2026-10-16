@@ -168,7 +168,7 @@ function LabelledField({ id, label, children }: { id: string; label: string; chi
 }
 
 function SectionHeading({ children }: { children: React.ReactNode }) {
-  return <h3 className="text-[13px] font-semibold text-white">{children}</h3>;
+  return <h3 className="text-[13px] font-semibold text-foreground">{children}</h3>;
 }
 
 export function OpportunityForm({
@@ -355,13 +355,13 @@ export function OpportunityForm({
         </LabelledField>
       </section>
 
-      <div className="flex items-center justify-end gap-3 border-t border-white/[0.06] pt-4">
+      <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
         <button type="button" onClick={onCancel} disabled={submitting}
-          className="rounded-lg border border-white/15 px-4 py-2 text-[13px] font-semibold text-slate-200 hover:bg-white/[0.04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/60 disabled:opacity-50">
+          className="rounded-lg border border-border px-4 py-2 text-[13px] font-semibold text-slate-700 hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
           Cancel
         </button>
         <button type="submit" disabled={submitting}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-4 py-2 text-[13px] font-semibold text-white hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
+          className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-500 px-4 py-2 text-[13px] font-semibold text-foreground hover:bg-indigo-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 disabled:opacity-50">
           {submitting && <Loader2 className="size-3.5 animate-spin" />}
           {submitLabel}
         </button>

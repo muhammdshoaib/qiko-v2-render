@@ -55,12 +55,12 @@ export function PulseDrawer({
   return (
     <Dialog open={Boolean(focus)} onOpenChange={(open) => { if (!open) onClose(); }}>
       <DialogContent
-        className="fixed inset-y-0 right-0 top-0 left-auto flex h-full max-h-none w-full max-w-[min(340px,92vw)] translate-x-0 translate-y-0 flex-col gap-0 overflow-y-auto rounded-none border-y-0 border-l border-white/10 bg-popover text-popover-foreground p-0 shadow-[-20px_0_50px_-20px_rgba(0,0,0,.65)] sm:max-w-[min(340px,92vw)] data-[state=open]:zoom-in-100"
+        className="fixed inset-y-0 right-0 top-0 left-auto flex h-full max-h-none w-full max-w-[min(340px,92vw)] translate-x-0 translate-y-0 flex-col gap-0 overflow-y-auto rounded-none border-y-0 border-l border-border bg-popover text-popover-foreground p-0 shadow-[-20px_0_50px_-20px_rgba(0,0,0,.65)] sm:max-w-[min(340px,92vw)] data-[state=open]:zoom-in-100"
         aria-describedby={undefined}
       >
         {node && focus && (
           <>
-            <DialogHeader className="border-b border-white/10 px-6 py-5 text-left">
+            <DialogHeader className="border-b border-border px-6 py-5 text-left">
               <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-violet-400">{node.kicker}</p>
               <div className="mt-1 flex items-start justify-between gap-3">
                 <DialogTitle className="text-[19px] font-extrabold tracking-[-0.01em] text-foreground" style={{ fontFamily: "var(--font-display)" }}>
@@ -68,7 +68,7 @@ export function PulseDrawer({
                 </DialogTitle>
                 <HonestyBadge kind="illustrative" />
               </div>
-              <DialogDescription className="text-[13.5px] leading-relaxed text-slate-300">{summary}</DialogDescription>
+              <DialogDescription className="text-[13.5px] leading-relaxed text-slate-600">{summary}</DialogDescription>
             </DialogHeader>
             <div className="flex flex-1 flex-col gap-5 px-6 py-5">
               {isWorkerId(focus) ? (
@@ -206,13 +206,13 @@ function RecordBody({
               <button
                 type="button"
                 onClick={() => onOpen(block.id)}
-                className="flex min-h-11 w-full flex-col rounded-xl border border-white/10 px-3 py-2.5 text-left hover:border-primary/40"
+                className="flex min-h-11 w-full flex-col rounded-xl border border-border px-3 py-2.5 text-left hover:border-primary/40"
               >
                 <span className="flex items-center justify-between gap-2">
                   <span className="text-[14px] font-semibold text-foreground">{block.name}</span>
                   <span className="text-[12px] font-semibold text-primary">Open</span>
                 </span>
-                <span className="mt-0.5 text-[12.5px] text-slate-300">{block.signal}</span>
+                <span className="mt-0.5 text-[12.5px] text-slate-600">{block.signal}</span>
               </button>
             </li>
           ))}
@@ -221,7 +221,7 @@ function RecordBody({
 
       <Section icon={Eye} title="Pending decisions">
         {intel.awaiting.length === 0 ? (
-          <p className="text-slate-300">Nothing waiting on a person.</p>
+          <p className="text-slate-600">Nothing waiting on a person.</p>
         ) : (
           <ul className="space-y-2">
             {intel.awaiting.map((item) => (
@@ -239,12 +239,12 @@ function RecordBody({
           </ul>
         )}
         {decided && (
-          <p className="mt-2 text-[13px] text-slate-300">{decisionLabel(referral.status)}</p>
+          <p className="mt-2 text-[13px] text-slate-600">{decisionLabel(referral.status)}</p>
         )}
         {onNav && (
           <div className="mt-3">
             <GhostButton onClick={() => onNav({ block: "investors", pane: "outcomes", detail: REFERRAL.id, focus: null })}>
-              Open outcome
+              Open insight
             </GhostButton>
           </div>
         )}
