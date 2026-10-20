@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -56,6 +56,20 @@ function tabFromParam(raw: string | null): Tab {
 }
 
 export default function InvestorsKnowledgePage() {
+  return (
+    <Suspense
+      fallback={
+        <AppShell title="Investors">
+          <p className="p-6 text-sm text-slate-400">Loading knowledge block…</p>
+        </AppShell>
+      }
+    >
+      <InvestorsKnowledgePageInner />
+    </Suspense>
+  );
+}
+
+function InvestorsKnowledgePageInner() {
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<Tab>(() => tabFromParam(searchParams.get("tab")));
   const qc = useQueryClient();

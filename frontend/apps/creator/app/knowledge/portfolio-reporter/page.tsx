@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -49,6 +49,20 @@ const TABS: { id: Tab; icon: LucideIcon }[] = [
 const MANAGE_TABS: Tab[] = ["Train", "Sources", "Connections", "Settings"];
 
 export default function PortfolioReporterKnowledgePage() {
+  return (
+    <Suspense
+      fallback={
+        <AppShell title="Portfolio Reporter">
+          <p className="p-6 text-sm text-slate-400">Loading knowledge block…</p>
+        </AppShell>
+      }
+    >
+      <PortfolioReporterKnowledgePageInner />
+    </Suspense>
+  );
+}
+
+function PortfolioReporterKnowledgePageInner() {
   const [tab, setTab] = useState<Tab>("Overview");
   const qc = useQueryClient();
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
