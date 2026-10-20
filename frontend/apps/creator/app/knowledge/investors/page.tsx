@@ -1,7 +1,8 @@
-﻿"use client";
+"use client";
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
@@ -48,8 +49,15 @@ const TABS: { id: Tab; icon: LucideIcon }[] = [
 
 const MANAGE_TABS: Tab[] = ["Train", "Sources", "Connections", "Settings"];
 
+function tabFromParam(raw: string | null): Tab {
+  if (!raw) return "Overview";
+  const match = TABS.find((t) => t.id.toLowerCase() === raw.toLowerCase());
+  return match?.id ?? "Overview";
+}
+
 export default function InvestorsKnowledgePage() {
-  const [tab, setTab] = useState<Tab>("Overview");
+  const searchParams = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => tabFromParam(searchParams.get("tab")));
   const qc = useQueryClient();
   const agents = useQuery({ queryKey: ["agents"], queryFn: listAgents });
   const account = useQuery({ queryKey: ["me"], queryFn: me });

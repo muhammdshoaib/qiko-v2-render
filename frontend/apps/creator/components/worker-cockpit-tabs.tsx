@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -43,6 +43,7 @@ import {
 function Textarea({ className, ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea {...props} className={cn("min-h-24 w-full rounded-lg border border-border bg-muted p-3 text-sm text-slate-700 placeholder:text-slate-500 transition-colors focus-visible:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300", className)} />;
 }
+
 export function WorkerCrmTab({ id, readOnly }: { id: string; readOnly?: boolean }) {
   return (
     <div className="h-[70vh]">

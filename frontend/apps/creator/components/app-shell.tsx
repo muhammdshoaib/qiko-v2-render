@@ -34,7 +34,7 @@ const COMPANY_BRAIN: NavItem[] = [
 ];
 
 const SETUP: NavItem[] = [
-  { id: "connections", label: "Connections", icon: Link2, href: "/studio/intelligence?tab=connections", count: "11" },
+  { id: "connections", label: "Connections", icon: Link2, href: "/studio/intelligence?tab=connections", count: "15" },
   { id: "settings", label: "Settings", icon: Settings, href: "/settings" },
 ];
 
@@ -239,12 +239,12 @@ function AppShellFrame({ title, children, search }: { title: string; children: R
             <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
               <div className="flex items-center justify-between text-[12.5px]">
                 <b className="font-semibold text-slate-900">Worker capacity</b>
-                <span className="font-mono text-[11px] text-slate-500">7 / 12</span>
+                <span className="font-mono text-[11px] text-slate-500">2 / 2</span>
               </div>
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
-                <i className="block h-full w-[58%] rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" />
+                <i className="block h-full w-full rounded-full bg-gradient-to-r from-indigo-500 to-violet-500" />
               </div>
-              <p className="mt-1.5 text-[11.5px] text-slate-500">5 more workers on your plan</p>
+              <p className="mt-1.5 text-[11.5px] text-slate-500">0 more workers on your plan</p>
             </div>
           )}
           <button

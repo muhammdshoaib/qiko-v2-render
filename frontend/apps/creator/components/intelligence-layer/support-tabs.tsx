@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, type ReactNode } from "react";
+import { X } from "lucide-react";
 import { HonestyBadge } from "./honesty-badge";
 import { ChannelSettings } from "./channel-surfaces";
+import { BLOCK_SYSTEM_CONNECTIONS } from "@/components/knowledge/investors-data";
 import {
   ACTIVITY,
   ACTIVITY_FILTERS,
@@ -125,6 +127,7 @@ export function ConnectionsTab({
   onViewBoundary: (focus: FocusId) => void;
   onOpenChannels?: (surface: "claude" | "slack") => void;
 }) {
+  const [systemBoundary, setSystemBoundary] = useState<(typeof BLOCK_SYSTEM_CONNECTIONS)[number] | null>(null);
   const cards: { id: FocusId; name: string; actions: string }[] = [
     { id: "properties", name: SYSTEMS.properties.name, actions: "Each advised investor’s portfolio, read to write their insight cards" },
     { id: "investor-app", name: SYSTEMS["investor-app"].name, actions: "Intent signals · no outbound contact" },
@@ -136,7 +139,54 @@ export function ConnectionsTab({
     { id: "slack" as const, name: "Slack", actions: "Same workers. Channel and user walls decide what can be said." },
   ];
   return (
-    <Panel title="Where the worker operates" description="Each connection has a readable boundary. Claude and Slack walkthroughs are simulated until live connectors exist.">
+    <Panel
+      title="Where the worker operates"
+      description="Each connection has a readable boundary. Connected systems match Investor Concierge · How this block works. Claude and Slack walkthroughs are simulated until live connectors exist."
+    >
+      {systemBoundary && (
+        <div
+          className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50/40 p-4"
+          role="dialog"
+          aria-label={`${systemBoundary.name} boundary`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="font-mono text-[10px] tracking-[0.12em] text-indigo-600 uppercase">Connected system</p>
+              <h3 className="mt-1 text-[16px] font-semibold text-foreground">{systemBoundary.name}</h3>
+              <p className="mt-1 text-[13px] text-slate-600">{systemBoundary.purpose}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSystemBoundary(null)}
+              className="grid size-9 shrink-0 place-items-center rounded-lg text-slate-500 hover:bg-white hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+              aria-label="Close boundary"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div>
+              <p className="text-[11px] font-semibold tracking-wide text-indigo-600 uppercase">Allowed</p>
+              <ul className="mt-1 space-y-1 text-[12px] text-slate-600">
+                {systemBoundary.allowed.map((item) => (
+                  <li key={item}>· {item}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="text-[11px] font-semibold tracking-wide text-red-600 uppercase">Hard walls</p>
+              <ul className="mt-1 space-y-1 text-[12px] text-slate-600">
+                {systemBoundary.blocked.map((item) => (
+                  <li key={item}>· {item}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <HonestyBadge kind="illustrative" className="mt-3" />
+        </div>
+      )}
+
+      <p className="mb-2 font-mono text-[10px] tracking-[0.12em] text-slate-500 uppercase">Worker surfaces</p>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {cards.map((card) => (
           <article key={card.id} className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
@@ -170,6 +220,30 @@ export function ConnectionsTab({
                 className="min-h-11 text-[12px] font-medium text-indigo-600 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
               >
                 Open walkthrough
+              </button>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      <p className="mb-2 mt-6 font-mono text-[10px] tracking-[0.12em] text-slate-500 uppercase">
+        Connected systems · Investor Concierge
+      </p>
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {BLOCK_SYSTEM_CONNECTIONS.map((card) => (
+          <article key={card.id} className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-sm font-semibold text-foreground">{card.name}</h3>
+              <HonestyBadge kind="illustrative" />
+            </div>
+            <p className="mt-3 text-[12px] text-slate-500">Permitted: {card.actions}</p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => setSystemBoundary(card)}
+                className="min-h-11 text-[12px] font-medium text-indigo-600 underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+              >
+                View boundary
               </button>
             </div>
           </article>

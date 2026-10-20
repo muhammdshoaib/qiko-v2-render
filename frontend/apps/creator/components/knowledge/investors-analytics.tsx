@@ -2,10 +2,8 @@
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, ArrowUpRight, BarChart3, ListTodo } from "lucide-react";
+import { ExternalLink, Sparkles } from "lucide-react";
 import {
-  Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
@@ -23,7 +21,8 @@ import { getAgentAnalytics } from "@/lib/api";
 import { addSharedPulseAction } from "@/lib/pulse-action-store";
 import {
   ANALYTICS_BUBBLES,
-  ANALYTICS_BUSINESS_KPIS,
+  ANALYTICS_CONVERSATIONS_30D,
+  ANALYTICS_CRM_WEEKS,
   type AnalyticsBubble,
 } from "./investors-data";
 
@@ -38,69 +37,64 @@ const TOOLTIP_STYLE = {
 } as const;
 const AXIS_TICK = { fill: "#64748b", fontSize: 11 } as const;
 
+const CLAUDE_SIMULATE_URL = "https://claude.ai/artifact/SfhNos5EWvZ5HkDP6oVp4d";
+
 const TONE_META = {
   growing: {
-    fill: "#818cf8",
-    chip: "bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200",
-    bubble: "border-indigo-300 bg-indigo-50 text-indigo-800 shadow-sm",
-    accent: "bg-indigo-500",
+    fill: "#10b981",
+    soft: "rgba(16,185,129,0.14)",
+    chip: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200",
+    bubble: "border-emerald-400/80 bg-emerald-50 text-emerald-900",
+    ring: "ring-emerald-400/50",
+    glow: "0 0 0 6px rgba(16,185,129,0.12), 0 10px 28px rgba(16,185,129,0.18)",
+    legend: "bg-emerald-500",
   },
   established: {
-    fill: "#38bdf8",
+    fill: "#3b82f6",
+    soft: "rgba(59,130,246,0.12)",
     chip: "bg-sky-50 text-sky-700 ring-1 ring-sky-200",
-    bubble: "border-sky-300 bg-sky-50 text-sky-800 shadow-sm",
-    accent: "bg-sky-500",
+    bubble: "border-sky-400/80 bg-sky-50 text-sky-900",
+    ring: "ring-sky-400/50",
+    glow: "0 0 0 6px rgba(59,130,246,0.10), 0 10px 28px rgba(59,130,246,0.16)",
+    legend: "bg-sky-500",
   },
   attention: {
-    fill: "#fbbf24",
-    chip: "bg-amber-50 text-amber-700 ring-1 ring-amber-200",
-    bubble: "border-amber-300 bg-amber-50 text-amber-900 shadow-sm",
-    accent: "bg-amber-500",
+    fill: "#f59e0b",
+    soft: "rgba(245,158,11,0.14)",
+    chip: "bg-amber-50 text-amber-800 ring-1 ring-amber-200",
+    bubble: "border-amber-400/80 bg-amber-50 text-amber-950",
+    ring: "ring-amber-400/50",
+    glow: "0 0 0 6px rgba(245,158,11,0.12), 0 10px 28px rgba(245,158,11,0.16)",
+    legend: "bg-amber-400",
   },
   gap: {
     fill: "#f87171",
+    soft: "rgba(248,113,113,0.08)",
     chip: "bg-red-50 text-red-700 ring-1 ring-red-200",
-    bubble: "border-dashed border-red-300 bg-white text-slate-500 shadow-sm",
-    accent: "bg-red-500",
+    bubble: "border-dashed border-red-400 bg-white text-red-600",
+    ring: "ring-red-300/60",
+    glow: "0 0 0 6px rgba(248,113,113,0.08)",
+    legend: "border border-dashed border-red-400 bg-transparent",
   },
 } as const;
 
-const BUBBLE_POS: Record<string, { x: number; y: number }> = {
-  intent: { x: 28, y: 38 },
-  gulf: { x: 58, y: 30 },
-  yield: { x: 72, y: 58 },
-  meetings: { x: 42, y: 66 },
-};
-
-const SAMPLE_USAGE = [
-  { day: "Mon 2", calls: 18, tokens: 42 },
-  { day: "Tue 3", calls: 24, tokens: 51 },
-  { day: "Wed 4", calls: 21, tokens: 47 },
-  { day: "Thu 5", calls: 31, tokens: 68 },
-  { day: "Fri 6", calls: 27, tokens: 59 },
-  { day: "Sat 7", calls: 14, tokens: 33 },
-  { day: "Sun 8", calls: 11, tokens: 28 },
-  { day: "Mon 9", calls: 29, tokens: 64 },
-  { day: "Tue 10", calls: 34, tokens: 72 },
-  { day: "Wed 11", calls: 30, tokens: 66 },
-  { day: "Thu 12", calls: 38, tokens: 81 },
-  { day: "Fri 13", calls: 36, tokens: 77 },
-  { day: "Sat 14", calls: 16, tokens: 36 },
-  { day: "Sun 15", calls: 13, tokens: 30 },
+const LEGEND: { tone: keyof typeof TONE_META; label: string }[] = [
+  { tone: "growing", label: "Growing" },
+  { tone: "established", label: "Established" },
+  { tone: "attention", label: "Needs attention" },
+  { tone: "gap", label: "Gap (not covered yet)" },
 ];
 
-function patternBars(bubbles: AnalyticsBubble[]) {
-  return bubbles
-    .filter((b) => !b.gap)
-    .map((b) => ({
-      name: b.label.length > 14 ? `${b.label.slice(0, 13)}…` : b.label,
-      full: b.label,
-      used: b.used,
-      fill: TONE_META[b.tone].fill,
-      id: b.id,
-    }))
-    .sort((a, b) => b.used - a.used);
-}
+/** Radial layout — largest pattern near centre. */
+const BUBBLE_POS: Record<string, { x: number; y: number }> = {
+  referrals: { x: 46, y: 48 },
+  gulf: { x: 22, y: 30 },
+  yield: { x: 70, y: 26 },
+  service: { x: 78, y: 56 },
+  ready: { x: 28, y: 72 },
+  offplan: { x: 58, y: 78 },
+  selling: { x: 16, y: 54 },
+};
 
 function MapBubble({
   item,
@@ -114,8 +108,9 @@ function MapBubble({
   positions: Record<string, { x: number; y: number }>;
 }) {
   const pos = positions[item.id] ?? { x: 50, y: 50 };
-  const size = Math.max(88, Math.min(120, Math.round(72 + item.size * 0.4)));
+  const size = Math.max(72, Math.min(128, Math.round(56 + item.size * 0.55)));
   const tone = TONE_META[item.tone];
+  const labelBelow = item.gap || item.label.length > 14 || size < 96;
 
   return (
     <button
@@ -123,18 +118,47 @@ function MapBubble({
       onClick={onSelect}
       aria-pressed={active}
       className={cn(
-        "absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 px-2.5 text-center transition-all duration-200",
-        "hover:z-20 hover:scale-[1.04] focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300",
+        "absolute -translate-x-1/2 -translate-y-1/2 rounded-full border-2 text-center transition-all duration-200",
+        "hover:z-20 hover:scale-[1.04] focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300",
         tone.bubble,
-        active && "z-20 scale-[1.08] ring-2 ring-indigo-300",
+        active && cn("z-20 scale-[1.06] ring-2", tone.ring),
       )}
-      style={{ left: `${pos.x}%`, top: `${pos.y}%`, width: size, height: size }}
+      style={{
+        left: `${pos.x}%`,
+        top: `${pos.y}%`,
+        width: size,
+        height: size,
+        boxShadow: active || item.tone === "growing" ? tone.glow : "0 4px 14px rgba(15,23,42,0.06)",
+      }}
     >
-      <span className="block px-0.5 text-[11px] font-semibold leading-snug tracking-[-0.01em]">{item.label}</span>
-      {item.sublabel && (
-        <span className={cn("mt-0.5 block text-[9px] leading-tight", item.gap ? "text-red-600" : "opacity-70")}>
-          {item.sublabel}
-        </span>
+      {labelBelow ? (
+        <>
+          {!item.gap && (
+            <>
+              <span className="block text-[13px] font-bold tabular-nums leading-none tracking-tight">{item.used}</span>
+              <span className="mt-0.5 block text-[9px] font-medium uppercase tracking-wide opacity-60">uses</span>
+            </>
+          )}
+          <span
+            className={cn(
+              "pointer-events-none absolute left-1/2 top-full mt-2 w-max max-w-[140px] -translate-x-1/2 text-center",
+            )}
+          >
+            <span className={cn("block text-[12px] font-bold leading-tight", item.gap ? "text-red-600" : "text-slate-800")}>
+              {item.label}
+            </span>
+            {item.sublabel && (
+              <span className={cn("mt-0.5 block text-[10px]", item.gap ? "text-red-500/90" : "text-slate-500")}>
+                {item.sublabel}
+              </span>
+            )}
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="block px-1 text-[12px] font-bold leading-snug tracking-[-0.01em]">{item.label}</span>
+          {item.sublabel && <span className="mt-0.5 block text-[10px] leading-tight opacity-65">{item.sublabel}</span>}
+        </>
       )}
     </button>
   );
@@ -149,21 +173,31 @@ export type KnowledgeAnalyticsProps = {
   kicker?: string;
   title?: string;
   description?: string;
+  /** When provided and non-empty, shows a KPI strip above the map (off by default). */
   businessKpis?: { label: string; value: string; hint: string; honesty: HonestyKind }[];
+  mapSubtitle?: string;
+  conversations30d?: number[];
+  crmWeeks?: { week: string; count: number }[];
+  todayHint?: string;
 };
 
 export function InvestorsAnalytics({
   agentId,
   bubbles = ANALYTICS_BUBBLES,
   bubblePositions = BUBBLE_POS,
-  hubId = "intent",
-  skipLinkIds = [],
-  kicker = "Investors · Analytics",
+  hubId = "referrals",
+  skipLinkIds = ["selling"],
+  kicker = "Knowledge block · Investors · Analytics",
   title = "What Investors knows",
-  description = "Commercial measures and evidence-backed insights. Every figure is Live, Pending integration, or Illustrative.",
-  businessKpis = ANALYTICS_BUSINESS_KPIS,
+  description = "Every bubble is something the block has learned. Size shows how often it is used. Click one to see the evidence.",
+  businessKpis,
+  mapSubtitle,
+  conversations30d = ANALYTICS_CONVERSATIONS_30D,
+  crmWeeks = ANALYTICS_CRM_WEEKS,
+  todayHint = "The charts already in Creator stay here",
 }: KnowledgeAnalyticsProps) {
   const [active, setActive] = useState(bubbles[0]?.id ?? hubId);
+  const [rulesMade, setRulesMade] = useState<Set<string>>(() => new Set());
   const bubble = bubbles.find((item) => item.id === active) ?? bubbles[0];
   const analytics = useQuery({
     queryKey: ["agent-analytics", agentId],
@@ -171,94 +205,126 @@ export function InvestorsAnalytics({
     enabled: !!agentId,
   });
 
-  const strengthData = useMemo(() => patternBars(bubbles), [bubbles]);
-  const usageData = useMemo(() => {
-    if (!analytics.data) return SAMPLE_USAGE;
-    const base = Math.max(8, analytics.data.calls || 12);
-    return SAMPLE_USAGE.map((row, i) => ({
-      ...row,
-      calls: Math.max(4, Math.round(base * (0.55 + ((i % 5) * 0.12)) + (i % 3) * 2)),
-      tokens: Math.max(10, Math.round((analytics.data!.input_tokens + analytics.data!.output_tokens || 40) * (0.04 + (i % 7) * 0.01))),
-    }));
-  }, [analytics.data]);
+  const dayBars = useMemo(
+    () => conversations30d.map((v, i) => ({ day: i + 1, count: v })),
+    [conversations30d],
+  );
 
+  const patternCount = bubbles.length;
+  const mapHint = mapSubtitle ?? `Investors block · ${patternCount} patterns · click a bubble`;
   const tone = bubble ? TONE_META[bubble.tone] : TONE_META.growing;
-  const usageHonesty: HonestyKind = agentId && analytics.data ? "live" : agentId ? "pending" : "illustrative";
   const hubPos = bubblePositions[hubId] ?? { x: 50, y: 50 };
+  const ruleApproved = bubble ? rulesMade.has(bubble.id) || !!bubble.inUse : false;
 
-  const addAction = () => {
-    if (!bubble) return;
+  const makeRule = () => {
+    if (!bubble?.rule) return;
+    setRulesMade((prev) => new Set(prev).add(bubble.id));
     addSharedPulseAction({
-      title: `Follow up · ${bubble.label}`,
+      title: `Rule · ${bubble.label}`,
       insightTitle: bubble.label,
       source: `${kicker} · ${bubble.source}`,
     });
-    toast.success("Added to action list", {
-      description: "Track status on Pulse: To do → In progress → Done.",
-      action: { label: "Open Pulse", onClick: () => { window.location.href = "/dashboard?view=insights"; } },
+    toast.success("Marked as a company rule", {
+      description: bubble.rule,
+      action: {
+        label: "Open Pulse",
+        onClick: () => {
+          window.location.href = "/dashboard?view=insights";
+        },
+      },
+    });
+  };
+
+  const coverGap = () => {
+    if (!bubble) return;
+    addSharedPulseAction({
+      title: `Cover gap · ${bubble.label}`,
+      insightTitle: bubble.label,
+      source: `${kicker} · ${bubble.source}`,
+    });
+    toast.success("Gap added to action list", {
+      description: "Track coverage work on Pulse.",
+      action: {
+        label: "Open Pulse",
+        onClick: () => {
+          window.location.href = "/dashboard?view=insights";
+        },
+      },
     });
   };
 
   return (
     <div className="mx-auto max-w-6xl space-y-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="font-mono text-[10px] tracking-[0.14em] text-indigo-600 uppercase">{kicker}</p>
-          <h1
-            className="mt-1 text-[24px] font-extrabold tracking-[-0.03em] text-slate-900 sm:text-[28px]"
-            style={{ fontFamily: "var(--font-display)" }}
-          >
-            {title}
-          </h1>
-          <p className="mt-1 max-w-[62ch] text-[13.5px] text-slate-500">{description}</p>
-        </div>
+      <div>
+        <p className="font-mono text-[10px] tracking-[0.14em] text-cyan-700 uppercase">{kicker}</p>
+        <h1
+          className="mt-1 text-[24px] font-extrabold tracking-[-0.03em] text-slate-900 sm:text-[28px]"
+          style={{ fontFamily: "var(--font-display)" }}
+        >
+          {title}
+        </h1>
+        <p className="mt-1 max-w-[62ch] text-[13.5px] text-slate-500">{description}</p>
       </div>
 
-      {/* CRM-oriented KPI row */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {businessKpis.map((kpi) => (
-          <div key={kpi.label} className={cn("px-4 py-3.5", CARD)}>
-            <div className="flex items-center justify-between gap-2">
-              <p className="font-mono text-[10px] tracking-[0.1em] text-slate-500 uppercase">{kpi.label}</p>
-              <HonestyBadge kind={kpi.honesty} className="scale-90" />
+      {businessKpis && businessKpis.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {businessKpis.map((kpi) => (
+            <div key={kpi.label} className={cn("px-4 py-3.5", CARD)}>
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-mono text-[10px] tracking-[0.1em] text-slate-500 uppercase">{kpi.label}</p>
+                <HonestyBadge kind={kpi.honesty} className="scale-90" />
+              </div>
+              <p
+                className="mt-1.5 text-[22px] font-extrabold tracking-[-0.03em] text-slate-900"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
+                {kpi.value}
+              </p>
+              <p className="mt-0.5 truncate text-[12px] text-slate-500">{kpi.hint}</p>
             </div>
-            <p className="mt-1.5 text-[22px] font-extrabold tracking-[-0.03em] text-slate-900" style={{ fontFamily: "var(--font-display)" }}>
-              {kpi.value}
-            </p>
-            <p className="mt-0.5 truncate text-[12px] text-slate-500">{kpi.hint}</p>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
-      <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.9fr)]">
-        <section className={cn("overflow-hidden", CARD)} aria-label="Evidence patterns">
+      <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1.45fr)_minmax(280px,0.85fr)]">
+        <section className={cn("flex flex-col overflow-hidden", CARD)} aria-label="Knowledge map">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 sm:px-5">
             <div>
               <h2 className="text-[15px] font-semibold text-slate-900" style={{ fontFamily: "var(--font-display)" }}>
-                Evidence patterns
+                Knowledge map
               </h2>
-              <p className="text-[12px] text-slate-500">Click a pattern to inspect evidence — not speculative scores</p>
+              <p className="text-[12px] text-slate-500">{mapHint}</p>
             </div>
             <HonestyBadge kind="illustrative" />
           </div>
 
-          <div className="relative h-[360px] bg-[radial-gradient(circle_at_50%_40%,rgba(99,102,241,0.06),transparent_55%)] sm:h-[400px]">
+          <div
+            className="relative min-h-[400px] flex-1 pb-14 pt-2 sm:min-h-[440px]"
+            style={{
+              backgroundColor: "#f8fafc",
+              backgroundImage:
+                "radial-gradient(circle at 46% 48%, rgba(6,182,212,0.09), transparent 42%), radial-gradient(rgba(148,163,184,0.32) 1px, transparent 1px)",
+              backgroundSize: "auto, 22px 22px",
+            }}
+          >
             <svg className="pointer-events-none absolute inset-0 h-full w-full" aria-hidden>
-              {bubbles.filter((b) => !skipLinkIds.includes(b.id)).map((item) => {
-                const to = bubblePositions[item.id];
-                if (!to || item.id === hubId) return null;
-                return (
-                  <line
-                    key={item.id}
-                    x1={`${hubPos.x}%`}
-                    y1={`${hubPos.y}%`}
-                    x2={`${to.x}%`}
-                    y2={`${to.y}%`}
-                    stroke="rgba(148,163,184,0.35)"
-                    strokeWidth="1"
-                  />
-                );
-              })}
+              {bubbles
+                .filter((b) => !skipLinkIds.includes(b.id) && !b.gap)
+                .map((item) => {
+                  const to = bubblePositions[item.id];
+                  if (!to || item.id === hubId) return null;
+                  return (
+                    <line
+                      key={item.id}
+                      x1={`${hubPos.x}%`}
+                      y1={`${hubPos.y}%`}
+                      x2={`${to.x}%`}
+                      y2={`${to.y}%`}
+                      stroke="rgba(148,163,184,0.28)"
+                      strokeWidth="1"
+                    />
+                  );
+                })}
             </svg>
             {bubbles.map((item) => (
               <MapBubble
@@ -270,30 +336,46 @@ export function InvestorsAnalytics({
               />
             ))}
           </div>
+
+          <div className="flex flex-wrap gap-x-4 gap-y-2 border-t border-slate-100 px-4 py-3 sm:px-5">
+            {LEGEND.map((item) => (
+              <span key={item.tone} className="inline-flex items-center gap-1.5 text-[11px] text-slate-600">
+                <i className={cn("inline-block size-2.5 rounded-full", TONE_META[item.tone].legend)} aria-hidden />
+                {item.label}
+              </span>
+            ))}
+          </div>
         </section>
 
         {bubble && (
-          <aside className={cn("flex flex-col overflow-hidden", CARD)} aria-label="Selected insight">
-            <div className={cn("h-1 w-full", tone.accent)} />
+          <aside className={cn("flex flex-col overflow-hidden", CARD)} aria-label="Selected pattern">
+            <div className={cn("h-1 w-full")} style={{ background: tone.fill }} />
             <div className="flex flex-1 flex-col p-4 sm:p-5">
-              <div className="flex flex-wrap items-center gap-2">
-                <p className="font-mono text-[10px] tracking-[0.12em] text-slate-500 uppercase">Selected insight</p>
-                <HonestyBadge kind={bubble.honesty} />
-              </div>
-              <h2 className="mt-1 text-[20px] font-extrabold tracking-[-0.02em] text-slate-900" style={{ fontFamily: "var(--font-display)" }}>
+              <p className="font-mono text-[10px] tracking-[0.14em] text-cyan-700 uppercase">Selected</p>
+              <h2
+                className="mt-1 text-[22px] font-extrabold tracking-[-0.02em] text-slate-900"
+                style={{ fontFamily: "var(--font-display)" }}
+              >
                 {bubble.label}
               </h2>
               <div className="mt-2.5 flex flex-wrap gap-1.5">
-                {bubble.strength && (
-                  <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-medium", tone.chip)}>
-                    {bubble.strength}
+                {ruleApproved ? (
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-200">
+                    Company rule · in use
                   </span>
+                ) : (
+                  bubble.strength && (
+                    <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-medium", tone.chip)}>
+                      {bubble.strength}
+                    </span>
+                  )
                 )}
                 {bubble.agent && bubble.agent !== "—" && (
-                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-700">
+                  <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-medium text-sky-700 ring-1 ring-sky-200">
                     {bubble.agent}
                   </span>
                 )}
+                <HonestyBadge kind={bubble.honesty} className="scale-90" />
               </div>
 
               <p className="mt-3 text-[13.5px] leading-relaxed text-slate-600">{bubble.summary}</p>
@@ -301,126 +383,125 @@ export function InvestorsAnalytics({
               <div className="mt-4 grid grid-cols-2 gap-2">
                 {bubble.stats.map((stat) => (
                   <div key={stat.label} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
-                    <b className="block text-[17px] font-extrabold tracking-[-0.02em] text-slate-900" style={{ fontFamily: "var(--font-display)" }}>
+                    <b
+                      className="block text-[16px] font-extrabold tracking-[-0.02em] text-slate-900"
+                      style={{ fontFamily: "var(--font-display)" }}
+                    >
                       {stat.value}
                     </b>
-                    <span className="text-[11px] text-slate-500">{stat.label}</span>
+                    <span className="mt-0.5 block text-[10px] font-medium tracking-[0.04em] text-slate-500 uppercase">
+                      {stat.label}
+                    </span>
                   </div>
                 ))}
               </div>
 
-              <div className="mt-4 rounded-xl border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-indigo-600">Recommendation</p>
-                <p className="mt-1 text-[13px] text-slate-700">{bubble.recommendation}</p>
+              <p className="mt-4 text-[12px] leading-relaxed text-slate-500">{bubble.source}</p>
+
+              <div className="mt-auto flex flex-wrap gap-2 pt-5">
+                {ruleApproved ? null : (
+                  <>
+                    {bubble.simulate && (
+                      <a
+                        href={CLAUDE_SIMULATE_URL}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-cyan-500 to-indigo-500 px-3 text-[13px] font-semibold text-white shadow-sm hover:from-cyan-400 hover:to-indigo-400"
+                      >
+                        <Sparkles className="size-3.5" />
+                        Simulate in Claude
+                        <ExternalLink className="size-3 opacity-80" />
+                      </a>
+                    )}
+                    {bubble.rule && (
+                      <button
+                        type="button"
+                        onClick={makeRule}
+                        className="inline-flex min-h-10 flex-1 items-center justify-center rounded-xl bg-indigo-600 px-3 text-[13px] font-semibold text-white hover:bg-indigo-700"
+                      >
+                        Make it a rule
+                      </button>
+                    )}
+                    {bubble.workerGap && (
+                      <button
+                        type="button"
+                        onClick={coverGap}
+                        className="inline-flex min-h-10 w-full items-center justify-center rounded-xl bg-indigo-600 px-3 text-[13px] font-semibold text-white hover:bg-indigo-700"
+                      >
+                        Cover this gap
+                      </button>
+                    )}
+                  </>
+                )}
               </div>
-
-              <p className="mt-4 flex items-start gap-1.5 text-[12px] text-slate-500">
-                <ArrowUpRight className="mt-0.5 size-3.5 shrink-0 opacity-70" />
-                {bubble.source}
-              </p>
-
-              <button
-                type="button"
-                onClick={addAction}
-                className="mt-auto inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 text-[14px] font-semibold text-white hover:bg-indigo-700"
-              >
-                <ListTodo className="size-4" />
-                Add to action list
-              </button>
-              <p className="mt-2 text-center text-[11px] text-slate-500">
-                Human-managed backlog — not marked done when proposed.
-              </p>
             </div>
           </aside>
         )}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <section className={cn("p-4 sm:p-5", CARD)} aria-label="Usage over time">
-          <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <h2 className="flex items-center gap-2 text-[15px] font-semibold text-slate-900" style={{ fontFamily: "var(--font-display)" }}>
-                <Activity className="size-4 text-indigo-600" />
-                Worker usage · last 14 days
-              </h2>
-              <p className="mt-0.5 text-[12px] text-slate-500">
-                {usageHonesty === "live" ? "From linked worker analytics" : "Illustrative until a live worker feed is bound"}
-              </p>
-            </div>
-            <HonestyBadge kind={usageHonesty} />
+      <section className={cn("overflow-hidden", CARD)} aria-label="Today's analytics">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3 sm:px-5">
+          <div>
+            <h2 className="text-[15px] font-semibold text-slate-900" style={{ fontFamily: "var(--font-display)" }}>
+              Today&apos;s analytics
+            </h2>
+            <p className="text-[12px] text-slate-500">{todayHint}</p>
           </div>
-          <div className="h-[240px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={usageData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="invCallsFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#6366f1" stopOpacity={0.28} />
-                    <stop offset="100%" stopColor="#6366f1" stopOpacity={0.02} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                <XAxis dataKey="day" tick={AXIS_TICK} axisLine={false} tickLine={false} interval={1} />
-                <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={32} />
-                <Tooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  cursor={{ stroke: "#cbd5e1" }}
-                  formatter={(value, name) => [Number(value).toLocaleString(), name === "calls" ? "Calls" : "Token index"]}
-                />
-                <Area type="monotone" dataKey="calls" name="calls" stroke="#6366f1" strokeWidth={2.25} fill="url(#invCallsFill)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          {agentId && analytics.isError && (
-            <button type="button" className="mt-2 text-[12px] text-indigo-600 underline" onClick={() => analytics.refetch()}>
-              Retry worker usage
-            </button>
-          )}
-        </section>
+          <HonestyBadge kind="illustrative" />
+        </div>
 
-        <section className={cn("p-4 sm:p-5", CARD)} aria-label="Pattern frequency">
-          <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <h2 className="flex items-center gap-2 text-[15px] font-semibold text-slate-900" style={{ fontFamily: "var(--font-display)" }}>
-                <BarChart3 className="size-4 text-indigo-600" />
-                Pattern frequency
-              </h2>
-              <p className="mt-0.5 text-[12px] text-slate-500">Relative mention share · click a bar to select</p>
+        <div className="grid gap-6 p-4 sm:p-5 lg:grid-cols-2">
+          <div>
+            <p className="mb-2 text-[12px] font-medium text-slate-600">Conversations per day · last 30 days</p>
+            <div className="h-[160px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={dayBars} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                  <XAxis dataKey="day" hide />
+                  <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={28} />
+                  <Tooltip
+                    contentStyle={TOOLTIP_STYLE}
+                    cursor={{ fill: "rgba(6,182,212,0.08)" }}
+                    formatter={(value) => [Number(value), "Conversations"]}
+                    labelFormatter={(label) => `Day ${label}`}
+                  />
+                  <Bar dataKey="count" radius={[3, 3, 0, 0]} barSize={10}>
+                    {dayBars.map((row, i) => (
+                      <Cell
+                        key={row.day}
+                        fill={`rgba(6,182,212,${(0.28 + 0.72 * (i / Math.max(dayBars.length - 1, 1))).toFixed(2)})`}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-            <HonestyBadge kind="illustrative" />
+            <div className="mt-1 flex justify-between text-[11px] text-slate-500">
+              <span>−30d</span>
+              <span>today</span>
+            </div>
           </div>
-          <div className="h-[240px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={strengthData} layout="vertical" margin={{ top: 4, right: 12, left: 4, bottom: 4 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" horizontal={false} />
-                <XAxis type="number" tick={AXIS_TICK} axisLine={false} tickLine={false} unit="%" />
-                <YAxis type="category" dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} width={88} />
-                <Tooltip
-                  contentStyle={TOOLTIP_STYLE}
-                  cursor={{ fill: "rgba(148,163,184,0.12)" }}
-                  formatter={(value, _name, item) => {
-                    const full = (item?.payload as { full?: string } | undefined)?.full;
-                    return [`${Number(value)}%`, full ?? "Pattern"];
-                  }}
-                />
-                <Bar
-                  dataKey="used"
-                  radius={[0, 6, 6, 0]}
-                  barSize={16}
-                  onClick={(entry) => {
-                    const id = (entry as { id?: string })?.id;
-                    if (id) setActive(id);
-                  }}
-                  className="cursor-pointer"
-                >
-                  {strengthData.map((row) => (
-                    <Cell key={row.id} fill={row.id === active ? row.fill : `${row.fill}99`} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
+
+          <div>
+            <p className="mb-2 text-[12px] font-medium text-slate-600">Handed to CRM · per week</p>
+            <div className="h-[160px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={crmWeeks} margin={{ top: 18, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                  <XAxis dataKey="week" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                  <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false} width={28} allowDecimals={false} />
+                  <Tooltip
+                    contentStyle={TOOLTIP_STYLE}
+                    cursor={{ fill: "rgba(6,182,212,0.08)" }}
+                    formatter={(value) => [Number(value), "Handed to CRM"]}
+                  />
+                  <Bar dataKey="count" fill="#06b6d4" radius={[6, 6, 0, 0]} barSize={56} label={{ position: "top", fill: "#475569", fontSize: 12, fontWeight: 600 }} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
 
       {agentId && analytics.data && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

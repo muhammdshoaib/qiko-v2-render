@@ -174,6 +174,8 @@ export const PORTFOLIO_ANALYTICS_BUBBLES: AnalyticsBubble[] = [
     source: "From advised investor holdings and investor-app cards",
     recommendation: "Review concentration evidence, then add a human follow-up if a person should act.",
     honesty: "illustrative" as const,
+    simulate: true,
+    rule: "Review concentration cards with 3+ holdings in one city before outreach",
   },
   {
     id: "regional",

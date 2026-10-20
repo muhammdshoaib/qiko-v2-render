@@ -17,7 +17,30 @@ export function IntelligenceCockpitShell({
   return (
     <AppShell title="Intelligence">
       <div className="flex min-h-[calc(100dvh-3.5rem)] flex-col bg-slate-50 text-slate-800 lg:min-h-screen">
-        {tab !== "intelligence" && (
+        {(tab === "connections" || tab === "channels") && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
+            <div>
+              <h1 className="text-lg font-semibold text-foreground" style={{ fontFamily: "var(--font-display)" }}>
+                {tab === "channels" ? "Claude & Slack" : "Connections"}
+              </h1>
+              <p className="text-[12px] text-slate-400">
+                {tab === "channels"
+                  ? "Walkthrough surfaces for Claude and Slack."
+                  : "Where the worker operates — surfaces and connected systems."}
+              </p>
+            </div>
+            {tab === "channels" && (
+              <button
+                type="button"
+                onClick={() => onTabChange("connections")}
+                className="min-h-10 rounded-lg border border-slate-200 bg-white px-3 text-[13px] font-medium text-indigo-600 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300"
+              >
+                ← Back to Connections
+              </button>
+            )}
+          </div>
+        )}
+        {tab !== "intelligence" && tab !== "connections" && tab !== "channels" && (
           <>
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-6">
               <div>

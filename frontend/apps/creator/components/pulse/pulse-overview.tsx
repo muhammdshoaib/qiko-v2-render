@@ -224,7 +224,7 @@ export function PulseOverview({
         </header>
 
         {/* 2. Value + best next move */}
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(280px,0.9fr)]">
           <section
             className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6"
             aria-label="Value from knowledge"
@@ -404,7 +404,7 @@ export function PulseOverview({
         />
 
         {/* 6. Knowledge blocks */}
-        <section aria-label="Knowledge blocks" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {/* <section aria-label="Knowledge blocks" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-5 py-3.5">
             <h2 className="text-[15px] font-semibold text-slate-900">Knowledge blocks</h2>
             <p className="mt-0.5 text-[12.5px] text-slate-500">Click to open · one block, one worker</p>
@@ -437,7 +437,7 @@ export function PulseOverview({
               </button>
             ))}
           </div>
-        </section>
+        </section> */}
       </div>
     </div>
   );

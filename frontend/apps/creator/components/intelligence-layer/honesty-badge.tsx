@@ -18,6 +18,8 @@ const VARIANT: Record<HonestyKind, "success" | "default" | "warning" | "muted"> 
 };
 
 export function HonestyBadge({ kind, className }: { kind: HonestyKind; className?: string }) {
+  // Hide Illustrative tags in the UI; Live / Pending badges still show.
+  if (kind === "illustrative") return null;
   return (
     <Badge variant={VARIANT[kind]} className={className} aria-label={`Data status: ${LABEL[kind]}`}>
       {LABEL[kind]}
