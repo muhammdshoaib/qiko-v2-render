@@ -22,6 +22,18 @@ import {
 import { getAgentAnalytics, listAgents, listDocuments, me, type Agent } from "@/lib/api";
 import { workerTypeLabel } from "@/lib/stringUtils";
 
+type Tab = "Overview" | "Analytics" | "Chat" | "Train" | "Sources" | "CRM" | "Connections" | "Settings";
+const TABS: { id: Tab; icon: LucideIcon; locked?: boolean }[] = [
+  { id: "Overview", icon: Sparkles },
+  { id: "Analytics", icon: BarChart3 },
+  { id: "Chat", icon: MessageSquare },
+  { id: "Train", icon: GraduationCap },
+  { id: "Sources", icon: Database },
+  { id: "CRM", icon: Users },
+  { id: "Connections", icon: Link2 },
+  { id: "Settings", icon: Settings },
+];
+
 export default function WorkerDetailPage() {
   const { id } = useParams<{ id: string }>();
   const qc = useQueryClient();
@@ -170,7 +182,7 @@ export default function WorkerDetailPage() {
     </AppShell>
   );
 }
-function OverviewTab({ id, worker }: { id: string; worker?: Agent }) {
+function OverviewTab({ worker }: { id: string; worker?: Agent }) {
   const [overviewOpen, setOverviewOpen] = useState(true);
   const typeLabel = workerTypeLabel(worker?.atype);
   const capabilities = [
